@@ -29,6 +29,32 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 
 ---
 
+## Quick Start
+
+```bash
+# First-time setup
+cp .env.example .env        # then edit values (see General rules for current drift)
+make dev                    # brings up postgres + backend + frontend
+                            # frontend :3000 · backend :4000
+
+# Day-to-day
+make dev                    # start stack
+make stop                   # stop stack
+make logs                   # tail all services
+make migrate                # apply pending migrations (prisma migrate deploy)
+make reset-db               # DESTRUCTIVE — wipes pgdata volume and re-migrates
+
+# Testing (from repo root)
+make test                   # backend (vitest) + frontend (vitest) suites
+make test-e2e               # playwright against a running stack
+cd backend && npm run db:test:reset   # reset the test DB before a full suite
+
+# Running a single task's verify command
+/task-verify D9             # runs the `verify:` for [D9] and reports the true exit code
+```
+
+---
+
 ## Task Completion Protocol
 
 **NEVER mark a task `[x]` until its verify command passes with exit code 0.**
@@ -43,6 +69,10 @@ For every task:
 7. Move to the next task immediately — do not refactor or add scope
 
 If a task has no verify command, add one to `TASKS.md` before starting.
+
+### Local tooling
+- **`/task-verify <TASK_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that runs the `verify:` command exactly as written and reports the true exit code. Use this before manually ticking a task; it's stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
+- **`.claude/hooks/pre-tasks-edit.sh`** — a pre-edit hook that automatically ticks a task `[x]` in `TASKS.md` when its verify command passes. Treat an auto-tick as authoritative for the verify gate; you still need the `security-reviewer` clearance (where applicable) before the task group is considered closed.
 
 ---
 
@@ -83,6 +113,7 @@ Hard gates (do not start until the prerequisite is complete):
 - No secrets ever committed to git. `.env` is in `.gitignore`.
 - **No server-wide Venice API key exists.** Venice keys are per-user (BYOK), AES-256-GCM encrypted at rest. A user-entered key must never appear in application logs, error responses, stack traces, or the frontend build output ([AU13]).
 - Two independent env secrets exist and must be backed up with the same rigour as the DB: `APP_ENCRYPTION_KEY` (wraps BYOK Venice keys) and `CONTENT_ENCRYPTION_KEY` (wraps per-user content DEKs). **Key loss = irrecoverable data loss.**
+- **`.env.example` is intentionally mid-migration** — still carries the legacy `VENICE_API_KEY` placeholder and does not yet list `APP_ENCRYPTION_KEY` / `CONTENT_ENCRYPTION_KEY`. Task `[I7]` does the swap. Until then: don't "fix" the drift as a side effect of another task; update `.env.example` only when implementing `[I7]`.
 
 ### Backend
 - All route handlers must be thin — logic goes in service files in `src/services/` and repository wrappers in `src/repos/`
@@ -205,6 +236,15 @@ The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a re
 - Any change to: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/ai.service.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`.
 
 Invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope in the prompt (e.g. "review AU9–AU10 as currently implemented" or "review the repo-layer boundary for E9"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box — if the hook (see `.claude/hooks/pre-tasks-edit.sh`) says the verify passed but the reviewer says `BLOCK`, do not tick.
+
+**Example invocation:**
+```
+Agent(
+  description: "Review BYOK endpoints",
+  subagent_type: "security-reviewer",
+  prompt: "Review [AU12] as currently implemented. Scope: backend/src/routes/venice-key.routes.ts + backend/src/services/crypto.service.ts + content-crypto.service.ts. Confirm: (1) decrypted keys never logged or returned; (2) PUT validates against Venice before storing; (3) response bodies on GET expose only { hasKey, lastFour, endpoint }."
+)
+```
 
 ---
 
