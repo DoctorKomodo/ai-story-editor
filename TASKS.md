@@ -53,16 +53,16 @@
 
 ## 🏗️ A — Architecture
 
-- [ ] **[A1]** Write `docs/data-model.md` with a mermaid ER diagram: User -> Stories -> Chapters, User -> Stories -> Characters. All fields listed per entity.
+- [x] **[A1]** Write `docs/data-model.md` with a mermaid ER diagram: User -> Stories -> Chapters, User -> Stories -> Characters. All fields listed per entity.
   - verify: `test -f docs/data-model.md && grep -q "Character" docs/data-model.md && grep -q "Chapter" docs/data-model.md`
 
-- [ ] **[A2]** Write `docs/api-contract.md` documenting every REST endpoint: method, path, auth required, request body, response schema, error codes.
+- [x] **[A2]** Write `docs/api-contract.md` documenting every REST endpoint: method, path, auth required, request body, response schema, error codes.
   - verify: `test -f docs/api-contract.md && grep -q "/api/stories" docs/api-contract.md && grep -q "/api/ai/complete" docs/api-contract.md`
 
-- [ ] **[A3]** Write `docs/venice-integration.md` covering: OpenAI-compatible client setup, venice_parameters used and why, prompt construction strategy, dynamic context window budgeting, streaming implementation, reasoning model handling, prompt caching strategy, rate limit and balance header usage.
+- [x] **[A3]** Write `docs/venice-integration.md` covering: OpenAI-compatible client setup, venice_parameters used and why, prompt construction strategy, dynamic context window budgeting, streaming implementation, reasoning model handling, prompt caching strategy, rate limit and balance header usage.
   - verify: `test -f docs/venice-integration.md && grep -q "venice_parameters" docs/venice-integration.md && grep -q "context_length" docs/venice-integration.md`
 
-- [ ] **[A4]** Create `backend/src/lib/venice.ts` — single place that initialises the OpenAI client with Venice base URL and API key. Export the client instance. No other file imports `openai` directly.
+- [x] **[A4]** Create `backend/src/lib/venice.ts` — single place that initialises the OpenAI client with Venice base URL and API key. Export the client instance. No other file imports `openai` directly.
   - verify: `cd backend && npm run test:backend -- --run tests/lib/venice.test.ts`
 
 ---
@@ -100,25 +100,25 @@
 - [x] **[D9]** Extend `Story` schema with `targetWords Int?` (story progress target, e.g. 90000 — displayed in sidebar footer) and `systemPrompt String?` (per-story creative-writing system prompt; null → prompt builder falls back to default).
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/story-settings.test.ts`
 
-- [ ] **[D10]** Extend `Chapter` schema with `bodyJson Json?` (TipTap JSON — canonical going forward) and `status String @default("draft")` (`draft` / `revised` / `final` — drives chapter status chip). Keep existing `content String` as a plain-text mirror derived from `bodyJson` on save so text search and text export keep working.
+- [x] **[D10]** Extend `Chapter` schema with `bodyJson Json?` (TipTap JSON — canonical going forward) and `status String @default("draft")` (`draft` / `revised` / `final` — drives chapter status chip). Keep existing `content String` as a plain-text mirror derived from `bodyJson` on save so text search and text export keep working.
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/chapter-body-json.test.ts`
 
-- [ ] **[D11]** Extend `Character` with mockup-card fields: `age String?`, `appearance String?`, `voice String?`, `arc String?`, `initial String?` (1-char sidebar avatar letter), `color String?` (avatar background hex). Existing `physicalDescription`/`personality`/`backstory`/`notes` are retained; UI may migrate values into the new fields over time.
+- [x] **[D11]** Extend `Character` with mockup-card fields: `age String?`, `appearance String?`, `voice String?`, `arc String?`, `initial String?` (1-char sidebar avatar letter), `color String?` (avatar background hex). Existing `physicalDescription`/`personality`/`backstory`/`notes` are retained; UI may migrate values into the new fields over time.
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/character-mockup.test.ts`
 
-- [ ] **[D12]** New model `OutlineItem`: `id`, `storyId` FK (cascade), `order Int`, `title String`, `sub String?`, `status String` (`done` / `current` / `pending`), timestamps. Index on `(storyId, order)`.
+- [x] **[D12]** New model `OutlineItem`: `id`, `storyId` FK (cascade), `order Int`, `title String`, `sub String?`, `status String` (`done` / `current` / `pending`), timestamps. Index on `(storyId, order)`.
   - verify: `cd backend && npm run test:backend -- --run tests/models/outline-item.test.ts`
 
-- [ ] **[D13]** New models `Chat` + `Message`. `Chat`: `id`, `chapterId` FK (cascade), `title String?`, timestamps. `Message`: `id`, `chatId` FK (cascade), `role` (`user` / `assistant` / `system`), `contentJson Json`, `attachmentJson Json?` (Ask-AI selection payload: `{ selectionText, chapterId }`), `model String?`, `tokens Int?`, `latencyMs Int?`, `createdAt`. Index on `(chatId, createdAt)`.
+- [x] **[D13]** New models `Chat` + `Message`. `Chat`: `id`, `chapterId` FK (cascade), `title String?`, timestamps. `Message`: `id`, `chatId` FK (cascade), `role` (`user` / `assistant` / `system`), `contentJson Json`, `attachmentJson Json?` (Ask-AI selection payload: `{ selectionText, chapterId }`), `model String?`, `tokens Int?`, `latencyMs Int?`, `createdAt`. Index on `(chatId, createdAt)`.
   - verify: `cd backend && npm run test:backend -- --run tests/models/chat.test.ts tests/models/message.test.ts`
 
-- [ ] **[D14]** Extend `User` with `name String?` (display name shown in top-bar user menu) and `settingsJson Json?` (stores non-sensitive client preferences — theme, prose font, prose size, line height, writing toggles, daily goal, chat model + params).
+- [x] **[D14]** Extend `User` with `name String?` (display name shown in top-bar user menu) and `settingsJson Json?` (stores non-sensitive client preferences — theme, prose font, prose size, line height, writing toggles, daily goal, chat model + params).
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/user-profile.test.ts`
 
-- [ ] **[D15]** Username-based identity (supersedes email as the primary credential — [D2] completed task remains unchanged; this task adds a new field and relaxes `email`): add `User.username String @unique` (stored lowercase, 3–32 chars, `/^[a-z0-9_-]+$/`). Make `User.email String?` nullable — email becomes optional metadata, not the login identifier. Migration backfills `username` from the local-part of each existing user's email, appending a numeric suffix on collision.
+- [x] **[D15]** Username-based identity (supersedes email as the primary credential — [D2] completed task remains unchanged; this task adds a new field and relaxes `email`): add `User.username String @unique` (stored lowercase, 3–32 chars, `/^[a-z0-9_-]+$/`). Make `User.email String?` nullable — email becomes optional metadata, not the login identifier. Migration backfills `username` from the local-part of each existing user's email, appending a numeric suffix on collision.
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/user-username.test.ts`
 
-- [ ] **[D16]** BYOK Venice-key storage on `User`: add `veniceApiKeyEnc String?` (AES-256-GCM ciphertext, base64), `veniceApiKeyIv String?` (12-byte IV, base64), `veniceApiKeyAuthTag String?` (GCM auth tag, base64), `veniceEndpoint String?` (optional endpoint override, default `https://api.venice.ai/api/v1`). All nullable — users without a stored key cannot invoke AI.
+- [x] **[D16]** BYOK Venice-key storage on `User`: add `veniceApiKeyEnc String?` (AES-256-GCM ciphertext, base64), `veniceApiKeyIv String?` (12-byte IV, base64), `veniceApiKeyAuthTag String?` (GCM auth tag, base64), `veniceEndpoint String?` (optional endpoint override, default `https://api.venice.ai/api/v1`). All nullable — users without a stored key cannot invoke AI.
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/user-venice-key.test.ts`
 
 ---
