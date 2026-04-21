@@ -12,30 +12,40 @@ datasource db {
 }
 
 model User {
-  id            String         @id @default(cuid())
-  email         String         @unique
-  passwordHash  String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                    String         @id @default(cuid())
+  email                 String?        @unique
+  username              String         @unique
+  name                  String?
+  passwordHash          String
+  settingsJson          Json?
+  veniceApiKeyEnc       String?
+  veniceApiKeyIv        String?
+  veniceApiKeyAuthTag   String?
+  veniceEndpoint        String?
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 
   stories       Story[]
   refreshTokens RefreshToken[]
 }
 
 model Story {
-  id          String      @id @default(cuid())
-  title       String
-  synopsis    String?
-  genre       String?
-  worldNotes  String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id           String        @id @default(cuid())
+  title        String
+  synopsis     String?
+  genre        String?
+  worldNotes   String?
+  targetWords  Int?
+  systemPrompt String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
 
-  userId      String
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  chapters    Chapter[]
-  characters  Character[]
+  chapters     Chapter[]
+  characters   Character[]
+  outlineItems OutlineItem[]
 
   @@index([userId])
 }
@@ -44,6 +54,8 @@ model Chapter {
   id          String   @id @default(cuid())
   title       String
   content     String   @default("")
+  bodyJson    Json?
+  status      String   @default("draft")
   orderIndex  Int
   wordCount   Int      @default(0)
   createdAt   DateTime @default(now())
@@ -51,6 +63,7 @@ model Chapter {
 
   storyId     String
   story       Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+  chats       Chat[]
 
   @@index([storyId])
   @@index([storyId, orderIndex])
@@ -60,6 +73,12 @@ model Character {
   id                  String   @id @default(cuid())
   name                String
   role                String?
+  age                 String?
+  appearance          String?
+  voice               String?
+  arc                 String?
+  initial             String?
+  color               String?
   physicalDescription String?
   personality         String?
   backstory           String?
@@ -71,6 +90,53 @@ model Character {
   story               Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@index([storyId])
+}
+
+model OutlineItem {
+  id        String   @id @default(cuid())
+  order     Int
+  title     String
+  sub       String?
+  status    String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  storyId   String
+  story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+  @@index([storyId, order])
+}
+
+model Chat {
+  id        String   @id @default(cuid())
+  title     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  chapterId String
+  chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+
+  messages  Message[]
+
+  @@index([chapterId])
+}
+
+model Message {
+  id             String   @id @default(cuid())
+  role           String
+  contentJson    Json
+  attachmentJson Json?
+  model          String?
+  tokens         Int?
+  latencyMs      Int?
+  createdAt      DateTime @default(now())
+
+  chatId         String
+  chat           Chat     @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@index([chatId])
+  @@index([chatId, createdAt])
 }
 
 model RefreshToken {

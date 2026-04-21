@@ -12,7 +12,7 @@ describe('User model', () => {
 
   it('creates a user with cuid id and timestamps', async () => {
     const user = await prisma.user.create({
-      data: { email: 'alice@example.com', passwordHash: 'hash-alice' },
+      data: { email: 'alice@example.com', username: 'alice', passwordHash: 'hash-alice' },
     });
     expect(user.id).toMatch(/^c[a-z0-9]+$/);
     expect(user.email).toBe('alice@example.com');
@@ -23,16 +23,18 @@ describe('User model', () => {
 
   it('enforces a unique email', async () => {
     await prisma.user.create({
-      data: { email: 'bob@example.com', passwordHash: 'h1' },
+      data: { email: 'bob@example.com', username: 'bob-a', passwordHash: 'h1' },
     });
     await expect(
-      prisma.user.create({ data: { email: 'bob@example.com', passwordHash: 'h2' } }),
+      prisma.user.create({
+        data: { email: 'bob@example.com', username: 'bob-b', passwordHash: 'h2' },
+      }),
     ).rejects.toThrow();
   });
 
   it('updates updatedAt on change', async () => {
     const user = await prisma.user.create({
-      data: { email: 'carol@example.com', passwordHash: 'h' },
+      data: { email: 'carol@example.com', username: 'carol', passwordHash: 'h' },
     });
     await new Promise((resolve) => setTimeout(resolve, 10));
     const updated = await prisma.user.update({

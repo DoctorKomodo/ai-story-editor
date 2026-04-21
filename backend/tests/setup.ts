@@ -3,8 +3,12 @@ import { afterAll } from 'vitest';
 
 process.env.NODE_ENV ??= 'test';
 
-export const testDatabaseUrl =
-  process.env.DATABASE_URL ?? 'postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test';
+// Prisma auto-loads backend/.env, which points at the dev DB. We ignore that
+// here and unconditionally pin to the test DB — the test suite must never
+// touch development data (CLAUDE.md: "never run tests against the dev DB").
+const explicitTestDb =
+  process.env.TEST_DATABASE_URL ?? 'postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test';
+export const testDatabaseUrl = explicitTestDb;
 
 process.env.DATABASE_URL = testDatabaseUrl;
 

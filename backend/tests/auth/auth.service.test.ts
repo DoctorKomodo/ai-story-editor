@@ -71,6 +71,7 @@ describe('auth.service register()', () => {
     await prisma.user.create({
       data: {
         email: 'race@example.com',
+        username: 'race',
         passwordHash: await bcrypt.hash('seeded-password', BCRYPT_ROUNDS),
       },
     });

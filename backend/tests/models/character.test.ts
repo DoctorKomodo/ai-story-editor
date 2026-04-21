@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 
 async function makeStory(email = 'char-author@example.com') {
-  const user = await prisma.user.create({ data: { email, passwordHash: 'h' } });
+  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
   return prisma.story.create({ data: { title: 'Host Story', userId: user.id } });
 }
 
