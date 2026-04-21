@@ -1,0 +1,86 @@
+// Story Editor — Prisma schema.
+// All models own createdAt/updatedAt. Foreign keys are indexed. Cascades are
+// declared on the relation, never in application code (see CLAUDE.md).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String         @id @default(cuid())
+  email         String         @unique
+  passwordHash  String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  stories       Story[]
+  refreshTokens RefreshToken[]
+}
+
+model Story {
+  id          String      @id @default(cuid())
+  title       String
+  synopsis    String?
+  genre       String?
+  worldNotes  String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  userId      String
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  chapters    Chapter[]
+  characters  Character[]
+
+  @@index([userId])
+}
+
+model Chapter {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   @default("")
+  orderIndex  Int
+  wordCount   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  storyId     String
+  story       Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+  @@index([storyId, orderIndex])
+}
+
+model Character {
+  id                  String   @id @default(cuid())
+  name                String
+  role                String?
+  physicalDescription String?
+  personality         String?
+  backstory           String?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  storyId             String
+  story               Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
+
+  @@index([storyId])
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}

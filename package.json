@@ -1,0 +1,9 @@
+{
+  "name": "story-editor",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Self-hosted story editor with Venice.ai integration — root workspace.",
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
+  }
+}
