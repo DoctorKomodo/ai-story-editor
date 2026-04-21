@@ -282,10 +282,10 @@
 - [ ] **[V3]** `backend/src/services/prompt.service.ts` — builds prompts given: `action`, `selectedText`, `chapterContent`, `characters[]`, `worldNotes`, `modelContextLength`. Budget: reserve 20% of `modelContextLength` for the response. Use the remainder for prompt content. If budget exceeded, truncate `chapterContent` from the top (oldest content first). Never truncate character context or worldNotes.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.service.test.ts`
 
-- [ ] **[V4]** Prompt builder always sets `venice_parameters.include_venice_system_prompt = false`. We supply our own creative writing system prompts. Unit test confirms this flag is always present regardless of action type or model.
+- [ ] **[V4]** Prompt builder sets `venice_parameters.include_venice_system_prompt` from a caller-supplied `includeVeniceSystemPrompt` boolean. When the flag is `true`, Venice's own creative-writing prompt is prepended; when `false`, only Inkwell's system message (default or per-story `Story.systemPrompt`) is in effect. Default when omitted is `true`. Unit test covers all three branches: explicit `true` → flag is `true`; explicit `false` → flag is `false`; omitted → flag is `true`. The flag value is never hardcoded inside the prompt builder.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.venice-params.test.ts`
 
-- [ ] **[V5]** `POST /api/ai/complete` — accepts `{ action, selectedText, chapterContent, storyId, modelId }`. Fetches story characters and worldNotes from DB. Calls prompt builder with model context length from cache. Calls Venice with `stream: true`. Pipes SSE stream back to client.
+- [ ] **[V5]** `POST /api/ai/complete` — accepts `{ action, selectedText, chapterContent, storyId, modelId }`. Fetches story characters and worldNotes from DB. Reads `req.user.settingsJson.ai.includeVeniceSystemPrompt` (default `true` if the key is missing) and passes it to the prompt builder. Calls prompt builder with model context length from cache. Calls Venice with `stream: true`. Pipes SSE stream back to client.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/complete.test.ts`
 
 - [ ] **[V6]** Reasoning model support: if selected model has `supportsReasoning: true`, set `venice_parameters.strip_thinking_response = true` in the Venice request. Test confirms this is applied to reasoning models and not others.
@@ -316,7 +316,7 @@
 
 ### V — Mockup-driven additions
 
-- [ ] **[V13]** Per-story system prompt in prompt builder: when `Story.systemPrompt` is non-null, use it as the primary system message; otherwise fall back to the default creative-writing system prompt. Unit tests cover both paths + the Venice `include_venice_system_prompt: false` invariant still holds.
+- [ ] **[V13]** Per-story system prompt in prompt builder: when `Story.systemPrompt` is non-null, use it as the primary system message; otherwise fall back to the default creative-writing system prompt. Unit tests cover both paths and confirm the Venice `include_venice_system_prompt` flag is driven entirely by the user setting — unaffected by whether `Story.systemPrompt` is set or null.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.system-prompt.test.ts`
 
 - [ ] **[V14]** Extend AI action set to cover mockup selection-bubble + chat actions: `rewrite`, `describe`, `expand` (inline result card), `continue` (cursor-context ~80-word continuation for ⌥↵), `ask` (routes selection into chat as attachment). Each has a dedicated prompt template. Complements [V12] — do not remove existing actions.
@@ -370,7 +370,7 @@
 - [ ] **[B10]** Chapter save pipeline: when PATCH payload includes `bodyJson`, backend derives plain text + `wordCount` from the JSON tree (pure function `tipTapJsonToText()`) and writes both `bodyJson` and `content` in the same update. Existing text-only PATCH path (from [B3]) continues to work.
   - verify: `cd backend && npm run test:backend -- --run tests/services/tiptap-to-text.test.ts tests/routes/chapters-body-json.test.ts`
 
-- [ ] **[B11]** User settings passthrough: `GET /api/users/me/settings` and `PATCH /api/users/me/settings` read/write `User.settingsJson`. Zod schema enforces allowed keys (theme, proseFont, proseSize, lineHeight, writing toggles, daily goal, chat model + params).
+- [ ] **[B11]** User settings passthrough: `GET /api/users/me/settings` and `PATCH /api/users/me/settings` read/write `User.settingsJson`. Zod schema enforces allowed keys (theme, proseFont, proseSize, lineHeight, writing toggles, daily goal, chat model + params, `ai.includeVeniceSystemPrompt` boolean defaulting to `true`).
   - verify: `cd backend && npm run test:backend -- --run tests/routes/user-settings.test.ts`
 
 ---
@@ -507,7 +507,7 @@
 - [ ] **[F42]** Model Picker modal (480px): radio-card list — name, params, ctx, speed, notes (same card component as Settings → Models tab). Selected card: `border-color: var(--ink)`. Click selects and closes. Shared component between chat-panel model bar trigger ([F38]) and Settings → Models ([F44]).
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/ModelPicker.test.tsx`
 
-- [ ] **[F43]** Settings modal (720px centered) shell + Venice tab: backdrop `rgba(20,18,12,.4)` with 3px blur. Header: "Settings" serif 18/500 + sub "Configure Venice.ai integration, writing preferences, and self-hosting" + close X. Horizontal tab nav (1px bottom accent on active): Venice / Models / Writing / Appearance. **No self-hosting tab** (removed per stakeholder direction; env-file configured externally). Footer: mono "Changes save automatically to your local vault" hint + Cancel + Done primary. Venice tab fields: API key (password input + eye toggle + "Verified · 2.2k credits" green status pill, red pill on 401), endpoint override, organization; Feature toggles (Chat completions / Text continuation / Inline rewrite / Image generation / Character extraction / Embeddings); Privacy toggles (request logging, send-story-context). **NB:** The API key input is only meaningful if BYOK is adopted (see conflict #2 in handoff); otherwise this tab shows the server-key health status read-only.
+- [ ] **[F43]** Settings modal (720px centered) shell + Venice tab: backdrop `rgba(20,18,12,.4)` with 3px blur. Header: "Settings" serif 18/500 + sub "Configure Venice.ai integration, writing preferences, and self-hosting" + close X. Horizontal tab nav (1px bottom accent on active): Venice / Models / Writing / Appearance. **No self-hosting tab** (removed per stakeholder direction; env-file configured externally). Footer: mono "Changes save automatically to your local vault" hint + Cancel + Done primary. Venice tab fields: API key (password input + eye toggle + "Verified · 2.2k credits" green status pill, red pill on 401), endpoint override, organization; Feature toggles (Chat completions / Text continuation / Inline rewrite / Image generation / Character extraction / Embeddings / **Include Venice creative-writing prompt** — bound to `settings.ai.includeVeniceSystemPrompt` via [B11], default on, hint "Prepend Venice's built-in creative writing guidance on top of Inkwell's own system prompt."); Privacy toggles (request logging, send-story-context). **NB:** The API key input is only meaningful if BYOK is adopted (see conflict #2 in handoff); otherwise this tab shows the server-key health status read-only.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/Settings.shell-venice.test.tsx`
 
 - [ ] **[F44]** Settings → Models tab: radio-card model list (reuses card from [F42]) + generation parameter sliders (temperature, top_p, max_tokens, frequency_penalty with live value readout) + system prompt textarea (serif, per-story, writes to `Story.systemPrompt` via [V13] + [B2]).
@@ -569,7 +569,7 @@
 - [ ] **[T4]** Characters route integration tests: CRUD, story scoping, cascade delete.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/characters.test.ts`
 
-- [ ] **[T5]** Prompt builder unit tests: all 5 action types, character context present, worldNotes present, `include_venice_system_prompt` always false, truncation removes from top of chapterContent only, budget respects model context length.
+- [ ] **[T5]** Prompt builder unit tests: all 5 action types, character context present, worldNotes present, `include_venice_system_prompt` reflects the caller-supplied `includeVeniceSystemPrompt` setting (default `true`) independent of action type, model, and `Story.systemPrompt`, truncation removes from top of chapterContent only, budget respects model context length.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.service.test.ts tests/services/prompt.actions.test.ts`
 
 - [ ] **[T6]** Venice AI service unit tests (mocked HTTP): correct payload, stream forwarded, reasoning model flag applied correctly, rate limit headers extracted, error codes mapped, no raw Venice errors leaked.
