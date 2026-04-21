@@ -97,7 +97,7 @@
 
 > Additive to D1–D8 (completed). No column renames or drops — new fields only. Source: `mockups/frontend-prototype/README.md` §Data Model + §Screens.
 
-- [ ] **[D9]** Extend `Story` schema with `targetWords Int?` (story progress target, e.g. 90000 — displayed in sidebar footer) and `systemPrompt String?` (per-story creative-writing system prompt; null → prompt builder falls back to default).
+- [x] **[D9]** Extend `Story` schema with `targetWords Int?` (story progress target, e.g. 90000 — displayed in sidebar footer) and `systemPrompt String?` (per-story creative-writing system prompt; null → prompt builder falls back to default).
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/story-settings.test.ts`
 
 - [ ] **[D10]** Extend `Chapter` schema with `bodyJson Json?` (TipTap JSON — canonical going forward) and `status String @default("draft")` (`draft` / `revised` / `final` — drives chapter status chip). Keep existing `content String` as a plain-text mirror derived from `bodyJson` on save so text search and text export keep working.
