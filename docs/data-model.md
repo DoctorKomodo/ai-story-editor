@@ -22,7 +22,7 @@ erDiagram
         string  username UK "3-32 chars, /^[a-z0-9_-]+$/"
         string  name
         string  passwordHash
-        json    settingsJson "theme / prose / writing / daily goal / chat params"
+        json    settingsJson "theme / prose / writing / daily goal / chat params / ai.* (e.g. includeVeniceSystemPrompt)"
         string  veniceApiKeyEnc "BYOK ciphertext (AES-256-GCM, base64)"
         string  veniceApiKeyIv "12-byte IV, base64"
         string  veniceApiKeyAuthTag "GCM tag, base64"

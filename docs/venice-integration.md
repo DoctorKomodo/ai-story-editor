@@ -37,13 +37,15 @@ Venice-specific behaviour passed under `body.venice_parameters`:
 
 | Parameter | Value | When | Task |
 |---|---|---|---|
-| `include_venice_system_prompt` | `false` | Always, on every call | [V4] — we supply our own creative-writing system prompts. |
+| `include_venice_system_prompt` | `userSettings.ai.includeVeniceSystemPrompt ?? true` | Every call | [V4] — user-configurable via Settings → Venice. |
 | `strip_thinking_response` | `true` | Selected model has `supportsReasoning: true` | [V6] — avoid leaking chain-of-thought tokens into the final text. |
 | `enable_web_search` | `"auto"` | Caller opts in via `enableWebSearch: true` | [V7] — research hook for world-building. |
 | `enable_web_citations` | `true` | Same as above | [V7] — keep citations for fact claims. |
 | `prompt_cache_key` | `sha256(storyId + modelId)` | Always, on every `/api/ai/complete` call | [V8] — route same-story requests to the same backend for cache-hit uplift. |
 
 All five flags pass through the `openai` SDK via `body.venice_parameters`. Tests pin each invariant ([V4] / [V6] / [V7] / [V8] test files in `tests/ai/` + `tests/services/`).
+
+**`include_venice_system_prompt` is additive, not exclusive.** Inkwell's own system message (the default creative-writing prompt, or the per-story `Story.systemPrompt` override from [V13]) is sent as a `system` message on every call. The Venice flag only controls whether Venice additionally prepends its built-in creative-writing guidance on top. The `/api/ai/complete` route reads `req.user.settingsJson.ai.includeVeniceSystemPrompt` (default `true` if missing) and passes it to the prompt builder as an explicit boolean — the builder never hardcodes the value.
 
 ---
 
@@ -89,7 +91,7 @@ If the composed prompt exceeds `budgetForPrompt`:
 - **Never truncate** the system prompt, character context, or `worldNotes`.
 - If the remaining content still can't fit, surface `413 { code: "context_overflow" }`.
 
-Tests exercise every branch ([T5]): character context present, `worldNotes` present, `include_venice_system_prompt` always false, truncation direction, budget respects `context_length`.
+Tests exercise every branch ([T5]): character context present, `worldNotes` present, `include_venice_system_prompt` reflects the caller-supplied setting (default `true`) independent of action type, model, and `Story.systemPrompt`, truncation direction, budget respects `context_length`.
 
 ---
 

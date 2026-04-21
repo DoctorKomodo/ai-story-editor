@@ -53,7 +53,7 @@ Response `200`: `{ "user": { "id", "username", "name", "createdAt" } }`.
 ## User — `/api/users/me`
 
 ### `GET /api/users/me/settings` · `PATCH /api/users/me/settings` ([B11])
-Read/write `User.settingsJson`. Zod enforces allowed keys: `theme`, `proseFont`, `proseSize`, `lineHeight`, `writing.{typewriter,focusParagraph,autosave,smartQuotes,emDashExpansion}`, `dailyGoal`, `chat.{model,temperature,top_p,max_tokens,frequency_penalty}`.
+Read/write `User.settingsJson`. Zod enforces allowed keys: `theme`, `proseFont`, `proseSize`, `lineHeight`, `writing.{typewriter,focusParagraph,autosave,smartQuotes,emDashExpansion}`, `dailyGoal`, `chat.{model,temperature,top_p,max_tokens,frequency_penalty}`, `ai.includeVeniceSystemPrompt` (boolean, default `true` when absent — controls `venice_parameters.include_venice_system_prompt` on every `/api/ai/complete` call).
 Response `200`: `{ "settings": { … } }`.
 
 ### `GET /api/users/me/venice-key` ([AU12])
@@ -181,7 +181,7 @@ Response `200`: `{ "usd": 15.0, "diem": 2200 }`.
 ### `POST /api/ai/complete` — SSE stream ([V5], [V7])
 Body: `{ "action": "continue" | "rewrite" | "describe" | "expand" | "summarise" | "ask" | "freeform", "selectedText?", "chapterContent?", "storyId", "modelId", "enableWebSearch?" }`.
 
-Backend: fetches story + characters + world notes via the repo layer (decrypted), calls prompt builder ([V3]) with `modelContextLength` from cache, calls Venice with `stream: true`, pipes SSE back verbatim. Sets `venice_parameters.include_venice_system_prompt = false`; conditionally sets `strip_thinking_response`, `enable_web_search`, `enable_web_citations`, and `prompt_cache_key` per [V6]–[V8].
+Backend: fetches story + characters + world notes via the repo layer (decrypted), calls prompt builder ([V3]) with `modelContextLength` from cache, calls Venice with `stream: true`, pipes SSE back verbatim. Sets `venice_parameters.include_venice_system_prompt` from the authenticated user's `settingsJson.ai.includeVeniceSystemPrompt` (default `true` when absent — user-configurable via Settings → Venice per [F43] / [B11]); conditionally sets `strip_thinking_response`, `enable_web_search`, `enable_web_citations`, and `prompt_cache_key` per [V6]–[V8].
 
 Response headers: `x-venice-remaining-requests`, `x-venice-remaining-tokens` ([V9]).
 
