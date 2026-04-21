@@ -6,7 +6,7 @@ This file is the operating manual for Claude Code on this project. Read it fully
 
 ## Project Overview
 
-A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integration. Users manage stories broken into chapters, attach characters for AI consistency, and invoke AI writing assistance from a TipTap rich text editor. **Authentication is username-based**; each user supplies **their own Venice.ai API key (BYOK)**, which is stored AES-256-GCM encrypted at rest. **All narrative content** (titles, bodies, notes, character bios, outline items, chat messages) is **encrypted at rest** with envelope encryption (per-user DEK wrapped by a server-side KEK).
+A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integration. Users manage stories broken into chapters, attach characters for AI consistency, and invoke AI writing assistance from a TipTap rich text editor. **Authentication is username-based**; each user supplies **their own Venice.ai API key (BYOK)**, which is stored AES-256-GCM encrypted at rest. **All narrative content** (titles, bodies, notes, character bios, outline items, chat messages) is **encrypted at rest** with envelope encryption (per-user random DEK wrapped by an argon2id-derived key from the user's password, with a second wrap under an argon2id-derived key from a one-time recovery code shown at signup — no server-held KEK wraps content).
 
 **Monorepo layout:**
 ```
@@ -112,8 +112,9 @@ Hard gates (do not start until the prerequisite is complete):
 - All environment variables must be documented in `.env.example` with a comment explaining what they are
 - No secrets ever committed to git. `.env` is in `.gitignore`.
 - **No server-wide Venice API key exists.** Venice keys are per-user (BYOK), AES-256-GCM encrypted at rest. A user-entered key must never appear in application logs, error responses, stack traces, or the frontend build output ([AU13]).
-- Two independent env secrets exist and must be backed up with the same rigour as the DB: `APP_ENCRYPTION_KEY` (wraps BYOK Venice keys) and `CONTENT_ENCRYPTION_KEY` (wraps per-user content DEKs). **Key loss = irrecoverable data loss.**
-- **`.env.example` is intentionally mid-migration** — still carries the legacy `VENICE_API_KEY` placeholder and does not yet list `APP_ENCRYPTION_KEY` / `CONTENT_ENCRYPTION_KEY`. Task `[I7]` does the swap. Until then: don't "fix" the drift as a side effect of another task; update `.env.example` only when implementing `[I7]`.
+- `APP_ENCRYPTION_KEY` is the only server-held encryption env secret and must be backed up with the same rigour as the DB — it wraps **BYOK Venice keys only**. Losing it makes stored Venice keys unrecoverable, but narrative content remains decryptable (content DEKs are wrapped by user-supplied secrets, not server state). There is no `CONTENT_ENCRYPTION_KEY`.
+- Content DEKs are wrapped by the user's password (argon2id) and by a one-time recovery code (argon2id). **Losing both the password and the recovery code for a given user = irrecoverable data loss for that user's narrative content.** The server has no way to decrypt when both are gone, by design.
+- **`.env.example` is intentionally mid-migration** — still carries the legacy `VENICE_API_KEY` placeholder and does not yet list `APP_ENCRYPTION_KEY`. Task `[I7]` does the swap (remove `VENICE_API_KEY`, add `APP_ENCRYPTION_KEY`). `CONTENT_ENCRYPTION_KEY` is never added — the scheme changed before `[I7]` ran. Until `[I7]`: don't "fix" the drift as a side effect of another task; update `.env.example` only when implementing `[I7]`.
 
 ### Backend
 - All route handlers must be thin — logic goes in service files in `src/services/` and repository wrappers in `src/repos/`
@@ -154,10 +155,10 @@ Hard gates (do not start until the prerequisite is complete):
 - Chapter bodies must be decrypted **via the chapter repo** before the prompt builder sees them. The builder never sees ciphertext, and decrypted bodies exist only for the lifetime of the request.
 
 ### Encryption at Rest
-- **Envelope model:** per-user random DEK (32-byte) wrapped by `CONTENT_ENCRYPTION_KEY` KEK via AES-256-GCM. DEK ciphertext lives on `User`. Narrative columns store `{Ciphertext, Iv, AuthTag}` triples.
-- DEK is random, **not password-derived** — password reset is safe and the server can decrypt without the user being logged in. See `docs/encryption.md` "Revisit" note for the password-derived alternative and its trade-offs.
-- The content-crypto service (`src/services/content-crypto.service.ts` — [E3]) unwraps DEKs only into a **request-scoped `WeakMap`**. Module-level caching of unwrapped DEKs is a bug.
-- Plaintext narrative content must never appear in logs, error messages, telemetry, or responses to anyone other than the owning user.
+- **Envelope model:** per-user random DEK (32-byte) wrapped **twice** by AES-256-GCM. Wrap #1: key derived via argon2id from the user's password. Wrap #2: key derived via argon2id from a one-time recovery code shown at signup. Both wraps live on `User` (`contentDekPassword*` and `contentDekRecovery*` columns, each with its own salt). No server-held KEK. Narrative columns store `{Ciphertext, Iv, AuthTag}` triples.
+- DEK is random; its **wraps** are password-derived and recovery-code-derived. Password reset requires the recovery code ([AU16]). Password change ([AU15]) only re-wraps the password copy — narrative ciphertext is untouched. Rotating the recovery code ([AU17]) only re-wraps the recovery copy. **The server cannot decrypt user content while the user is logged out** — there is no offline / background / admin decryption path. If that requirement ever appears, it needs a schema migration to add a third wrap. See `docs/encryption.md` Revisit section ([E1]).
+- The content-crypto service (`src/services/content-crypto.service.ts` — [E3]) unwraps DEKs only into a **request-scoped `WeakMap`**. Module-level caching of unwrapped DEKs is a bug. **Open design question** (see [AU10] note and [E3]): the DEK must survive across requests within a single session — how that's implemented (process-memory session cache, session-key wrap in access token, `Session` table, etc.) is pending resolution in `docs/encryption.md` and must be finalised before [E3] starts.
+- Plaintext narrative content must never appear in logs, error messages, telemetry, or responses to anyone other than the owning user. Plaintext passwords and recovery codes must never appear in logs, error messages, responses, or error objects.
 - The leak test ([E12]) inserts a sentinel string and asserts it's absent from every raw row in the narrative tables. Run it after any change to the repo layer, schema, or migrations.
 
 ---
@@ -226,13 +227,14 @@ The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a re
 - **AU12** — BYOK Venice-key endpoints (store, validate, delete). Review *after* the frontend build exists.
 - **AU13** — no-leak proof for the BYOK path (supersedes AU8).
 - **AU14** — argon2id migration path (if taken).
-- **E3** — per-user DEK generation, wrapping, request-scoped unwrap cache.
+- **AU15 / AU16 / AU17** — change-password, reset-password (recovery-code flow), rotate-recovery-code endpoints. Each touches the DEK-wrap columns and the password hash; review for plaintext/recovery-code leakage, rate-limiting, timing equalisation, and correct transaction boundaries.
+- **E3** — per-user DEK generation, password + recovery-code argon2id wraps, request-scoped unwrap cache, session-lifetime DEK availability mechanism (see open design question in [AU10] / Encryption-at-Rest section).
 - **E9** — repo-layer boundary (confirm no Prisma bypasses for narrative entities).
 - **E12** — encryption leak test integrity.
-- **E14** — KEK rotation script.
+- **E14** — DEK-wrap rotation script (recovery-code rotation, admin-force-rotation).
 - **V17** — per-user Venice client construction; must not cache across users.
 - **V18** — Venice-key verify endpoint.
-- **I7** — env swap (`VENICE_API_KEY` removed, `APP_ENCRYPTION_KEY` + `CONTENT_ENCRYPTION_KEY` added).
+- **I7** — env swap (`VENICE_API_KEY` removed, `APP_ENCRYPTION_KEY` added — no `CONTENT_ENCRYPTION_KEY`).
 - Any change to: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/ai.service.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`.
 
 Invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope in the prompt (e.g. "review AU9–AU10 as currently implemented" or "review the repo-layer boundary for E9"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box — if the hook (see `.claude/hooks/pre-tasks-edit.sh`) says the verify passed but the reviewer says `BLOCK`, do not tick.
@@ -256,7 +258,8 @@ Stop and ask before proceeding if:
 - A task conflicts with a decision already made in a previous task
 - You are about to modify the Prisma schema after the initial migration has been run (the E series already plans many additions — batch and document)
 - You are about to run the drop-plaintext migration `[E11]` (destructive — verify `[E10]` backfill first)
-- You are about to rotate `APP_ENCRYPTION_KEY` or `CONTENT_ENCRYPTION_KEY` in any non-dev environment
+- You are about to rotate `APP_ENCRYPTION_KEY` in any non-dev environment (re-wraps all BYOK Venice keys)
+- You are about to change the DEK-wrap scheme for existing users (adding a third wrap, changing argon2id parameters, etc.) — that's a migration, not a rotation, and requires every user to re-authenticate with their password
 - You are about to merge an AU or E change that has NOT been cleared by `security-reviewer`
 - You are about to add a new dependency that significantly increases bundle or image size
 - You are about to persist plaintext narrative content to disk outside the repo layer (incl. caches, tmp files, export intermediates that don't delete on error)
