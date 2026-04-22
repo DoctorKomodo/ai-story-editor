@@ -10,6 +10,7 @@ import { ARGON2_PARAMS } from './argon2.config';
 import {
   generateDekAndWraps,
   InvalidRecoveryCodeError,
+  rewrapRecoveryWrap,
   unwrapDekWithPassword,
   unwrapDekWithRecoveryCode,
   wrapDek,
@@ -594,6 +595,31 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     closeSessionsForUser(user.id);
   }
 
+  // [AU17] Authenticated recovery-code rotation. The DEK is unwrapped with
+  // the user's current password and then re-wrapped under a freshly-generated
+  // recovery code. The old recovery code becomes unusable the instant the
+  // DB write commits. Password wrap, password hash, narrative ciphertext, and
+  // all active refresh tokens / sessions are intentionally untouched — the
+  // user is already authenticated and does not need to re-log-in.
+  async function rotateRecoveryCode(input: {
+    userId: string;
+    password: string;
+  }): Promise<string> {
+    const user = await client.user.findUnique({ where: { id: input.userId } });
+    if (!user) throw new InvalidCredentialsError();
+
+    const { ok } = await verifyPassword(user.passwordHash, input.password);
+    if (!ok) throw new InvalidCredentialsError();
+
+    const dek = await unwrapDekWithPassword(user, input.password);
+
+    // rewrapRecoveryWrap generates a new random recovery code, derives a new
+    // argon2id wrap key from it, re-encrypts the DEK, and writes the four
+    // recovery columns atomically via a single UPDATE. Returns the plaintext
+    // recovery code that must be shown to the user exactly once.
+    return rewrapRecoveryWrap(client, user.id, dek);
+  }
+
   // [AU16] Unauthenticated password reset via recovery code. The DEK is
   // unwrapped with the recovery-code-derived key and then re-wrapped under
   // the new password. Recovery wrap is intentionally not rotated here — if
@@ -660,6 +686,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     logoutAllSessionsForUser,
     changePassword,
     resetPassword,
+    rotateRecoveryCode,
   };
 }
 
