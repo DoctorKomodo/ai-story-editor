@@ -44,6 +44,11 @@ async function registerUser(username: string): Promise<string> {
   return user.id;
 }
 
+// IMPORTANT: keep this field list in sync with the password-wrap columns on
+// `User` in `schema.prisma`. If a new column is added (e.g. a KDF param /
+// iterations field) and NOT mirrored here, the immutability assertion will
+// silently stop covering it — mutation of the new column by the admin script
+// would go undetected by these tests.
 async function readPasswordSnapshot(userId: string): Promise<PasswordWrapSnapshot> {
   const u = await prisma.user.findUniqueOrThrow({ where: { id: userId } });
   return {
@@ -70,6 +75,9 @@ async function seedFakeStory(userId: string): Promise<{
   titleCiphertext: string;
   titleIv: string;
   titleAuthTag: string;
+  synopsisCiphertext: string;
+  synopsisIv: string;
+  synopsisAuthTag: string;
 }> {
   // Seed with fake ciphertext triples via raw Prisma — same pattern the
   // rotate-recovery-code tests use. We're not exercising the repo round-trip,
@@ -90,6 +98,9 @@ async function seedFakeStory(userId: string): Promise<{
     titleCiphertext: story.titleCiphertext!,
     titleIv: story.titleIv!,
     titleAuthTag: story.titleAuthTag!,
+    synopsisCiphertext: story.synopsisCiphertext!,
+    synopsisIv: story.synopsisIv!,
+    synopsisAuthTag: story.synopsisAuthTag!,
   };
 }
 
@@ -133,11 +144,16 @@ describe('[E14] forceRecoveryRotation (admin-triggered recovery wrap invalidatio
     const passwordAfter = await readPasswordSnapshot(userId);
     expect(passwordAfter).toEqual(passwordBefore);
 
-    // Narrative ciphertext untouched.
+    // Narrative ciphertext untouched. Script's UPDATE is scoped to User, so
+    // spot-checking two triples on Story is sufficient evidence that no
+    // narrative row was mutated.
     const storyAfter = await prisma.story.findUniqueOrThrow({ where: { id: story.id } });
     expect(storyAfter.titleCiphertext).toBe(story.titleCiphertext);
     expect(storyAfter.titleIv).toBe(story.titleIv);
     expect(storyAfter.titleAuthTag).toBe(story.titleAuthTag);
+    expect(storyAfter.synopsisCiphertext).toBe(story.synopsisCiphertext);
+    expect(storyAfter.synopsisIv).toBe(story.synopsisIv);
+    expect(storyAfter.synopsisAuthTag).toBe(story.synopsisAuthTag);
   });
 
   it('returns not-found and leaves the DB untouched when no user matches', async () => {
