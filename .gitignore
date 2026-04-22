@@ -28,3 +28,6 @@ test-results/
 
 # Database backups
 backups/
+
+# Git worktrees
+.worktrees/

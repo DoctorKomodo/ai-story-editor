@@ -10,6 +10,8 @@
 // Failure messages include the table + column but NEVER the row content —
 // otherwise the leak test output would itself be a leak channel.
 
+import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
@@ -18,7 +20,7 @@ import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import { testDatabaseUrl } from '../setup';
+import { prisma, testDatabaseUrl } from '../setup';
 import { makeUserContext, resetAllTables } from '../repos/_req';
 
 const SENTINEL = 'SENTINEL_E12_DO_NOT_LEAK';
@@ -188,5 +190,123 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
         `expected at least 1 row in "${NARRATIVE_TABLES[i]}" — the test didn't seed anything`,
       ).toBeGreaterThan(0);
     }
+  });
+
+  // [E13] Seed-script leak proof. The verify command for [E13] is
+  //   npx ts-node prisma/seed.ts && vitest ... --grep seed
+  // so THIS test is what the "--grep seed" half runs. Without a matching test,
+  // Vitest exits 0 with zero tests — which would technically pass but defeat
+  // the spec's intent. We spawn the real seed script against the test DB and
+  // prove the seeded plaintext never lands on disk.
+  it('seed script does not leak plaintext to disk', async () => {
+    // Snippets picked from the seed fixtures. Each contains a space (so it
+    // can't false-positive against base64 ciphertext) and is specific enough
+    // to the seed that an accidental match would be meaningful.
+    //
+    // IMPORTANT: keep these in sync with backend/prisma/seed.ts. If a fixture
+    // is renamed and this list isn't updated, the test will still pass but
+    // will no longer prove anything about the renamed field.
+    const SEED_SNIPPETS = [
+      'The Lantern Keeper', // story title
+      'Maren Oake', // character name
+      'A Visitor Out of the Fog', // chapter title
+    ];
+
+    // Locate the backend repo root from the test file — vitest's CWD varies
+    // depending on how it's invoked.
+    const backendRoot = path.resolve(__dirname, '..', '..');
+
+    const result = spawnSync('npx', ['ts-node', 'prisma/seed.ts'], {
+      cwd: backendRoot,
+      env: {
+        ...process.env,
+        // Force the seed into the test DB. setup.ts pins DATABASE_URL for this
+        // process, but the spawned child sees its own env — be explicit.
+        DATABASE_URL: testDatabaseUrl,
+        // The seed calls auth.register() which doesn't need JWT secrets, but
+        // auth.service reads them at module load for other exports. Ensure
+        // they're set to something so the import side-effect doesn't explode.
+        JWT_SECRET: process.env.JWT_SECRET ?? 'test-jwt-secret',
+        REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET ?? 'test-refresh-secret',
+        APP_ENCRYPTION_KEY:
+          process.env.APP_ENCRYPTION_KEY ?? Buffer.alloc(32, 0xab).toString('base64'),
+      },
+      encoding: 'utf8',
+      // 2 minutes is generous — the seed does ~4× argon2id derivations (~400ms)
+      // plus a couple of network round trips to postgres. A real run is well
+      // under 5s; the budget is so a congested CI host doesn't flake.
+      timeout: 120_000,
+    });
+
+    if (result.status !== 0 || result.signal != null) {
+      // Surface stdout+stderr only — the seed intentionally never logs narrative
+      // plaintext, and we'd rather fail loudly than swallow an error. Include
+      // the signal so a timeout (status=null, signal=SIGTERM) is distinguishable
+      // from a real non-zero exit in the CI log.
+      throw new Error(
+        `[E13] seed script failed (status=${result.status}, signal=${result.signal ?? 'none'}): ` +
+          `stdout=<<<${result.stdout}>>> stderr=<<<${result.stderr}>>>`,
+      );
+    }
+
+    // Scan every narrative table for any of the seed snippets. Matching on
+    // ANY snippet in ANY row fails the test.
+    type Hit = { table: string; column: string; snippet: string; rowId: string | null };
+    const hits: Hit[] = [];
+
+    for (const table of NARRATIVE_TABLES) {
+      const { rows } = await pg.query<Record<string, unknown>>(
+        `SELECT * FROM "${table}"`,
+      );
+      for (const row of rows) {
+        const rowId = typeof row.id === 'string' ? row.id : null;
+        for (const [col, val] of Object.entries(row)) {
+          if (val == null) continue;
+          let asText: string;
+          if (typeof val === 'string') {
+            asText = val;
+          } else if (Buffer.isBuffer(val)) {
+            asText = val.toString('utf8');
+          } else if (typeof val === 'object') {
+            asText = JSON.stringify(val);
+          } else {
+            asText = String(val);
+          }
+          for (const snippet of SEED_SNIPPETS) {
+            if (asText.includes(snippet)) {
+              hits.push({ table, column: col, snippet, rowId });
+            }
+          }
+        }
+      }
+    }
+
+    if (hits.length > 0) {
+      const summary = hits
+        .map(
+          (h) =>
+            `${h.table}.${h.column} matched '${h.snippet}'${h.rowId ? ` (row ${h.rowId})` : ''}`,
+        )
+        .join(', ');
+      throw new Error(`[E13] seed leaked plaintext to disk at: ${summary}`);
+    }
+
+    // Sanity: the seed must have actually populated Story / Chapter / Character.
+    // A silent seed failure that produced zero rows would otherwise pass the
+    // no-leak check trivially. OutlineItem / Chat / Message are not written by
+    // the seed, so we only assert on the three tables the seed touches.
+    const SEEDED_TABLES = ['Story', 'Chapter', 'Character'] as const;
+    for (const t of SEEDED_TABLES) {
+      const r = await pg.query<{ c: string }>(`SELECT count(*)::text AS c FROM "${t}"`);
+      expect(
+        Number(r.rows[0]!.c),
+        `expected at least 1 row in "${t}" — seed produced nothing`,
+      ).toBeGreaterThan(0);
+    }
+
+    // Tidy up so subsequent tests start clean. resetAllTables in afterEach
+    // will also cover this, but be explicit — the seed created a real user
+    // row we don't want bleeding into the leak summary of an unrelated test.
+    await prisma.user.deleteMany({ where: { username: 'demo' } });
   });
 });
