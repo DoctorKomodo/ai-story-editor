@@ -276,6 +276,45 @@ export function createAuthRouter() {
     },
   );
 
+  router.post(
+    '/rotate-recovery-code',
+    requireAuth,
+    changePasswordLimiter(),
+    async (req, res, next) => {
+      try {
+        const authed = req.user;
+        if (!authed) {
+          res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
+          return;
+        }
+        const schema = z.object({
+          password: z.string().min(1, 'password is required'),
+        });
+        const parsed = schema.parse(req.body);
+        const recoveryCode = await authService.rotateRecoveryCode({
+          userId: authed.id,
+          password: parsed.password,
+        });
+        res.status(200).json({
+          recoveryCode,
+          warning: 'Save this recovery code now — it will not be shown again.',
+        });
+      } catch (err) {
+        if (err instanceof ZodError) {
+          badRequestFromZod(res, err);
+          return;
+        }
+        if (err instanceof InvalidCredentialsError) {
+          res.status(401).json({
+            error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+          });
+          return;
+        }
+        next(err);
+      }
+    },
+  );
+
   router.get('/me', requireAuth, async (req, res, next) => {
     try {
       const authed = req.user;
