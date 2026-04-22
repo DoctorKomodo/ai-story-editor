@@ -1,0 +1,61 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { prisma } from '../setup';
+import { SENTINEL, createUser, resetNarrativeTables } from './_helpers';
+
+describe('[E4] Story — ciphertext columns', () => {
+  beforeEach(resetNarrativeTables);
+  afterEach(resetNarrativeTables);
+
+  it('persists title/synopsis/worldNotes/systemPrompt ciphertext triples', async () => {
+    const user = await createUser();
+    const created = await prisma.story.create({
+      data: {
+        userId: user.id,
+        title: 'Plaintext Dual Write',
+        titleCiphertext: SENTINEL.ciphertext,
+        titleIv: SENTINEL.iv,
+        titleAuthTag: SENTINEL.authTag,
+        synopsisCiphertext: SENTINEL.ciphertext,
+        synopsisIv: SENTINEL.iv,
+        synopsisAuthTag: SENTINEL.authTag,
+        worldNotesCiphertext: SENTINEL.ciphertext,
+        worldNotesIv: SENTINEL.iv,
+        worldNotesAuthTag: SENTINEL.authTag,
+        systemPromptCiphertext: SENTINEL.ciphertext,
+        systemPromptIv: SENTINEL.iv,
+        systemPromptAuthTag: SENTINEL.authTag,
+      },
+    });
+    const read = await prisma.story.findUniqueOrThrow({ where: { id: created.id } });
+    expect(read.titleCiphertext).toBe(SENTINEL.ciphertext);
+    expect(read.titleIv).toBe(SENTINEL.iv);
+    expect(read.titleAuthTag).toBe(SENTINEL.authTag);
+    expect(read.synopsisCiphertext).toBe(SENTINEL.ciphertext);
+    expect(read.worldNotesCiphertext).toBe(SENTINEL.ciphertext);
+    expect(read.systemPromptCiphertext).toBe(SENTINEL.ciphertext);
+  });
+
+  it('keeps genre, targetWords, userId, timestamps plaintext (unchanged)', async () => {
+    const user = await createUser();
+    const created = await prisma.story.create({
+      data: {
+        userId: user.id,
+        title: 'x',
+        genre: 'romance',
+        targetWords: 90000,
+      },
+    });
+    expect(created.genre).toBe('romance');
+    expect(created.targetWords).toBe(90000);
+    expect(created.userId).toBe(user.id);
+  });
+
+  it('ciphertext columns are nullable during the dual-write window', async () => {
+    const user = await createUser();
+    const created = await prisma.story.create({
+      data: { userId: user.id, title: 'no-ciphertext-yet' },
+    });
+    expect(created.titleCiphertext).toBeNull();
+    expect(created.synopsisCiphertext).toBeNull();
+  });
+});
