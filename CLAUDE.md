@@ -146,7 +146,7 @@ Hard gates (do not start until the prerequisite is complete):
 - Every model has `createdAt`; most have `updatedAt`. `Message` is an append-only log and has `createdAt` only.
 - Foreign key fields must have indexes.
 - Cascading deletes must be defined in the schema (`onDelete: Cascade`) — do not handle cascade logic in application code.
-- Schema changes after the initial migration require explicit approval (see **When to Stop and Ask**). The E-series adds many encrypted columns; plan those migrations in batches and run backfill ([E10]) before dropping plaintext ([E11]).
+- Schema changes after the initial migration require explicit approval (see **When to Stop and Ask**). The E-series adds many encrypted columns; plan those migrations in batches. [E10] (backfill) is deferred under [X10] — pre-deployment there's no legacy data to backfill, and [E11] already dropped the plaintext columns.
 
 ### AI Integration
 - All Venice.ai calls are proxied through the backend — the frontend only talks to `/api/ai/*`.
@@ -259,8 +259,7 @@ Stop and ask before proceeding if:
 - A task requires an architectural decision not covered in this file or `TASKS.md`
 - A verify command cannot pass due to an external dependency issue (e.g. Venice.ai API is unreachable)
 - A task conflicts with a decision already made in a previous task
-- You are about to modify the Prisma schema after the initial migration has been run (the E series already plans many additions — batch and document)
-- You are about to run the drop-plaintext migration `[E11]` (destructive — verify `[E10]` backfill first)
+- You are about to modify the Prisma schema after the initial migration has been run (batch and document — E-series narrative-column additions are already shipped)
 - You are about to rotate `APP_ENCRYPTION_KEY` in any non-dev environment (re-wraps all BYOK Venice keys)
 - You are about to change the DEK-wrap scheme for existing users (adding a third wrap, changing argon2id parameters, etc.) — that's a migration, not a rotation, and requires every user to re-authenticate with their password
 - You are about to merge an AU or E change that has NOT been cleared by `security-reviewer`
@@ -290,10 +289,3 @@ Do not ask for permission to:
 - Keyboard shortcuts contract (one listener, scoped callbacks): `⌘/Ctrl+Enter` = chat send, `⌥+Enter` = continue-writing, `Escape` = dismiss selection bubble / inline AI card / close modal
 - The auth identifier is `username` (lowercased, 3–32 chars, `/^[a-z0-9_-]+$/`). `User.email` exists but is optional metadata — do not use it for login or uniqueness checks
 
----
-
-## Lessons Learned
-
-> Add to this section whenever Claude does something wrong that should not be repeated.
-
-*(empty — update as the project progresses)*
