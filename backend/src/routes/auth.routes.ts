@@ -63,10 +63,17 @@ function buildResetPasswordSchema() {
   });
 }
 
-// Per-user (not per-IP) rate limit for the password-change endpoint. Scoped
-// to authenticated requests via requireAuth — the keyGenerator relies on
-// req.user.id, which the middleware sets before this limiter runs.
-function changePasswordLimiter() {
+function buildRotateRecoveryCodeSchema() {
+  return z.object({ password: z.string().min(1, 'password is required') });
+}
+
+// Per-user (not per-IP) rate limit for sensitive authenticated endpoints
+// (change-password and rotate-recovery-code). Each call-site passes its own
+// invocation so each route gets an independent 10/min bucket — they do NOT
+// share a quota. Scoped to authenticated requests via requireAuth — the
+// keyGenerator relies on req.user.id, which the middleware sets before this
+// limiter runs.
+function sensitiveAuthLimiter() {
   return rateLimit({
     windowMs: 60_000,
     // Generous enough that the test suite can exercise the endpoint
@@ -242,7 +249,7 @@ export function createAuthRouter() {
   router.post(
     '/change-password',
     requireAuth,
-    changePasswordLimiter(),
+    sensitiveAuthLimiter(),
     async (req, res, next) => {
       try {
         const authed = req.user;
@@ -279,7 +286,7 @@ export function createAuthRouter() {
   router.post(
     '/rotate-recovery-code',
     requireAuth,
-    changePasswordLimiter(),
+    sensitiveAuthLimiter(),
     async (req, res, next) => {
       try {
         const authed = req.user;
@@ -287,10 +294,7 @@ export function createAuthRouter() {
           res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
           return;
         }
-        const schema = z.object({
-          password: z.string().min(1, 'password is required'),
-        });
-        const parsed = schema.parse(req.body);
+        const parsed = buildRotateRecoveryCodeSchema().parse(req.body);
         const recoveryCode = await authService.rotateRecoveryCode({
           userId: authed.id,
           password: parsed.password,
