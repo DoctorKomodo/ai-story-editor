@@ -10,22 +10,19 @@ export async function createUser(username = `m-${Math.random().toString(36).slic
   });
 }
 
+// Post-[E11] narrative columns are ciphertext-only. Schema-shape tests that
+// just need "some row" to exist can omit every narrative field — the schema
+// makes them all nullable (ciphertext triples are optional).
 export async function createStoryRow(userId: string) {
-  return prisma.story.create({
-    data: { userId, title: 'Temp Title' },
-  });
+  return prisma.story.create({ data: { userId } });
 }
 
 export async function createChapterRow(storyId: string) {
-  return prisma.chapter.create({
-    data: { storyId, title: 'Temp Ch', orderIndex: 0 },
-  });
+  return prisma.chapter.create({ data: { storyId, orderIndex: 0 } });
 }
 
 export async function createChatRow(chapterId: string) {
-  return prisma.chat.create({
-    data: { chapterId },
-  });
+  return prisma.chat.create({ data: { chapterId } });
 }
 
 export async function resetNarrativeTables(): Promise<void> {

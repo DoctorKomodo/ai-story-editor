@@ -20,7 +20,6 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
     const created = await prisma.chat.create({
       data: {
         chapterId: chapter.id,
-        title: 'dual-write',
         titleCiphertext: SENTINEL.ciphertext,
         titleIv: SENTINEL.iv,
         titleAuthTag: SENTINEL.authTag,
@@ -39,8 +38,6 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
       data: {
         chatId: chat.id,
         role: 'user',
-        contentJson: { parts: ['dual-write'] },
-        attachmentJson: { selectionText: 'plaintext' },
         contentJsonCiphertext: SENTINEL.ciphertext,
         contentJsonIv: SENTINEL.iv,
         contentJsonAuthTag: SENTINEL.authTag,
@@ -63,7 +60,6 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
       data: {
         chatId: chat.id,
         role: 'assistant',
-        contentJson: {},
         model: 'venice-mini',
         tokens: 42,
         latencyMs: 1234,

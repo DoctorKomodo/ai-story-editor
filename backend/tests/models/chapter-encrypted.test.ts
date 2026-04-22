@@ -2,18 +2,19 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 import { SENTINEL, createStoryRow, createUser, resetNarrativeTables } from './_helpers';
 
-describe('[E5] Chapter — ciphertext columns', () => {
+// Post-[E11]: plaintext title/content/bodyJson on Chapter are dropped. Only
+// the ciphertext triples remain for narrative fields. Schema-shape tests.
+
+describe('[E5] Chapter — ciphertext columns (post-E11)', () => {
   beforeEach(resetNarrativeTables);
   afterEach(resetNarrativeTables);
 
-  it('persists title + body ciphertext triples alongside the plaintext dual-write columns', async () => {
+  it('persists title + body ciphertext triples', async () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
     const created = await prisma.chapter.create({
       data: {
         storyId: story.id,
-        title: 'Dual write title',
-        content: 'Dual write content',
         orderIndex: 0,
         wordCount: 3,
         titleCiphertext: SENTINEL.ciphertext,
@@ -37,7 +38,6 @@ describe('[E5] Chapter — ciphertext columns', () => {
     const created = await prisma.chapter.create({
       data: {
         storyId: story.id,
-        title: 'x',
         orderIndex: 7,
         status: 'draft',
         wordCount: 1234,
@@ -49,11 +49,11 @@ describe('[E5] Chapter — ciphertext columns', () => {
     expect(created.storyId).toBe(story.id);
   });
 
-  it('ciphertext columns nullable during dual-write window', async () => {
+  it('ciphertext columns are nullable (a chapter with no body yet is legal)', async () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
     const created = await prisma.chapter.create({
-      data: { storyId: story.id, title: 'y', orderIndex: 0 },
+      data: { storyId: story.id, orderIndex: 0 },
     });
     expect(created.titleCiphertext).toBeNull();
     expect(created.bodyCiphertext).toBeNull();

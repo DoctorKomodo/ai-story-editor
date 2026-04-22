@@ -23,7 +23,6 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
       storyId: story.id as string,
       title: 'Chapter One',
       bodyJson: body,
-      content: 'The night was young.',
       wordCount: 4,
       orderIndex: 0,
     });

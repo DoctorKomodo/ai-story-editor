@@ -252,10 +252,10 @@
 - [ ] **[E10]** Backfill migration: encrypt all existing plaintext rows for every user via the repo layer. Script: `backend/prisma/scripts/encrypt-backfill.ts`. Idempotent (safe to re-run; skips rows whose ciphertext columns are non-null). Runs inside a transaction per user. Logs counts, no content.
   - verify: `cd backend && npx ts-node prisma/scripts/encrypt-backfill.ts && npm run test:backend -- --run tests/migrations/encrypt-backfill.test.ts`
 
-- [ ] **[E11]** Drop plaintext columns (post-rollout): after [E10] has run, migration removes `Story.title|synopsis|worldNotes|systemPrompt`, `Chapter.title|bodyJson|content`, `Character.*(narrative)`, `OutlineItem.title|sub`, `Chat.title`, `Message.contentJson|attachmentJson`. One migration file named `drop-plaintext-narrative`. Tests run after migration and confirm all repo reads still work end-to-end.
+- [x] **[E11]** Drop plaintext columns (post-rollout): after [E10] has run, migration removes `Story.title|synopsis|worldNotes|systemPrompt`, `Chapter.title|bodyJson|content`, `Character.*(narrative)`, `OutlineItem.title|sub`, `Chat.title`, `Message.contentJson|attachmentJson`. One migration file named `drop-plaintext-narrative`. Tests run after migration and confirm all repo reads still work end-to-end.
   - verify: `cd backend && ls prisma/migrations | grep drop-plaintext-narrative && npm run test:backend -- --run tests/repos/`
 
-- [ ] **[E12]** Encryption leak test: a test that inserts a story with a known sentinel string (`"SENTINEL_E12_DO_NOT_LEAK"`), then opens a raw `pg` connection (bypassing Prisma + repos) and reads every row of `stories`, `chapters`, `characters`, `outline_items`, `chats`, `messages`. Assertion: the sentinel appears in zero rows. Ensures no plaintext narrative content landed in the DB.
+- [x] **[E12]** Encryption leak test: a test that inserts a story with a known sentinel string (`"SENTINEL_E12_DO_NOT_LEAK"`), then opens a raw `pg` connection (bypassing Prisma + repos) and reads every row of `stories`, `chapters`, `characters`, `outline_items`, `chats`, `messages`. Assertion: the sentinel appears in zero rows. Ensures no plaintext narrative content landed in the DB.
   - verify: `cd backend && npm run test:backend -- --run tests/security/encryption-leak.test.ts`
 
 - [ ] **[E13]** Update [D8]'s seed to write via the repo layer. New script `backend/prisma/seed.ts` (replaces D8's behavior, doesn't edit the [D8] task entry): creates demo user via [AU9], generates DEK via [E3], then seeds via repos so demo data lands encrypted.

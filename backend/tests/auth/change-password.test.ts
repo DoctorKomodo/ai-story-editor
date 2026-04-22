@@ -169,7 +169,6 @@ describe('[AU15] POST /api/auth/change-password', () => {
     const story = await prisma.story.create({
       data: {
         userId: user.id,
-        title: 'plaintext-title',
         titleCiphertext: 'FAKE_CIPHER_TITLE',
         titleIv: 'FAKE_IV_TITLE',
         titleAuthTag: 'FAKE_TAG_TITLE',

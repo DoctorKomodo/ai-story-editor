@@ -86,8 +86,11 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
     expect(result).toBeNull();
 
     const after = await prisma.story.findUniqueOrThrow({ where: { id: s.id as string } });
+    // Post-[E11] the plaintext `title` column is gone — the ciphertext
+    // triple is the sole source of truth. Compare it instead.
     expect(after.titleCiphertext).toBe(before.titleCiphertext);
-    expect(after.title).toBe(before.title);
+    expect(after.titleIv).toBe(before.titleIv);
+    expect(after.titleAuthTag).toBe(before.titleAuthTag);
   });
 
   it('readEncrypted throws if no DEK is attached to the request (hardened post-review)', async () => {

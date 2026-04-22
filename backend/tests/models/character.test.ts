@@ -1,10 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 
+// Post-[E11] character narrative fields are ciphertext-only. Schema-shape +
+// cascade tests only; repo-layer encrypt/decrypt is covered in
+// tests/repos/character.repo.test.ts.
+
 async function makeStory(email = 'char-author@example.com') {
   const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
-  return prisma.story.create({ data: { title: 'Host Story', userId: user.id } });
+  return prisma.story.create({ data: { userId: user.id } });
 }
 
 describe('Character model', () => {
@@ -16,50 +20,33 @@ describe('Character model', () => {
     await prisma.user.deleteMany();
   });
 
-  it('creates a character with a name and nullable detail fields', async () => {
+  it('creates a character with nullable ciphertext fields', async () => {
     const story = await makeStory();
     const character = await prisma.character.create({
-      data: { name: 'Aria', storyId: story.id },
+      data: { storyId: story.id, color: '#abcdef', initial: 'A' },
     });
     expect(character.id).toMatch(/^c[a-z0-9]+$/);
-    expect(character.name).toBe('Aria');
-    expect(character.role).toBeNull();
-    expect(character.physicalDescription).toBeNull();
-    expect(character.personality).toBeNull();
-    expect(character.backstory).toBeNull();
-    expect(character.notes).toBeNull();
+    expect(character.color).toBe('#abcdef');
+    expect(character.initial).toBe('A');
+    // Every narrative field is ciphertext-only and nullable.
+    expect(character.nameCiphertext).toBeNull();
+    expect(character.roleCiphertext).toBeNull();
+    expect(character.physicalDescriptionCiphertext).toBeNull();
+    expect(character.personalityCiphertext).toBeNull();
+    expect(character.backstoryCiphertext).toBeNull();
+    expect(character.notesCiphertext).toBeNull();
     expect(character.storyId).toBe(story.id);
     expect(character.createdAt).toBeInstanceOf(Date);
     expect(character.updatedAt).toBeInstanceOf(Date);
-  });
-
-  it('stores all descriptive fields', async () => {
-    const story = await makeStory('char-b@example.com');
-    const character = await prisma.character.create({
-      data: {
-        name: 'Kestrel',
-        role: 'protagonist',
-        physicalDescription: 'Tall, dark hair, grey eyes.',
-        personality: 'Quiet, observant, dry humour.',
-        backstory: 'Orphaned at twelve, raised by a guild.',
-        notes: 'Favours short blades.',
-        storyId: story.id,
-      },
-    });
-    expect(character.role).toBe('protagonist');
-    expect(character.physicalDescription).toContain('grey eyes');
-    expect(character.personality).toContain('dry humour');
-    expect(character.backstory).toContain('Orphaned');
-    expect(character.notes).toContain('short blades');
   });
 
   it('allows multiple characters per story', async () => {
     const story = await makeStory('char-c@example.com');
     await prisma.character.createMany({
       data: [
-        { name: 'One', storyId: story.id },
-        { name: 'Two', storyId: story.id },
-        { name: 'Three', storyId: story.id },
+        { storyId: story.id },
+        { storyId: story.id },
+        { storyId: story.id },
       ],
     });
     expect(await prisma.character.count({ where: { storyId: story.id } })).toBe(3);
@@ -67,7 +54,7 @@ describe('Character model', () => {
 
   it('cascades character deletes when the story is deleted', async () => {
     const story = await makeStory('char-d@example.com');
-    await prisma.character.create({ data: { name: 'Vanishes', storyId: story.id } });
+    await prisma.character.create({ data: { storyId: story.id } });
     await prisma.story.delete({ where: { id: story.id } });
     expect(await prisma.character.count({ where: { storyId: story.id } })).toBe(0);
   });
