@@ -258,7 +258,7 @@
 - [x] **[E12]** Encryption leak test: a test that inserts a story with a known sentinel string (`"SENTINEL_E12_DO_NOT_LEAK"`), then opens a raw `pg` connection (bypassing Prisma + repos) and reads every row of `stories`, `chapters`, `characters`, `outline_items`, `chats`, `messages`. Assertion: the sentinel appears in zero rows. Ensures no plaintext narrative content landed in the DB.
   - verify: `cd backend && npm run test:backend -- --run tests/security/encryption-leak.test.ts`
 
-- [ ] **[E13]** Update [D8]'s seed to write via the repo layer. New script `backend/prisma/seed.ts` (replaces D8's behavior, doesn't edit the [D8] task entry): creates demo user via [AU9], generates DEK via [E3], then seeds via repos so demo data lands encrypted.
+- [x] **[E13]** Update [D8]'s seed to write via the repo layer. New script `backend/prisma/seed.ts` (replaces D8's behavior, doesn't edit the [D8] task entry): creates demo user via [AU9], generates DEK via [E3], then seeds via repos so demo data lands encrypted.
   - verify: `cd backend && npx ts-node prisma/seed.ts && npm run test:backend -- --run tests/security/encryption-leak.test.ts -- --grep seed`
 
 - [ ] **[E14]** DEK-wrap rotation: there is no `CONTENT_ENCRYPTION_KEY` to rotate. Per-user rotation of the recovery-code wrap is the useful primitive. Covered by [AU17]'s `POST /api/auth/rotate-recovery-code` endpoint plus a matching admin-triggerable script `backend/prisma/scripts/force-recovery-rotation.ts` that invalidates the current recovery wrap for a named user (e.g. user reports the code leaked and is locked out of the UI). **Does not touch narrative ciphertext** — only the ~60-byte recovery wrap on `User` changes. Logs only counts + usernames acted on. Documented in [E1]'s `docs/encryption.md`.
