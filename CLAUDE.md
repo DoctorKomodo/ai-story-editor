@@ -80,7 +80,7 @@ If a task has no verify command, add one to `TASKS.md` before starting.
 
 Work through tasks in this order unless instructed otherwise:
 
-**S → A → D → AU → E → V → B → F → I → T → X**
+**S → A → D → AU → E → V → L → B → F → I → T → X**
 
 | Section | Scope |
 |---|---|
@@ -90,6 +90,7 @@ Work through tasks in this order unless instructed otherwise:
 | AU | auth — username register/login (supersedes email), refresh rotation, middleware, security headers, **BYOK Venice key** (AU9–AU14) |
 | E | encryption at rest — envelope encryption with per-user DEK wrapped by server KEK (E1–E15); see `docs/encryption.md` |
 | V | Venice.ai integration — **per-user OpenAI-compatible client**, prompt builder, SSE streaming, reasoning/web-search flags |
+| L | live Venice testing — opt-in, dev-only path (`backend/.env.live`, `npm run test:live`, `venice:probe` CLI). Never in the default test run or in CI. |
 | B | backend non-AI routes (stories / chapters / characters / outline / chats / user-settings) |
 | F | frontend — mockup-fidelity UI; source of truth is `mockups/frontend-prototype/` |
 | I | infra (Dockerfiles, compose, backup, `SELF_HOSTING.md`) |
@@ -100,6 +101,7 @@ Hard gates (do not start until the prerequisite is complete):
 - **B** requires **AU** — ownership middleware gates every non-auth route.
 - **Any narrative-entity CRUD** (Story / Chapter / Character / OutlineItem / Chat / Message — touches both B and F) requires **E3 + E9** — writing plaintext you'd have to re-encrypt later is wasted work and a leak risk.
 - **V** beyond `[A4]` requires **AU11 + AU12** — BYOK is the only key path; there is no server-wide Venice key.
+- **L** requires **V17** — the probe CLI and live tests reuse the per-user OpenAI-compatible client construction. No separate Venice client lives in `scripts/` or `tests/live/`.
 - **F AI features** (`[F33]`–`[F42]`: selection bubble, inline result, chat panel, model picker) require **V5+** streaming endpoints to be routable.
 - **E2E tests** (`[T8]`) require the full stack to run via Docker Compose.
 
@@ -171,7 +173,7 @@ Hard gates (do not start until the prerequisite is complete):
 - Each test file sets up its own test data and tears it down — no test should depend on data created by another test
 - Do not mock the database in integration tests — use the test DB with real Prisma queries
 - Integration tests against narrative entities go through the **repo layer**, not raw Prisma — otherwise the test doesn't exercise the encrypt/decrypt path and is unrepresentative
-- The Venice.ai HTTP client must be mocked in all tests — no real API calls in the test suite
+- The Venice.ai HTTP client must be mocked in all tests — no real API calls in the test suite. **Exception:** the opt-in L-series tests under `backend/tests/live/**` hit a real Venice endpoint using a spending-capped key from `backend/.env.live`. They are excluded from `npm run test:backend` and CI, and are only run via `npm run test:live`. Never import from `backend/tests/live/**` into the default suite, and never wire `.env.live` into production code paths.
 - Do not skip or delete a failing test — fix the code until the test passes
 - Frontend tests use jsdom — do not write tests that require a real browser (use Playwright for that)
 - The encryption leak test ([E12]) must pass before merging any schema change, repo change, or migration that touches narrative entities
