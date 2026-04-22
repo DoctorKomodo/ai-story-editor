@@ -202,6 +202,10 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     // Snippets picked from the seed fixtures. Each contains a space (so it
     // can't false-positive against base64 ciphertext) and is specific enough
     // to the seed that an accidental match would be meaningful.
+    //
+    // IMPORTANT: keep these in sync with backend/prisma/seed.ts. If a fixture
+    // is renamed and this list isn't updated, the test will still pass but
+    // will no longer prove anything about the renamed field.
     const SEED_SNIPPETS = [
       'The Lantern Keeper', // story title
       'Maren Oake', // character name
@@ -234,11 +238,13 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       timeout: 120_000,
     });
 
-    if (result.status !== 0) {
+    if (result.status !== 0 || result.signal != null) {
       // Surface stdout+stderr only — the seed intentionally never logs narrative
-      // plaintext, and we'd rather fail loudly than swallow an error.
+      // plaintext, and we'd rather fail loudly than swallow an error. Include
+      // the signal so a timeout (status=null, signal=SIGTERM) is distinguishable
+      // from a real non-zero exit in the CI log.
       throw new Error(
-        `[E13] seed script exited non-zero (status=${result.status}): ` +
+        `[E13] seed script failed (status=${result.status}, signal=${result.signal ?? 'none'}): ` +
           `stdout=<<<${result.stdout}>>> stderr=<<<${result.stderr}>>>`,
       );
     }
