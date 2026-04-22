@@ -9,7 +9,11 @@ import { prisma as defaultPrisma } from '../lib/prisma';
 import { ARGON2_PARAMS } from './argon2.config';
 import {
   generateDekAndWraps,
+  InvalidRecoveryCodeError,
   unwrapDekWithPassword,
+  unwrapDekWithRecoveryCode,
+  wrapDek,
+  type UserDekColumns,
 } from './content-crypto.service';
 import {
   closeSession,
@@ -37,6 +41,28 @@ async function getDummyPasswordHash(): Promise<string> {
   if (cachedDummyHash) return cachedDummyHash;
   cachedDummyHash = await argon2.hash(' not-a-real-password ', ARGON2_PARAMS);
   return cachedDummyHash;
+}
+
+// Analogue of getDummyPasswordHash for the reset-password flow: a shared
+// junk DEK + wraps used as a dummy target for unwrapDekWithRecoveryCode when
+// the username doesn't exist. The KDF inside unwrapDek (argon2id, ~100ms)
+// dominates the cost of a real unwrap, so running it once against a junk
+// wrap equalises wall-clock timing between "no such user" and "wrong code".
+let cachedDummyDekWraps: UserDekColumns | null = null;
+async function getDummyDekWraps(): Promise<UserDekColumns> {
+  if (cachedDummyDekWraps) return cachedDummyDekWraps;
+  const gen = await generateDekAndWraps(' reset-timing-dummy ');
+  cachedDummyDekWraps = {
+    contentDekPasswordEnc: gen.passwordWrap.ciphertext,
+    contentDekPasswordIv: gen.passwordWrap.iv,
+    contentDekPasswordAuthTag: gen.passwordWrap.authTag,
+    contentDekPasswordSalt: gen.passwordWrap.salt,
+    contentDekRecoveryEnc: gen.recoveryWrap.ciphertext,
+    contentDekRecoveryIv: gen.recoveryWrap.iv,
+    contentDekRecoveryAuthTag: gen.recoveryWrap.authTag,
+    contentDekRecoverySalt: gen.recoveryWrap.salt,
+  };
+  return cachedDummyDekWraps;
 }
 
 export async function hashPassword(password: string): Promise<string> {
@@ -80,6 +106,7 @@ export async function verifyPassword(hash: string, password: string): Promise<Pa
 // The timing defence still works without this, but a cold-start window of one
 // anomalous request is removed.
 void getDummyPasswordHash();
+void getDummyDekWraps();
 
 const USERNAME_REGEX = /^[a-z0-9_-]{3,32}$/;
 
@@ -520,7 +547,120 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     ]);
   }
 
-  return { register, login, refresh, logout, logoutAllSessionsForUser };
+  // [AU15] Authenticated password change. Rewraps the content DEK under the
+  // new password — narrative ciphertext is untouched. Invalidates all
+  // sessions + refresh tokens so any other logged-in device is forced
+  // through /login again (where it will re-derive the wrap key from the
+  // new password). The recovery wrap is intentionally not rotated here;
+  // rotating the recovery code is a separate, explicit user action ([AU17]).
+  async function changePassword(input: {
+    userId: string;
+    oldPassword: string;
+    newPassword: string;
+  }): Promise<void> {
+    const user = await client.user.findUnique({ where: { id: input.userId } });
+    if (!user) throw new InvalidCredentialsError();
+
+    const { ok } = await verifyPassword(user.passwordHash, input.oldPassword);
+    if (!ok) throw new InvalidCredentialsError();
+
+    const dek = await unwrapDekWithPassword(user, input.oldPassword);
+
+    const [newHash, newWrap] = await Promise.all([
+      hashPassword(input.newPassword),
+      wrapDek(dek, input.newPassword),
+    ]);
+
+    await client.$transaction([
+      client.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: newHash,
+          contentDekPasswordEnc: newWrap.ciphertext,
+          contentDekPasswordIv: newWrap.iv,
+          contentDekPasswordAuthTag: newWrap.authTag,
+          contentDekPasswordSalt: newWrap.salt,
+        },
+      }),
+      client.refreshToken.deleteMany({ where: { userId: user.id } }),
+      client.session.deleteMany({ where: { userId: user.id } }),
+    ]);
+
+    // In-memory session map eviction is separate from the DB write — a
+    // stale in-memory entry on another request thread would let an already
+    // authenticated request keep its DEK for up to one more hop. Do this
+    // after the DB tx commits so we never evict in-memory state that the
+    // DB still claims is valid.
+    closeSessionsForUser(user.id);
+  }
+
+  // [AU16] Unauthenticated password reset via recovery code. The DEK is
+  // unwrapped with the recovery-code-derived key and then re-wrapped under
+  // the new password. Recovery wrap is intentionally not rotated here — if
+  // the user also wants a fresh recovery code they call [AU17] afterwards.
+  //
+  // Username enumeration defence: unknown-user and wrong-code must be
+  // indistinguishable. Both paths run unwrapDekWithRecoveryCode exactly once
+  // (against a cached dummy wrap on the missing-user branch) and both
+  // surface as InvalidCredentialsError to the caller — which the route maps
+  // to the same 401 body as a wrong-password login.
+  async function resetPassword(input: {
+    username: string;
+    recoveryCode: string;
+    newPassword: string;
+  }): Promise<void> {
+    const normalisedUsername = input.username.trim().toLowerCase();
+    const user = await client.user.findUnique({ where: { username: normalisedUsername } });
+
+    if (!user) {
+      try {
+        await unwrapDekWithRecoveryCode(await getDummyDekWraps(), input.recoveryCode);
+      } catch {
+        // expected — dummy wrap never unwraps with caller-supplied code
+      }
+      throw new InvalidCredentialsError();
+    }
+
+    let dek: Buffer;
+    try {
+      dek = await unwrapDekWithRecoveryCode(user, input.recoveryCode);
+    } catch (err) {
+      if (err instanceof InvalidRecoveryCodeError) throw new InvalidCredentialsError();
+      throw err;
+    }
+
+    const [newHash, newWrap] = await Promise.all([
+      hashPassword(input.newPassword),
+      wrapDek(dek, input.newPassword),
+    ]);
+
+    await client.$transaction([
+      client.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: newHash,
+          contentDekPasswordEnc: newWrap.ciphertext,
+          contentDekPasswordIv: newWrap.iv,
+          contentDekPasswordAuthTag: newWrap.authTag,
+          contentDekPasswordSalt: newWrap.salt,
+        },
+      }),
+      client.refreshToken.deleteMany({ where: { userId: user.id } }),
+      client.session.deleteMany({ where: { userId: user.id } }),
+    ]);
+
+    closeSessionsForUser(user.id);
+  }
+
+  return {
+    register,
+    login,
+    refresh,
+    logout,
+    logoutAllSessionsForUser,
+    changePassword,
+    resetPassword,
+  };
 }
 
 export const authService = createAuthService();

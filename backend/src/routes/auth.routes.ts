@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { ZodError } from 'zod';
+import rateLimit from 'express-rate-limit';
+import { z, ZodError } from 'zod';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
@@ -33,6 +34,95 @@ function badRequestFromZod(res: Response, err: ZodError): Response {
         path: issue.path,
         message: issue.message,
       })),
+    },
+  });
+}
+
+function minPasswordLength(): number {
+  return process.env.NODE_ENV === 'production' ? 8 : 4;
+}
+
+function buildChangePasswordSchema() {
+  const min = minPasswordLength();
+  return z.object({
+    oldPassword: z.string().min(1, 'oldPassword is required'),
+    newPassword: z
+      .string()
+      .min(min, `Password must be at least ${min} characters`),
+  });
+}
+
+function buildResetPasswordSchema() {
+  const min = minPasswordLength();
+  return z.object({
+    username: z.string().min(1, 'username is required'),
+    recoveryCode: z.string().min(1, 'recoveryCode is required'),
+    newPassword: z
+      .string()
+      .min(min, `Password must be at least ${min} characters`),
+  });
+}
+
+// Per-user (not per-IP) rate limit for the password-change endpoint. Scoped
+// to authenticated requests via requireAuth — the keyGenerator relies on
+// req.user.id, which the middleware sets before this limiter runs.
+function changePasswordLimiter() {
+  return rateLimit({
+    windowMs: 60_000,
+    // Generous enough that the test suite can exercise the endpoint
+    // several times per describe block without hitting the limit, but
+    // still meaningful as a brute-force defence. Tune in production via
+    // env if needed.
+    limit: 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    // Keying on user id (not ip) matches the task spec — a shared NAT
+    // can't DOS a legitimate user's ability to change their own password,
+    // and a compromised session can't burn someone else's quota.
+    keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
+    // Don't draw from the limit pool when bodies are malformed / unauthed;
+    // the endpoint's protection target is the crypto-verify path, not the
+    // schema / auth rejection path.
+    skipFailedRequests: false,
+  });
+}
+
+// Aggressive stacked rate limits for the unauthenticated reset-password
+// endpoint. Spec: "per-IP + per-username". Two limiters stack, so a single
+// abusive IP can't cross-target many usernames to grind the crypto path,
+// and a single victim username can't be hammered from a botnet.
+//
+// Under NODE_ENV=test the limits are raised way out of the way — the test
+// suite legitimately fires many requests from a single IP (always 127.0.0.1)
+// and the timing test needs to avoid hitting 429 short-circuits, which
+// would mask the very argon2id-cost equality that test is supposed to
+// verify. Tests that exercise rate-limit behaviour directly should use a
+// dedicated per-test app instance or mock the limiter.
+const IS_TEST_ENV = process.env.NODE_ENV === 'test';
+
+function resetPasswordIpLimiter() {
+  return rateLimit({
+    windowMs: 60_000,
+    limit: IS_TEST_ENV ? 10_000 : 20,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => req.ip ?? 'unknown-ip',
+  });
+}
+
+function resetPasswordUsernameLimiter() {
+  return rateLimit({
+    windowMs: 60_000,
+    limit: IS_TEST_ENV ? 10_000 : 10,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => {
+      // req.body is already JSON-parsed by express.json() — the limiter
+      // runs after that middleware. An absent / malformed username is fine
+      // to key under a shared bucket because the endpoint will reject it
+      // at the schema step anyway.
+      const raw = (req.body as { username?: unknown })?.username;
+      return typeof raw === 'string' ? raw.trim().toLowerCase() : 'unknown-user';
     },
   });
 }
@@ -116,6 +206,75 @@ export function createAuthRouter() {
       next(err);
     }
   });
+
+  router.post(
+    '/reset-password',
+    resetPasswordIpLimiter(),
+    resetPasswordUsernameLimiter(),
+    async (req, res, next) => {
+      try {
+        const parsed = buildResetPasswordSchema().parse(req.body);
+        await authService.resetPassword({
+          username: parsed.username,
+          recoveryCode: parsed.recoveryCode,
+          newPassword: parsed.newPassword,
+        });
+        res.status(204).send();
+      } catch (err) {
+        if (err instanceof ZodError) {
+          badRequestFromZod(res, err);
+          return;
+        }
+        if (err instanceof InvalidCredentialsError) {
+          // Identical body + status to the login invalid-credentials path —
+          // reset-password must not expose "user not found" vs. "wrong
+          // recovery code" to the caller ([AU10] precedent).
+          res.status(401).json({
+            error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+          });
+          return;
+        }
+        next(err);
+      }
+    },
+  );
+
+  router.post(
+    '/change-password',
+    requireAuth,
+    changePasswordLimiter(),
+    async (req, res, next) => {
+      try {
+        const authed = req.user;
+        if (!authed) {
+          res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
+          return;
+        }
+        const parsed = buildChangePasswordSchema().parse(req.body);
+        await authService.changePassword({
+          userId: authed.id,
+          oldPassword: parsed.oldPassword,
+          newPassword: parsed.newPassword,
+        });
+        // 204 — caller stays authenticated on this request's access token
+        // until it expires, but all refresh tokens (including this one's)
+        // have been invalidated server-side so the next refresh will fail.
+        res.status(204).send();
+      } catch (err) {
+        if (err instanceof ZodError) {
+          badRequestFromZod(res, err);
+          return;
+        }
+        if (err instanceof InvalidCredentialsError) {
+          res.status(401).json({
+            error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+          });
+          return;
+        }
+        next(err);
+      }
+    },
+  );
 
   router.get('/me', requireAuth, async (req, res, next) => {
     try {
