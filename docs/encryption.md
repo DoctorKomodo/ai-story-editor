@@ -102,6 +102,15 @@ Handled by `POST /api/auth/rotate-recovery-code` ([AU17]). The user must be auth
 
 An admin-triggerable variant lives in `backend/prisma/scripts/force-recovery-rotation.ts` ([E14]) for the case where a user reports their code has leaked and they can't reach the UI to rotate it themselves.
 
+### Admin-forced recovery-wrap invalidation ([E14])
+
+The admin has neither the user's password nor the old recovery code, so they cannot unwrap the DEK and therefore cannot mint a replacement wrap directly. The only safe primitive available server-side is **invalidation**: NULL the four `contentDekRecovery*` columns on `User`.
+
+- **Invoked by:** the operator, at the CLI — `ts-node backend/prisma/scripts/force-recovery-rotation.ts --username <name> [--dry-run]`. The script normalises the username the same way [AU9] does (trim + lowercase), looks the user up, and issues a single transactional `UPDATE` setting the four recovery columns to `null`. Logs only the action taken, the normalised username, and the user id — never wrap values, DEK material, password hashes, or narrative content.
+- **What it changes:** the four `contentDekRecovery*` columns on `User` (~60 bytes of ciphertext + salt metadata).
+- **What it does NOT change:** the password wrap, the password hash, sessions, refresh tokens, or any narrative ciphertext. The user stays logged in wherever they already are.
+- **User recovery path post-invalidation:** the user logs in with their password (unchanged), then calls `POST /api/auth/rotate-recovery-code` ([AU17]) while authenticated. That endpoint unwraps the DEK with the password and mints a fresh recovery code, repopulating the four columns atomically. Until they do this, the account has no working recovery code and password-reset-via-recovery-code ([AU16]) will refuse.
+
 ---
 
 ## Session lifecycle and DEK survival
