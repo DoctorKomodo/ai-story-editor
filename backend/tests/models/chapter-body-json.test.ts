@@ -1,23 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 
+// Post-[E11] chapter body (TipTap JSON) is ciphertext-only in
+// `bodyCiphertext/Iv/AuthTag`. Body round-trip is covered by
+// tests/repos/chapter.repo.test.ts — here we only exercise the model
+// shape that remains plaintext (status, orderIndex, wordCount).
+
 async function makeStory(email = 'body-json-author@example.com') {
   const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
-  return prisma.story.create({ data: { title: 'Host', userId: user.id } });
+  return prisma.story.create({ data: { userId: user.id } });
 }
 
-const sampleDoc = {
-  type: 'doc',
-  content: [
-    {
-      type: 'paragraph',
-      content: [{ type: 'text', text: 'The lighthouse flickered once, then again.' }],
-    },
-  ],
-};
-
-describe('Chapter body-json + status', () => {
+describe('Chapter plaintext shape (post-E11)', () => {
   beforeEach(async () => {
     await prisma.user.deleteMany();
   });
@@ -26,53 +21,33 @@ describe('Chapter body-json + status', () => {
     await prisma.user.deleteMany();
   });
 
-  it('defaults bodyJson to null and status to "draft"', async () => {
+  it('defaults status to "draft" and wordCount to 0', async () => {
     const story = await makeStory();
     const chapter = await prisma.chapter.create({
-      data: { title: 'Opening', orderIndex: 0, storyId: story.id },
+      data: { orderIndex: 0, storyId: story.id },
     });
-    expect(chapter.bodyJson).toBeNull();
     expect(chapter.status).toBe('draft');
-  });
-
-  it('round-trips TipTap JSON unchanged', async () => {
-    const story = await makeStory('rt@example.com');
-    const chapter = await prisma.chapter.create({
-      data: {
-        title: 'Two',
-        orderIndex: 0,
-        storyId: story.id,
-        bodyJson: sampleDoc,
-      },
-    });
-    const loaded = await prisma.chapter.findUniqueOrThrow({ where: { id: chapter.id } });
-    expect(loaded.bodyJson).toEqual(sampleDoc);
+    expect(chapter.wordCount).toBe(0);
+    // Ciphertext triples are nullable.
+    expect(chapter.bodyCiphertext).toBeNull();
+    expect(chapter.titleCiphertext).toBeNull();
   });
 
   it('accepts the three known status values', async () => {
     const story = await makeStory('st@example.com');
     for (const [i, status] of ['draft', 'revised', 'final'].entries()) {
       const c = await prisma.chapter.create({
-        data: { title: `C${i}`, orderIndex: i, storyId: story.id, status },
+        data: { orderIndex: i, storyId: story.id, status },
       });
       expect(c.status).toBe(status);
     }
   });
 
-  it('keeps the plaintext content mirror alongside bodyJson', async () => {
-    const story = await makeStory('mirror@example.com');
+  it('persists wordCount plaintext (derived at save time before encryption)', async () => {
+    const story = await makeStory('wc@example.com');
     const chapter = await prisma.chapter.create({
-      data: {
-        title: 'Mirror',
-        orderIndex: 0,
-        storyId: story.id,
-        content: 'The lighthouse flickered once, then again.',
-        wordCount: 7,
-        bodyJson: sampleDoc,
-      },
+      data: { orderIndex: 0, storyId: story.id, wordCount: 7 },
     });
-    expect(chapter.content).toBe('The lighthouse flickered once, then again.');
     expect(chapter.wordCount).toBe(7);
-    expect(chapter.bodyJson).toEqual(sampleDoc);
   });
 });

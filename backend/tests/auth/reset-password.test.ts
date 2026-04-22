@@ -146,7 +146,6 @@ describe('[AU16] POST /api/auth/reset-password', () => {
     const story = await prisma.story.create({
       data: {
         userId: user.id,
-        title: 'plaintext-title',
         titleCiphertext: 'FAKE_CIPHER',
         titleIv: 'FAKE_IV',
         titleAuthTag: 'FAKE_TAG',

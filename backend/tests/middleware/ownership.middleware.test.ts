@@ -42,21 +42,20 @@ async function seedTwoUsersAndAStory(): Promise<{
   const owner = await makeUser(prisma, { email: 'owner@example.com', username: 'owner' });
   const stranger = await makeUser(prisma, { email: 'stranger@example.com', username: 'stranger' });
 
-  const story = await prisma.story.create({
-    data: { title: 'Tome', userId: owner.id },
-  });
+  // Post-[E11]: narrative fields are ciphertext-only — the middleware
+  // doesn't read them, so we seed minimal rows with just the plaintext
+  // structural fields (FKs, order/status indexes).
+  const story = await prisma.story.create({ data: { userId: owner.id } });
   const chapter = await prisma.chapter.create({
-    data: { title: 'Ch 1', orderIndex: 0, storyId: story.id },
+    data: { orderIndex: 0, storyId: story.id },
   });
-  const character = await prisma.character.create({
-    data: { name: 'Hero', storyId: story.id },
-  });
+  const character = await prisma.character.create({ data: { storyId: story.id } });
   const outline = await prisma.outlineItem.create({
-    data: { title: 'Act 1', order: 0, status: 'pending', storyId: story.id },
+    data: { order: 0, status: 'pending', storyId: story.id },
   });
   const chat = await prisma.chat.create({ data: { chapterId: chapter.id } });
   const message = await prisma.message.create({
-    data: { chatId: chat.id, role: 'user', contentJson: { text: 'hi' } },
+    data: { chatId: chat.id, role: 'user' },
   });
 
   return {

@@ -13,8 +13,6 @@ describe('[E7] OutlineItem — ciphertext columns', () => {
       data: {
         storyId: story.id,
         order: 0,
-        title: 'plaintext',
-        sub: 'dual-write sub',
         status: 'done',
         titleCiphertext: SENTINEL.ciphertext,
         titleIv: SENTINEL.iv,
@@ -33,7 +31,7 @@ describe('[E7] OutlineItem — ciphertext columns', () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
     const created = await prisma.outlineItem.create({
-      data: { storyId: story.id, order: 3, title: 'x', status: 'active' },
+      data: { storyId: story.id, order: 3, status: 'active' },
     });
     expect(created.order).toBe(3);
     expect(created.status).toBe('active');

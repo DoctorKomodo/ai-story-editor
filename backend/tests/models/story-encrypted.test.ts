@@ -11,7 +11,6 @@ describe('[E4] Story — ciphertext columns', () => {
     const created = await prisma.story.create({
       data: {
         userId: user.id,
-        title: 'Plaintext Dual Write',
         titleCiphertext: SENTINEL.ciphertext,
         titleIv: SENTINEL.iv,
         titleAuthTag: SENTINEL.authTag,
@@ -40,7 +39,6 @@ describe('[E4] Story — ciphertext columns', () => {
     const created = await prisma.story.create({
       data: {
         userId: user.id,
-        title: 'x',
         genre: 'romance',
         targetWords: 90000,
       },
@@ -50,10 +48,10 @@ describe('[E4] Story — ciphertext columns', () => {
     expect(created.userId).toBe(user.id);
   });
 
-  it('ciphertext columns are nullable during the dual-write window', async () => {
+  it('ciphertext columns are nullable (a story with no fields set yet is legal)', async () => {
     const user = await createUser();
     const created = await prisma.story.create({
-      data: { userId: user.id, title: 'no-ciphertext-yet' },
+      data: { userId: user.id },
     });
     expect(created.titleCiphertext).toBeNull();
     expect(created.synopsisCiphertext).toBeNull();
