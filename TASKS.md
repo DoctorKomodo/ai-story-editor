@@ -128,56 +128,56 @@
 - [x] **[AU1]** `auth.service.ts`: `register()` hashes with bcryptjs (12 rounds), creates user, returns record without `passwordHash`.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/auth.service.test.ts`
 
-- [ ] **[AU2]** `auth.service.ts`: `login()` validates credentials, returns JWT access token (15min) and refresh token (7 days, stored in `RefreshToken` table).
+- [x] **[AU2]** `auth.service.ts`: `login()` validates credentials, returns JWT access token (15min) and refresh token (7 days, stored in `RefreshToken` table).
   - verify: `cd backend && npm run test:backend -- --run tests/auth/login.test.ts`
 
-- [ ] **[AU3]** Auth routes: `POST /api/auth/register`, `POST /api/auth/login` (sets httpOnly cookie), `POST /api/auth/logout` (clears cookie + deletes DB record), `GET /api/auth/me`.
+- [x] **[AU3]** Auth routes: `POST /api/auth/register`, `POST /api/auth/login` (sets httpOnly cookie), `POST /api/auth/logout` (clears cookie + deletes DB record), `GET /api/auth/me`.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/auth.routes.test.ts`
   - security notes (from AU1 security review):
     - Map `EmailAlreadyRegisteredError` to a generic 409 `{ error: 'Email unavailable' }` (or a 200 "check your inbox" response if email verification is added) — do NOT echo `err.message` to the client; it leaks the user list.
     - Equalize register-endpoint response time across the duplicate-vs-new branch: run a dummy `bcrypt.hash` on the duplicate-email path so both branches pay the ~200ms cost. Prevents timing-based user enumeration.
     - Same pattern for `POST /api/auth/login`: identical error body ("Invalid credentials") and comparable timing for "user not found" vs "password wrong" — never branch the response shape.
 
-- [ ] **[AU4]** `POST /api/auth/refresh` — reads httpOnly cookie, validates against DB, issues new access token, rotates refresh token in a single transaction.
+- [x] **[AU4]** `POST /api/auth/refresh` — reads httpOnly cookie, validates against DB, issues new access token, rotates refresh token in a single transaction.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/refresh.test.ts`
 
-- [ ] **[AU5]** Auth middleware: validates JWT from `Authorization: Bearer` header, attaches `req.user`. Returns 401 if missing or invalid.
+- [x] **[AU5]** Auth middleware: validates JWT from `Authorization: Bearer` header, attaches `req.user`. Returns 401 if missing or invalid.
   - verify: `cd backend && npm run test:backend -- --run tests/middleware/auth.middleware.test.ts`
 
-- [ ] **[AU6]** Ownership middleware: verifies story/chapter/character belongs to `req.user.id`. Returns 403 if not.
+- [x] **[AU6]** Ownership middleware: verifies story/chapter/character belongs to `req.user.id`. Returns 403 if not.
   - verify: `cd backend && npm run test:backend -- --run tests/middleware/ownership.middleware.test.ts`
 
-- [ ] **[AU7]** Helmet.js, CORS (origin from `FRONTEND_URL`), rate limit on `/api/ai/*` (20 req/min per IP).
+- [x] **[AU7]** Helmet.js, CORS (origin from `FRONTEND_URL`), rate limit on `/api/ai/*` (20 req/min per IP).
   - verify: `cd backend && npm run test:backend -- --run tests/middleware/security.test.ts`
 
-- [ ] **[AU8]** Venice API key only in backend `.env`. Test confirms no `VENICE` string in frontend build output.
+- [x] **[AU8]** Venice API key only in backend `.env`. Test confirms no `VENICE` string in frontend build output.
   - verify: `cd frontend && npm run build && ! grep -r "VENICE" dist/ && echo "API KEY NOT LEAKED"`
 
 ### AU — Username auth + BYOK Venice key
 
 > [AU1] is completed with email+bcrypt. Per CLAUDE.md these supersede the *behaviour* of [AU1]–[AU3] and [AU8] without editing those entries. Trigger the security-reviewer subagent after [AU13] is implemented (auth-surface change + new crypto).
 
-- [ ] **[AU9]** `auth.service.ts` signup supersede: `register({ name, username, password })`. Normalize username (trim + lowercase) before uniqueness check + storage. Validate: `name` 1–80 chars (optional in DB, required in signup), `username` matches `/^[a-z0-9_-]{3,32}$/`, `password` ≥ 8 chars in production (≥ 4 dev-only, gated on `NODE_ENV`). Duplicate-username path runs a dummy `bcrypt.hash` to equalize timing with the happy path. **Once [E3] lands:** signup also calls `content-crypto.service.generateDekAndWraps(password)` and persists the eight DEK-wrap columns + salts in the same transaction as the `User` row. Response: user without `passwordHash`, surfacing `{ id, name, username, createdAt, recoveryCode }` — the `recoveryCode` field is returned **exactly once** at registration and must be surfaced clearly in the UI ([F-series] signup flow) with a "save this now, it will not be shown again" warning.
+- [x] **[AU9]** `auth.service.ts` signup supersede: `register({ name, username, password })`. Normalize username (trim + lowercase) before uniqueness check + storage. Validate: `name` 1–80 chars (optional in DB, required in signup), `username` matches `/^[a-z0-9_-]{3,32}$/`, `password` ≥ 8 chars in production (≥ 4 dev-only, gated on `NODE_ENV`). Duplicate-username path runs a dummy `bcrypt.hash` to equalize timing with the happy path. **Once [E3] lands:** signup also calls `content-crypto.service.generateDekAndWraps(password)` and persists the eight DEK-wrap columns + salts in the same transaction as the `User` row. Response: user without `passwordHash`, surfacing `{ id, name, username, createdAt, recoveryCode }` — the `recoveryCode` field is returned **exactly once** at registration and must be surfaced clearly in the UI ([F-series] signup flow) with a "save this now, it will not be shown again" warning.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/register-username.test.ts`
 
-- [ ] **[AU10]** `POST /api/auth/login` supersede: accepts `{ username, password }` (lowercased server-side before lookup). Identical 401 body (`{ error: "Invalid credentials" }`) for "user not found" and "password mismatch". Identical wall-clock timing (run a dummy bcrypt compare against a fixed junk hash when the user doesn't exist). Sets refresh token as httpOnly cookie, returns access token in body.
+- [x] **[AU10]** `POST /api/auth/login` supersede: accepts `{ username, password }` (lowercased server-side before lookup). Identical 401 body (`{ error: "Invalid credentials" }`) for "user not found" and "password mismatch". Identical wall-clock timing (run a dummy bcrypt compare against a fixed junk hash when the user doesn't exist). Sets refresh token as httpOnly cookie, returns access token in body.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/login-username.test.ts`
 
 > **⚠ Open design question for [E3]:** under Option D the DEK is unwrapped from the password at login, but the password is not available on subsequent requests (only the JWT is). The DEK therefore must survive across requests somewhere. Candidates, to decide in [E1]: **(a)** re-prompt the user for their password on every request (rejected — DX disaster); **(b)** process-memory session cache keyed by JWT `jti`, evicted on logout / token rotation / process restart (pragmatic for single-host self-hosted deployments; violates the current "request-scoped `WeakMap` only" rule and must be documented); **(c)** unwrap-once, re-wrap with a random session key returned to the client in the access token (the access token becomes the wrapper key; server stores only the session-wrapped DEK); **(d)** unwrap-once, store session-wrapped DEK in a `Session` table keyed by `jti`, session key derived from a cookie-side secret. The choice affects `content-crypto.service.ts`, `auth.service.ts`, `auth.middleware.ts`, the `Session` / `RefreshToken` schema, and the leak-test assertions in [E12]. **Do not start [E3] until this is resolved and documented in `docs/encryption.md`.**
 
-- [ ] **[AU11]** `backend/src/services/crypto.service.ts` — AES-256-GCM helper. Reads `APP_ENCRYPTION_KEY` from env (32 bytes, base64). Exposes `encrypt(plaintext): { ciphertext, iv, authTag }` (all base64) and `decrypt({ ciphertext, iv, authTag }): plaintext`. Constant-time comparison helpers. Unit tests cover roundtrip, malformed inputs (throws), tampered auth tag (throws).
+- [x] **[AU11]** `backend/src/services/crypto.service.ts` — AES-256-GCM helper. Reads `APP_ENCRYPTION_KEY` from env (32 bytes, base64). Exposes `encrypt(plaintext): { ciphertext, iv, authTag }` (all base64) and `decrypt({ ciphertext, iv, authTag }): plaintext`. Constant-time comparison helpers. Unit tests cover roundtrip, malformed inputs (throws), tampered auth tag (throws).
   - verify: `cd backend && npm run test:backend -- --run tests/services/crypto.service.test.ts`
 
-- [ ] **[AU12]** BYOK user-key endpoints (all require auth + ownership-of-self):
+- [x] **[AU12]** BYOK user-key endpoints (all require auth + ownership-of-self):
   - `GET /api/users/me/venice-key` → `{ hasKey: boolean, lastFour: string | null, endpoint: string | null }`. **Never returns the key.**
   - `PUT /api/users/me/venice-key` → body `{ apiKey, endpoint? }`. Validates by calling Venice `GET /v1/models` with the key before storing. On success: encrypts via [AU11], writes `veniceApiKeyEnc/Iv/AuthTag/Endpoint`, returns `{ status: "saved", lastFour }`. On 401 from Venice: returns 400 `{ error: "venice_key_invalid" }` without storing.
   - `DELETE /api/users/me/venice-key` → nulls all four BYOK columns. Returns `{ status: "removed" }`.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/venice-key.test.ts`
 
-- [ ] **[AU13]** Supersedes [AU8] with BYOK semantics: no env-level `VENICE_API_KEY` exists anywhere (remove from `.env.example` in [I7]). The user-entered key must never appear in application logs, error responses, stack traces, or the frontend build output. Tests: (a) install a log spy, trigger the full BYOK flow, assert the raw key never appears in any log line; (b) frontend build contains no `VENICE` substring; (c) `GET /api/users/me/venice-key` roundtrip never exposes the ciphertext fields.
+- [x] **[AU13]** Supersedes [AU8] with BYOK semantics: no env-level `VENICE_API_KEY` exists anywhere (remove from `.env.example` in [I7]). The user-entered key must never appear in application logs, error responses, stack traces, or the frontend build output. Tests: (a) install a log spy, trigger the full BYOK flow, assert the raw key never appears in any log line; (b) frontend build contains no `VENICE` substring; (c) `GET /api/users/me/venice-key` roundtrip never exposes the ciphertext fields.
   - verify: `cd backend && npm run test:backend -- --run tests/security/byok-leak.test.ts && cd ../frontend && npm run build && ! grep -r "VENICE" dist/ && echo "BYOK LEAK-PROOF"`
 
-- [ ] **[AU14]** (Optional, security upgrade) Swap `bcryptjs(12)` for `argon2id` (OWASP 2024 top pick). On next login, if stored hash is bcrypt, re-hash password with argon2id and update. Requires `APP_ENCRYPTION_KEY`-independent `ARGON2_PEPPER` (optional). **Hard prerequisite for [E3]** — the argon2id parameter config is shared between password hashing and DEK-wrap key derivation.
+- [x] **[AU14]** (Optional, security upgrade) Swap `bcryptjs(12)` for `argon2id` (OWASP 2024 top pick). On next login, if stored hash is bcrypt, re-hash password with argon2id and update. Requires `APP_ENCRYPTION_KEY`-independent `ARGON2_PEPPER` (optional). **Hard prerequisite for [E3]** — the argon2id parameter config is shared between password hashing and DEK-wrap key derivation.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/argon2-migration.test.ts`
 
 - [ ] **[AU15]** `POST /api/auth/change-password` — authenticated endpoint that accepts `{ oldPassword, newPassword }`. Flow: (1) verify `oldPassword` against the stored hash via `auth.service.ts`; (2) call `content-crypto.service.unwrapDekWithPassword(userId, oldPassword)` → DEK; (3) re-hash the new password; (4) call `rewrapPasswordWrap(userId, dek, newPassword)`; (5) write the new password hash and the new `contentDekPasswordEnc/Iv/AuthTag/Salt` in a single transaction; (6) delete all existing refresh tokens for the user (forcing re-login elsewhere); (7) return 204. Never log either password. Rate-limited per-user (not per-IP). Narrative ciphertext is **not** touched — tests assert no `*Ciphertext` column changes. **Invoke `security-reviewer` after implementation.**
@@ -202,7 +202,7 @@
 >
 > **Threat model:** DB dump alone reveals structural metadata only (`orderIndex`, `wordCount`, `status`, `genre`, `targetWords`, FK ids, timestamps). DB + env leak reveals the same — no `CONTENT_ENCRYPTION_KEY` exists under this scheme. Narrative content is disclosed only if an attacker additionally compromises a user's password (via phishing, keylogger, credential reuse, etc.) or recovery code. **Revisit** in `docs/encryption.md` if offline decrypt becomes a requirement.
 
-- [ ] **[E1]** Write `docs/encryption.md`: DEK / wrap model, exact field list (what's encrypted vs plaintext), threat model (DB dump alone vs DB + env leak vs password/recovery-code compromise), trade-offs accepted (no DB-side FTS / title sort; no offline/background decrypt). **Must include:**
+- [x] **[E1]** Write `docs/encryption.md`: DEK / wrap model, exact field list (what's encrypted vs plaintext), threat model (DB dump alone vs DB + env leak vs password/recovery-code compromise), trade-offs accepted (no DB-side FTS / title sort; no offline/background decrypt). **Must include:**
   - **"DEK provenance" section** — the DEK is random per user; its **wraps** are password-derived and recovery-code-derived (argon2id). No server-held KEK wraps content.
   - **"argon2id parameters" section** — document `m`, `t`, `p`, salt length, output length, and where those parameters are sourced from ([AU14]). Note that the same parameters are reused for password hashing and DEK-wrap key derivation.
   - **"Recovery code" section** — 128-bit entropy minimum, printable format (suggest BIP-39-style word list or base32 with checksum), shown exactly once at signup, never stored plaintext server-side, user-guided to store out-of-band. Document the rotate-recovery-code flow ([AU17]).
@@ -212,10 +212,10 @@
   - This is the design-of-record; subsequent E-tasks reference it.
   - verify: `test -f docs/encryption.md && grep -q "argon2id" docs/encryption.md && grep -q "recovery code" docs/encryption.md && grep -q "DEK" docs/encryption.md && grep -q "threat model" docs/encryption.md && grep -q "password-derived" docs/encryption.md && grep -q "Revisit" docs/encryption.md`
 
-- [ ] **[E2]** Env + boot validation: content DEKs are **not** wrapped by a server-held KEK under this scheme, so there is no `CONTENT_ENCRYPTION_KEY` env var. `APP_ENCRYPTION_KEY` remains (wraps BYOK Venice keys only — see [AU11] / [AU13]) and must still be validated at boot. Backend startup asserts `APP_ENCRYPTION_KEY` is set and correctly sized; fails fast with a clear, actionable message otherwise. Include a generation one-liner (`node -e "console.log(crypto.randomBytes(32).toString('base64'))"`) in `.env.example` comments. A boot test confirms there is **no** `CONTENT_ENCRYPTION_KEY` requirement (guards against the env accidentally being reintroduced).
+- [x] **[E2]** Env + boot validation: content DEKs are **not** wrapped by a server-held KEK under this scheme, so there is no `CONTENT_ENCRYPTION_KEY` env var. `APP_ENCRYPTION_KEY` remains (wraps BYOK Venice keys only — see [AU11] / [AU13]) and must still be validated at boot. Backend startup asserts `APP_ENCRYPTION_KEY` is set and correctly sized; fails fast with a clear, actionable message otherwise. Include a generation one-liner (`node -e "console.log(crypto.randomBytes(32).toString('base64'))"`) in `.env.example` comments. A boot test confirms there is **no** `CONTENT_ENCRYPTION_KEY` requirement (guards against the env accidentally being reintroduced).
   - verify: `! grep -q "CONTENT_ENCRYPTION_KEY" .env.example && grep -q "APP_ENCRYPTION_KEY" .env.example && cd backend && npm run test:backend -- --run tests/boot/encryption-keys.test.ts`
 
-- [ ] **[E3]** Per-user DEK + content-crypto service:
+- [x] **[E3]** Per-user DEK + content-crypto service:
   - Schema (on `User`, all non-null after backfill):
     - `contentDekPasswordEnc String`, `contentDekPasswordIv String`, `contentDekPasswordAuthTag String`, `contentDekPasswordSalt String` — AES-256-GCM ciphertext of the DEK wrapped by `argon2id(password, contentDekPasswordSalt, params)`.
     - `contentDekRecoveryEnc String`, `contentDekRecoveryIv String`, `contentDekRecoveryAuthTag String`, `contentDekRecoverySalt String` — ciphertext of the same DEK wrapped by `argon2id(recoveryCode, contentDekRecoverySalt, params)`. Two independent salts (not shared) so compromise of one does not accelerate attack on the other.
@@ -231,22 +231,22 @@
     - argon2id parameters imported from a single config module shared with [AU14]'s password-hash parameters.
   - verify: `cd backend && npm run test:backend -- --run tests/services/content-crypto.service.test.ts`
 
-- [ ] **[E4]** Encrypt `Story` narrative fields. Schema: add `titleCiphertext/Iv/AuthTag`, `synopsisCiphertext/Iv/AuthTag`, `worldNotesCiphertext/Iv/AuthTag`, `systemPromptCiphertext/Iv/AuthTag`. Keep plaintext `title`, `synopsis`, `worldNotes`, `systemPrompt` temporarily for dual-write during rollout (dropped in [E11]). `genre`, `targetWords`, timestamps, `userId` remain plaintext.
+- [x] **[E4]** Encrypt `Story` narrative fields. Schema: add `titleCiphertext/Iv/AuthTag`, `synopsisCiphertext/Iv/AuthTag`, `worldNotesCiphertext/Iv/AuthTag`, `systemPromptCiphertext/Iv/AuthTag`. Keep plaintext `title`, `synopsis`, `worldNotes`, `systemPrompt` temporarily for dual-write during rollout (dropped in [E11]). `genre`, `targetWords`, timestamps, `userId` remain plaintext.
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/story-encrypted.test.ts`
 
-- [ ] **[E5]** Encrypt `Chapter` narrative fields + **drop the plaintext `content` mirror** from [D4]/[D10]. Schema: add `titleCiphertext/Iv/AuthTag` and `bodyCiphertext/Iv/AuthTag` (ciphertext of the serialised TipTap JSON tree). Keep `bodyJson` and `content` plaintext during dual-write; both dropped in [E11]. `wordCount` stays plaintext (derived from the tree at save time, before encryption). `orderIndex`, `status`, `storyId`, timestamps remain plaintext. **Search/export features that rely on `content` must be reworked to decrypt on demand** ([B10] updated accordingly).
+- [x] **[E5]** Encrypt `Chapter` narrative fields + **drop the plaintext `content` mirror** from [D4]/[D10]. Schema: add `titleCiphertext/Iv/AuthTag` and `bodyCiphertext/Iv/AuthTag` (ciphertext of the serialised TipTap JSON tree). Keep `bodyJson` and `content` plaintext during dual-write; both dropped in [E11]. `wordCount` stays plaintext (derived from the tree at save time, before encryption). `orderIndex`, `status`, `storyId`, timestamps remain plaintext. **Search/export features that rely on `content` must be reworked to decrypt on demand** ([B10] updated accordingly).
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/chapter-encrypted.test.ts`
 
-- [ ] **[E6]** Encrypt `Character` narrative fields. Schema: add `_Ciphertext/_Iv/_AuthTag` triples for `name`, `role`, `appearance`, `voice`, `arc`, `age`, `personality`, `backstory`, `notes`, `physicalDescription`. `color`, `initial`, `storyId`, timestamps remain plaintext (UI-only hints + structural fields).
+- [x] **[E6]** Encrypt `Character` narrative fields. Schema: add `_Ciphertext/_Iv/_AuthTag` triples for `name`, `role`, `appearance`, `voice`, `arc`, `age`, `personality`, `backstory`, `notes`, `physicalDescription`. `color`, `initial`, `storyId`, timestamps remain plaintext (UI-only hints + structural fields).
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/character-encrypted.test.ts`
 
-- [ ] **[E7]** Encrypt `OutlineItem` narrative fields. Schema: add `titleCiphertext/Iv/AuthTag` and `subCiphertext/Iv/AuthTag`. `order`, `status`, `storyId`, timestamps remain plaintext.
+- [x] **[E7]** Encrypt `OutlineItem` narrative fields. Schema: add `titleCiphertext/Iv/AuthTag` and `subCiphertext/Iv/AuthTag`. `order`, `status`, `storyId`, timestamps remain plaintext.
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/outline-encrypted.test.ts`
 
-- [ ] **[E8]** Encrypt `Chat` + `Message`. `Chat.title` → ciphertext triple. `Message.contentJson` + `Message.attachmentJson` → ciphertext triples (serialised JSON encrypted as a single blob per column). `role`, `model`, `tokens`, `latencyMs`, timestamps remain plaintext — needed for the chat header meta row + regeneration flows.
+- [x] **[E8]** Encrypt `Chat` + `Message`. `Chat.title` → ciphertext triple. `Message.contentJson` + `Message.attachmentJson` → ciphertext triples (serialised JSON encrypted as a single blob per column). `role`, `model`, `tokens`, `latencyMs`, timestamps remain plaintext — needed for the chat header meta row + regeneration flows.
   - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/chat-message-encrypted.test.ts`
 
-- [ ] **[E9]** Repository layer — transparent encrypt-on-write / decrypt-on-read. `src/repos/story.repo.ts`, `chapter.repo.ts`, `character.repo.ts`, `outline.repo.ts`, `chat.repo.ts`, `message.repo.ts` wrap Prisma. Controllers and services call repos, never Prisma directly for these entities. Repos resolve `userId` from the request context and use [E3]'s service. No controller touches ciphertext. Prompt builder ([V3]) reads via these repos.
+- [x] **[E9]** Repository layer — transparent encrypt-on-write / decrypt-on-read. `src/repos/story.repo.ts`, `chapter.repo.ts`, `character.repo.ts`, `outline.repo.ts`, `chat.repo.ts`, `message.repo.ts` wrap Prisma. Controllers and services call repos, never Prisma directly for these entities. Repos resolve `userId` from the request context and use [E3]'s service. No controller touches ciphertext. Prompt builder ([V3]) reads via these repos.
   - verify: `cd backend && npm run test:backend -- --run tests/repos/`
 
 - [ ] **[E10]** Backfill migration: encrypt all existing plaintext rows for every user via the repo layer. Script: `backend/prisma/scripts/encrypt-backfill.ts`. Idempotent (safe to re-run; skips rows whose ciphertext columns are non-null). Runs inside a transaction per user. Logs counts, no content.

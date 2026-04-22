@@ -22,11 +22,40 @@ model User {
   veniceApiKeyIv        String?
   veniceApiKeyAuthTag   String?
   veniceEndpoint        String?
+  // Envelope-encryption wrap columns ([E3]). Both wraps protect the SAME
+  // 32-byte random DEK. Nullable to permit a migration window where users
+  // predate [E3] — their wraps are populated on first login after deploy,
+  // when the password is available. See docs/encryption.md.
+  contentDekPasswordEnc     String?
+  contentDekPasswordIv      String?
+  contentDekPasswordAuthTag String?
+  contentDekPasswordSalt    String?
+  contentDekRecoveryEnc     String?
+  contentDekRecoveryIv      String?
+  contentDekRecoveryAuthTag String?
+  contentDekRecoverySalt    String?
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
 
   stories       Story[]
   refreshTokens RefreshToken[]
+  sessions      Session[]
+}
+
+// Session rows for Option B DEK-survival (see docs/encryption.md). The DEK
+// itself is NOT stored here — only the in-process map holds it. The row
+// exists so a cold replica or restart can detect "session expired" and force
+// re-authentication instead of silently 500-ing.
+model Session {
+  id        String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model Story {
@@ -37,6 +66,21 @@ model Story {
   worldNotes   String?
   targetWords  Int?
   systemPrompt String?
+  // [E4] ciphertext triples. Populated by the repo layer ([E9]) on write.
+  // Plaintext columns above stay during the dual-write window and are dropped
+  // in [E11]. `genre`, `targetWords`, `userId`, timestamps remain plaintext.
+  titleCiphertext         String?
+  titleIv                 String?
+  titleAuthTag            String?
+  synopsisCiphertext      String?
+  synopsisIv              String?
+  synopsisAuthTag         String?
+  worldNotesCiphertext    String?
+  worldNotesIv            String?
+  worldNotesAuthTag       String?
+  systemPromptCiphertext  String?
+  systemPromptIv          String?
+  systemPromptAuthTag     String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -58,6 +102,17 @@ model Chapter {
   status      String   @default("draft")
   orderIndex  Int
   wordCount   Int      @default(0)
+  // [E5] ciphertext triples. `bodyCiphertext` encodes the serialised TipTap
+  // JSON tree. `wordCount` is derived from the tree at save time (before
+  // encryption) so UI progress calcs keep working without decryption.
+  // Plaintext `content` + `bodyJson` remain during the dual-write window
+  // and are dropped in [E11].
+  titleCiphertext String?
+  titleIv         String?
+  titleAuthTag    String?
+  bodyCiphertext  String?
+  bodyIv          String?
+  bodyAuthTag     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -83,6 +138,38 @@ model Character {
   personality         String?
   backstory           String?
   notes               String?
+  // [E6] ciphertext triples for every narrative field. `color`, `initial`,
+  // `storyId`, timestamps remain plaintext (UI hints + structural fields).
+  nameCiphertext                String?
+  nameIv                        String?
+  nameAuthTag                   String?
+  roleCiphertext                String?
+  roleIv                        String?
+  roleAuthTag                   String?
+  ageCiphertext                 String?
+  ageIv                         String?
+  ageAuthTag                    String?
+  appearanceCiphertext          String?
+  appearanceIv                  String?
+  appearanceAuthTag             String?
+  voiceCiphertext               String?
+  voiceIv                       String?
+  voiceAuthTag                  String?
+  arcCiphertext                 String?
+  arcIv                         String?
+  arcAuthTag                    String?
+  physicalDescriptionCiphertext String?
+  physicalDescriptionIv         String?
+  physicalDescriptionAuthTag    String?
+  personalityCiphertext         String?
+  personalityIv                 String?
+  personalityAuthTag            String?
+  backstoryCiphertext           String?
+  backstoryIv                   String?
+  backstoryAuthTag              String?
+  notesCiphertext               String?
+  notesIv                       String?
+  notesAuthTag                  String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
@@ -98,6 +185,15 @@ model OutlineItem {
   title     String
   sub       String?
   status    String
+  // [E7] ciphertext triples. `order`, `status`, `storyId`, timestamps stay
+  // plaintext so Postgres can sort/filter and the UI can render status chips
+  // without decryption.
+  titleCiphertext String?
+  titleIv         String?
+  titleAuthTag    String?
+  subCiphertext   String?
+  subIv           String?
+  subAuthTag      String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -111,6 +207,11 @@ model OutlineItem {
 model Chat {
   id        String   @id @default(cuid())
   title     String?
+  // [E8] ciphertext triple for the chat title. `chapterId` + timestamps
+  // remain plaintext (FK + timeline ordering).
+  titleCiphertext String?
+  titleIv         String?
+  titleAuthTag    String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -130,6 +231,15 @@ model Message {
   model          String?
   tokens         Int?
   latencyMs      Int?
+  // [E8] ciphertext triples for the JSON payloads (encrypted as serialised
+  // JSON strings). `role`, `model`, `tokens`, `latencyMs`, timestamps remain
+  // plaintext — needed for the chat header meta row + regeneration flows.
+  contentJsonCiphertext    String?
+  contentJsonIv            String?
+  contentJsonAuthTag       String?
+  attachmentJsonCiphertext String?
+  attachmentJsonIv         String?
+  attachmentJsonAuthTag    String?
   createdAt      DateTime @default(now())
 
   chatId         String
