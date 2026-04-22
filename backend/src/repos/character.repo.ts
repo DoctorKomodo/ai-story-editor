@@ -68,10 +68,9 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
         storyId: input.storyId,
         color: input.color ?? null,
         initial: input.initial ?? null,
-        // Plaintext required column `name` is NOT NULL in the schema. The
-        // writeEncrypted() spread fills it below; the explicit `name:` after
-        // the spread is defensive in case a caller passes `name: ''`.
-        name: input.name,
+        // Post-[E11]: all narrative fields (name, role, age, appearance,
+        // voice, arc, physicalDescription, personality, backstory, notes)
+        // are ciphertext-only. Plaintext siblings were dropped.
         ...encryptedDataFrom(req, input),
       },
     });

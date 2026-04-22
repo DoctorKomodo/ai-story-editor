@@ -43,11 +43,9 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
         userId,
         genre: input.genre ?? null,
         targetWords: input.targetWords ?? null,
+        // Post-[E11]: only the ciphertext triple persists. `title`,
+        // `synopsis`, `worldNotes`, `systemPrompt` are encrypted-only.
         ...encCols,
-        // Prisma requires `title` as non-null on create; writeEncrypted already
-        // placed it into encCols, but its value there is `input.title` — spread
-        // above satisfies the schema.
-        title: input.title,
       },
     });
     return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);

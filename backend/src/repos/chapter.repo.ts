@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { Prisma, type PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeCiphertextOnly, writeEncrypted } from './_narrative';
 
@@ -11,18 +11,17 @@ export interface ChapterCreateInput {
   // Body is stored encrypted as a serialised JSON string. Caller passes the
   // TipTap JSON tree; the repo serialises + encrypts it.
   bodyJson?: unknown;
-  // Plaintext text derived from bodyJson by the caller ([B10]), used only
-  // for the wordCount derivation since we can't count over ciphertext.
-  content?: string;
   status?: string;
   orderIndex: number;
+  // Plaintext integer derived from bodyJson at save time (before encryption)
+  // — we can't count words over ciphertext, so this stays plaintext. See
+  // CLAUDE.md "Chapter.wordCount" note.
   wordCount?: number;
 }
 
 export interface ChapterUpdateInput {
   title?: string;
   bodyJson?: unknown;
-  content?: string;
   status?: string;
   orderIndex?: number;
   wordCount?: number;
@@ -55,17 +54,10 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         orderIndex: input.orderIndex,
         status: input.status ?? 'draft',
         wordCount: input.wordCount ?? 0,
-        // Plaintext dual-writes during rollout; dropped in [E11].
-        title: input.title,
-        content: input.content ?? '',
-        bodyJson:
-          input.bodyJson === undefined
-            ? Prisma.DbNull
-            : (input.bodyJson as Prisma.InputJsonValue),
+        // Post-[E11]: narrative content is ciphertext-only. `title` uses the
+        // standard triple; `body` is the serialised TipTap JSON tree
+        // encrypted into `bodyCiphertext/Iv/AuthTag` (no plaintext sibling).
         ...writeEncrypted(req, 'title', input.title),
-        // body plaintext lives in bodyJson + content (dropped in [E11]); the
-        // ciphertext triple is bodyCiphertext/Iv/AuthTag with no plain `body`
-        // column in the schema.
         ...writeCiphertextOnly(req, 'body', bodyPlaintext),
       },
     });
@@ -98,11 +90,12 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       Object.assign(data, writeEncrypted(req, 'title', input.title));
     }
     if (input.bodyJson !== undefined) {
+      // Post-[E11]: bodyJson exists as plaintext only on the wire — we
+      // serialise + encrypt into `bodyCiphertext` and never persist the
+      // plaintext tree.
       const plaintext = JSON.stringify(input.bodyJson);
       Object.assign(data, writeCiphertextOnly(req, 'body', plaintext));
-      data.bodyJson = input.bodyJson as Prisma.InputJsonValue;
     }
-    if (input.content !== undefined) data.content = input.content;
     if (input.status !== undefined) data.status = input.status;
     if (input.orderIndex !== undefined) data.orderIndex = input.orderIndex;
     if (input.wordCount !== undefined) data.wordCount = input.wordCount;
@@ -135,7 +128,8 @@ function shape(row: unknown, req: Request) {
     try {
       projected.body = JSON.parse(projected.body);
     } catch {
-      // Non-JSON plaintext from the pre-[E10] rollout window — leave as-is.
+      // Non-JSON plaintext — shouldn't happen post-[E11]; leave as string
+      // so the caller can see something went wrong rather than crash.
     }
   }
   return projected;

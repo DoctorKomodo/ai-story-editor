@@ -1,5 +1,5 @@
 import type { Request } from 'express';
-import { Prisma, type PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeCiphertextOnly } from './_narrative';
 
@@ -48,16 +48,9 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
         model: input.model ?? null,
         tokens: input.tokens ?? null,
         latencyMs: input.latencyMs ?? null,
-        // Plaintext dual-write (dropped in [E11]).
-        contentJson: input.contentJson as Prisma.InputJsonValue,
-        attachmentJson:
-          input.attachmentJson === undefined
-            ? Prisma.DbNull
-            : (input.attachmentJson as Prisma.InputJsonValue),
-        // Plain JSON columns are set above; the ciphertext triple stores a
-        // serialised + encrypted copy. writeEncrypted would emit a `contentJson`
-        // key too which conflicts with the Prisma Json type — use the variant
-        // that emits only the ciphertext triple.
+        // Post-[E11]: JSON payloads live only in the ciphertext triples —
+        // serialised + encrypted. Plaintext `contentJson` / `attachmentJson`
+        // columns were dropped.
         ...writeCiphertextOnly(req, 'contentJson', serialiseJsonField(input.contentJson)),
         ...writeCiphertextOnly(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
       },
@@ -97,7 +90,8 @@ function shape(row: unknown, req: Request) {
       try {
         projected[f] = JSON.parse(v);
       } catch {
-        // Pre-encryption plaintext from legacy rows — leave as string.
+        // Non-JSON plaintext after decryption — shouldn't happen post-[E11];
+        // leave as string so callers can see something went wrong.
       }
     }
   }

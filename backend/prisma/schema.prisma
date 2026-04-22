@@ -60,15 +60,12 @@ model Session {
 
 model Story {
   id           String        @id @default(cuid())
-  title        String
-  synopsis     String?
   genre        String?
-  worldNotes   String?
   targetWords  Int?
-  systemPrompt String?
-  // [E4] ciphertext triples. Populated by the repo layer ([E9]) on write.
-  // Plaintext columns above stay during the dual-write window and are dropped
-  // in [E11]. `genre`, `targetWords`, `userId`, timestamps remain plaintext.
+  // [E4] ciphertext triples — now the SOLE source of truth for narrative
+  // fields (title, synopsis, worldNotes, systemPrompt). Populated by the repo
+  // layer ([E9]) on write. Plaintext siblings were dropped in [E11].
+  // `genre`, `targetWords`, `userId`, timestamps remain plaintext.
   titleCiphertext         String?
   titleIv                 String?
   titleAuthTag            String?
@@ -96,17 +93,14 @@ model Story {
 
 model Chapter {
   id          String   @id @default(cuid())
-  title       String
-  content     String   @default("")
-  bodyJson    Json?
   status      String   @default("draft")
   orderIndex  Int
   wordCount   Int      @default(0)
-  // [E5] ciphertext triples. `bodyCiphertext` encodes the serialised TipTap
-  // JSON tree. `wordCount` is derived from the tree at save time (before
-  // encryption) so UI progress calcs keep working without decryption.
-  // Plaintext `content` + `bodyJson` remain during the dual-write window
-  // and are dropped in [E11].
+  // [E5] ciphertext triples — now the SOLE source of truth for narrative
+  // fields. `bodyCiphertext` encodes the serialised TipTap JSON tree.
+  // `wordCount` is derived from the tree at save time (before encryption) so
+  // UI progress calcs keep working without decryption. Plaintext `title`,
+  // `content`, `bodyJson` were dropped in [E11].
   titleCiphertext String?
   titleIv         String?
   titleAuthTag    String?
@@ -126,20 +120,12 @@ model Chapter {
 
 model Character {
   id                  String   @id @default(cuid())
-  name                String
-  role                String?
-  age                 String?
-  appearance          String?
-  voice               String?
-  arc                 String?
   initial             String?
   color               String?
-  physicalDescription String?
-  personality         String?
-  backstory           String?
-  notes               String?
-  // [E6] ciphertext triples for every narrative field. `color`, `initial`,
-  // `storyId`, timestamps remain plaintext (UI hints + structural fields).
+  // [E6] ciphertext triples for every narrative field — now the SOLE source
+  // of truth. `color`, `initial`, `storyId`, timestamps remain plaintext (UI
+  // hints + structural fields). Plaintext narrative siblings were dropped in
+  // [E11].
   nameCiphertext                String?
   nameIv                        String?
   nameAuthTag                   String?
@@ -182,12 +168,11 @@ model Character {
 model OutlineItem {
   id        String   @id @default(cuid())
   order     Int
-  title     String
-  sub       String?
   status    String
-  // [E7] ciphertext triples. `order`, `status`, `storyId`, timestamps stay
+  // [E7] ciphertext triples — now the SOLE source of truth for narrative
+  // fields (title, sub). `order`, `status`, `storyId`, timestamps stay
   // plaintext so Postgres can sort/filter and the UI can render status chips
-  // without decryption.
+  // without decryption. Plaintext narrative siblings were dropped in [E11].
   titleCiphertext String?
   titleIv         String?
   titleAuthTag    String?
@@ -206,9 +191,9 @@ model OutlineItem {
 
 model Chat {
   id        String   @id @default(cuid())
-  title     String?
-  // [E8] ciphertext triple for the chat title. `chapterId` + timestamps
-  // remain plaintext (FK + timeline ordering).
+  // [E8] ciphertext triple for the chat title — now the SOLE source of truth.
+  // `chapterId` + timestamps remain plaintext (FK + timeline ordering).
+  // Plaintext `title` was dropped in [E11].
   titleCiphertext String?
   titleIv         String?
   titleAuthTag    String?
@@ -226,14 +211,14 @@ model Chat {
 model Message {
   id             String   @id @default(cuid())
   role           String
-  contentJson    Json
-  attachmentJson Json?
   model          String?
   tokens         Int?
   latencyMs      Int?
   // [E8] ciphertext triples for the JSON payloads (encrypted as serialised
-  // JSON strings). `role`, `model`, `tokens`, `latencyMs`, timestamps remain
-  // plaintext — needed for the chat header meta row + regeneration flows.
+  // JSON strings) — now the SOLE source of truth. `role`, `model`, `tokens`,
+  // `latencyMs`, timestamps remain plaintext — needed for the chat header
+  // meta row + regeneration flows. Plaintext `contentJson` + `attachmentJson`
+  // were dropped in [E11].
   contentJsonCiphertext    String?
   contentJsonIv            String?
   contentJsonAuthTag       String?
