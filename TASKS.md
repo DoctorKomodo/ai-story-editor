@@ -614,3 +614,6 @@
 
 - [ ] **[X9]** Typewriter mode + Focus paragraph rendering (Settings → Writing toggles from [F45]): typewriter keeps active line vertically centred via padding manipulation; focus paragraph dims all but the current paragraph via an `opacity: .35` rule controlled by `data-focus-active` on the prose container.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/FocusParagraph.test.tsx`
+
+- [ ] **[X10]** Migration-handling revisit (pre-deployment: no legacy rows exist, so migration branches in the core path were removed or never added). When real users exist, re-examine and decide: (a) `login()` lazy-wrap generation for pre-[E3] users (`auth.service.ts`); (b) `verifyPassword` bcrypt legacy branch + `login()` `needsRehash` silent upgrade from [AU14]; (c) optional `sessionId` on access/refresh token payloads (pre-[E3] tokens); (d) `readEncrypted` plaintext fallback in `repos/_narrative.ts` during the [E10]→[E11] rollout window; (e) `message.repo` JSON-parse legacy-string fallback. If a code path has no real legacy population to serve, delete it; otherwise document the exact migration window it covers. Only meaningful after the core feature set ships.
+  - verify: (manual review — no automated verify)

@@ -14,7 +14,6 @@ import {
   unwrapDekWithRecoveryCode,
   wrapDek,
   type UserDekColumns,
-  type WrapFields,
 } from './content-crypto.service';
 import {
   closeSession,
@@ -565,26 +564,8 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     const { ok } = await verifyPassword(user.passwordHash, input.oldPassword);
     if (!ok) throw new InvalidCredentialsError();
 
-    // Step 2: obtain the DEK. Post-E3 users unwrap under the OLD password.
-    // Pre-E3 users with no password wrap get a freshly-generated DEK — we
-    // also produce a new recovery wrap for them, persisted atomically with
-    // the password rotation below. No partial-write window: either the user
-    // emerges with both wraps set under the new password, or the DB rolls
-    // back and the row stays exactly as it was.
-    let dek: Buffer;
-    let newRecoveryWrap: WrapFields | null = null;
-    if (user.contentDekPasswordEnc) {
-      dek = await unwrapDekWithPassword(user, input.oldPassword);
-    } else {
-      const generated = await generateDekAndWraps(input.oldPassword);
-      dek = generated.dek;
-      newRecoveryWrap = generated.recoveryWrap;
-    }
+    const dek = await unwrapDekWithPassword(user, input.oldPassword);
 
-    // Step 3-5: hash + wrap under the new password, persist in a single
-    // transaction alongside refresh-token + session deletion so any other
-    // active client's next request fails auth immediately and no row is
-    // ever left in a partial state.
     const [newHash, newWrap] = await Promise.all([
       hashPassword(input.newPassword),
       wrapDek(dek, input.newPassword),
@@ -599,14 +580,6 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
           contentDekPasswordIv: newWrap.iv,
           contentDekPasswordAuthTag: newWrap.authTag,
           contentDekPasswordSalt: newWrap.salt,
-          ...(newRecoveryWrap
-            ? {
-                contentDekRecoveryEnc: newRecoveryWrap.ciphertext,
-                contentDekRecoveryIv: newRecoveryWrap.iv,
-                contentDekRecoveryAuthTag: newRecoveryWrap.authTag,
-                contentDekRecoverySalt: newRecoveryWrap.salt,
-              }
-            : {}),
         },
       }),
       client.refreshToken.deleteMany({ where: { userId: user.id } }),
@@ -629,8 +602,8 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
   // Username enumeration defence: unknown-user and wrong-code must be
   // indistinguishable. Both paths run unwrapDekWithRecoveryCode exactly once
   // (against a cached dummy wrap on the missing-user branch) and both
-  // branches surface as InvalidCredentialsError to the caller — which the
-  // route maps to the same 401 body as a wrong-password login.
+  // surface as InvalidCredentialsError to the caller — which the route maps
+  // to the same 401 body as a wrong-password login.
   async function resetPassword(input: {
     username: string;
     recoveryCode: string;
@@ -639,20 +612,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     const normalisedUsername = input.username.trim().toLowerCase();
     const user = await client.user.findUnique({ where: { username: normalisedUsername } });
 
-    // Route every negative branch through the same dummy-wrap KDF so all
-    // three failure modes (unknown user / pre-E3 user with no recovery wrap /
-    // known user with wrong code) pay a single argon2id derivation and are
-    // indistinguishable by wall-clock. `requireRecoveryWrap` in
-    // content-crypto throws synchronously on missing columns — if we let
-    // that fire we'd short-circuit the KDF for pre-E3 users and re-open
-    // the enumeration oracle that dummyDekWraps exists to close.
-    const hasRecoveryWrap =
-      user?.contentDekRecoveryEnc &&
-      user?.contentDekRecoveryIv &&
-      user?.contentDekRecoveryAuthTag &&
-      user?.contentDekRecoverySalt;
-
-    if (!user || !hasRecoveryWrap) {
+    if (!user) {
       try {
         await unwrapDekWithRecoveryCode(await getDummyDekWraps(), input.recoveryCode);
       } catch {
@@ -666,8 +626,6 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
       dek = await unwrapDekWithRecoveryCode(user, input.recoveryCode);
     } catch (err) {
       if (err instanceof InvalidRecoveryCodeError) throw new InvalidCredentialsError();
-      // DekWrapMissingError is already excluded above; anything else
-      // arriving here is unexpected and should surface to the error handler.
       throw err;
     }
 

@@ -164,54 +164,17 @@ describe('[AU16] POST /api/auth/reset-password', () => {
     expect(after.titleAuthTag).toBe(story.titleAuthTag);
   });
 
-  it('returns 401 (not 500) for a pre-E3 user whose recovery-wrap columns are null', async () => {
-    // Simulate a legacy user — register normally, then null out the
-    // recovery wrap fields to mimic a row from before [E3] landed.
-    await registerAndCaptureRecovery();
-    await prisma.user.update({
-      where: { username: USERNAME },
-      data: {
-        contentDekRecoveryEnc: null,
-        contentDekRecoveryIv: null,
-        contentDekRecoveryAuthTag: null,
-        contentDekRecoverySalt: null,
-      },
-    });
-
-    const res = await request(app)
-      .post('/api/auth/reset-password')
-      .send({ username: USERNAME, recoveryCode: 'ANY-CODE-AT-ALL', newPassword: NEW_PASSWORD });
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('invalid_credentials');
-  });
-
-  it('timing is within an order of magnitude across unknown-user, pre-E3 user, and wrong-code branches', async () => {
-    // Three populations must be timing-indistinguishable: caller-unknown,
-    // caller-known-but-wrong-code, and caller-known-but-no-recovery-wrap
-    // (pre-E3 legacy row). Distinct usernames per sample keep each call
-    // in a fresh per-username rate-limit bucket — otherwise a 429
+  it('timing is within an order of magnitude across unknown-user and wrong-code branches', async () => {
+    // Two populations must be timing-indistinguishable: caller-unknown and
+    // caller-known-but-wrong-code. Distinct usernames per sample keep each
+    // call in a fresh per-username rate-limit bucket — otherwise a 429
     // short-circuit would measure the limiter instead of the crypto path.
     const samples = 3;
     const knownUsernames: string[] = [];
-    const preE3Usernames: string[] = [];
     for (let i = 0; i < samples + 1; i += 1) {
       const u = `timing-known-${i}`;
       await request(app).post('/api/auth/register').send({ name: 'T', username: u, password: PASSWORD });
       knownUsernames.push(u);
-    }
-    for (let i = 0; i < samples + 1; i += 1) {
-      const u = `timing-legacy-${i}`;
-      await request(app).post('/api/auth/register').send({ name: 'T', username: u, password: PASSWORD });
-      await prisma.user.update({
-        where: { username: u },
-        data: {
-          contentDekRecoveryEnc: null,
-          contentDekRecoveryIv: null,
-          contentDekRecoveryAuthTag: null,
-          contentDekRecoverySalt: null,
-        },
-      });
-      preE3Usernames.push(u);
     }
 
     async function timedCall(username: string): Promise<number> {
@@ -231,26 +194,20 @@ describe('[AU16] POST /api/auth/reset-password', () => {
     // and JIT are all primed.
     await timedCall('timing-unknown-warm');
     await timedCall(knownUsernames[0]);
-    await timedCall(preE3Usernames[0]);
 
     const unknowns: number[] = [];
     const knowns: number[] = [];
-    const preE3: number[] = [];
     for (let i = 0; i < samples; i += 1) {
       unknowns.push(await timedCall(`timing-unknown-${i}`));
       knowns.push(await timedCall(knownUsernames[i + 1]));
-      preE3.push(await timedCall(preE3Usernames[i + 1]));
     }
     const median = (xs: number[]): number => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
     const mU = median(unknowns);
     const mK = median(knowns);
-    const mL = median(preE3);
-    const all = [mU, mK, mL];
-    const ratio = Math.max(...all) / Math.max(1, Math.min(...all));
+    const ratio = Math.max(mU, mK) / Math.max(1, Math.min(mU, mK));
     if (ratio >= 5) {
       console.log('unknowns ms:', unknowns, 'median', mU);
       console.log('knowns   ms:', knowns, 'median', mK);
-      console.log('pre-E3   ms:', preE3, 'median', mL);
     }
     expect(ratio).toBeLessThan(5);
   }, 45_000);
