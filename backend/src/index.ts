@@ -9,6 +9,7 @@ import { NoVeniceKeyError } from './lib/venice';
 import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createVeniceKeyRouter } from './routes/venice-key.routes';
+import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
 // tests/setup.ts, so this runs cleanly there too.
@@ -72,6 +73,9 @@ app.use(
 app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/ai', createAiRouter());
+// [V15] Chat + message routes — two separate router mounts (option A: mergeParams).
+app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
+app.use('/api/chats/:chatId/messages', createChatMessagesRouter());
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });

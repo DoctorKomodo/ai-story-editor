@@ -77,9 +77,16 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     return rows.map((r) => shape(r, req));
   }
 
+  async function countForChat(chatId: string): Promise<number> {
+    const userId = resolveUserId(req);
+    return client.message.count({
+      where: { chatId, chat: { chapter: { story: { userId } } } },
+    });
+  }
+
   // No update / delete: Message is append-only (CLAUDE.md).
 
-  return { create, findById, findManyForChat };
+  return { create, findById, findManyForChat, countForChat };
 }
 
 function shape(row: unknown, req: Request) {

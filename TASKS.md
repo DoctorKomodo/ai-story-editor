@@ -322,10 +322,10 @@
 - [x] **[V14]** Extend AI action set to cover mockup selection-bubble + chat actions: `rewrite`, `describe`, `expand` (inline result card), `continue` (cursor-context ~80-word continuation for ⌥↵), `ask` (routes selection into chat as attachment). Each has a dedicated prompt template. Complements [V12] — do not remove existing actions.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.mockup-actions.test.ts`
 
-- [ ] **[V15]** Chat persistence: `POST /api/chapters/:chapterId/chats` creates a chat; `GET /api/chapters/:chapterId/chats` lists; `POST /api/chats/:chatId/messages` appends a user message, streams an assistant reply via Venice (SSE passthrough), persists both messages with `tokens` + `latencyMs` captured from the Venice response.
+- [x] **[V15]** Chat persistence: `POST /api/chapters/:chapterId/chats` creates a chat; `GET /api/chapters/:chapterId/chats` lists; `POST /api/chats/:chatId/messages` appends a user message, streams an assistant reply via Venice (SSE passthrough), persists both messages with `tokens` + `latencyMs` captured from the Venice response.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/chat-persistence.test.ts`
 
-- [ ] **[V16]** Ask-AI attachment payload: `POST /api/chats/:chatId/messages` accepts optional `{ attachment: { selectionText, chapterId } }`. Stored as `attachmentJson` on the user message. Prompt builder prepends attachment text as additional user-role context when present.
+- [x] **[V16]** Ask-AI attachment payload: `POST /api/chats/:chatId/messages` accepts optional `{ attachment: { selectionText, chapterId } }`. Stored as `attachmentJson` on the user message. Prompt builder prepends attachment text as additional user-role context when present.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/ask-ai-attachment.test.ts`
 
 - [x] **[V17]** Per-user Venice client (supersedes the singleton in [A4]): `getVeniceClient(userId)` reads the user's encrypted key + endpoint, decrypts via [AU11], constructs a per-call `OpenAI` instance bound to that key + endpoint. Never cached across users. If the user has no stored key, throws `NoVeniceKeyError` (mapped to 409 `{ error: "venice_key_required" }` with a hint pointing at `/settings#venice`). Replaces all call sites across [V1]–[V12], [V15].
