@@ -13,6 +13,7 @@ import { createVeniceKeyRouter } from './routes/venice-key.routes';
 import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
+import { createOutlineRouter } from './routes/outline.routes';
 import { createStoriesRouter } from './routes/stories.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
@@ -85,6 +86,8 @@ app.use('/api/stories', createStoriesRouter());
 app.use('/api/stories/:storyId/chapters', createChaptersRouter());
 // [B5] Character CRUD nested under a parent story.
 app.use('/api/stories/:storyId/characters', createCharactersRouter());
+// [B8] Outline CRUD + reorder nested under a parent story.
+app.use('/api/stories/:storyId/outline', createOutlineRouter());
 // [V15] Chat + message routes — two separate router mounts (option A: mergeParams).
 app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
 app.use('/api/chats/:chatId/messages', createChatMessagesRouter());
