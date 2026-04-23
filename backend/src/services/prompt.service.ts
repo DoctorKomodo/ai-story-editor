@@ -2,6 +2,13 @@
 // by the route layer so this module stays unit-testable without HTTP or Venice
 // client dependencies.
 
+export class PromptValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PromptValidationError';
+  }
+}
+
 export type PromptAction =
   | 'continue'
   | 'rephrase'
@@ -84,7 +91,7 @@ function buildTaskBlock(input: BuildPromptInput): string {
     case 'ask': {
       // ask routes selection into chat as an attachment (V16). freeformInstruction is required.
       if (!input.freeformInstruction) {
-        throw new Error('freeformInstruction is required for action "ask"');
+        throw new PromptValidationError('freeformInstruction is required for action "ask"');
       }
       const attached = input.selectedText ? `\n\nAttached selection: «${input.selectedText}»` : '';
       return `User question: ${input.freeformInstruction}${attached}`;
