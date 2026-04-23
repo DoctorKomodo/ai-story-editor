@@ -200,21 +200,43 @@ export function createAiRouter() {
         res.flushHeaders();
       }
 
+      // Headers are now committed — all errors from this point must be written
+      // as terminal SSE frames; Express's global error handler can no longer
+      // send an HTTP error response.
+
       // Stop iteration cleanly when the client disconnects mid-stream.
       let clientClosed = false;
       req.on('close', () => {
         clientClosed = true;
+        // Best-effort abort of the Venice stream so we don't leak an open
+        // connection upstream.
+        try {
+          (stream as unknown as { controller?: { abort?: () => void } }).controller?.abort?.();
+        } catch {
+          // Ignore — the stream may already be closed.
+        }
       });
 
-      for await (const chunk of stream) {
-        if (clientClosed) break;
-        res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-      }
+      try {
+        for await (const chunk of stream) {
+          if (clientClosed) break;
+          res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+        }
 
-      if (!clientClosed) {
-        res.write('data: [DONE]\n\n');
+        if (!clientClosed) {
+          res.write('data: [DONE]\n\n');
+        }
+      } catch {
+        // Stream errored after headers were flushed — write a terminal error
+        // frame so the client knows something went wrong, then close cleanly.
+        // Do NOT call next(err): headers are already committed.
+        if (!clientClosed) {
+          res.write(`data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`);
+          res.write('data: [DONE]\n\n');
+        }
+      } finally {
+        res.end();
       }
-      res.end();
     } catch (err) {
       next(err);
     }

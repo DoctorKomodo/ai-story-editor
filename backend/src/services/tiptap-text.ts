@@ -19,7 +19,8 @@ const BLOCK_TYPES = new Set([
   'listItem',
   'codeBlock',
   'horizontalRule',
-  'hardBreak',
+  // hardBreak is an inline element in TipTap — not a block node.
+  // It is handled by the text leaf path and produces a single '\n' naturally.
 ]);
 
 function isBlockNode(node: TipTapNode): boolean {
@@ -32,24 +33,48 @@ function extractText(node: TipTapNode): string {
     return node.text;
   }
 
+  // hardBreak is an inline element — produces a single newline.
+  if (node.type === 'hardBreak') {
+    return '\n';
+  }
+
   if (!Array.isArray(node.content) || node.content.length === 0) {
     return '';
   }
 
-  // Collect children
-  const parts: string[] = [];
-  for (const child of node.content) {
-    const text = extractText(child);
-    if (text.length > 0) {
-      parts.push(text);
-    }
+  if (!isBlockNode(node)) {
+    // Inline container (e.g. a marks span) — concatenate children directly.
+    return node.content.map(extractText).join('');
   }
 
-  // Block nodes separate their children with double newlines; inline nodes join directly.
-  if (isBlockNode(node)) {
-    return parts.join('\n\n');
+  // Block container: separate block children with '\n\n' while concatenating
+  // inline children (text, hardBreak, marks) directly onto their adjacent segment.
+  // This avoids double-newline separation around inline nodes like hardBreak.
+  const segments: string[] = [];
+  let currentInline = '';
+
+  for (const child of node.content) {
+    if (isBlockNode(child)) {
+      // Flush any inline accumulation before this block child.
+      if (currentInline.length > 0) {
+        segments.push(currentInline);
+        currentInline = '';
+      }
+      const blockText = extractText(child);
+      if (blockText.length > 0) {
+        segments.push(blockText);
+      }
+    } else {
+      // Inline child (text, hardBreak, …) — accumulate directly.
+      currentInline += extractText(child);
+    }
   }
-  return parts.join('');
+  // Flush trailing inline content.
+  if (currentInline.length > 0) {
+    segments.push(currentInline);
+  }
+
+  return segments.join('\n\n');
 }
 
 /**

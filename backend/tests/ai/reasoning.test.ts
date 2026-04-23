@@ -211,7 +211,7 @@ describe('POST /api/ai/complete — reasoning model [V6]', () => {
 
     const requestBody = await callComplete(accessToken, storyId, chapterId, PLAIN_MODEL_ID, fetchSpy);
     const vp = requestBody.venice_parameters as Record<string, unknown>;
-    // Must be absent or explicitly not true
-    expect(vp.strip_thinking_response).not.toBe(true);
+    // Must be absent — setting it to false would still be wrong.
+    expect(vp.strip_thinking_response).toBeUndefined();
   });
 });

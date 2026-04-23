@@ -308,6 +308,7 @@ describe('POST /api/ai/complete [V5]', () => {
         modelId: BASE_MODEL_ID,
       });
     expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('not_found');
   });
 
   it('returns 404 when story is not owned by the caller', async () => {
@@ -327,6 +328,7 @@ describe('POST /api/ai/complete [V5]', () => {
         modelId: BASE_MODEL_ID,
       });
     expect(res.status).toBe(404);
+    expect(res.body.error.code).toBe('not_found');
   });
 
   it('streams SSE with at least one data chunk and a [DONE] terminator', async () => {
@@ -355,7 +357,9 @@ describe('POST /api/ai/complete [V5]', () => {
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/text\/event-stream/);
     const body = res.body as string;
-    expect(body).toContain('data: ');
+    // Assert that the actual chunk content flows through — not just any SSE frame.
+    expect(body).toContain('"Hello"');
+    expect(body).toContain('" world"');
     expect(body).toContain('data: [DONE]');
   });
 
