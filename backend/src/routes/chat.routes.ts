@@ -23,6 +23,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
+import { badRequestFromZod } from '../lib/bad-request';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
 
@@ -30,21 +31,26 @@ type MessageRole = 'user' | 'assistant' | 'system';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
-const CreateChatBody = z.object({
-  title: z.string().optional(),
-});
+const CreateChatBody = z
+  .object({
+    title: z.string().optional(),
+  })
+  .strict();
 
-const PostMessageBody = z.object({
-  content: z.string().min(1),
-  modelId: z.string().min(1),
-  // [V16] Optional attachment — selection from the current chapter.
-  attachment: z
-    .object({
-      selectionText: z.string().min(1),
-      chapterId: z.string().min(1),
-    })
-    .optional(),
-});
+const PostMessageBody = z
+  .object({
+    content: z.string().min(1),
+    modelId: z.string().min(1),
+    // [V16] Optional attachment — selection from the current chapter.
+    attachment: z
+      .object({
+        selectionText: z.string().min(1),
+        chapterId: z.string().min(1),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,9 +87,7 @@ export function createChapterChatsRouter() {
 
     const parsed = CreateChatBody.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: { message: 'Invalid request', code: 'invalid_request', details: parsed.error.flatten() } });
+      badRequestFromZod(res, parsed.error);
       return;
     }
     const body = parsed.data;
@@ -152,9 +156,7 @@ export function createChatMessagesRouter() {
 
     const parsed = PostMessageBody.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: { message: 'Invalid request', code: 'invalid_request', details: parsed.error.flatten() } });
+      badRequestFromZod(res, parsed.error);
       return;
     }
     const body = parsed.data;
