@@ -106,11 +106,24 @@ export function createVeniceModelsService(deps: VeniceModelsServiceDeps = {}) {
     throw new UnknownModelError(modelId);
   }
 
+  // [V6] Find a model by id from the in-memory cache. Returns null when the
+  // model isn't present. fetchModels() must have been called first (which
+  // /api/ai/complete always does) so the cache is populated; a null return
+  // means "not in Venice's list for this user", not "cache is empty".
+  function findModel(modelId: string): ModelInfo | null {
+    for (const entry of byUser.values()) {
+      for (const m of entry.models) {
+        if (m.id === modelId) return m;
+      }
+    }
+    return null;
+  }
+
   function resetCache(): void {
     byUser.clear();
   }
 
-  return { fetchModels, getModelContextLength, resetCache };
+  return { fetchModels, getModelContextLength, findModel, resetCache };
 }
 
 export const veniceModelsService = createVeniceModelsService();
