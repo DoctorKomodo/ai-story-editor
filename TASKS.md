@@ -273,10 +273,10 @@
 
 > Venice is OpenAI API-compatible. Use the `openai` npm package with Venice's base URL. Venice-specific features are passed via the `venice_parameters` object.
 
-- [ ] **[V1]** `GET /api/ai/models` — calls Venice `GET /v1/models`, filters to text models only, returns each model's `id`, `name`, `context_length`, and capability flags (`supportsReasoning`, `supportsVision`). Cache result in memory for 10 minutes.
+- [x] **[V1]** `GET /api/ai/models` — calls Venice `GET /v1/models`, filters to text models only, returns each model's `id`, `name`, `context_length`, and capability flags (`supportsReasoning`, `supportsVision`). Cache result in memory for 10 minutes.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/models.test.ts`
 
-- [ ] **[V2]** `backend/src/services/venice.models.service.ts` — fetches and caches model list. Exposes `getModelContextLength(modelId): number`. Used by the prompt builder to set dynamic context budgets. No token counts are hardcoded anywhere in the codebase.
+- [x] **[V2]** `backend/src/services/venice.models.service.ts` — fetches and caches model list. Exposes `getModelContextLength(modelId): number`. Used by the prompt builder to set dynamic context budgets. No token counts are hardcoded anywhere in the codebase.
   - verify: `cd backend && npm run test:backend -- --run tests/services/venice.models.service.test.ts`
 
 - [ ] **[V3]** `backend/src/services/prompt.service.ts` — builds prompts given: `action`, `selectedText`, `chapterContent`, `characters[]`, `worldNotes`, `modelContextLength`. Budget: reserve 20% of `modelContextLength` for the response. Use the remainder for prompt content. If budget exceeded, truncate `chapterContent` from the top (oldest content first). Never truncate character context or worldNotes.

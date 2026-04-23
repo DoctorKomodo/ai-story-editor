@@ -6,6 +6,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import { validateEncryptionEnv } from './boot/env-validation';
 import { NoVeniceKeyError } from './lib/venice';
+import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createVeniceKeyRouter } from './routes/venice-key.routes';
 
@@ -70,6 +71,7 @@ app.use(
 
 app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
+app.use('/api/ai', createAiRouter());
 
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok' });
