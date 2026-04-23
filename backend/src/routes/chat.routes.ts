@@ -147,6 +147,35 @@ export function createChatMessagesRouter() {
   const router = Router({ mergeParams: true });
   router.use(requireAuth);
 
+  // [V21] GET /api/chats/:chatId/messages — list messages in the chat (asc).
+  router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+    const { chatId } = req.params;
+    try {
+      // Pre-check via repo to return 404 cleanly for unowned / missing chats;
+      // findManyForChat would otherwise throw a generic Error → 500.
+      const chat = await createChatRepo(req).findById(chatId);
+      if (!chat) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+
+      const rows = await createMessageRepo(req).findManyForChat(chatId);
+      const messages = rows.map((m) => ({
+        id: m.id,
+        role: m.role,
+        contentJson: m.contentJson,
+        attachmentJson: m.attachmentJson ?? null,
+        model: m.model ?? null,
+        tokens: m.tokens ?? null,
+        latencyMs: m.latencyMs ?? null,
+        createdAt: m.createdAt,
+      }));
+      res.status(200).json({ messages });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // TODO: add per-chat rate limiting in a future task (chat rate limit follow-up).
 
   // POST /api/chats/:chatId/messages — append a user message, stream assistant reply.
