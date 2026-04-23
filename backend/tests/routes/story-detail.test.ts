@@ -206,6 +206,12 @@ describe('Story detail routes [B2]', () => {
     expect(getRes.body.story.genre).toBe('drama');
     expect(getRes.body.story.worldNotes).toBe('Unchanged notes');
     expect(getRes.body.story.targetWords).toBe(10000);
+
+    for (const key of Object.keys(patchRes.body.story)) {
+      expect(key.endsWith('Ciphertext')).toBe(false);
+      expect(key.endsWith('Iv')).toBe(false);
+      expect(key.endsWith('AuthTag')).toBe(false);
+    }
   });
 
   it('PATCH /:id clears a nullable field when null is passed', async () => {
@@ -229,6 +235,12 @@ describe('Story detail routes [B2]', () => {
     expect(patchRes.body.story.targetWords).toBeNull();
     // Title should remain untouched.
     expect(patchRes.body.story.title).toBe('Has Synopsis');
+
+    for (const key of Object.keys(patchRes.body.story)) {
+      expect(key.endsWith('Ciphertext')).toBe(false);
+      expect(key.endsWith('Iv')).toBe(false);
+      expect(key.endsWith('AuthTag')).toBe(false);
+    }
   });
 
   // ── DELETE /api/stories/:id ──────────────────────────────────────────────

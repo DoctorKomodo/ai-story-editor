@@ -78,9 +78,10 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
       data,
     });
     if (updated.count === 0) return null;
-    const row = await client.outlineItem.findFirstOrThrow({
+    const row = await client.outlineItem.findFirst({
       where: { id, story: { userId } },
     });
+    if (!row) return null;
     return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 

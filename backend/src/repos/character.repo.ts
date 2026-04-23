@@ -106,9 +106,10 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
       data,
     });
     if (updated.count === 0) return null;
-    const row = await client.character.findFirstOrThrow({
+    const row = await client.character.findFirst({
       where: { id, story: { userId } },
     });
+    if (!row) return null;
     return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 

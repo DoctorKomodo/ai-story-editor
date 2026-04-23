@@ -105,9 +105,10 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       data,
     });
     if (updated.count === 0) return null;
-    const row = await client.chapter.findFirstOrThrow({
+    const row = await client.chapter.findFirst({
       where: { id, story: { userId } },
     });
+    if (!row) return null;
     return shape(row, req);
   }
 

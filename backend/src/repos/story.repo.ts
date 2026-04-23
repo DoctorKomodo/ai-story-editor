@@ -94,7 +94,8 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
       data,
     });
     if (updated.count === 0) return null;
-    const row = await client.story.findFirstOrThrow({ where: { id, userId } });
+    const row = await client.story.findFirst({ where: { id, userId } });
+    if (!row) return null;
     return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 
