@@ -362,7 +362,7 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 - [x] **[B2]** `GET|PATCH|DELETE /api/stories/:id`. All require auth + ownership middleware.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/story-detail.test.ts`
 
-- [ ] **[B3]** Chapters full CRUD under `/api/stories/:storyId/chapters`. POST auto-assigns `orderIndex`. `wordCount` computed and stored on create/update.
+- [x] **[B3]** Chapters full CRUD under `/api/stories/:storyId/chapters`. POST auto-assigns `orderIndex`. `wordCount` computed and stored on create/update.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/chapters.test.ts`
 
 - [ ] **[B4]** `PATCH /api/stories/:storyId/chapters/reorder` — accepts `{ chapters: [{ id, orderIndex }] }`, updates all in a single Prisma transaction.
