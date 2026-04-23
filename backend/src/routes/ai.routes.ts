@@ -10,6 +10,7 @@ import { createStoryRepo } from '../repos/story.repo';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
+import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -69,6 +70,28 @@ export function createAiRouter() {
       const models = await veniceModelsService.fetchModels(req.user!.id);
       res.status(200).json({ models });
     } catch (err) {
+      if (mapVeniceError(err, res, req.user!.id)) return;
+      next(err);
+    }
+  });
+
+  // [V10] GET /api/ai/balance — reads x-venice-balance-usd and x-venice-balance-diem
+  // from Venice response headers via a lightweight models.list() call.
+  // Does NOT use the models service cache (balance must be fresh).
+  // Returns { credits: number | null, diem: number | null }.
+  router.get('/balance', async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const client = await getVeniceClient(req.user!.id);
+      // .withResponse() gives us the raw HTTP response so we can read
+      // balance headers even though the openai SDK doesn't type them.
+      const { response } = await client.models.list().withResponse();
+      const rawUsd = response.headers.get('x-venice-balance-usd');
+      const rawDiem = response.headers.get('x-venice-balance-diem');
+      const credits = rawUsd !== null ? parseFloat(rawUsd) : null;
+      const diem = rawDiem !== null ? parseFloat(rawDiem) : null;
+      res.status(200).json({ credits, diem });
+    } catch (err) {
+      if (mapVeniceError(err, res, req.user!.id)) return;
       next(err);
     }
   });
@@ -182,20 +205,46 @@ export function createAiRouter() {
       const client = await getVeniceClient(userId);
 
       // ── 12. Call Venice with streaming ────────────────────────────────────
-      // `venice_parameters` is not in the openai SDK types; cast at call site.
-      const stream = await client.chat.completions.create({
-        model: body.modelId,
-        messages,
-        stream: true,
-        max_tokens,
-        venice_parameters,
-      } as unknown as Parameters<typeof client.chat.completions.create>[0]);
+      // [V9] Use .withResponse() so we can read rate-limit headers from the
+      // HTTP response before the body streams. The SDK returns headers as soon
+      // as the response status line arrives, before any body bytes.
+      // `venice_parameters` is not in the openai SDK types; cast through
+      // unknown at the call site. Also cast .withResponse() return so TS
+      // treats `data` as AsyncIterable<ChatCompletionChunk> (stream: true
+      // guarantees this at runtime but the overload union obscures it).
+      const streamWithResp = await (
+        client.chat.completions.create({
+          model: body.modelId,
+          messages,
+          stream: true as const,
+          max_tokens,
+          venice_parameters,
+        } as unknown as Parameters<typeof client.chat.completions.create>[0])
+      ).withResponse() as unknown as {
+        data: AsyncIterable<{ choices: Array<{ delta: { content?: string }; finish_reason: string | null }> }>;
+        // Fetch API Response (not Express Response) — use structural type to avoid
+        // the import collision between Express.Response and globalThis.Response.
+        response: { headers: { get(name: string): string | null } };
+      };
+      const { data: stream, response: veniceResponse } = streamWithResp;
 
       // ── 13. Write SSE response ────────────────────────────────────────────
       res.status(200);
       res.setHeader('Content-Type', 'text/event-stream');
       res.setHeader('Cache-Control', 'no-cache, no-transform');
       res.setHeader('Connection', 'keep-alive');
+
+      // [V9] Forward Venice rate-limit headers to the client so the frontend
+      // can display usage. Only set when Venice actually sent them.
+      const remainingRequests = veniceResponse.headers.get('x-ratelimit-remaining-requests');
+      const remainingTokens = veniceResponse.headers.get('x-ratelimit-remaining-tokens');
+      if (remainingRequests !== null) {
+        res.setHeader('x-venice-remaining-requests', remainingRequests);
+      }
+      if (remainingTokens !== null) {
+        res.setHeader('x-venice-remaining-tokens', remainingTokens);
+      }
+
       if (typeof res.flushHeaders === 'function') {
         res.flushHeaders();
       }
@@ -226,18 +275,25 @@ export function createAiRouter() {
         if (!clientClosed) {
           res.write('data: [DONE]\n\n');
         }
-      } catch {
+      } catch (streamErr) {
         // Stream errored after headers were flushed — write a terminal error
         // frame so the client knows something went wrong, then close cleanly.
         // Do NOT call next(err): headers are already committed.
         if (!clientClosed) {
-          res.write(`data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`);
-          res.write('data: [DONE]\n\n');
+          // [V11] Map Venice API errors to structured SSE frames. Falls back to
+          // generic stream_error for unknown errors.
+          const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), userId);
+          if (!handled) {
+            res.write(`data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`);
+            res.write('data: [DONE]\n\n');
+          }
         }
       } finally {
         res.end();
       }
     } catch (err) {
+      // [V11] Map Venice API errors before the SSE headers are flushed.
+      if (mapVeniceError(err, res, userId)) return;
       next(err);
     }
   });

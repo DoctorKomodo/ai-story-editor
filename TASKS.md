@@ -297,13 +297,13 @@
 - [x] **[V8]** Prompt caching: set `venice_parameters.prompt_cache_key` to a deterministic hash of `storyId + modelId` on all `/api/ai/complete` requests. This improves cache hit rates by routing requests with the same story context to the same Venice backend infrastructure. Document in `docs/venice-integration.md`.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/prompt-cache.test.ts`
 
-- [ ] **[V9]** Rate limit header forwarding: after each Venice call, read `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` from Venice response headers. Attach as `x-venice-remaining-requests` and `x-venice-remaining-tokens` on the backend response so the frontend can display usage.
+- [x] **[V9]** Rate limit header forwarding: after each Venice call, read `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` from Venice response headers. Attach as `x-venice-remaining-requests` and `x-venice-remaining-tokens` on the backend response so the frontend can display usage.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/rate-limit-headers.test.ts`
 
-- [ ] **[V10]** `GET /api/ai/balance` (auth required) — reads `x-venice-balance-usd` and `x-venice-balance-diem` from a lightweight Venice API call and returns them. Frontend shows this in the user menu.
+- [x] **[V10]** `GET /api/ai/balance` (auth required) — reads `x-venice-balance-usd` and `x-venice-balance-diem` from a lightweight Venice API call and returns them. Frontend shows this in the user menu.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/balance.test.ts`
 
-- [ ] **[V11]** Venice error handling: map error codes to user-friendly messages. Handle `401` (invalid API key — log server-side, show generic error to user), `429` (rate limited — include reset time in response), `503` (Venice unavailable). Never expose raw Venice errors or stack traces to the frontend.
+- [x] **[V11]** Venice error handling: map error codes to user-friendly messages. Handle `401` (invalid API key — log server-side, show generic error to user), `429` (rate limited — include reset time in response), `503` (Venice unavailable). Never expose raw Venice errors or stack traces to the frontend.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/error-handling.test.ts`
 
 - [ ] **[V12]** AI action system prompts — write and test the system prompt and user prompt template for each action. Each instructs the model to act as a creative writing assistant and return only the content with no preamble:
