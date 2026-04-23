@@ -75,9 +75,10 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
       data,
     });
     if (updated.count === 0) return null;
-    const row = await client.chat.findFirstOrThrow({
+    const row = await client.chat.findFirst({
       where: { id, chapter: { story: { userId } } },
     });
+    if (!row) return null;
     return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 

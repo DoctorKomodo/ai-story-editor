@@ -7,7 +7,7 @@ All endpoints are served from the Express backend at `/api`. Content type is `ap
 ## Conventions
 
 - **Auth** — unless marked "Public", every endpoint requires the auth middleware ([AU5]) and is scoped to `req.user.id`. Protected endpoints expect `Authorization: Bearer <JWT>`. The refresh-token cookie (`refreshToken`, `HttpOnly; SameSite=Lax; Secure` in prod) is only read by `/api/auth/refresh` and `/api/auth/logout`.
-- **Ownership** — every route that references a `:storyId`, `:chapterId`, `:characterId`, `:outlineItemId`, `:chatId`, or `:messageId` passes through the ownership middleware ([AU6]) and returns `403 { error: { message, code: "forbidden" } }` on mismatch.
+- **Ownership** — every route that references a `:storyId`, `:chapterId`, `:characterId`, `:outlineItemId`, `:chatId`, or `:messageId` passes through the ownership middleware ([AU6]) and returns `403 { error: { message, code: "forbidden" } }` on mismatch (unknown id, or id owned by another user). Per-handler path-integrity checks additionally return `404 { error: { message, code: "not_found" } }` when a nested resource belongs to the caller but to a different `:storyId` than the URL specifies (e.g. `GET /api/stories/A/chapters/:chapterId` where the chapter lives under story B).
 - **Validation** — request bodies are Zod-validated ([AU / B series]); invalid payloads return `400 { error: { message, code: "validation_error", issues } }`.
 - **Errors** — global error handler returns `{ error: { message, code } }`. Never exposes stack traces in `NODE_ENV=production` ([B7]). Common codes: `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `venice_key_required`, `venice_key_invalid`, `internal_error`.
 - **Narrative fields** — responses for Story, Chapter, Character, OutlineItem, Chat, Message never include ciphertext siblings (`*Ciphertext`, `*Iv`, `*AuthTag`). The repo layer strips them ([E9]).
@@ -83,7 +83,7 @@ Body: `{ "title": "…", "genre?", "synopsis?", "worldNotes?", "targetWords?", "
 Response `201`: `{ "story": { … } }`.
 
 ### `GET /api/stories/:id` ([B2])
-Response `200`: `{ "story": { … full record …, "chapters": [{ id, title, orderIndex, wordCount, status }], "characters": [{ id, name, role, initial, color }] } }`.
+Response `200`: `{ "story": { … full record … } }` — a flat story record only. Chapters and characters are fetched via their own endpoints (`GET /api/stories/:storyId/chapters`, `GET /api/stories/:storyId/characters`).
 
 ### `PATCH /api/stories/:id` ([B2])
 Body: partial of create shape. Response `200`: `{ "story": { … } }`.
@@ -102,14 +102,14 @@ Response `200`: `{ "wordCount", "targetWords", "percent", "chapters": [{ "id", "
 Response `200`: `{ "chapters": [{ "id", "title", "orderIndex", "wordCount", "status", "updatedAt" }] }` — sorted by `orderIndex`.
 
 ### `POST /api/stories/:storyId/chapters` ([B3])
-Body: `{ "title": "…", "content?": "…", "bodyJson?": { … } }`. Backend auto-assigns `orderIndex` and computes `wordCount`.
+Body: `{ "title": "…", "bodyJson?": { … }, "status?" }`. Backend auto-assigns `orderIndex` and computes `wordCount` from `bodyJson`. (Post-[E5]/[E11] the plaintext `content` column is dropped; only the TipTap `bodyJson` tree is persisted, encrypted. Plaintext is derived on demand for export / AI prompts, never stored.)
 Response `201`: `{ "chapter": { … } }`.
 
 ### `GET /api/stories/:storyId/chapters/:chapterId` ([B3])
-Response `200`: `{ "chapter": { "id", "title", "bodyJson", "content", "status", "orderIndex", "wordCount", "updatedAt" } }`.
+Response `200`: `{ "chapter": { "id", "title", "bodyJson", "status", "orderIndex", "wordCount", "updatedAt" } }`. `bodyJson` is the parsed TipTap document tree (decrypted by the chapter repo).
 
 ### `PATCH /api/stories/:storyId/chapters/:chapterId` ([B3], [B10])
-Body: any subset of `{ "title", "bodyJson", "content", "status" }`. If `bodyJson` is sent, backend derives `content` + `wordCount` via `tipTapJsonToText()`.
+Body: any subset of `{ "title", "bodyJson", "status", "orderIndex" }`. If `bodyJson` is sent, the backend derives `wordCount` from it via `tipTapJsonToText()`.
 Response `200`: `{ "chapter": { … } }`.
 
 ### `DELETE /api/stories/:storyId/chapters/:chapterId` ([B3])
@@ -117,7 +117,7 @@ Response `204`.
 
 ### `PATCH /api/stories/:storyId/chapters/reorder` ([B4])
 Body: `{ "chapters": [{ "id", "orderIndex" }] }` — updated in a single Prisma transaction.
-Response `200`: `{ "chapters": [{ "id", "orderIndex" }] }`.
+Response `204 No Content`. The client re-fetches the list via `GET /api/stories/:storyId/chapters` to pick up the new order.
 
 ---
 
@@ -140,13 +140,13 @@ Standard CRUD. Response `200`/`204`.
 Response `200`: `{ "items": [{ "id", "order", "title", "sub", "status" }] }`.
 
 ### `POST /api/stories/:storyId/outline`
-Body: `{ "title", "sub?", "status": "done" | "current" | "pending" }`. Backend auto-assigns `order`. Response `201`.
+Body: `{ "title", "sub?", "status" }`. `status` is a free-form short string (1–40 chars) — the mockup uses values like `"queued"`, `"active"`, and `"done"` by convention, but the server doesn't pin an enum. Backend auto-assigns `order`. Response `201`.
 
 ### `PATCH|DELETE /api/stories/:storyId/outline/:outlineItemId`
 Standard update/delete.
 
 ### `PATCH /api/stories/:storyId/outline/reorder`
-Body: `{ "items": [{ "id", "order" }] }`. Single transaction. Response `200`: `{ "items": [{ "id", "order" }] }`.
+Body: `{ "items": [{ "id", "order" }] }`. Single transaction. Response `204 No Content`. The client re-fetches via `GET /api/stories/:storyId/outline` to pick up the new order.
 
 ---
 

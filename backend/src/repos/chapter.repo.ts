@@ -42,12 +42,30 @@ async function ensureStoryOwned(
   if (!ok) throw new Error('chapter.repo: story not owned by caller');
 }
 
+/**
+ * Thrown by `reorder` when one or more chapter ids in the payload do not
+ * belong to the target story for the caller. The route maps this to 403 —
+ * we conflate "unknown id" with "id belongs to another story/user" so the
+ * endpoint is not an id-enumeration oracle.
+ */
+export class ChapterNotOwnedError extends Error {
+  constructor(message = 'chapter.repo: one or more chapters not owned by caller under storyId') {
+    super(message);
+    this.name = 'ChapterNotOwnedError';
+  }
+}
+
 export function createChapterRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: ChapterCreateInput) {
     const userId = resolveUserId(req);
     await ensureStoryOwned(client, input.storyId, userId);
 
-    const bodyPlaintext = input.bodyJson === undefined ? null : JSON.stringify(input.bodyJson);
+    // `null` and `undefined` both mean "no body": persist all-null body
+    // triples rather than encrypting the literal string "null".
+    const bodyPlaintext =
+      input.bodyJson === undefined || input.bodyJson === null
+        ? null
+        : JSON.stringify(input.bodyJson);
     const row = await client.chapter.create({
       data: {
         storyId: input.storyId,
@@ -90,10 +108,10 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       Object.assign(data, writeEncrypted(req, 'title', input.title));
     }
     if (input.bodyJson !== undefined) {
-      // Post-[E11]: bodyJson exists as plaintext only on the wire — we
-      // serialise + encrypt into `bodyCiphertext` and never persist the
-      // plaintext tree.
-      const plaintext = JSON.stringify(input.bodyJson);
+      // `null` clears the body (all-null ciphertext triple); an object tree
+      // is serialised + encrypted. The literal string "null" must never land
+      // in ciphertext.
+      const plaintext = input.bodyJson === null ? null : JSON.stringify(input.bodyJson);
       Object.assign(data, writeCiphertextOnly(req, 'body', plaintext));
     }
     if (input.status !== undefined) data.status = input.status;
@@ -105,9 +123,10 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       data,
     });
     if (updated.count === 0) return null;
-    const row = await client.chapter.findFirstOrThrow({
+    const row = await client.chapter.findFirst({
       where: { id, story: { userId } },
     });
+    if (!row) return null;
     return shape(row, req);
   }
 
@@ -117,7 +136,36 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForStory, update, remove };
+  async function reorder(
+    storyId: string,
+    items: Array<{ id: string; orderIndex: number }>,
+  ): Promise<void> {
+    const userId = resolveUserId(req);
+    await ensureStoryOwned(client, storyId, userId);
+
+    const ids = items.map((i) => i.id);
+    const found = await client.chapter.findMany({
+      where: { id: { in: ids }, storyId, story: { userId } },
+      select: { id: true },
+    });
+    if (found.length !== ids.length) {
+      throw new ChapterNotOwnedError();
+    }
+
+    // TODO(B3-deferred): once @@unique([storyId, orderIndex]) lands, this
+    // transaction must use a two-phase swap (negative temp values, then final)
+    // to avoid unique-constraint violations mid-transaction.
+    await client.$transaction(
+      items.map((item) =>
+        client.chapter.update({
+          where: { id: item.id },
+          data: { orderIndex: item.orderIndex },
+        }),
+      ),
+    );
+  }
+
+  return { create, findById, findManyForStory, update, remove, reorder };
 }
 
 function shape(row: unknown, req: Request) {

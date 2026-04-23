@@ -5,11 +5,17 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { validateEncryptionEnv } from './boot/env-validation';
+import { prisma } from './lib/prisma';
 import { NoVeniceKeyError } from './lib/venice';
 import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createVeniceKeyRouter } from './routes/venice-key.routes';
 import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
+import { createChaptersRouter } from './routes/chapters.routes';
+import { createCharactersRouter } from './routes/characters.routes';
+import { createOutlineRouter } from './routes/outline.routes';
+import { createStoriesRouter } from './routes/stories.routes';
+import { createUserSettingsRouter } from './routes/user-settings.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
 // tests/setup.ts, so this runs cleanly there too.
@@ -50,7 +56,9 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+// 256kb limit: encrypted narrative-field Zod maxima (worldNotes 50k + others)
+// worst-case in multi-byte UTF-8 exceed Express's default 100kb body limit.
+app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 // morgan's dev format is for local debugging only. In production it would log
 // every request URL (including owned resource IDs like /api/stories/:id) to
@@ -72,13 +80,32 @@ app.use(
 
 app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
+app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());
+app.use('/api/stories', createStoriesRouter());
+// [B3] Chapter CRUD nested under a parent story. mergeParams: true inside the
+// router exposes :storyId to its handlers.
+app.use('/api/stories/:storyId/chapters', createChaptersRouter());
+// [B5] Character CRUD nested under a parent story.
+app.use('/api/stories/:storyId/characters', createCharactersRouter());
+// [B8] Outline CRUD + reorder nested under a parent story.
+app.use('/api/stories/:storyId/outline', createOutlineRouter());
 // [V15] Chat + message routes — two separate router mounts (option A: mergeParams).
 app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
 app.use('/api/chats/:chatId/messages', createChatMessagesRouter());
 
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok' });
+// [B6] Health check with DB connectivity probe. `SELECT 1` is ~1ms against a
+// healthy Postgres and fails fast when the pool can't reach the server. No
+// auth — must be reachable for uptime probes. Shape is intentionally not the
+// project's standard `{ error: {...} }` envelope; liveness endpoints expose
+// their own status payload.
+app.get('/api/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: 'ok', db: 'connected' });
+  } catch {
+    res.status(503).json({ status: 'degraded', db: 'unreachable' });
+  }
 });
 
 // Global error handler. Keeps stack traces out of production responses and

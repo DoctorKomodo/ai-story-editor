@@ -30,6 +30,19 @@ async function ensureStoryOwned(
   if (!ok) throw new Error('outline.repo: story not owned by caller');
 }
 
+/**
+ * Thrown by `reorder` when one or more outline-item ids in the payload do not
+ * belong to the target story for the caller. The route maps this to 403 — we
+ * conflate "unknown id" with "id belongs to another story/user" so the
+ * endpoint is not an id-enumeration oracle.
+ */
+export class OutlineNotOwnedError extends Error {
+  constructor(message = 'outline.repo: one or more items not owned by caller under storyId') {
+    super(message);
+    this.name = 'OutlineNotOwnedError';
+  }
+}
+
 export function createOutlineRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: OutlineCreateInput) {
     const userId = resolveUserId(req);
@@ -78,9 +91,10 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
       data,
     });
     if (updated.count === 0) return null;
-    const row = await client.outlineItem.findFirstOrThrow({
+    const row = await client.outlineItem.findFirst({
       where: { id, story: { userId } },
     });
+    if (!row) return null;
     return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 
@@ -90,5 +104,30 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForStory, update, remove };
+  async function reorder(
+    storyId: string,
+    items: Array<{ id: string; order: number }>,
+  ): Promise<void> {
+    const userId = resolveUserId(req);
+    await ensureStoryOwned(client, storyId, userId);
+
+    const ids = items.map((i) => i.id);
+    const found = await client.outlineItem.findMany({
+      where: { id: { in: ids }, storyId, story: { userId } },
+      select: { id: true },
+    });
+    if (found.length !== ids.length) {
+      throw new OutlineNotOwnedError();
+    }
+
+    // TODO(schema): once @@unique([storyId, order]) lands, this transaction
+    // must use a two-phase swap to avoid unique-constraint violations mid-txn.
+    await client.$transaction(
+      items.map((item) =>
+        client.outlineItem.update({ where: { id: item.id }, data: { order: item.order } }),
+      ),
+    );
+  }
+
+  return { create, findById, findManyForStory, update, remove, reorder };
 }
