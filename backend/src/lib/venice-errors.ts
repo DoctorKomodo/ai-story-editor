@@ -10,6 +10,10 @@
 import type { Response } from 'express';
 import { APIError, AuthenticationError, RateLimitError } from 'openai';
 
+// Re-export so route files stay insulated from the `openai` package boundary.
+// Keeps the SDK import surface contained to this module + lib/venice.ts.
+export { AuthenticationError, RateLimitError } from 'openai';
+
 // The openai SDK's `APIError.headers` is typed as
 // `Record<string, string | null | undefined>` — a plain lowercase-keyed object,
 // NOT the DOM `Headers` type. Access via bracket notation.

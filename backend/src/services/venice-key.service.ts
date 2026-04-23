@@ -2,6 +2,8 @@ import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { decrypt, encrypt } from './crypto.service';
+import { getVeniceClient } from '../lib/venice';
+import type OpenAI from 'openai';
 
 export const DEFAULT_VENICE_ENDPOINT = 'https://api.venice.ai/api/v1';
 
@@ -9,6 +11,14 @@ export interface VeniceKeyStatus {
   hasKey: boolean;
   lastFour: string | null;
   endpoint: string | null;
+}
+
+export interface VeniceKeyVerifyResult {
+  verified: boolean;
+  credits: number | null;
+  diem: number | null;
+  endpoint: string | null;
+  lastFour: string | null;
 }
 
 export class VeniceKeyInvalidError extends Error {
@@ -42,6 +52,9 @@ export type StoreVeniceKeyInput = z.infer<typeof storeVeniceKeyInputSchema>;
 export interface VeniceKeyServiceDeps {
   client?: PrismaClient;
   fetchFn?: typeof fetch;
+  // Injection seam for tests: override getVeniceClient so tests can stub
+  // the OpenAI SDK without touching globalThis.fetch at the verify layer.
+  getVeniceClientFn?: (userId: string) => Promise<OpenAI>;
 }
 
 function lastFourOf(apiKey: string): string {
@@ -146,7 +159,41 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     });
   }
 
-  return { getStatus, store, remove, validateAgainstVenice };
+  // [V18] Re-validates the stored key by calling Venice (GET /v1/models) and
+  // reads balance headers from the response. Never modifies stored rows —
+  // purely a read + probe operation.
+  async function verify(userId: string): Promise<VeniceKeyVerifyResult> {
+    const status = await getStatus(userId);
+
+    if (!status.hasKey) {
+      return { verified: false, credits: null, diem: null, endpoint: null, lastFour: null };
+    }
+
+    // Use the injected getter (or the default) so tests can stub the client
+    // without needing to manipulate globalThis.fetch directly.
+    const getClientFn = deps.getVeniceClientFn ?? getVeniceClient;
+    const veniceClient = await getClientFn(userId);
+
+    // .withResponse() gives us the raw HTTP response so we can read balance
+    // headers even though the openai SDK doesn't type them.
+    const { response } = await veniceClient.models.list().withResponse();
+
+    const rawUsd = response.headers.get('x-venice-balance-usd');
+    const rawDiem = response.headers.get('x-venice-balance-diem');
+
+    const creditsVal = rawUsd !== null ? parseFloat(rawUsd) : null;
+    const diemVal = rawDiem !== null ? parseFloat(rawDiem) : null;
+
+    return {
+      verified: true,
+      credits: creditsVal !== null && !isNaN(creditsVal) ? creditsVal : null,
+      diem: diemVal !== null && !isNaN(diemVal) ? diemVal : null,
+      endpoint: status.endpoint,
+      lastFour: status.lastFour,
+    };
+  }
+
+  return { getStatus, store, remove, validateAgainstVenice, verify };
 }
 
 export const veniceKeyService = createVeniceKeyService();

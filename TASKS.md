@@ -331,7 +331,7 @@
 - [x] **[V17]** Per-user Venice client (supersedes the singleton in [A4]): `getVeniceClient(userId)` reads the user's encrypted key + endpoint, decrypts via [AU11], constructs a per-call `OpenAI` instance bound to that key + endpoint. Never cached across users. If the user has no stored key, throws `NoVeniceKeyError` (mapped to 409 `{ error: "venice_key_required" }` with a hint pointing at `/settings#venice`). Replaces all call sites across [V1]–[V12], [V15].
   - verify: `cd backend && npm run test:backend -- --run tests/lib/venice-per-user.test.ts`
 
-- [ ] **[V18]** `POST /api/users/me/venice-key/verify` — re-validates the stored key by calling Venice (`GET /v1/models` + balance headers). Returns `{ verified: boolean, credits: number | null, diem: number | null, endpoint: string | null, lastFour: string | null }`. Frontend's Settings → Venice "Verified · 2.2k credits" pill reads this. Rate-limited per user (6 req/min) to avoid Venice abuse.
+- [x] **[V18]** `POST /api/users/me/venice-key/verify` — re-validates the stored key by calling Venice (`GET /v1/models` + balance headers). Returns `{ verified: boolean, credits: number | null, diem: number | null, endpoint: string | null, lastFour: string | null }`. Frontend's Settings → Venice "Verified · 2.2k credits" pill reads this. Rate-limited per user (6 req/min) to avoid Venice abuse.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/venice-key-verify.test.ts`
 
 ---
