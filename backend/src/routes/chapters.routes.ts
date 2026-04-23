@@ -6,7 +6,11 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { prisma } from '../lib/prisma';
-import { createChapterRepo, type ChapterUpdateInput } from '../repos/chapter.repo';
+import {
+  ChapterNotOwnedError,
+  createChapterRepo,
+  type ChapterUpdateInput,
+} from '../repos/chapter.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
 
 const ChapterStatus = z.enum(['draft', 'revision', 'final']);
@@ -25,6 +29,21 @@ const UpdateChapterBody = z
     bodyJson: z.unknown().optional(),
     status: ChapterStatus.optional(),
     orderIndex: z.number().int().min(0).optional(),
+  })
+  .strict();
+
+const ReorderChaptersBody = z
+  .object({
+    chapters: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            orderIndex: z.number().int().min(0),
+          })
+          .strict(),
+      )
+      .min(1),
   })
   .strict();
 
@@ -98,6 +117,63 @@ export function createChaptersRouter() {
       next(err);
     }
   });
+
+  // [B4] PATCH /reorder — declared BEFORE /:chapterId so Express doesn't
+  // match the literal "reorder" path segment against the :chapterId param.
+  router.patch(
+    '/reorder',
+    ownStory,
+    async (req: Request, res: Response, next: NextFunction) => {
+      const storyId = req.params.storyId as string;
+
+      const parsed = ReorderChaptersBody.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          error: {
+            message: 'Invalid request',
+            code: 'invalid_request',
+            details: parsed.error.flatten(),
+          },
+        });
+        return;
+      }
+      const items = parsed.data.chapters;
+
+      // Uniqueness checks the Zod schema can't express cleanly.
+      const seenIds = new Set<string>();
+      const seenOrders = new Set<number>();
+      for (const item of items) {
+        if (seenIds.has(item.id)) {
+          res.status(400).json({
+            error: { message: 'Duplicate chapter id in payload', code: 'invalid_request' },
+          });
+          return;
+        }
+        seenIds.add(item.id);
+        if (seenOrders.has(item.orderIndex)) {
+          res.status(400).json({
+            error: {
+              message: 'Duplicate orderIndex in payload',
+              code: 'invalid_request',
+            },
+          });
+          return;
+        }
+        seenOrders.add(item.orderIndex);
+      }
+
+      try {
+        await createChapterRepo(req).reorder(storyId, items);
+        res.status(204).send();
+      } catch (err) {
+        if (err instanceof ChapterNotOwnedError) {
+          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
+          return;
+        }
+        next(err);
+      }
+    },
+  );
 
   // Ownership middleware confirms the caller owns the chapter but not that
   // the chapter lives under :storyId — each per-chapter handler 404s a

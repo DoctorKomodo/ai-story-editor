@@ -42,6 +42,19 @@ async function ensureStoryOwned(
   if (!ok) throw new Error('chapter.repo: story not owned by caller');
 }
 
+/**
+ * Thrown by `reorder` when one or more chapter ids in the payload do not
+ * belong to the target story for the caller. The route maps this to 403 —
+ * we conflate "unknown id" with "id belongs to another story/user" so the
+ * endpoint is not an id-enumeration oracle.
+ */
+export class ChapterNotOwnedError extends Error {
+  constructor(message = 'chapter.repo: one or more chapters not owned by caller under storyId') {
+    super(message);
+    this.name = 'ChapterNotOwnedError';
+  }
+}
+
 export function createChapterRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: ChapterCreateInput) {
     const userId = resolveUserId(req);
@@ -123,7 +136,36 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForStory, update, remove };
+  async function reorder(
+    storyId: string,
+    items: Array<{ id: string; orderIndex: number }>,
+  ): Promise<void> {
+    const userId = resolveUserId(req);
+    await ensureStoryOwned(client, storyId, userId);
+
+    const ids = items.map((i) => i.id);
+    const found = await client.chapter.findMany({
+      where: { id: { in: ids }, storyId, story: { userId } },
+      select: { id: true },
+    });
+    if (found.length !== ids.length) {
+      throw new ChapterNotOwnedError();
+    }
+
+    // TODO(B3-deferred): once @@unique([storyId, orderIndex]) lands, this
+    // transaction must use a two-phase swap (negative temp values, then final)
+    // to avoid unique-constraint violations mid-transaction.
+    await client.$transaction(
+      items.map((item) =>
+        client.chapter.update({
+          where: { id: item.id },
+          data: { orderIndex: item.orderIndex },
+        }),
+      ),
+    );
+  }
+
+  return { create, findById, findManyForStory, update, remove, reorder };
 }
 
 function shape(row: unknown, req: Request) {
