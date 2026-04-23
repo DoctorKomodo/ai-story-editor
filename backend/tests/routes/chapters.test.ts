@@ -400,6 +400,48 @@ describe('Chapter routes [B3]', () => {
     expect(r2.body.chapter.title).toBe('New Title');
   });
 
+  it('PATCH with bodyJson: null clears the body and sets wordCount to 0', async () => {
+    const accessToken = await registerAndLogin('chapters-patch-null-body');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'Clearable' });
+    const storyId = story.id as string;
+
+    const originalTree = paragraphDoc('some words to clear later'); // 5 words
+    const created = await createChapterRepo(req).create({
+      storyId,
+      title: 'To Clear',
+      orderIndex: 0,
+      bodyJson: originalTree,
+      wordCount: 5,
+    });
+    const chapterId = created.id as string;
+
+    const r = await request(app)
+      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ bodyJson: null });
+    expect(r.status).toBe(200);
+    expect(r.body.chapter.wordCount).toBe(0);
+    expect(r.body.chapter.body).toBeNull();
+
+    const follow = await request(app)
+      .get(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(follow.status).toBe(200);
+    expect(follow.body.chapter.wordCount).toBe(0);
+    expect(follow.body.chapter.body).toBeNull();
+
+    // Row-level assertion: body triple is SQL NULL, not ciphertext of "null".
+    const row = await prisma.chapter.findUnique({
+      where: { id: chapterId },
+      select: { bodyCiphertext: true, bodyIv: true, bodyAuthTag: true },
+    });
+    expect(row).not.toBeNull();
+    expect(row!.bodyCiphertext).toBeNull();
+    expect(row!.bodyIv).toBeNull();
+    expect(row!.bodyAuthTag).toBeNull();
+  });
+
   it('PATCH returns 400 on an unknown key', async () => {
     const accessToken = await registerAndLogin('chapters-patch-strict');
     const req = makeFakeReq(accessToken);

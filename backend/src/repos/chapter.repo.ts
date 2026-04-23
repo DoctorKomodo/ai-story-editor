@@ -47,7 +47,12 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     const userId = resolveUserId(req);
     await ensureStoryOwned(client, input.storyId, userId);
 
-    const bodyPlaintext = input.bodyJson === undefined ? null : JSON.stringify(input.bodyJson);
+    // `null` and `undefined` both mean "no body": persist all-null body
+    // triples rather than encrypting the literal string "null".
+    const bodyPlaintext =
+      input.bodyJson === undefined || input.bodyJson === null
+        ? null
+        : JSON.stringify(input.bodyJson);
     const row = await client.chapter.create({
       data: {
         storyId: input.storyId,
@@ -90,10 +95,10 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       Object.assign(data, writeEncrypted(req, 'title', input.title));
     }
     if (input.bodyJson !== undefined) {
-      // Post-[E11]: bodyJson exists as plaintext only on the wire — we
-      // serialise + encrypt into `bodyCiphertext` and never persist the
-      // plaintext tree.
-      const plaintext = JSON.stringify(input.bodyJson);
+      // `null` clears the body (all-null ciphertext triple); an object tree
+      // is serialised + encrypted. The literal string "null" must never land
+      // in ciphertext.
+      const plaintext = input.bodyJson === null ? null : JSON.stringify(input.bodyJson);
       Object.assign(data, writeCiphertextOnly(req, 'body', plaintext));
     }
     if (input.status !== undefined) data.status = input.status;
