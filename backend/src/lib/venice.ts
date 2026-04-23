@@ -40,6 +40,11 @@ export function createVeniceClient({ apiKey, endpoint }: VeniceClientOptions): O
     // transport rebindable (e.g. vi.stubGlobal in tests). Resolved lazily
     // per-call so the stubbing stays live across the lifetime of a test.
     fetch: (url, init) => globalThis.fetch(url as string, init as RequestInit),
+    // Disable the SDK's automatic retry logic. We map Venice errors explicitly
+    // ([V11]) and let the caller decide retry policy. Automatic retries would:
+    // (a) exhaust rate-limit quotas silently on 429, and
+    // (b) cause the globalThis.fetch mock to run out of stubs in tests.
+    maxRetries: 0,
   });
 }
 
