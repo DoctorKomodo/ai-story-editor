@@ -43,7 +43,8 @@ const ReorderChaptersBody = z
           })
           .strict(),
       )
-      .min(1),
+      .min(1)
+      .max(500),
   })
   .strict();
 

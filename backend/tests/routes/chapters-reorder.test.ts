@@ -177,6 +177,21 @@ describe('Chapter reorder route [B4]', () => {
     expect(res.body.error.code).toBe('invalid_request');
   });
 
+  it('returns 400 when chapters array exceeds max length', async () => {
+    const accessToken = await registerAndLogin('reorder-too-many');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'S' });
+
+    const res = await request(app)
+      .patch(`/api/stories/${story.id as string}/chapters/reorder`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        chapters: Array.from({ length: 501 }, (_, i) => ({ id: 'x' + i, orderIndex: i })),
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('invalid_request');
+  });
+
   it('returns 400 on duplicate id in payload', async () => {
     const accessToken = await registerAndLogin('reorder-dup-id');
     const req = makeFakeReq(accessToken);
