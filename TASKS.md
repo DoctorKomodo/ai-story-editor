@@ -368,7 +368,7 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 - [x] **[B4]** `PATCH /api/stories/:storyId/chapters/reorder` — accepts `{ chapters: [{ id, orderIndex }] }`, updates all in a single Prisma transaction.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/chapters-reorder.test.ts`
 
-- [ ] **[B5]** Characters full CRUD under `/api/stories/:storyId/characters`. All fields validated with Zod.
+- [x] **[B5]** Characters full CRUD under `/api/stories/:storyId/characters`. All fields validated with Zod.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/characters.test.ts`
 
 - [ ] **[B6]** `GET /api/health` returns `{ status: "ok", db: "connected" }`. Returns 503 if DB unreachable.
