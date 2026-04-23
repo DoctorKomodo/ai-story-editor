@@ -1,7 +1,6 @@
-// [V3] Prompt builder service — pure, no IO, no async.
-// Turns structured inputs into an OpenAI-compatible chat-completion request
-// body ready to send to Venice. The caller fills in `stream` and `model`
-// at the route layer.
+// Pure, no IO, no async — intentionally so. `stream` and `model` are injected
+// by the route layer so this module stays unit-testable without HTTP or Venice
+// client dependencies.
 
 export type PromptAction = 'continue' | 'rephrase' | 'expand' | 'summarise' | 'freeform';
 
@@ -43,10 +42,8 @@ export const DEFAULT_SYSTEM_PROMPT =
 
 // ─── Token estimation ─────────────────────────────────────────────────────────
 
-/**
- * Conservative token estimate: ceil(chars / 4).
- * No external tokenizer — good enough for budgeting.
- */
+// chars/4 is a conservative over-estimate chosen to avoid an external tokenizer dependency;
+// good enough since the 20% response headroom absorbs the approximation.
 export function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4);
 }
@@ -86,7 +83,6 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
       ? input.storySystemPrompt
       : DEFAULT_SYSTEM_PROMPT;
 
-  // [V4] venice_parameters flag — read from input, never hardcoded
   const includeVeniceSystemPrompt = input.includeVeniceSystemPrompt ?? true;
 
   // ── Build the fixed (non-truncatable) blocks ──────────────────────────────

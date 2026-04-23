@@ -98,6 +98,10 @@ describe('buildPrompt — max_tokens', () => {
     const result = buildPrompt(baseInput({ modelContextLength: 65536 }));
     expect(result.max_tokens).toBe(Math.floor(65536 * 0.2));
   });
+
+  it('floors non-integer result (4097 * 0.2 = 819.4 → 819)', () => {
+    expect(buildPrompt(baseInput({ modelContextLength: 4097 })).max_tokens).toBe(819);
+  });
 });
 
 // ─── Action → task block ──────────────────────────────────────────────────────
@@ -183,14 +187,17 @@ describe('buildPrompt — chapterContent truncation', () => {
   // over-budget. The prompt builder must truncate from the TOP (oldest chars),
   // so the END of the string (newest content) survives.
   it('truncates chapterContent from the top when over budget', () => {
+    const HEAD = 'HEAD_DROPPED_SENTINEL';
     const TAIL = 'TAIL_CONTENT_SURVIVES';
-    const bigContent = 'x'.repeat(200_000) + TAIL;
+    const bigContent = HEAD + 'x'.repeat(200_000) + TAIL;
     const result = buildPrompt(
       baseInput({ chapterContent: bigContent, modelContextLength: 4096 }),
     );
     const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
-    // The tail must survive
+    // The tail (newest content) must survive
     expect(userContent).toContain(TAIL);
+    // The head (oldest content) must have been dropped
+    expect(userContent).not.toContain(HEAD);
     // The overall token count of the user message must be ≤ promptBudget
     const promptBudget = Math.floor(4096 * 0.8);
     const sysTokens = estimateTokens(result.messages[0]?.content ?? '');
