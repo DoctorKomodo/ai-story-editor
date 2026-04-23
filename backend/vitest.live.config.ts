@@ -13,7 +13,6 @@ export default defineConfig({
     // No globalSetup — live tests don't touch the DB.
     // No setupFiles from the main suite either; live tests are standalone.
     pool: 'forks',
-    poolOptions: { forks: { singleFork: true } },
     fileParallelism: false,
     sequence: { concurrent: false },
   },
