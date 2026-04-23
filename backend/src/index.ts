@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { validateEncryptionEnv } from './boot/env-validation';
+import { NoVeniceKeyError } from './lib/venice';
 import { createAuthRouter } from './routes/auth.routes';
 import { createVeniceKeyRouter } from './routes/venice-key.routes';
 
@@ -76,13 +77,31 @@ app.get('/api/health', (_req, res) => {
 
 // Global error handler. Keeps stack traces out of production responses and
 // gives clients a consistent JSON shape when a route hands an error to next().
-app.use((err: unknown, _req: Request, res: Response, _next: NextFunction) => {
+// Exported so tests can mount the exact same handler on a disposable app
+// instead of duplicating the logic.
+export function globalErrorHandler(
+  err: unknown,
+  _req: Request,
+  res: Response,
+  _next: NextFunction,
+): void {
+  // [V17] Per-user Venice client signals "user has no stored key" via
+  // NoVeniceKeyError. Map to 409 so the frontend can prompt the user to set
+  // one in /settings#venice. Keep this above the catch-all 500 below.
+  if (err instanceof NoVeniceKeyError) {
+    res.status(409).json({
+      error: { message: 'venice_key_required', code: 'venice_key_required' },
+    });
+    return;
+  }
   const isProd = process.env.NODE_ENV === 'production';
   const message = isProd
     ? 'Internal server error'
     : (err instanceof Error ? err.message : 'Internal server error');
   res.status(500).json({ error: { message, code: 'internal_error' } });
-});
+}
+
+app.use(globalErrorHandler);
 
 const port = Number(process.env.PORT ?? 4000);
 

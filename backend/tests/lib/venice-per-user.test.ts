@@ -144,6 +144,54 @@ describe('lib/venice — getVeniceClient (per-user) [V17]', () => {
     expect(keysSeen[0]).not.toBe(keysSeen[1]);
   });
 
+  it('decryption failure does not leak ciphertext bytes into the thrown error', async () => {
+    // Build a valid stored row, then tamper with veniceApiKeyEnc by replacing
+    // it with a same-length base64 string of different bytes. decrypt() will
+    // throw a GCM auth-tag error. We assert (a) it is NOT a NoVeniceKeyError
+    // (a partial/null row would throw that; a tampered row is a different
+    // failure mode that must not be confused with "no key set"), and (b) none
+    // of the stored ciphertext/iv/authTag values appear anywhere in the
+    // error's message, String() form, or a JSON-serialised shape.
+    const stored = storeKey('sk-tamper-victim');
+    const tamperedEnc = Buffer.from(
+      Buffer.from(stored.veniceApiKeyEnc, 'base64').map((b) => b ^ 0xff),
+    ).toString('base64');
+    const row: VeniceUserRow = {
+      veniceApiKeyEnc: tamperedEnc,
+      veniceApiKeyIv: stored.veniceApiKeyIv,
+      veniceApiKeyAuthTag: stored.veniceApiKeyAuthTag,
+      veniceEndpoint: null,
+    };
+    const { client } = makePrismaStub({ 'tamper-user': row });
+    const getVeniceClient = createGetVeniceClient({ client });
+
+    let caught: unknown;
+    try {
+      await getVeniceClient('tamper-user');
+    } catch (err) {
+      caught = err;
+    }
+
+    expect(caught).toBeInstanceOf(Error);
+    expect(caught).not.toBeInstanceOf(NoVeniceKeyError);
+
+    const err = caught as Error;
+    const haystacks = [
+      err.message,
+      String(err),
+      JSON.stringify({ message: err.message, name: err.name }),
+    ];
+    // The three stubbed ciphertext-column values must not appear verbatim
+    // anywhere in the error surface. We check both the tampered enc and the
+    // untampered iv/authTag we handed to the stub.
+    const needles = [tamperedEnc, row.veniceApiKeyIv!, row.veniceApiKeyAuthTag!];
+    for (const hay of haystacks) {
+      for (const needle of needles) {
+        expect(hay).not.toContain(needle);
+      }
+    }
+  });
+
   it('builds a fresh instance on every call for the same user (no memoisation)', async () => {
     const { client, findUniqueSpy } = makePrismaStub({
       'user-c': { ...storeKey('sk-user-c-key'), veniceEndpoint: null },
