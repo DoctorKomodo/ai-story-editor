@@ -379,7 +379,7 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 
 ### B — Mockup-driven additions
 
-- [ ] **[B8]** Outline CRUD under `/api/stories/:storyId/outline`: list, create, patch, delete, plus `PATCH …/outline/reorder` (single transaction). Auth + ownership middleware required.
+- [x] **[B8]** Outline CRUD under `/api/stories/:storyId/outline`: list, create, patch, delete, plus `PATCH …/outline/reorder` (single transaction). Auth + ownership middleware required.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/outline.test.ts`
 
 - [ ] **[B9]** `GET /api/stories/:id/progress` — returns `{ wordCount, targetWords, percent, chapters: [{ id, wordCount }] }` for the sidebar progress footer (`42,318 / 90,000 words · 47%`).
