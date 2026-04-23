@@ -359,7 +359,7 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 - [x] **[B1]** `GET /api/stories` and `POST /api/stories`. GET returns all user stories with chapter count and total word count. POST validates with Zod.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/stories.test.ts`
 
-- [ ] **[B2]** `GET|PATCH|DELETE /api/stories/:id`. All require auth + ownership middleware.
+- [x] **[B2]** `GET|PATCH|DELETE /api/stories/:id`. All require auth + ownership middleware.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/story-detail.test.ts`
 
 - [ ] **[B3]** Chapters full CRUD under `/api/stories/:storyId/chapters`. POST auto-assigns `orderIndex`. `wordCount` computed and stored on create/update.
