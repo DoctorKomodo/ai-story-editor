@@ -114,7 +114,7 @@ res.setHeader('Connection', 'keep-alive');
 for await (const chunk of completion) {
   res.write(`data: ${JSON.stringify(chunk)}\n\n`);
 }
-res.write('event: done\ndata: {}\n\n');
+res.write('data: [DONE]\n\n');
 res.end();
 ```
 
