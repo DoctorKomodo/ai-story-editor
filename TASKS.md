@@ -306,7 +306,7 @@
 - [x] **[V11]** Venice error handling: map error codes to user-friendly messages. Handle `401` (invalid API key — log server-side, show generic error to user), `429` (rate limited — include reset time in response), `503` (Venice unavailable). Never expose raw Venice errors or stack traces to the frontend.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/error-handling.test.ts`
 
-- [ ] **[V12]** AI action system prompts — write and test the system prompt and user prompt template for each action. Each instructs the model to act as a creative writing assistant and return only the content with no preamble:
+- [x] **[V12]** AI action system prompts — write and test the system prompt and user prompt template for each action. Each instructs the model to act as a creative writing assistant and return only the content with no preamble:
   - **Continue** — continues from where the selection ends, matching the established style
   - **Rephrase** — rewrites the selected text with different phrasing, preserving meaning
   - **Expand** — adds more detail, description, and depth to the selected passage
@@ -316,10 +316,10 @@
 
 ### V — Mockup-driven additions
 
-- [ ] **[V13]** Per-story system prompt in prompt builder: when `Story.systemPrompt` is non-null, use it as the primary system message; otherwise fall back to the default creative-writing system prompt. Unit tests cover both paths and confirm the Venice `include_venice_system_prompt` flag is driven entirely by the user setting — unaffected by whether `Story.systemPrompt` is set or null.
+- [x] **[V13]** Per-story system prompt in prompt builder: when `Story.systemPrompt` is non-null, use it as the primary system message; otherwise fall back to the default creative-writing system prompt. Unit tests cover both paths and confirm the Venice `include_venice_system_prompt` flag is driven entirely by the user setting — unaffected by whether `Story.systemPrompt` is set or null.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.system-prompt.test.ts`
 
-- [ ] **[V14]** Extend AI action set to cover mockup selection-bubble + chat actions: `rewrite`, `describe`, `expand` (inline result card), `continue` (cursor-context ~80-word continuation for ⌥↵), `ask` (routes selection into chat as attachment). Each has a dedicated prompt template. Complements [V12] — do not remove existing actions.
+- [x] **[V14]** Extend AI action set to cover mockup selection-bubble + chat actions: `rewrite`, `describe`, `expand` (inline result card), `continue` (cursor-context ~80-word continuation for ⌥↵), `ask` (routes selection into chat as attachment). Each has a dedicated prompt template. Complements [V12] — do not remove existing actions.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.mockup-actions.test.ts`
 
 - [ ] **[V15]** Chat persistence: `POST /api/chapters/:chapterId/chats` creates a chat; `GET /api/chapters/:chapterId/chats` lists; `POST /api/chats/:chatId/messages` appends a user message, streams an assistant reply via Venice (SSE passthrough), persists both messages with `tokens` + `latencyMs` captured from the Venice response.
