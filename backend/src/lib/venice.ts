@@ -34,6 +34,12 @@ export function createVeniceClient({ apiKey, endpoint }: VeniceClientOptions): O
   return new OpenAI({
     apiKey,
     baseURL: endpoint && endpoint.length > 0 ? endpoint : DEFAULT_VENICE_BASE_URL,
+    // Route through globalThis.fetch (native fetch on Node 18+) instead of
+    // the SDK's bundled node-fetch. Keeps the HTTP path consistent with
+    // venice-key.service, which also uses globalThis.fetch, and makes the
+    // transport rebindable (e.g. vi.stubGlobal in tests). Resolved lazily
+    // per-call so the stubbing stays live across the lifetime of a test.
+    fetch: (url, init) => globalThis.fetch(url as string, init as RequestInit),
   });
 }
 
