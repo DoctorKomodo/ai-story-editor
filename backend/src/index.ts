@@ -10,6 +10,7 @@ import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createVeniceKeyRouter } from './routes/venice-key.routes';
 import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
+import { createStoriesRouter } from './routes/stories.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
 // tests/setup.ts, so this runs cleanly there too.
@@ -73,6 +74,8 @@ app.use(
 app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/ai', createAiRouter());
+// [B1] Story list + create. Chapters, characters, outline, chat follow in B2–B11.
+app.use('/api/stories', createStoriesRouter());
 // [V15] Chat + message routes — two separate router mounts (option A: mergeParams).
 app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
 app.use('/api/chats/:chatId/messages', createChatMessagesRouter());
