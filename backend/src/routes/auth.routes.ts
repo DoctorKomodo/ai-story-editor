@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { z, ZodError } from 'zod';
 import { prisma } from '../lib/prisma';
+import { badRequestFromZod } from '../lib/bad-request';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
   InvalidCredentialsError,
@@ -23,19 +24,6 @@ function refreshCookieOptions() {
     path: '/api/auth',
     maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
   };
-}
-
-function badRequestFromZod(res: Response, err: ZodError): Response {
-  return res.status(400).json({
-    error: {
-      message: 'Invalid request body',
-      code: 'validation_error',
-      issues: err.issues.map((issue) => ({
-        path: issue.path,
-        message: issue.message,
-      })),
-    },
-  });
 }
 
 function minPasswordLength(): number {

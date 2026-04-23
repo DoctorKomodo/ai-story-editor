@@ -22,6 +22,7 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { deepMerge } from '../lib/deep-merge';
+import { badRequestFromZod } from '../lib/bad-request';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -99,13 +100,7 @@ export function createUserSettingsRouter() {
   router.patch('/', async (req: Request, res: Response, next: NextFunction) => {
     const parsed = SettingsSchema.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({
-        error: {
-          message: 'Invalid request',
-          code: 'invalid_request',
-          details: parsed.error.flatten(),
-        },
-      });
+      badRequestFromZod(res, parsed.error);
       return;
     }
 

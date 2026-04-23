@@ -158,7 +158,7 @@ describe('Chapter routes [B3]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: '' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 when an unknown key (wordCount) is passed', async () => {
@@ -171,7 +171,7 @@ describe('Chapter routes [B3]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'Ch 1', wordCount: 9999 });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 when an unknown key (orderIndex) is passed', async () => {
@@ -184,7 +184,7 @@ describe('Chapter routes [B3]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'Ch 1', orderIndex: 7 });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   // ── POST happy path: wordCount + orderIndex ───────────────────────────────
@@ -458,7 +458,7 @@ describe('Chapter routes [B3]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'ok', wordCount: 9999 });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH returns 400 on unknown key (foo)', async () => {
@@ -477,7 +477,7 @@ describe('Chapter routes [B3]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'ok', foo: 'bar' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   // ── DELETE /:chapterId ────────────────────────────────────────────────────

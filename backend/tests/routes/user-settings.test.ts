@@ -158,7 +158,7 @@ describe('User settings routes [B11]', () => {
       .send({ foo: 'bar' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH returns 400 on an unknown nested key', async () => {
@@ -169,7 +169,7 @@ describe('User settings routes [B11]', () => {
       .send({ prose: { weight: 700 } });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH returns 400 on out-of-range prose.size', async () => {
@@ -180,7 +180,7 @@ describe('User settings routes [B11]', () => {
       .send({ prose: { size: 50 } });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH returns 400 on negative writing.dailyWordGoal', async () => {
@@ -191,7 +191,7 @@ describe('User settings routes [B11]', () => {
       .send({ writing: { dailyWordGoal: -1 } });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   // ── Leakage / shape ───────────────────────────────────────────────────────

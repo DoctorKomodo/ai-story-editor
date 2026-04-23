@@ -122,7 +122,7 @@ describe('Chapter reorder route [B4]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ chapters: [] });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 when an entry is missing orderIndex', async () => {
@@ -135,7 +135,7 @@ describe('Chapter reorder route [B4]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ chapters: [{ id: FAKE_ID }] });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on a negative orderIndex', async () => {
@@ -148,7 +148,7 @@ describe('Chapter reorder route [B4]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: -1 }] });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on an unknown root key', async () => {
@@ -161,7 +161,7 @@ describe('Chapter reorder route [B4]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: 0 }], foo: 'bar' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on an unknown key inside a chapter entry', async () => {
@@ -174,7 +174,7 @@ describe('Chapter reorder route [B4]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: 0, extra: 'nope' }] });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 when chapters array exceeds max length', async () => {
@@ -189,7 +189,7 @@ describe('Chapter reorder route [B4]', () => {
         chapters: Array.from({ length: 501 }, (_, i) => ({ id: 'x' + i, orderIndex: i })),
       });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on duplicate id in payload', async () => {
@@ -209,7 +209,7 @@ describe('Chapter reorder route [B4]', () => {
         ],
       });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on duplicate orderIndex in payload', async () => {
@@ -229,7 +229,7 @@ describe('Chapter reorder route [B4]', () => {
         ],
       });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 403 when an id belongs to a different story (same user)', async () => {

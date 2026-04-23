@@ -183,7 +183,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: '', status: 'queued' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 on missing status', async () => {
@@ -196,7 +196,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'Intro' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 when an unknown key is passed', async () => {
@@ -209,7 +209,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'Act I', status: 'queued', extraField: 'nope' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 when order is included (server assigns)', async () => {
@@ -222,7 +222,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'Act I', status: 'queued', order: 7 });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   // ── POST happy path ───────────────────────────────────────────────────────
@@ -410,7 +410,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'ok', mystery: 'field' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH returns 404 when outlineId belongs to a different story (path integrity)', async () => {
@@ -472,7 +472,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ items: [] });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('reorder returns 400 on negative order', async () => {
@@ -485,7 +485,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ items: [{ id: FAKE_ID, order: -1 }] });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('reorder returns 400 on unknown key inside item', async () => {
@@ -498,7 +498,7 @@ describe('Outline routes [B8]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ items: [{ id: FAKE_ID, order: 0, extra: 'no' }] });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('reorder returns 400 when items exceed max length', async () => {
@@ -513,7 +513,7 @@ describe('Outline routes [B8]', () => {
         items: Array.from({ length: 501 }, (_, i) => ({ id: 'x' + i, order: i })),
       });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('reorder returns 400 on duplicate id in payload', async () => {
@@ -533,7 +533,7 @@ describe('Outline routes [B8]', () => {
         ],
       });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('reorder returns 400 on duplicate order in payload', async () => {
@@ -553,7 +553,7 @@ describe('Outline routes [B8]', () => {
         ],
       });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('reorder returns 403 when an id belongs to a different story (same user)', async () => {

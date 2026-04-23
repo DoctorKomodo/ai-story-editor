@@ -96,8 +96,8 @@ describe('Stories routes [B1]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ synopsis: 'a tale with no title' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
-    expect(res.body.error.details).toBeDefined();
+    expect(res.body.error.code).toBe('validation_error');
+    expect(res.body.error.issues).toBeDefined();
   });
 
   it('POST /api/stories returns 400 when title is empty', async () => {
@@ -107,7 +107,7 @@ describe('Stories routes [B1]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: '' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   // ── POST happy path ──────────────────────────────────────────────────────

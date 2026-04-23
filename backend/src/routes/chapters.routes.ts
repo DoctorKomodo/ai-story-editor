@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { prisma } from '../lib/prisma';
+import { badRequestFromZod } from '../lib/bad-request';
 import {
   ChapterNotOwnedError,
   createChapterRepo,
@@ -76,13 +77,7 @@ export function createChaptersRouter() {
 
     const parsed = CreateChapterBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({
-        error: {
-          message: 'Invalid request',
-          code: 'invalid_request',
-          details: parsed.error.flatten(),
-        },
-      });
+      badRequestFromZod(res, parsed.error);
       return;
     }
     const body = parsed.data;
@@ -129,24 +124,22 @@ export function createChaptersRouter() {
 
       const parsed = ReorderChaptersBody.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            message: 'Invalid request',
-            code: 'invalid_request',
-            details: parsed.error.flatten(),
-          },
-        });
+        badRequestFromZod(res, parsed.error);
         return;
       }
       const items = parsed.data.chapters;
 
-      // Uniqueness checks the Zod schema can't express cleanly.
+      // Uniqueness checks the Zod schema can't express cleanly — these are
+      // semantic validation (duplicate id / duplicate orderIndex) rather than
+      // schema-shape issues, but still return the contract's `validation_error`
+      // code so clients can handle all 400s uniformly. The human-readable
+      // message disambiguates the specific failure.
       const seenIds = new Set<string>();
       const seenOrders = new Set<number>();
       for (const item of items) {
         if (seenIds.has(item.id)) {
           res.status(400).json({
-            error: { message: 'Duplicate chapter id in payload', code: 'invalid_request' },
+            error: { message: 'Duplicate chapter id in payload', code: 'validation_error' },
           });
           return;
         }
@@ -155,7 +148,7 @@ export function createChaptersRouter() {
           res.status(400).json({
             error: {
               message: 'Duplicate orderIndex in payload',
-              code: 'invalid_request',
+              code: 'validation_error',
             },
           });
           return;
@@ -209,13 +202,7 @@ export function createChaptersRouter() {
 
       const parsed = UpdateChapterBody.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            message: 'Invalid request',
-            code: 'invalid_request',
-            details: parsed.error.flatten(),
-          },
-        });
+        badRequestFromZod(res, parsed.error);
         return;
       }
       const body = parsed.data;

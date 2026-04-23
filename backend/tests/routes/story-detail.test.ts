@@ -170,7 +170,7 @@ describe('Story detail routes [B2]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ title: 'strict update', nope: true });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH /:id updates only the provided fields', async () => {

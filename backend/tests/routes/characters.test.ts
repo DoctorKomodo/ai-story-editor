@@ -132,7 +132,7 @@ describe('Character routes [B5]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ name: '' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 on missing name', async () => {
@@ -145,7 +145,7 @@ describe('Character routes [B5]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ role: 'protagonist' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 when an unknown key is passed', async () => {
@@ -158,7 +158,7 @@ describe('Character routes [B5]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ name: 'Bob', extraField: 'nope' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   // ── POST happy path ───────────────────────────────────────────────────────
@@ -367,7 +367,7 @@ describe('Character routes [B5]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ name: 'ok', mystery: 'field' });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH returns 400 on overlong name (>200)', async () => {
@@ -386,7 +386,7 @@ describe('Character routes [B5]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ name: tooLong });
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('invalid_request');
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   // ── DELETE /:characterId ──────────────────────────────────────────────────

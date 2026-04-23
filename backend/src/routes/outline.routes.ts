@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { prisma } from '../lib/prisma';
+import { badRequestFromZod } from '../lib/bad-request';
 import {
   createOutlineRepo,
   OutlineNotOwnedError,
@@ -70,13 +71,7 @@ export function createOutlineRouter() {
 
     const parsed = CreateOutlineBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({
-        error: {
-          message: 'Invalid request',
-          code: 'invalid_request',
-          details: parsed.error.flatten(),
-        },
-      });
+      badRequestFromZod(res, parsed.error);
       return;
     }
     const body = parsed.data;
@@ -118,31 +113,29 @@ export function createOutlineRouter() {
 
       const parsed = ReorderOutlineBody.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            message: 'Invalid request',
-            code: 'invalid_request',
-            details: parsed.error.flatten(),
-          },
-        });
+        badRequestFromZod(res, parsed.error);
         return;
       }
       const items = parsed.data.items;
 
-      // Uniqueness checks the Zod schema can't express cleanly.
+      // Uniqueness checks the Zod schema can't express cleanly — these are
+      // semantic validation (duplicate id / duplicate order) rather than
+      // schema-shape issues, but still return the contract's `validation_error`
+      // code so clients can handle all 400s uniformly. The human-readable
+      // message disambiguates the specific failure.
       const seenIds = new Set<string>();
       const seenOrders = new Set<number>();
       for (const item of items) {
         if (seenIds.has(item.id)) {
           res.status(400).json({
-            error: { message: 'Duplicate outline id in payload', code: 'invalid_request' },
+            error: { message: 'Duplicate outline id in payload', code: 'validation_error' },
           });
           return;
         }
         seenIds.add(item.id);
         if (seenOrders.has(item.order)) {
           res.status(400).json({
-            error: { message: 'Duplicate order in payload', code: 'invalid_request' },
+            error: { message: 'Duplicate order in payload', code: 'validation_error' },
           });
           return;
         }
@@ -195,13 +188,7 @@ export function createOutlineRouter() {
 
       const parsed = UpdateOutlineBody.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            message: 'Invalid request',
-            code: 'invalid_request',
-            details: parsed.error.flatten(),
-          },
-        });
+        badRequestFromZod(res, parsed.error);
         return;
       }
       const body = parsed.data;

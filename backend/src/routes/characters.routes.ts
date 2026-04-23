@@ -5,6 +5,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
+import { badRequestFromZod } from '../lib/bad-request';
 import { createCharacterRepo, type CharacterUpdateInput } from '../repos/character.repo';
 
 const CreateCharacterBody = z
@@ -63,13 +64,7 @@ export function createCharactersRouter() {
 
     const parsed = CreateCharacterBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({
-        error: {
-          message: 'Invalid request',
-          code: 'invalid_request',
-          details: parsed.error.flatten(),
-        },
-      });
+      badRequestFromZod(res, parsed.error);
       return;
     }
     const body = parsed.data;
@@ -129,13 +124,7 @@ export function createCharactersRouter() {
 
       const parsed = UpdateCharacterBody.safeParse(req.body);
       if (!parsed.success) {
-        res.status(400).json({
-          error: {
-            message: 'Invalid request',
-            code: 'invalid_request',
-            details: parsed.error.flatten(),
-          },
-        });
+        badRequestFromZod(res, parsed.error);
         return;
       }
       const body = parsed.data;
