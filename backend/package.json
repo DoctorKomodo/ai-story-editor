@@ -10,7 +10,8 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "test": "vitest run",
     "test:backend": "vitest",
-    "db:test:reset": "bash ../scripts/db-test-reset.sh"
+    "db:test:reset": "bash ../scripts/db-test-reset.sh",
+    "test:live": "vitest --run --config vitest.live.config.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
