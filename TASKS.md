@@ -374,7 +374,7 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 - [ ] **[B6]** `GET /api/health` returns `{ status: "ok", db: "connected" }`. Returns 503 if DB unreachable.
   - verify: `curl -sf http://localhost:4000/api/health | grep '"status":"ok"'`
 
-- [ ] **[B7]** Global error handler: consistent `{ error: { message, code } }` JSON. No stack traces in production.
+- [x] **[B7]** Global error handler: consistent `{ error: { message, code } }` JSON. No stack traces in production.
   - verify: `cd backend && npm run test:backend -- --run tests/middleware/error-handler.test.ts`
 
 ### B — Mockup-driven additions
