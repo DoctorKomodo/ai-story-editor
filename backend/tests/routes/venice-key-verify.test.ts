@@ -240,6 +240,11 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const infoSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
+
     // Return a 401 Response so the SDK throws AuthenticationError.
     fetchSpy.mockResolvedValueOnce(errorResponse(401, 'Invalid API key'));
 
@@ -255,6 +260,16 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
       endpoint: DEFAULT_VENICE_ENDPOINT,
       lastFour: 'LAST',
     });
+
+    const logged = [errSpy, warnSpy, logSpy, infoSpy]
+      .flatMap((s) => s.mock.calls)
+      .map((c) => c.map(String).join(' '))
+      .join('\n');
+    expect(logged).not.toContain(VALID_KEY);
+    errSpy.mockRestore();
+    warnSpy.mockRestore();
+    logSpy.mockRestore();
+    infoSpy.mockRestore();
   });
 
   // ── 7. Venice returns 429 → our 429 venice_rate_limited ───────────────────

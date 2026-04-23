@@ -2,8 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import { ZodError } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
-import { mapVeniceError } from '../lib/venice-errors';
-import { AuthenticationError } from 'openai';
+import { AuthenticationError, mapVeniceError } from '../lib/venice-errors';
 import {
   VeniceKeyCheckError,
   VeniceKeyInvalidError,
