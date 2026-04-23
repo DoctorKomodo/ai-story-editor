@@ -5,6 +5,7 @@ import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { validateEncryptionEnv } from './boot/env-validation';
+import { prisma } from './lib/prisma';
 import { NoVeniceKeyError } from './lib/venice';
 import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
@@ -88,8 +89,18 @@ app.use('/api/stories/:storyId/characters', createCharactersRouter());
 app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
 app.use('/api/chats/:chatId/messages', createChatMessagesRouter());
 
-app.get('/api/health', (_req, res) => {
-  res.json({ status: 'ok' });
+// [B6] Health check with DB connectivity probe. `SELECT 1` is ~1ms against a
+// healthy Postgres and fails fast when the pool can't reach the server. No
+// auth — must be reachable for uptime probes. Shape is intentionally not the
+// project's standard `{ error: {...} }` envelope; liveness endpoints expose
+// their own status payload.
+app.get('/api/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.status(200).json({ status: 'ok', db: 'connected' });
+  } catch {
+    res.status(503).json({ status: 'error', db: 'disconnected' });
+  }
 });
 
 // Global error handler. Keeps stack traces out of production responses and
