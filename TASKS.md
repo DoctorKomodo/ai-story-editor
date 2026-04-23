@@ -391,6 +391,22 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 - [x] **[B11]** User settings passthrough: `GET /api/users/me/settings` and `PATCH /api/users/me/settings` read/write `User.settingsJson`. Zod schema enforces allowed keys (theme, proseFont, proseSize, lineHeight, writing toggles, daily goal, chat model + params, `ai.includeVeniceSystemPrompt` boolean defaulting to `true`).
   - verify: `cd backend && npm run test:backend -- --run tests/routes/user-settings.test.ts`
 
+### B — Post-B-series follow-ups (work next, before F)
+
+Surfaced by the final cross-cutting review of the B-series branch. Three V-series contract gaps + one deferred schema fix. Work these before starting F so the frontend codes against a settled contract.
+
+- [ ] **[V19]** Wrap `POST /api/chapters/:chapterId/chats` response body in `{ chat }` envelope to match `docs/api-contract.md:156`. Currently returns the bare `chat` object at the top level. Update `backend/src/routes/chat.routes.ts` and any test assertions in `backend/tests/ai/chat-persistence.test.ts` that relied on the flat shape.
+  - verify: `cd backend && npm run test:backend -- --run tests/ai/chat-persistence.test.ts`
+
+- [ ] **[V20]** Add `.strict()` to `CreateChatBody`, `PostMessageBody`, and the nested `attachment` sub-schema in `backend/src/routes/chat.routes.ts` so stray / misspelled keys return 400 instead of being silently dropped. Mirror the B-series precedent (`validation_error` envelope via `backend/src/lib/bad-request.ts`). Add tests for unknown-key rejection on both endpoints.
+  - verify: `cd backend && npm run test:backend -- --run tests/ai/chat-persistence.test.ts`
+
+- [ ] **[V21]** Implement `GET /api/chats/:chatId/messages` returning `{ messages: [{ id, role, contentJson, attachmentJson, model, tokens, latencyMs, createdAt }] }` per `docs/api-contract.md:161`. Route goes under `createChatMessagesRouter()` (`backend/src/routes/chat.routes.ts`), ordered by `createdAt asc`. Reuse `createMessageRepo(req).findManyForChat(chatId)` (ownership enforced by the repo). Required by the frontend chat panel to hydrate history on mount.
+  - verify: `cd backend && npm run test:backend -- --run tests/routes/chat-messages-list.test.ts`
+
+- [ ] **[D16]** Investigate and, if confirmed needed, add `@@unique([storyId, orderIndex])` to `Chapter` and `@@unique([storyId, order])` to `OutlineItem` in `backend/prisma/schema.prisma`. Background: B3/B4/B8 left `TODO(B4)` / `TODO(schema)` markers in the chapter + outline repos because the `aggregate(_max) → insert` auto-assign pattern in their POST handlers is racy — concurrent POSTs to the same story can produce duplicate `orderIndex` / `order` rows with no DB-level guard. Breaking schema changes are acceptable (there is no deployed data to migrate per CLAUDE.md's "migration handling is deferred" rule). After adding the constraint, update the POST handlers to catch Prisma `P2002` (unique violation) and retry the aggregate, and extend the reorder transaction to use a two-phase swap (negative temp values → final) to avoid unique-constraint violations mid-transaction. Remove the two TODO markers. If the investigation concludes the constraint is not worth the complexity cost, document the rationale in `docs/data-model.md` and remove the TODOs.
+  - verify: `cd backend && npm run test:backend -- --run tests/routes/chapters.test.ts tests/routes/chapters-reorder.test.ts tests/routes/outline.test.ts`
+
 ---
 
 ## 🎨 F — Frontend
