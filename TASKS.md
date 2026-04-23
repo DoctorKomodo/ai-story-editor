@@ -371,7 +371,7 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 - [x] **[B5]** Characters full CRUD under `/api/stories/:storyId/characters`. All fields validated with Zod.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/characters.test.ts`
 
-- [ ] **[B6]** `GET /api/health` returns `{ status: "ok", db: "connected" }`. Returns 503 if DB unreachable.
+- [x] **[B6]** `GET /api/health` returns `{ status: "ok", db: "connected" }`. Returns 503 if DB unreachable.
   - verify: `curl -sf http://localhost:4000/api/health | grep '"status":"ok"'`
 
 - [x] **[B7]** Global error handler: consistent `{ error: { message, code } }` JSON. No stack traces in production.
