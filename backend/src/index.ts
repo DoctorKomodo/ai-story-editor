@@ -51,7 +51,9 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json());
+// 256kb limit: encrypted narrative-field Zod maxima (worldNotes 50k + others)
+// worst-case in multi-byte UTF-8 exceed Express's default 100kb body limit.
+app.use(express.json({ limit: '256kb' }));
 app.use(cookieParser());
 // morgan's dev format is for local debugging only. In production it would log
 // every request URL (including owned resource IDs like /api/stories/:id) to
@@ -74,7 +76,6 @@ app.use(
 app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/ai', createAiRouter());
-// [B1] Story list + create. Chapters, characters, outline, chat follow in B2–B11.
 app.use('/api/stories', createStoriesRouter());
 // [V15] Chat + message routes — two separate router mounts (option A: mergeParams).
 app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
