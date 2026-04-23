@@ -15,6 +15,7 @@ import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
 import { createOutlineRouter } from './routes/outline.routes';
 import { createStoriesRouter } from './routes/stories.routes';
+import { createUserSettingsRouter } from './routes/user-settings.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
 // tests/setup.ts, so this runs cleanly there too.
@@ -79,6 +80,7 @@ app.use(
 
 app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
+app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());
 app.use('/api/stories', createStoriesRouter());
 // [B3] Chapter CRUD nested under a parent story. mergeParams: true inside the
