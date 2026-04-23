@@ -296,18 +296,27 @@ describe('Venice error handling [V11]', () => {
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
       fetchSpy.mockResolvedValueOnce(errorResponse(401, 'Invalid API key'));
 
+      // Spy on all console channels — the key must not leak through any of them
       const errorSpy = vi.spyOn(console, 'error');
+      const warnSpy = vi.spyOn(console, 'warn');
+      const logSpy = vi.spyOn(console, 'log');
+      const infoSpy = vi.spyOn(console, 'info');
 
       await request(app)
         .post('/api/ai/complete')
         .set('Authorization', `Bearer ${accessToken}`)
         .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
 
-      // The key must never appear in any console.error call
-      const allLoggedArgs = errorSpy.mock.calls.flat().map(String).join(' ');
+      // The key must never appear in any console channel
+      const allLoggedArgs = [
+        ...errorSpy.mock.calls,
+        ...warnSpy.mock.calls,
+        ...logSpy.mock.calls,
+        ...infoSpy.mock.calls,
+      ].flat().map(String).join(' ');
       expect(allLoggedArgs).not.toContain(VALID_KEY);
 
-      errorSpy.mockRestore();
+      vi.restoreAllMocks();
     });
   });
 

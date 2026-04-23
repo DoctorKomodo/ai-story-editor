@@ -58,6 +58,7 @@ describe('GET /api/ai/balance [V10]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
+    await prisma.session.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
@@ -68,6 +69,7 @@ describe('GET /api/ai/balance [V10]', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
+    await prisma.session.deleteMany();
     await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });

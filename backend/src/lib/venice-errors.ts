@@ -20,7 +20,7 @@ type SdkHeaders = Record<string, string | null | undefined>;
  * Handles both the delta-seconds form ("60") and the HTTP-date form.
  * Returns null when the header is absent or unparseable.
  */
-function parseRetryAfter(
+export function parseRetryAfter(
   headers: SdkHeaders | null | undefined,
 ): number | null {
   const raw = headers?.['retry-after'] ?? null;
