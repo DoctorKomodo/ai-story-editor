@@ -208,9 +208,9 @@ describe('Chat persistence [V15]', () => {
       .send({ title: 'My Chat' });
 
     expect(res.status).toBe(201);
-    expect(res.body.title).toBe('My Chat');
-    expect(res.body.chapterId).toBe(chapterId);
-    expect(typeof res.body.id).toBe('string');
+    expect(res.body.chat.title).toBe('My Chat');
+    expect(res.body.chat.chapterId).toBe(chapterId);
+    expect(typeof res.body.chat.id).toBe('string');
   });
 
   it('POST /api/chapters/:chapterId/chats returns 201 with null title when omitted', async () => {
@@ -224,7 +224,7 @@ describe('Chat persistence [V15]', () => {
       .send({});
 
     expect(res.status).toBe(201);
-    expect(res.body.title).toBeNull();
+    expect(res.body.chat.title).toBeNull();
   });
 
   it('POST /api/chapters/:chapterId/chats returns 401 without Bearer', async () => {

@@ -101,7 +101,7 @@ export function createChapterChatsRouter() {
         title: body.title ?? null,
       });
 
-      res.status(201).json(chat);
+      res.status(201).json({ chat });
     } catch (err) {
       next(err);
     }

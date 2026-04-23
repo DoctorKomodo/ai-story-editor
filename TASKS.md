@@ -395,7 +395,7 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 
 Surfaced by the final cross-cutting review of the B-series branch. V-series contract gaps + a Venice-API audit + one deferred schema fix. Work these before starting F so the frontend codes against a settled contract.
 
-- [ ] **[V19]** Wrap `POST /api/chapters/:chapterId/chats` response body in `{ chat }` envelope to match `docs/api-contract.md:156`. Currently returns the bare `chat` object at the top level. Update `backend/src/routes/chat.routes.ts` and any test assertions in `backend/tests/ai/chat-persistence.test.ts` that relied on the flat shape.
+- [x] **[V19]** Wrap `POST /api/chapters/:chapterId/chats` response body in `{ chat }` envelope to match `docs/api-contract.md:156`. Currently returns the bare `chat` object at the top level. Update `backend/src/routes/chat.routes.ts` and any test assertions in `backend/tests/ai/chat-persistence.test.ts` that relied on the flat shape.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/chat-persistence.test.ts`
 
 - [ ] **[V20]** Add `.strict()` to `CreateChatBody`, `PostMessageBody`, and the nested `attachment` sub-schema in `backend/src/routes/chat.routes.ts` so stray / misspelled keys return 400 instead of being silently dropped. Mirror the B-series precedent (`validation_error` envelope via `backend/src/lib/bad-request.ts`). Add tests for unknown-key rejection on both endpoints.
