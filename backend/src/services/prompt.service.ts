@@ -63,6 +63,22 @@ export function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4);
 }
 
+// ─── Ask-action user content renderer ────────────────────────────────────────
+
+// Exported so that the history-reconstruction path in chat.routes.ts can
+// produce the same framing as the prompt builder — preventing the two sites
+// from drifting apart.  Pure; no IO.
+export function renderAskUserContent({
+  freeformInstruction,
+  selectionText,
+}: {
+  freeformInstruction: string;
+  selectionText?: string | null;
+}): string {
+  const attached = selectionText ? `\n\nAttached selection: «${selectionText}»` : '';
+  return `User question: ${freeformInstruction}${attached}`;
+}
+
 // ─── Action task block ────────────────────────────────────────────────────────
 
 function buildTaskBlock(input: BuildPromptInput): string {
@@ -93,8 +109,10 @@ function buildTaskBlock(input: BuildPromptInput): string {
       if (!input.freeformInstruction) {
         throw new PromptValidationError('freeformInstruction is required for action "ask"');
       }
-      const attached = input.selectedText ? `\n\nAttached selection: «${input.selectedText}»` : '';
-      return `User question: ${input.freeformInstruction}${attached}`;
+      return renderAskUserContent({
+        freeformInstruction: input.freeformInstruction,
+        selectionText: input.selectedText,
+      });
     }
   }
 }

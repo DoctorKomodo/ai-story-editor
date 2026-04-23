@@ -6,6 +6,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildPrompt,
+  renderAskUserContent,
   DEFAULT_SYSTEM_PROMPT,
   type BuildPromptInput,
 } from '../../src/services/prompt.service';
@@ -170,5 +171,61 @@ describe('[V12] action=freeform', () => {
     expect(() =>
       buildPrompt(baseInput({ action: 'freeform', freeformInstruction: '', selectedText: 'T.' })),
     ).not.toThrow();
+  });
+});
+
+// ─── renderAskUserContent ─────────────────────────────────────────────────────
+
+describe('renderAskUserContent', () => {
+  it('without selection: returns "User question: <instruction>"', () => {
+    const result = renderAskUserContent({ freeformInstruction: 'What happens next?' });
+    expect(result).toBe('User question: What happens next?');
+    expect(result).not.toContain('Attached selection');
+  });
+
+  it('with selection: appends "Attached selection: «…»" on a new line', () => {
+    const result = renderAskUserContent({
+      freeformInstruction: 'Explain this passage.',
+      selectionText: 'The sun rose slowly.',
+    });
+    expect(result).toBe(
+      'User question: Explain this passage.\n\nAttached selection: «The sun rose slowly.»',
+    );
+  });
+
+  it('empty selectionText is treated as no selection (no attachment block)', () => {
+    const result = renderAskUserContent({
+      freeformInstruction: 'Tell me more.',
+      selectionText: '',
+    });
+    expect(result).toBe('User question: Tell me more.');
+    expect(result).not.toContain('Attached selection');
+  });
+
+  it('null selectionText is treated as no selection', () => {
+    const result = renderAskUserContent({
+      freeformInstruction: 'Any thoughts?',
+      selectionText: null,
+    });
+    expect(result).toBe('User question: Any thoughts?');
+    expect(result).not.toContain('Attached selection');
+  });
+
+  it('matches the framing that buildPrompt action=ask produces', () => {
+    const instruction = 'What is the theme here?';
+    const selection = 'He walked away in silence.';
+
+    // Via buildPrompt (integration path).
+    const built = buildPrompt(
+      baseInput({ action: 'ask', freeformInstruction: instruction, selectedText: selection }),
+    );
+    const builtUserContent = built.messages.find((m) => m.role === 'user')?.content ?? '';
+
+    // Via renderAskUserContent (history-reconstruction path).
+    const rendered = renderAskUserContent({ freeformInstruction: instruction, selectionText: selection });
+
+    // The task block is embedded inside a larger user message (chapter, characters, etc.),
+    // but both must agree on the key framing strings.
+    expect(builtUserContent).toContain(rendered);
   });
 });

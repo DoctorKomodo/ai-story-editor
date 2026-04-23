@@ -44,6 +44,48 @@ describe('[E9] message.repo', () => {
     expect(raw.attachmentJsonCiphertext).toBeTruthy();
   });
 
+  it('countForChat returns the number of messages in an owned chat', async () => {
+    const ctx = await makeUserContext();
+    const story = await createStoryRepo(ctx.req).create({ title: 's' });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'ch',
+      orderIndex: 0,
+    });
+    const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id as string });
+    const repo = createMessageRepo(ctx.req);
+
+    expect(await repo.countForChat(chat.id as string)).toBe(0);
+
+    await repo.create({ chatId: chat.id as string, role: 'user', contentJson: 'q1' });
+    await repo.create({ chatId: chat.id as string, role: 'assistant', contentJson: 'a1' });
+
+    expect(await repo.countForChat(chat.id as string)).toBe(2);
+  });
+
+  it('countForChat returns 0 for a chat belonging to another user (no throw)', async () => {
+    // Create a chat owned by user A.
+    const ctxA = await makeUserContext();
+    const story = await createStoryRepo(ctxA.req).create({ title: 'story-a' });
+    const chapter = await createChapterRepo(ctxA.req).create({
+      storyId: story.id as string,
+      title: 'ch-a',
+      orderIndex: 0,
+    });
+    const chat = await createChatRepo(ctxA.req).create({ chapterId: chapter.id as string });
+    await createMessageRepo(ctxA.req).create({
+      chatId: chat.id as string,
+      role: 'user',
+      contentJson: 'secret message',
+    });
+
+    // User B tries to count messages for that chat — should get 0, not throw.
+    const ctxB = await makeUserContext();
+    const repoB = createMessageRepo(ctxB.req);
+    const count = await repoB.countForChat(chat.id as string);
+    expect(count).toBe(0);
+  });
+
   it('findManyForChat returns ordered messages with decrypted content', async () => {
     const ctx = await makeUserContext();
     const story = await createStoryRepo(ctx.req).create({ title: 's' });

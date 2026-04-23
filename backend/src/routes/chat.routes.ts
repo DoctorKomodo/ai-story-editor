@@ -15,7 +15,7 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
 import { veniceModelsService } from '../services/venice.models.service';
-import { buildPrompt, type CharacterContext } from '../services/prompt.service';
+import { buildPrompt, renderAskUserContent, type CharacterContext } from '../services/prompt.service';
 import { createChatRepo } from '../repos/chat.repo';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createStoryRepo } from '../repos/story.repo';
@@ -120,12 +120,10 @@ export function createChapterChatsRouter() {
 
       const chats = await createChatRepo(req).findManyForChapter(chapterId);
 
-      // Enrich each chat with its message count.
+      // Enrich each chat with its message count (via repo layer — ownership enforced).
       const enriched = await Promise.all(
         chats.map(async (chat) => {
-          const messageCount = await prisma.message.count({
-            where: { chatId: chat.id as string },
-          });
+          const messageCount = await createMessageRepo(req).countForChat(chat.id as string);
           return { ...chat, messageCount };
         }),
       );
@@ -247,12 +245,31 @@ export function createChatMessagesRouter() {
       const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
       const systemMsg = baseMessages[0];
       const synthesisedUserMsg = baseMessages[1];
-      const history = priorMessages.map((m) => ({
-        role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
-        content: typeof m.contentJson === 'string'
-          ? m.contentJson
-          : JSON.stringify(m.contentJson),
-      }));
+      const history = priorMessages.map((m) => {
+        const rawContent =
+          typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
+
+        // For prior user turns that carried an attachment, re-synthesise the
+        // same framing that the prompt builder emits for the `ask` action so
+        // that Venice sees consistent context across turns.
+        if (m.role === 'user' && m.attachmentJson != null) {
+          const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
+          if (typeof att.selectionText === 'string') {
+            return {
+              role: 'user' as const,
+              content: renderAskUserContent({
+                freeformInstruction: rawContent,
+                selectionText: att.selectionText,
+              }),
+            };
+          }
+        }
+
+        return {
+          role: (m.role === 'assistant' ? 'assistant' : 'user') as 'user' | 'assistant',
+          content: rawContent,
+        };
+      });
       const messages: Array<{ role: MessageRole; content: string }> = [
         systemMsg,
         ...history,

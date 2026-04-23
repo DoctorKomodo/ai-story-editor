@@ -306,6 +306,57 @@ describe('Ask-AI attachment payload [V16]', () => {
     expect(rawMsg!.attachmentJsonCiphertext).not.toContain(ATTACHMENT_SENTINEL);
   });
 
+  it('multi-turn: prior user turn WITH attachment is re-synthesised in history (round-trip)', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { chapterId, chatId } = await setupStoryChapterAndChat(req);
+
+    // ── Turn 1: user sends a message WITH an attachment ──────────────────────
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([makeChunk('Turn-one reply.', 'stop')]),
+    );
+
+    await sendMessage(accessToken, chatId, {
+      content: 'What is the significance of this passage?',
+      modelId: BASE_MODEL_ID,
+      attachment: { selectionText: 'The knight removed his helmet.', chapterId },
+    });
+
+    // ── Turn 2: user sends WITHOUT attachment ────────────────────────────────
+    // The models list is already cached, so only one Venice call needed here.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([makeChunk('Turn-two reply.', 'stop')]),
+    );
+
+    await sendMessage(accessToken, chatId, {
+      content: 'Can you elaborate on that?',
+      modelId: BASE_MODEL_ID,
+    });
+
+    // ── Assert the second Venice completions call ────────────────────────────
+    const completionCalls = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    // Two turns → two completions calls.
+    expect(completionCalls.length).toBeGreaterThanOrEqual(2);
+
+    const secondCall = completionCalls[1]!;
+    const [, init] = secondCall;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    const sentMessages = requestBody.messages as Array<{ role: string; content: string }>;
+
+    // The prior user turn (turn 1) should have its attachment text in the
+    // reconstructed history content — proving the round-trip is intact.
+    const priorUserTurn = sentMessages.find(
+      (m) => m.role === 'user' && m.content.includes('What is the significance of this passage?'),
+    );
+    expect(priorUserTurn).toBeDefined();
+    expect(priorUserTurn!.content).toContain('The knight removed his helmet.');
+    expect(priorUserTurn!.content).toContain('Attached selection');
+  });
+
   it('attachment-less path still works (no attachmentJson on user message)', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
