@@ -2,7 +2,15 @@
 // by the route layer so this module stays unit-testable without HTTP or Venice
 // client dependencies.
 
-export type PromptAction = 'continue' | 'rephrase' | 'expand' | 'summarise' | 'freeform';
+export type PromptAction =
+  | 'continue'
+  | 'rephrase'
+  | 'expand'
+  | 'summarise'
+  | 'freeform'
+  | 'rewrite'   // mockup selection-bubble vocabulary (visible "Rewrite" button); rephrase is the AI-panel vocabulary from [F12] — both coexist to avoid breaking either surface's contract
+  | 'describe'  // elaborate with vivid sensory/physical/emotional detail
+  | 'ask';      // chat-attachment pathway — NOT valid on /complete; only used via the chat message route (V16)
 
 export interface CharacterContext {
   name: string;
@@ -21,7 +29,7 @@ export interface BuildPromptInput {
   includeVeniceSystemPrompt?: boolean;
   /** If non-null / non-empty, replaces the default creative-writing system message */
   storySystemPrompt?: string | null;
-  /** Only used when action === 'freeform' */
+  /** Required when action === 'freeform' or 'ask'; optional otherwise */
   freeformInstruction?: string;
 }
 
@@ -54,16 +62,32 @@ function buildTaskBlock(input: BuildPromptInput): string {
   const sel = input.selectedText ? `\n\nSelection: «${input.selectedText}»` : '';
   switch (input.action) {
     case 'continue':
-      return `Task: continue the story from where the selection ends, matching the established voice.${sel}`;
+      // ~80-word target aligns with the ⌥↵ cursor-context continuation shortcut (V14).
+      return `Task: continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.${sel}`;
     case 'rephrase':
-      return `Task: rephrase the selection, preserving meaning.${sel}`;
+      return `Task: rephrase the selection, preserving meaning. Return a single rewritten version.${sel}`;
     case 'expand':
-      return `Task: expand the selection with more detail, description, and depth.${sel}`;
+      return `Task: expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.${sel}`;
     case 'summarise':
-      return `Task: summarise the selection to its essentials.${sel}`;
+      return `Task: summarise the selection to its essential points. Use 1–3 sentences.${sel}`;
     case 'freeform': {
       const instruction = input.freeformInstruction ?? '';
       return `${instruction}${sel}`;
+    }
+    // ── V14 additions ──────────────────────────────────────────────────────
+    case 'rewrite':
+      // rewrite = mockup selection-bubble vocabulary; rephrase = AI-panel vocabulary.
+      // Near-identical intent — both are kept to avoid breaking either surface's contract.
+      return `Task: rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.${sel}`;
+    case 'describe':
+      return `Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.${sel}`;
+    case 'ask': {
+      // ask routes selection into chat as an attachment (V16). freeformInstruction is required.
+      if (!input.freeformInstruction) {
+        throw new Error('freeformInstruction is required for action "ask"');
+      }
+      const attached = input.selectedText ? `\n\nAttached selection: «${input.selectedText}»` : '';
+      return `User question: ${input.freeformInstruction}${attached}`;
     }
   }
 }
