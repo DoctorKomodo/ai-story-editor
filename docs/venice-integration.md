@@ -135,7 +135,19 @@ Non-reasoning models never set this flag; the test in `tests/ai/reasoning.test.t
 
 ## Prompt Caching ([V8])
 
-We set `venice_parameters.prompt_cache_key = sha256(storyId + modelId)` on every `/api/ai/complete` request. Same story + same model → same Venice backend → higher cache-hit rate → lower latency and cost. The key is deterministic and does not leak story content. Hash is computed server-side in the prompt builder.
+Every `/api/ai/complete` request sets:
+
+```
+venice_parameters.prompt_cache_key = sha256(`${storyId}:${modelId}`).slice(0, 32)
+```
+
+The hash is **deterministic per (storyId, modelId) pair**: same story + same model → same Venice backend → higher cache-hit rate → lower latency and lower cost for the user. Truncating to 32 hex characters keeps the key compact in Venice's telemetry without sacrificing uniqueness (2^128 collision space is sufficient).
+
+Key properties:
+- **Server-side only** — computed in `ai.routes.ts`, never accepted from the client.
+- **Content-blind** — the key is derived from IDs, not from plaintext content. Leaking the cache key reveals only that two requests targeted the same story with the same model.
+- **Always set** — `prompt_cache_key` is present on every `/api/ai/complete` call regardless of action type, model, or web-search flag.
+- **Not stored** — recomputed freshly on each request; no persistence needed.
 
 ---
 
