@@ -2,7 +2,7 @@
 //
 // Covers:
 //   - 200 happy path: `{ status: 'ok', db: 'connected' }` and real DB probe.
-//   - 503 DB-down path: $queryRaw throws → `{ status: 'error', db: 'disconnected' }`.
+//   - 503 DB-down path: $queryRaw throws → `{ status: 'degraded', db: 'unreachable' }`.
 //
 // We spy on the exact prisma singleton the app imports from `src/lib/prisma.ts`.
 // The ./setup export is a *different* PrismaClient (pinned to the test DB), so
@@ -25,14 +25,14 @@ describe('GET /api/health', () => {
     expect(res.body).toEqual({ status: 'ok', db: 'connected' });
   });
 
-  it('returns 503 with status=error and db=disconnected when DB is unreachable', async () => {
+  it('returns 503 with status=degraded and db=unreachable when DB is unreachable', async () => {
     const spy = vi
       .spyOn(appPrisma, '$queryRaw')
       .mockRejectedValueOnce(new Error('connection refused'));
 
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(503);
-    expect(res.body).toEqual({ status: 'error', db: 'disconnected' });
+    expect(res.body).toEqual({ status: 'degraded', db: 'unreachable' });
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
