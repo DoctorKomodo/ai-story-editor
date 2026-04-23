@@ -10,7 +10,9 @@
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "test": "vitest run",
     "test:backend": "vitest",
-    "db:test:reset": "bash ../scripts/db-test-reset.sh"
+    "db:test:reset": "bash ../scripts/db-test-reset.sh",
+    "test:live": "bash -c 'OUT=$(vitest --config vitest.live.config.ts \"$@\" 2>&1); CODE=$?; echo \"$OUT\"; exit $CODE' --",
+    "venice:probe": "ts-node scripts/venice-probe.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -37,6 +39,7 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
     "@types/supertest": "^7.2.0",
+    "dotenv": "^17.4.2",
     "pg": "^8.20.0",
     "supertest": "^7.2.2",
     "ts-node-dev": "^2.0.0",
