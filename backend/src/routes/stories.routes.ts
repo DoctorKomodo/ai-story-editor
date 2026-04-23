@@ -141,6 +141,55 @@ export function createStoriesRouter() {
 
   const ownStory = requireOwnership('story', { idParam: 'id' });
 
+  // GET /api/stories/:id/progress — aggregate for the sidebar progress footer.
+  // Returns { wordCount, targetWords, percent, chapters: [{ id, wordCount }] }.
+  // `wordCount` is plaintext on chapters (not narrative content), so reading
+  // it directly via Prisma is fine — nothing ciphertext-adjacent is selected.
+  // `percent` is floor((wordCount / targetWords) * 100); 0 when targetWords is
+  // null or 0. Not clamped at 100: over-target stories render >100% in the UI.
+  router.get(
+    '/:id/progress',
+    ownStory,
+    async (req: Request, res: Response, next: NextFunction) => {
+      const id = req.params.id as string;
+      const userId = req.user!.id;
+      try {
+        // targetWords lives plaintext on Story; reading just that column
+        // keeps us off the ciphertext surface entirely. Scope by userId for
+        // defence-in-depth on top of ownership middleware.
+        const story = await prisma.story.findFirst({
+          where: { id, userId },
+          select: { targetWords: true },
+        });
+        if (!story) {
+          // Race: ownership middleware saw the row, then it got deleted.
+          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
+          return;
+        }
+
+        const chapters = await prisma.chapter.findMany({
+          where: { storyId: id, story: { userId } },
+          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+          select: { id: true, wordCount: true },
+        });
+
+        const wordCount = chapters.reduce((sum, c) => sum + c.wordCount, 0);
+        const targetWords = story.targetWords ?? null;
+        const percent =
+          targetWords && targetWords > 0 ? Math.floor((wordCount / targetWords) * 100) : 0;
+
+        res.status(200).json({
+          wordCount,
+          targetWords,
+          percent,
+          chapters: chapters.map((c) => ({ id: c.id, wordCount: c.wordCount })),
+        });
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
+
   // GET /api/stories/:id — return the decrypted story.
   router.get('/:id', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     // Express types `req.params[k]` as `string | string[]`; ownership
