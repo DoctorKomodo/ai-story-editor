@@ -208,9 +208,9 @@ describe('Chat persistence [V15]', () => {
       .send({ title: 'My Chat' });
 
     expect(res.status).toBe(201);
-    expect(res.body.title).toBe('My Chat');
-    expect(res.body.chapterId).toBe(chapterId);
-    expect(typeof res.body.id).toBe('string');
+    expect(res.body.chat.title).toBe('My Chat');
+    expect(res.body.chat.chapterId).toBe(chapterId);
+    expect(typeof res.body.chat.id).toBe('string');
   });
 
   it('POST /api/chapters/:chapterId/chats returns 201 with null title when omitted', async () => {
@@ -224,7 +224,23 @@ describe('Chat persistence [V15]', () => {
       .send({});
 
     expect(res.status).toBe(201);
-    expect(res.body.title).toBeNull();
+    expect(res.body.chat.title).toBeNull();
+  });
+
+  // [V20] strict schema — unknown keys on CreateChatBody are rejected.
+  it('POST /api/chapters/:chapterId/chats returns 400 validation_error on unknown keys', async () => {
+    const accessToken = await registerAndLogin();
+    const req = makeFakeReq(accessToken);
+    const { chapterId } = await setupStoryAndChapter(req);
+
+    const res = await request(app)
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ title: 'ok', extraneous: 'nope' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+    expect(Array.isArray(res.body.error.issues)).toBe(true);
   });
 
   it('POST /api/chapters/:chapterId/chats returns 401 without Bearer', async () => {
@@ -291,6 +307,32 @@ describe('Chat persistence [V15]', () => {
       .post('/api/chats/some-chat/messages')
       .send({ content: 'hi', modelId: BASE_MODEL_ID });
     expect(res.status).toBe(401);
+  });
+
+  // [V20] strict schema — unknown top-level key on PostMessageBody.
+  it('POST /api/chats/:chatId/messages returns 400 validation_error on unknown top-level key', async () => {
+    const accessToken = await registerAndLogin();
+    const res = await request(app)
+      .post('/api/chats/some-chat/messages')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ content: 'hi', modelId: BASE_MODEL_ID, stray: 'nope' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+  });
+
+  // [V20] strict schema — unknown key inside nested `attachment`.
+  it('POST /api/chats/:chatId/messages returns 400 validation_error on unknown attachment key', async () => {
+    const accessToken = await registerAndLogin();
+    const res = await request(app)
+      .post('/api/chats/some-chat/messages')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        content: 'hi',
+        modelId: BASE_MODEL_ID,
+        attachment: { selectionText: 'x', chapterId: 'y', extra: 'nope' },
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST /api/chats/:chatId/messages returns 404 for unowned chat', async () => {

@@ -23,6 +23,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
+import { badRequestFromZod } from '../lib/bad-request';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
 
@@ -30,21 +31,26 @@ type MessageRole = 'user' | 'assistant' | 'system';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
-const CreateChatBody = z.object({
-  title: z.string().optional(),
-});
+const CreateChatBody = z
+  .object({
+    title: z.string().optional(),
+  })
+  .strict();
 
-const PostMessageBody = z.object({
-  content: z.string().min(1),
-  modelId: z.string().min(1),
-  // [V16] Optional attachment — selection from the current chapter.
-  attachment: z
-    .object({
-      selectionText: z.string().min(1),
-      chapterId: z.string().min(1),
-    })
-    .optional(),
-});
+const PostMessageBody = z
+  .object({
+    content: z.string().min(1),
+    modelId: z.string().min(1),
+    // [V16] Optional attachment — selection from the current chapter.
+    attachment: z
+      .object({
+        selectionText: z.string().min(1),
+        chapterId: z.string().min(1),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -81,9 +87,7 @@ export function createChapterChatsRouter() {
 
     const parsed = CreateChatBody.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: { message: 'Invalid request', code: 'invalid_request', details: parsed.error.flatten() } });
+      badRequestFromZod(res, parsed.error);
       return;
     }
     const body = parsed.data;
@@ -101,7 +105,7 @@ export function createChapterChatsRouter() {
         title: body.title ?? null,
       });
 
-      res.status(201).json(chat);
+      res.status(201).json({ chat });
     } catch (err) {
       next(err);
     }
@@ -143,6 +147,35 @@ export function createChatMessagesRouter() {
   const router = Router({ mergeParams: true });
   router.use(requireAuth);
 
+  // [V21] GET /api/chats/:chatId/messages — list messages in the chat (asc).
+  router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+    const { chatId } = req.params;
+    try {
+      // Pre-check via repo to return 404 cleanly for unowned / missing chats;
+      // findManyForChat would otherwise throw a generic Error → 500.
+      const chat = await createChatRepo(req).findById(chatId);
+      if (!chat) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+
+      const rows = await createMessageRepo(req).findManyForChat(chatId);
+      const messages = rows.map((m) => ({
+        id: m.id,
+        role: m.role,
+        contentJson: m.contentJson,
+        attachmentJson: m.attachmentJson ?? null,
+        model: m.model ?? null,
+        tokens: m.tokens ?? null,
+        latencyMs: m.latencyMs ?? null,
+        createdAt: m.createdAt,
+      }));
+      res.status(200).json({ messages });
+    } catch (err) {
+      next(err);
+    }
+  });
+
   // TODO: add per-chat rate limiting in a future task (chat rate limit follow-up).
 
   // POST /api/chats/:chatId/messages — append a user message, stream assistant reply.
@@ -152,9 +185,7 @@ export function createChatMessagesRouter() {
 
     const parsed = PostMessageBody.safeParse(req.body);
     if (!parsed.success) {
-      res
-        .status(400)
-        .json({ error: { message: 'Invalid request', code: 'invalid_request', details: parsed.error.flatten() } });
+      badRequestFromZod(res, parsed.error);
       return;
     }
     const body = parsed.data;
