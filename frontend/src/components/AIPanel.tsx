@@ -37,6 +37,18 @@ export interface AIPanelProps {
    * and the capability-gated render via `<WebSearchToggle />`.
    */
   webSearchToggle?: React.ReactNode;
+  /**
+   * [F15] Optional result slot rendered below the freeform section. Parent
+   * passes an `<AIResult />` driven by `useAICompletion()`. The slot keeps
+   * this panel agnostic of the streaming-hook wiring.
+   */
+  result?: React.ReactNode;
+  /**
+   * [F15] Optional friendly message surfaced under the action buttons when
+   * the user clicks an action without a required prerequisite (e.g. no model
+   * selected, no chapter selected). Rendered with `role="alert"`.
+   */
+  actionError?: string | null;
 }
 
 const SELECTION_DISPLAY_MAX = 200;
@@ -56,6 +68,8 @@ export function AIPanel({
   pending = false,
   modelSelector,
   webSearchToggle,
+  result,
+  actionError,
 }: AIPanelProps): JSX.Element {
   const [freeform, setFreeform] = useState('');
 
@@ -156,6 +170,14 @@ export function AIPanel({
           Run
         </button>
       </div>
+
+      {actionError !== undefined && actionError !== null && actionError.length > 0 && (
+        <p role="alert" className="text-sm text-red-600">
+          {actionError}
+        </p>
+      )}
+
+      {result !== undefined && result !== null && result}
     </div>
   );
 }

@@ -5,10 +5,12 @@ import { useStoryQuery } from '@/hooks/useStories';
 import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
 import { AIPanel, type AIAction } from '@/components/AIPanel';
+import { AIResult } from '@/components/AIResult';
 import { ModelSelector } from '@/components/ModelSelector';
 import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useModelsQuery } from '@/hooks/useModels';
+import { useAICompletion } from '@/hooks/useAICompletion';
 
 function extractSelection(editor: TiptapEditor): string {
   const { from, to } = editor.state.selection;
@@ -54,6 +56,12 @@ export function EditorPage(): JSX.Element {
   const [webSearch, setWebSearch] = useState(false);
   const { data: models } = useModelsQuery();
   const selectedModel = models?.find((m) => m.id === selectedModelId) ?? null;
+  // [F15] Streaming AI completion hook — owns status/text/error for the
+  // in-flight call. `actionError` is the pre-call validation message (no
+  // model / no chapter); the hook's own error state is for transport-level
+  // failures (no Venice key, rate-limit, mid-stream error).
+  const completion = useAICompletion();
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     setWebSearch(false);
@@ -76,16 +84,35 @@ export function EditorPage(): JSX.Element {
 
   const handleAIAction = useCallback(
     (action: AIAction, freeformInstruction?: string): void => {
-      // [F15] will replace this stub with the streaming call to /api/ai/complete.
-      // eslint-disable-next-line no-console
-      console.info('F15 will call /api/ai/complete with', {
+      if (!story) return;
+      if (selectedModelId === null) {
+        setActionError('Select a model before running an AI action.');
+        return;
+      }
+      if (activeChapterId === null) {
+        setActionError('Select a chapter before running an AI action.');
+        return;
+      }
+      setActionError(null);
+      void completion.run({
         action,
-        freeformInstruction,
         selectedText,
-        webSearch,
+        chapterId: activeChapterId,
+        storyId: story.id,
+        modelId: selectedModelId,
+        freeformInstruction,
+        enableWebSearch: webSearch,
       });
     },
-    [selectedText, webSearch],
+    [activeChapterId, completion, selectedModelId, selectedText, story, webSearch],
+  );
+
+  const handleInsertAtCursor = useCallback(
+    (text: string): void => {
+      if (!editor) return;
+      editor.chain().focus().insertContent(text).run();
+    },
+    [editor],
   );
 
   if (isLoading) {
@@ -172,6 +199,8 @@ export function EditorPage(): JSX.Element {
           <AIPanel
             selectedText={selectedText}
             onAction={handleAIAction}
+            pending={completion.status === 'streaming'}
+            actionError={actionError}
             modelSelector={
               <ModelSelector value={selectedModelId} onChange={setSelectedModelId} />
             }
@@ -180,6 +209,15 @@ export function EditorPage(): JSX.Element {
                 model={selectedModel}
                 checked={webSearch}
                 onChange={setWebSearch}
+              />
+            }
+            result={
+              <AIResult
+                status={completion.status}
+                text={completion.text}
+                error={completion.error}
+                onInsertAtCursor={handleInsertAtCursor}
+                onDismiss={completion.reset}
               />
             }
           />
