@@ -4,7 +4,6 @@ import { ZodError, z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth.middleware';
-import { requireAllowedOrigin } from '../middleware/origin-check.middleware';
 import {
   authService,
   InvalidCredentialsError,
@@ -57,36 +56,31 @@ function buildRotateRecoveryCodeSchema() {
 // requests via requireAuth — the keyGenerator relies on req.user.id, which
 // the middleware sets before this limiter runs.
 //
-// One instance per route (not a shared quota) preserves the original
-// design: each sensitive endpoint has its own 10/min bucket. They're
-// exported as module-scope constants rather than factory invocations at
-// route-definition time so CodeQL's data-flow analysis can trace
-// `rateLimit(...)` directly to the route's middleware chain — a factory
-// call hides the pattern behind one indirection and trips the
-// "missing rate limiting" rule.
-function buildSensitiveAuthLimiter() {
-  return rateLimit({
-    windowMs: 60_000,
-    // Generous enough that the test suite can exercise the endpoint
-    // several times per describe block without hitting the limit, but
-    // still meaningful as a brute-force defence. Tune in production via
-    // env if needed.
-    limit: 10,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    // Keying on user id (not ip) matches the task spec — a shared NAT
-    // can't DOS a legitimate user's ability to change their own password,
-    // and a compromised session can't burn someone else's quota.
-    keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
-    // Don't draw from the limit pool when bodies are malformed / unauthed;
-    // the endpoint's protection target is the crypto-verify path, not the
-    // schema / auth rejection path.
-    skipFailedRequests: false,
-  });
-}
+// Each endpoint gets its own independent 10/min bucket (constants, not a
+// shared middleware instance). The `rateLimit(...)` call is at module
+// scope with no factory indirection so CodeQL's "missing rate limiting"
+// rule can trace it directly from the route definition.
+const SENSITIVE_AUTH_LIMIT_OPTIONS = {
+  windowMs: 60_000,
+  // Generous enough that the test suite can exercise the endpoint
+  // several times per describe block without hitting the limit, but
+  // still meaningful as a brute-force defence. Tune in production via
+  // env if needed.
+  limit: 10,
+  standardHeaders: 'draft-7' as const,
+  legacyHeaders: false,
+  // Keying on user id (not ip) matches the task spec — a shared NAT
+  // can't DOS a legitimate user's ability to change their own password,
+  // and a compromised session can't burn someone else's quota.
+  keyGenerator: (req: Request) => req.user?.id ?? req.ip ?? 'unknown',
+  // Don't draw from the limit pool when bodies are malformed / unauthed;
+  // the endpoint's protection target is the crypto-verify path, not the
+  // schema / auth rejection path.
+  skipFailedRequests: false,
+};
 
-const changePasswordLimiter = buildSensitiveAuthLimiter();
-const rotateRecoveryCodeLimiter = buildSensitiveAuthLimiter();
+const changePasswordLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
+const rotateRecoveryCodeLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 
 // Aggressive stacked rate limits for the unauthenticated reset-password
 // endpoint. Spec: "per-IP + per-username". Two limiters stack, so a single
@@ -128,18 +122,8 @@ function resetPasswordUsernameLimiter() {
   });
 }
 
-export function createAuthRouter(allowedOrigin: string) {
+export function createAuthRouter() {
   const router = Router();
-
-  // CSRF defense — applied to the entire /api/auth tree, not just the two
-  // cookie-authed endpoints (/refresh, /logout). All auth endpoints are
-  // POSTs, so the middleware's safe-method (GET/HEAD/OPTIONS) exemption
-  // doesn't apply and every state-changing request gets the Origin check.
-  // Router-level application also makes the CSRF posture visible to
-  // static analysis (CodeQL) right alongside cookieParser mount point.
-  // See origin-check.middleware.ts for the design and non-browser-client
-  // exemption (supertest, curl, etc.).
-  router.use(requireAllowedOrigin(allowedOrigin));
 
   router.post('/register', async (req, res, next) => {
     try {

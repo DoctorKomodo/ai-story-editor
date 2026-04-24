@@ -7,6 +7,7 @@ import morgan from 'morgan';
 import { validateEncryptionEnv } from './boot/env-validation';
 import { prisma } from './lib/prisma';
 import { NoVeniceKeyError } from './lib/venice';
+import { requireAllowedOrigin } from './middleware/origin-check.middleware';
 import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
@@ -81,7 +82,7 @@ app.use(
   }),
 );
 
-app.use('/api/auth', cookieParser(), createAuthRouter(allowedOrigin));
+app.use('/api/auth', cookieParser(), requireAllowedOrigin(allowedOrigin), createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());
