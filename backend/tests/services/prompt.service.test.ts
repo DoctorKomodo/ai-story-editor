@@ -44,11 +44,11 @@ function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput 
 // ─── Shape / structure ───────────────────────────────────────────────────────
 
 describe('buildPrompt — shape', () => {
-  it('returns messages, venice_parameters, and max_tokens', () => {
+  it('returns messages, venice_parameters, and max_completion_tokens', () => {
     const result = buildPrompt(baseInput());
     expect(result).toHaveProperty('messages');
     expect(result).toHaveProperty('venice_parameters');
-    expect(result).toHaveProperty('max_tokens');
+    expect(result).toHaveProperty('max_completion_tokens');
     expect(Array.isArray(result.messages)).toBe(true);
   });
 
@@ -86,21 +86,21 @@ describe('buildPrompt — shape', () => {
   });
 });
 
-// ─── max_tokens budget ────────────────────────────────────────────────────────
+// ─── max_completion_tokens budget ─────────────────────────────────────────────
 
-describe('buildPrompt — max_tokens', () => {
+describe('buildPrompt — max_completion_tokens', () => {
   it('equals floor(modelContextLength * 0.2)', () => {
     const result = buildPrompt(baseInput({ modelContextLength: 4096 }));
-    expect(result.max_tokens).toBe(Math.floor(4096 * 0.2));
+    expect(result.max_completion_tokens).toBe(Math.floor(4096 * 0.2));
   });
 
   it('works for a larger context length', () => {
     const result = buildPrompt(baseInput({ modelContextLength: 65536 }));
-    expect(result.max_tokens).toBe(Math.floor(65536 * 0.2));
+    expect(result.max_completion_tokens).toBe(Math.floor(65536 * 0.2));
   });
 
   it('floors non-integer result (4097 * 0.2 = 819.4 → 819)', () => {
-    expect(buildPrompt(baseInput({ modelContextLength: 4097 })).max_tokens).toBe(819);
+    expect(buildPrompt(baseInput({ modelContextLength: 4097 })).max_completion_tokens).toBe(819);
   });
 });
 

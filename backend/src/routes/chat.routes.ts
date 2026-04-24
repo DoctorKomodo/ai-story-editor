@@ -260,7 +260,7 @@ export function createChatMessagesRouter() {
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
       const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
-      const { messages: baseMessages, venice_parameters: baseVeniceParams, max_tokens } = buildPrompt({
+      const { messages: baseMessages, venice_parameters: baseVeniceParams, max_completion_tokens } = buildPrompt({
         action: 'ask',
         selectedText: body.attachment?.selectionText ?? '',
         chapterContent,
@@ -341,7 +341,7 @@ export function createChatMessagesRouter() {
           model: body.modelId,
           messages,
           stream: true as const,
-          max_tokens,
+          max_completion_tokens,
           // Request usage in the final chunk so we can persist token counts.
           stream_options: { include_usage: true },
           prompt_cache_key: chatPromptCacheKey(chatId, body.modelId),
