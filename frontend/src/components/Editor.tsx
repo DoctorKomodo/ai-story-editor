@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { Editor as TiptapEditor, JSONContent } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
@@ -73,6 +73,15 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
   // See CLAUDE.md "Known Gotchas" — useEditor needs a stable reference.
   const extensions = useMemo(() => [StarterKit], []);
 
+  // `useEditor` wires callbacks at mount and does not re-subscribe when
+  // its options object changes, so a prop callback captured directly would
+  // go stale if the parent re-renders with a new function reference. Route
+  // through a ref so the latest prop is always called.
+  const onUpdateRef = useRef(onUpdate);
+  useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  }, [onUpdate]);
+
   const editor = useEditor({
     extensions,
     content: initialBodyJson ?? DEFAULT_EMPTY_DOC,
@@ -87,18 +96,29 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
       },
     },
     onUpdate({ editor: ed }) {
-      if (!onUpdate) return;
+      const cb = onUpdateRef.current;
+      if (!cb) return;
       const json = ed.getJSON();
       const wordCount = countWords(ed.getText());
-      onUpdate({ bodyJson: json, wordCount });
+      cb({ bodyJson: json, wordCount });
     },
   });
 
   // Surface the editor instance to consumers that need deterministic
-  // control (primarily tests). Fire once when the editor first mounts.
+  // control (primarily tests). Fire once when the editor first mounts;
+  // use a ref to avoid re-firing on parent-provided callback identity
+  // changes, and guard against double-fire in React StrictMode.
+  const onReadyRef = useRef(onReady);
   useEffect(() => {
-    if (editor && onReady) onReady(editor);
-  }, [editor, onReady]);
+    onReadyRef.current = onReady;
+  }, [onReady]);
+  const readyFiredFor = useRef<TiptapEditor | null>(null);
+  useEffect(() => {
+    if (!editor) return;
+    if (readyFiredFor.current === editor) return;
+    readyFiredFor.current = editor;
+    onReadyRef.current?.(editor);
+  }, [editor]);
 
   // Swap content when the controlled prop changes (e.g. F9 loads a
   // different chapter). Skip if the current content already matches —
