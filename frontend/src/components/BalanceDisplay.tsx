@@ -10,10 +10,7 @@
  * data shape are intentionally stable so F26 is layout-only.
  */
 
-export interface Balance {
-  credits: number | null;
-  diem: number | null;
-}
+import type { Balance } from '@/hooks/useBalance';
 
 export interface BalanceDisplayProps {
   balance: Balance | null;
@@ -68,8 +65,8 @@ export function BalanceDisplay({
     return <p className="text-xs text-neutral-600">Balance unavailable</p>;
   }
 
-  const usd = balance.credits === null ? 'USD: —' : `USD: ${formatUsd(balance.credits)}`;
-  const diem = balance.diem === null ? 'Diem: —' : `Diem: ${formatDiem(balance.diem)}`;
+  const usd = balance.credits == null ? 'USD: —' : `USD: ${formatUsd(balance.credits)}`;
+  const diem = balance.diem == null ? 'Diem: —' : `Diem: ${formatDiem(balance.diem)}`;
 
   return (
     <div className="text-xs text-neutral-700 space-y-0.5">

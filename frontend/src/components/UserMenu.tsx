@@ -10,7 +10,8 @@
  * intentionally stable so F26 is layout-only.
  */
 import { useEffect, useRef, useState } from 'react';
-import { BalanceDisplay, type Balance } from './BalanceDisplay';
+import { BalanceDisplay } from './BalanceDisplay';
+import type { Balance } from '@/hooks/useBalance';
 
 export interface UserMenuProps {
   username: string;

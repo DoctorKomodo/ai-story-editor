@@ -53,6 +53,16 @@ describe('F17 · BalanceDisplay component', () => {
     render(<BalanceDisplay balance={null} />);
     expect(screen.getByText(/balance unavailable/i)).toBeInTheDocument();
   });
+
+  it('treats undefined fields like null (never throws on partial responses)', () => {
+    // A backend response missing a field entirely (e.g. `{ credits: 2.5 }`
+    // with no `diem` key) arrives as undefined, not null. The guard must
+    // coerce both to the em-dash placeholder.
+    const partial = { credits: 2.5 } as unknown as { credits: number | null; diem: number | null };
+    render(<BalanceDisplay balance={partial} />);
+    expect(screen.getByText('USD: $2.50')).toBeInTheDocument();
+    expect(screen.getByText('Diem: —')).toBeInTheDocument();
+  });
 });
 
 describe('F17 · formatters', () => {
