@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import type { PrismaClient, User } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
-import bcrypt from 'bcryptjs';
 import jwt, { type SignOptions } from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma as defaultPrisma } from '../lib/prisma';
@@ -24,9 +23,6 @@ import {
   openSession,
 } from './session-store';
 
-// bcrypt rounds retained only for verifying legacy bcrypt hashes during the
-// argon2 migration ([AU14]) — new passwords always hash with argon2id.
-export const BCRYPT_ROUNDS = 12;
 export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
 export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
@@ -70,39 +66,13 @@ export async function hashPassword(password: string): Promise<string> {
   return argon2.hash(password, ARGON2_PARAMS);
 }
 
-export interface PasswordVerifyResult {
-  ok: boolean;
-  // True when a successful match used a legacy hash scheme that should be
-  // silently re-hashed with the current ARGON2_PARAMS on next write.
-  needsRehash: boolean;
-}
-
-export async function verifyPassword(
-  hash: string,
-  password: string,
-): Promise<PasswordVerifyResult> {
-  if (hash.startsWith('$argon2')) {
-    try {
-      // argon2.verify reads m/t/p from the hash string and does NOT consult
-      // ARGON2_PARAMS (only the optional `secret` field is used). Use
-      // argon2.needsRehash separately to detect param drift so a future bump
-      // to ARGON2_PARAMS triggers silent migration on the next login.
-      const ok = await argon2.verify(hash, password);
-      if (!ok) return { ok: false, needsRehash: false };
-      const needsRehash = argon2.needsRehash(hash, ARGON2_PARAMS);
-      return { ok: true, needsRehash };
-    } catch {
-      return { ok: false, needsRehash: false };
-    }
+export async function verifyPassword(hash: string, password: string): Promise<boolean> {
+  if (!hash.startsWith('$argon2')) return false;
+  try {
+    return await argon2.verify(hash, password);
+  } catch {
+    return false;
   }
-  if (hash.startsWith('$2')) {
-    // Legacy bcryptjs hash from pre-[AU14] registrations. On successful match
-    // we flag for rehash so the next write upgrades the stored hash to argon2.
-    const ok = await bcrypt.compare(password, hash);
-    return { ok, needsRehash: ok };
-  }
-  // Unknown / corrupt hash format: fail closed.
-  return { ok: false, needsRehash: false };
 }
 
 // Warm the dummy hash on module load (fire-and-forget) so the first
@@ -180,11 +150,10 @@ export interface AccessTokenPayload {
   sub: string;
   email: string | null;
   username?: string;
-  // [E3] session id — present on tokens issued after E3 rollout. Middleware
-  // uses it to look up the unwrapped DEK from the session store. Tokens
-  // issued before E3 (or in auth-only tests that bypass login()) carry no
-  // sessionId and simply have no DEK attached to the request.
-  sessionId?: string;
+  // [E3] session id — the middleware uses this to look up the unwrapped DEK
+  // from the session store. Required on every server-issued token; tokens
+  // without it are rejected.
+  sessionId: string;
 }
 
 export interface RefreshTokenPayload {
@@ -193,7 +162,7 @@ export interface RefreshTokenPayload {
   type: 'refresh';
   // [E3] session id — binds this refresh token to the DEK-holding session
   // in session-store. Refresh reuses the same sessionId; logout destroys it.
-  sessionId?: string;
+  sessionId: string;
 }
 
 export class UsernameUnavailableError extends Error {
@@ -241,24 +210,24 @@ function getRequiredEnv(name: string): string {
   return value;
 }
 
-function signAccessToken(user: User, sessionId?: string): string {
+function signAccessToken(user: User, sessionId: string): string {
   const payload: AccessTokenPayload = {
     sub: user.id,
     email: user.email,
     username: user.username,
+    sessionId,
   };
-  if (sessionId) payload.sessionId = sessionId;
   const options: SignOptions = { expiresIn: ACCESS_TOKEN_TTL_SECONDS };
   return jwt.sign(payload, getRequiredEnv('JWT_SECRET'), options);
 }
 
-function signRefreshToken(user: User, sessionId?: string): string {
+function signRefreshToken(user: User, sessionId: string): string {
   const payload: RefreshTokenPayload = {
     sub: user.id,
     jti: crypto.randomBytes(16).toString('hex'),
     type: 'refresh',
+    sessionId,
   };
-  if (sessionId) payload.sessionId = sessionId;
   const options: SignOptions = { expiresIn: REFRESH_TOKEN_TTL_SECONDS };
   return jwt.sign(payload, getRequiredEnv('REFRESH_TOKEN_SECRET'), options);
 }
@@ -314,57 +283,16 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     // a lazily-computed dummy argon2id hash so the response time doesn't
     // distinguish "wrong username" from "wrong password" (enumeration defence).
     const passwordHashForVerify = user?.passwordHash ?? (await getDummyPasswordHash());
-    const { ok: passwordMatches, needsRehash } = await verifyPassword(
-      passwordHashForVerify,
-      input.password,
-    );
+    const passwordMatches = await verifyPassword(passwordHashForVerify, input.password);
 
     if (!user || !passwordMatches) {
       throw new InvalidCredentialsError();
     }
 
-    // [AU14] migration: if the stored hash is a legacy bcrypt hash, upgrade
-    // it to argon2id inside the same request. Failure to rehash must not fail
-    // the login — the user still has a valid password; the upgrade simply
-    // retries next time.
-    if (needsRehash) {
-      try {
-        const upgraded = await hashPassword(input.password);
-        await client.user.update({
-          where: { id: user.id },
-          data: { passwordHash: upgraded },
-        });
-      } catch {
-        // Swallow — migration is best-effort.
-      }
-    }
-
-    // [E3] Unwrap the content DEK with the now-verified password. Users
-    // registered before [E3] may lack wrap columns; lazily generate them on
-    // the first post-[E3] login when the password is available.
-    let dek: Buffer;
-    if (user.contentDekPasswordEnc) {
-      dek = await unwrapDekWithPassword(user, input.password);
-    } else {
-      const generated = await generateDekAndWraps(input.password);
-      await client.user.update({
-        where: { id: user.id },
-        data: {
-          contentDekPasswordEnc: generated.passwordWrap.ciphertext,
-          contentDekPasswordIv: generated.passwordWrap.iv,
-          contentDekPasswordAuthTag: generated.passwordWrap.authTag,
-          contentDekPasswordSalt: generated.passwordWrap.salt,
-          contentDekRecoveryEnc: generated.recoveryWrap.ciphertext,
-          contentDekRecoveryIv: generated.recoveryWrap.iv,
-          contentDekRecoveryAuthTag: generated.recoveryWrap.authTag,
-          contentDekRecoverySalt: generated.recoveryWrap.salt,
-        },
-      });
-      dek = generated.dek;
-      // NOTE: the lazy-generated recoveryCode is NOT surfaced — the user
-      // never sees it. They'll need to rotate via [AU17] on first use to
-      // receive a code they can write down. Documented in [E10].
-    }
+    // [E3] Unwrap the content DEK with the now-verified password. Every user
+    // has password wraps from signup — a missing wrap column is a corrupted
+    // row, not a legacy shape, so let unwrapDekWithPassword throw.
+    const dek = await unwrapDekWithPassword(user, input.password);
 
     const now = Date.now();
     const accessTokenExpiresAt = new Date(now + ACCESS_TOKEN_TTL_SECONDS * 1000);
@@ -417,7 +345,8 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
         typeof decoded !== 'object' ||
         decoded === null ||
         (decoded as RefreshTokenPayload).type !== 'refresh' ||
-        typeof (decoded as RefreshTokenPayload).sub !== 'string'
+        typeof (decoded as RefreshTokenPayload).sub !== 'string' ||
+        typeof (decoded as RefreshTokenPayload).sessionId !== 'string'
       ) {
         throw new InvalidRefreshTokenError();
       }
@@ -446,16 +375,14 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     //    as any other invalid refresh — 401 + clear cookie — so the frontend
     //    routes to /login and prompts for the password again.
     const sessionId = payload.sessionId;
-    if (sessionId) {
-      const session = getSession(sessionId);
-      if (!session || session.userId !== user.id) {
-        // Session lost; clean the orphaned refresh token and session row.
-        await Promise.all([
-          client.refreshToken.deleteMany({ where: { id: stored.id } }),
-          client.session.deleteMany({ where: { id: sessionId } }),
-        ]);
-        throw new InvalidRefreshTokenError();
-      }
+    const session = getSession(sessionId);
+    if (!session || session.userId !== user.id) {
+      // Session lost; clean the orphaned refresh token and session row.
+      await Promise.all([
+        client.refreshToken.deleteMany({ where: { id: stored.id } }),
+        client.session.deleteMany({ where: { id: sessionId } }),
+      ]);
+      throw new InvalidRefreshTokenError();
     }
 
     // 4) Atomic rotation: delete the old refresh row + create the new row in
@@ -488,13 +415,11 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
       throw err;
     }
 
-    if (sessionId) {
-      await client.session.updateMany({
-        where: { id: sessionId },
-        data: { expiresAt: refreshTokenExpiresAt },
-      });
-      extendSessionExpiry(sessionId, refreshTokenExpiresAt);
-    }
+    await client.session.updateMany({
+      where: { id: sessionId },
+      data: { expiresAt: refreshTokenExpiresAt },
+    });
+    extendSessionExpiry(sessionId, refreshTokenExpiresAt);
 
     const accessToken = signAccessToken(user, sessionId);
     const accessTokenExpiresAt = new Date(now + ACCESS_TOKEN_TTL_SECONDS * 1000);
@@ -524,7 +449,8 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
         typeof decoded === 'object' &&
         decoded !== null &&
         (decoded as RefreshTokenPayload).type === 'refresh' &&
-        typeof (decoded as RefreshTokenPayload).sub === 'string'
+        typeof (decoded as RefreshTokenPayload).sub === 'string' &&
+        typeof (decoded as RefreshTokenPayload).sessionId === 'string'
       ) {
         payload = decoded as RefreshTokenPayload;
       }
@@ -562,7 +488,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     const user = await client.user.findUnique({ where: { id: input.userId } });
     if (!user) throw new InvalidCredentialsError();
 
-    const { ok } = await verifyPassword(user.passwordHash, input.oldPassword);
+    const ok = await verifyPassword(user.passwordHash, input.oldPassword);
     if (!ok) throw new InvalidCredentialsError();
 
     const dek = await unwrapDekWithPassword(user, input.oldPassword);
@@ -605,7 +531,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     const user = await client.user.findUnique({ where: { id: input.userId } });
     if (!user) throw new InvalidCredentialsError();
 
-    const { ok } = await verifyPassword(user.passwordHash, input.password);
+    const ok = await verifyPassword(user.passwordHash, input.password);
     if (!ok) throw new InvalidCredentialsError();
 
     const dek = await unwrapDekWithPassword(user, input.password);

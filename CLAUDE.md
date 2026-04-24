@@ -117,7 +117,7 @@ Hard gates (do not start until the prerequisite is complete):
 - `APP_ENCRYPTION_KEY` is the only server-held encryption env secret and must be backed up with the same rigour as the DB — it wraps **BYOK Venice keys only**. Losing it makes stored Venice keys unrecoverable, but narrative content remains decryptable (content DEKs are wrapped by user-supplied secrets, not server state). There is no `CONTENT_ENCRYPTION_KEY`.
 - Content DEKs are wrapped by the user's password (argon2id) and by a one-time recovery code (argon2id). **Losing both the password and the recovery code for a given user = irrecoverable data loss for that user's narrative content.** The server has no way to decrypt when both are gone, by design.
 - **`.env.example` is intentionally mid-migration** — still carries the legacy `VENICE_API_KEY` placeholder and does not yet list `APP_ENCRYPTION_KEY`. Task `[I7]` does the swap (remove `VENICE_API_KEY`, add `APP_ENCRYPTION_KEY`). `CONTENT_ENCRYPTION_KEY` is never added — the scheme changed before `[I7]` ran. Until `[I7]`: don't "fix" the drift as a side effect of another task; update `.env.example` only when implementing `[I7]`.
-- **Don't write data-migration branches until the core system ships.** Pre-deployment there are no users, no stored content, and no legacy rows — so code paths that exist only to handle "pre-[Tn]" shapes (null wrap columns, bcrypt hashes, plaintext-only rows, optional `sessionId` claims, etc.) are speculative and cost complexity, test surface, and review burden for a population that does not yet exist. When an earlier task's rollout plan asks for a dual-write, lazy-backfill, or legacy-read fallback, implement only what the current task's verify demands and leave a TODO referencing [X10]. Migration-handling is deferred to the X-series; tackle it against the concrete state of the DB at that moment rather than scaffolding against imagined legacy shapes. See [X10] and `docs/encryption.md` → "Migration handling is deferred".
+- **Don't write data-migration branches.** Pre-deployment there are no users, no stored content, and no legacy rows — so code paths that exist only to handle "pre-[Tn]" shapes (null wrap columns, bcrypt hashes, plaintext-only rows, optional `sessionId` claims, etc.) serve a population that doesn't exist and just cost complexity + test surface + review burden. When a task's rollout plan asks for a dual-write, lazy-backfill, or legacy-read fallback, skip it and implement the post-rollout shape directly. If the app is ever deployed against pre-existing data in future, reintroduce only the specific branch needed for that actual population with a dated TODO for its removal. The project was scrubbed of every such branch post-[X10] (bcrypt removed, sessionId required, lazy wraps deleted, plaintext fallbacks deleted).
 
 ### Backend
 - All route handlers must be thin — logic goes in service files in `src/services/` and repository wrappers in `src/repos/`
@@ -146,7 +146,7 @@ Hard gates (do not start until the prerequisite is complete):
 - Every model has `createdAt`; most have `updatedAt`. `Message` is an append-only log and has `createdAt` only.
 - Foreign key fields must have indexes.
 - Cascading deletes must be defined in the schema (`onDelete: Cascade`) — do not handle cascade logic in application code.
-- Schema changes after the initial migration require explicit approval (see **When to Stop and Ask**). The E-series adds many encrypted columns; plan those migrations in batches. [E10] (backfill) is deferred under [X10] — pre-deployment there's no legacy data to backfill, and [E11] already dropped the plaintext columns.
+- Schema changes after the initial migration require explicit approval (see **When to Stop and Ask**). The E-series adds many encrypted columns; plan those migrations in batches. [E10] (backfill) is **cancelled** — pre-deployment there were no legacy plaintext rows, and [E11] already dropped the plaintext columns, leaving no source to read from. [X10] (migration-handling revisit) is **retired** — every legacy branch it was holding space for was deleted in situ. If the app is ever deployed against pre-existing plaintext data in future, reintroduce only the specific branch needed with a dated removal TODO.
 
 ### AI Integration
 - All Venice.ai calls are proxied through the backend — the frontend only talks to `/api/ai/*`.
@@ -259,22 +259,21 @@ The `repo-boundary-reviewer` subagent (`.claude/agents/repo-boundary-reviewer.md
 
 - **E4–E8** — per-entity encryption schema + dual-write. Confirm new ciphertext columns are wired through both write and read paths in the matching repo.
 - **E9** — repo-layer boundary. The one that defines the invariant; review for any controller/service/route that still talks to Prisma for a narrative model.
-- **E10** — backfill migration (`backend/prisma/scripts/encrypt-backfill.ts`). Scripts are the most common place the repo layer gets bypassed.
-- **E11** — plaintext-column drop. Confirm every repo read has already migrated to ciphertext-only before the migration runs.
+- **E11** — plaintext-column drop. Confirm every repo read has already migrated to ciphertext-only before the migration runs. ([E10] backfill was cancelled — no legacy plaintext rows existed pre-deployment.)
 - **E12** — leak test. Confirm the sentinel covers every narrative table and the test is not skipped.
 - Any change to: `backend/src/repos/**`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/prompt.service.ts` (reads chapter bodies), `backend/src/routes/{stories,chapters,characters,outline,chat}.routes.ts`, or any migration touching narrative columns.
 - Any new one-off script under `backend/prisma/scripts/**` or `scripts/**` that touches narrative tables.
 
-Invoke via the Agent tool with `subagent_type: repo-boundary-reviewer` and a concrete scope (e.g. "review the chapter repo changes on this branch" or "review the [E10] backfill script end-to-end"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box.
+Invoke via the Agent tool with `subagent_type: repo-boundary-reviewer` and a concrete scope (e.g. "review the chapter repo changes on this branch" or "review the new `/api/stories/:id/export` route for raw Prisma access"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box.
 
 `security-reviewer` and `repo-boundary-reviewer` are complements, not substitutes — run both when a change touches both surfaces (e.g. a new narrative route that also adds auth middleware). Each stays in its own lane: `security-reviewer` owns auth/session/key/crypto-primitive surface; `repo-boundary-reviewer` owns the narrative-entity boundary.
 
 **Example invocation:**
 ```
 Agent(
-  description: "Review [E10] backfill",
+  description: "Review chapter repo changes",
   subagent_type: "repo-boundary-reviewer",
-  prompt: "Review [E10] as currently implemented. Scope: backend/prisma/scripts/encrypt-backfill.ts + any new helpers it imports. Confirm: (1) the script writes via the repo layer, never raw Prisma for narrative tables; (2) idempotency check is based on ciphertext-column non-null, not plaintext presence; (3) no plaintext is logged; (4) transaction boundaries are per-user."
+  prompt: "Review the chapter repo changes on this branch. Scope: backend/src/repos/chapter.repo.ts + any route/service that calls it. Confirm: (1) no controller/service/route touches Prisma directly for Chapter; (2) every write path encrypts the narrative columns and every read path decrypts them; (3) wordCount is computed from plaintext before encryption; (4) no plaintext is logged or returned outside the owning user's response."
 )
 ```
 
