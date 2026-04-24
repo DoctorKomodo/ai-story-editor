@@ -1,5 +1,5 @@
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { useInitAuth } from '@/hooks/useAuth';
 import { useSessionStore } from '@/store/session';
 import { queryClient } from '@/lib/queryClient';
@@ -24,13 +24,24 @@ function RequireAuth(): JSX.Element {
   return <Outlet />;
 }
 
-export function AppRouter(): JSX.Element {
+export interface AppRouterProps {
+  /**
+   * Optional QueryClient override. Tests should pass a fresh
+   * `createQueryClient()` per render to avoid cross-test cache bleed through
+   * the module-level singleton. Production (`App.tsx`) omits the prop and
+   * uses the singleton.
+   */
+  queryClient?: QueryClient;
+}
+
+export function AppRouter({ queryClient: clientOverride }: AppRouterProps = {}): JSX.Element {
   useInitAuth();
   // TanStack Query lives here (rather than higher up in App.tsx) so tests that
   // mount <AppRouter /> directly under <MemoryRouter> automatically get the
   // query cache without having to wrap every render site.
+  const client = clientOverride ?? queryClient;
   return (
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={client}>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

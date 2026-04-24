@@ -59,7 +59,7 @@ export function useCreateStoryMutation(): UseMutationResult<StoryListItem, Error
     mutationFn: async (input: StoryInput): Promise<StoryListItem> => {
       const res = await api<StoryResponse>('/stories', {
         method: 'POST',
-        body: input as unknown as Record<string, unknown>,
+        body: input,
       });
       return res.story;
     },
@@ -80,7 +80,7 @@ export function useUpdateStoryMutation(): UseMutationResult<StoryListItem, Error
     mutationFn: async ({ id, input }: UpdateStoryArgs): Promise<StoryListItem> => {
       const res = await api<StoryResponse>(`/stories/${id}`, {
         method: 'PATCH',
-        body: input as unknown as Record<string, unknown>,
+        body: input,
       });
       return res.story;
     },

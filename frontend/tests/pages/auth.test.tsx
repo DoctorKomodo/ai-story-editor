@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRouter } from '@/router';
 import { useSessionStore } from '@/store/session';
 import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -16,9 +17,12 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 function renderAt(path: string): ReturnType<typeof render> {
+  // Fresh QueryClient per render so tests never share cache via the module
+  // singleton in `@/lib/queryClient`.
+  const client = createQueryClient();
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRouter />
+      <AppRouter queryClient={client} />
     </MemoryRouter>,
   );
 }

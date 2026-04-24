@@ -4,13 +4,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppRouter } from '@/router';
 import { useSessionStore } from '@/store/session';
 import { setAccessToken } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
 function renderAt(path: string) {
+  // Fresh QueryClient per render so tests never share cache via the module
+  // singleton in `@/lib/queryClient`.
+  const client = createQueryClient();
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <AppRouter />
+      <AppRouter queryClient={client} />
     </MemoryRouter>,
   );
 }

@@ -75,8 +75,18 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * JSON-serialisable object body: any plain object shape. Uses `object` (rather
+ * than `Record<string, unknown>`) so callers passing a typed interface
+ * (e.g. `StoryInput`) don't need a cast — named interfaces without an index
+ * signature aren't assignable to `Record<string, unknown>`, but they are
+ * assignable to `object`. The runtime check `isPlainBodyObject` still strips
+ * out DOM-ish non-JSON shapes (FormData, Blob, etc.) before stringifying.
+ */
+export type JsonBody = object;
+
 export interface ApiRequestInit extends Omit<RequestInit, 'body'> {
-  body?: BodyInit | Record<string, unknown> | unknown[] | null;
+  body?: BodyInit | JsonBody | unknown[] | null;
 }
 
 function buildUrl(path: string): string {
