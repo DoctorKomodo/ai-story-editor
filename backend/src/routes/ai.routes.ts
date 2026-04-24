@@ -237,15 +237,32 @@ export function createAiRouter() {
       res.setHeader('Cache-Control', 'no-cache, no-transform');
       res.setHeader('Connection', 'keep-alive');
 
-      // [V9] Forward Venice rate-limit headers to the client so the frontend
-      // can display usage. Only set when Venice actually sent them.
+      // [V9][V28] Forward Venice rate-limit headers to the client so the
+      // frontend can display "X / Y remaining until HH:MM" without a second
+      // round-trip. Only set each when Venice actually sent it.
       const remainingRequests = veniceResponse.headers.get('x-ratelimit-remaining-requests');
       const remainingTokens = veniceResponse.headers.get('x-ratelimit-remaining-tokens');
+      const limitRequests = veniceResponse.headers.get('x-ratelimit-limit-requests');
+      const limitTokens = veniceResponse.headers.get('x-ratelimit-limit-tokens');
+      const resetRequests = veniceResponse.headers.get('x-ratelimit-reset-requests');
+      const resetTokens = veniceResponse.headers.get('x-ratelimit-reset-tokens');
       if (remainingRequests !== null) {
         res.setHeader('x-venice-remaining-requests', remainingRequests);
       }
       if (remainingTokens !== null) {
         res.setHeader('x-venice-remaining-tokens', remainingTokens);
+      }
+      if (limitRequests !== null) {
+        res.setHeader('x-venice-limit-requests', limitRequests);
+      }
+      if (limitTokens !== null) {
+        res.setHeader('x-venice-limit-tokens', limitTokens);
+      }
+      if (resetRequests !== null) {
+        res.setHeader('x-venice-reset-requests', resetRequests);
+      }
+      if (resetTokens !== null) {
+        res.setHeader('x-venice-reset-tokens', resetTokens);
       }
 
       if (typeof res.flushHeaders === 'function') {
