@@ -25,6 +25,12 @@ export interface AIPanelProps {
   selectedText: string;
   onAction: (action: AIAction, freeformInstruction?: string) => void;
   pending?: boolean;
+  /**
+   * [F13] Optional model-picker slot rendered above the action buttons.
+   * Kept as a `ReactNode` slot so the panel stays agnostic of TanStack Query
+   * / localStorage concerns — the parent page owns wiring.
+   */
+  modelSelector?: React.ReactNode;
 }
 
 const SELECTION_DISPLAY_MAX = 200;
@@ -38,7 +44,12 @@ function displaySelection(text: string): string {
 const actionButtonClass =
   'rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors disabled:opacity-50';
 
-export function AIPanel({ selectedText, onAction, pending = false }: AIPanelProps): JSX.Element {
+export function AIPanel({
+  selectedText,
+  onAction,
+  pending = false,
+  modelSelector,
+}: AIPanelProps): JSX.Element {
   const [freeform, setFreeform] = useState('');
 
   const hasSelection = selectedText.length > 0;
@@ -60,6 +71,13 @@ export function AIPanel({ selectedText, onAction, pending = false }: AIPanelProp
           <p className="text-neutral-500">Highlight text in the editor to use it as context.</p>
         )}
       </section>
+
+      {modelSelector !== undefined && (
+        <section aria-label="Model" className="flex flex-col gap-2">
+          <h3 className="text-sm font-medium text-neutral-700">Model</h3>
+          {modelSelector}
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         <button
