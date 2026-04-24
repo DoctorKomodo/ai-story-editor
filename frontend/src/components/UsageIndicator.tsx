@@ -28,7 +28,9 @@ export function formatTokens(n: number): string {
     return `${(n / 1_000_000).toFixed(1)}M`;
   }
   if (n >= 1000) {
-    return `${Math.round(n / 1000)}K`;
+    const k = Math.round(n / 1000);
+    if (k >= 1000) return `${(n / 1_000_000).toFixed(1)}M`;
+    return `${k}K`;
   }
   return String(n);
 }

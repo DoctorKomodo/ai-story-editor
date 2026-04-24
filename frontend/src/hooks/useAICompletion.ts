@@ -61,7 +61,9 @@ const INITIAL_STATE: AICompletionState = {
 
 function parseIntHeader(v: string | null): number | null {
   if (v === null) return null;
-  const parsed = Number.parseInt(v, 10);
+  const trimmed = v.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = Number.parseInt(trimmed, 10);
   return Number.isNaN(parsed) ? null : parsed;
 }
 

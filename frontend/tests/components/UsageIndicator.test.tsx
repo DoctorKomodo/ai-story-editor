@@ -79,4 +79,9 @@ describe('F16 · formatters', () => {
     expect(formatTokens(482_000)).toBe('482K');
     expect(formatTokens(2_500_000)).toBe('2.5M');
   });
+
+  it('formatTokens promotes to M when K-rounding overflows past 999K', () => {
+    expect(formatTokens(999_500)).toBe('1.0M');
+    expect(formatTokens(999_999)).toBe('1.0M');
+  });
 });

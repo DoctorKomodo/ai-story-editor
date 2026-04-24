@@ -313,6 +313,38 @@ describe('F15 · useAICompletion hook', () => {
       remainingTokens: 1_200_000,
     });
   });
+
+  it('rejects non-integer rate-limit header values (no silent truncation)', async () => {
+    fetchMock.mockResolvedValueOnce(
+      streamResponse(
+        [
+          'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ],
+        undefined,
+        {
+          'x-venice-remaining-requests': '1.5',
+          'x-venice-remaining-tokens': 'abc',
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useAICompletion());
+
+    await act(async () => {
+      await result.current.run({
+        action: 'continue',
+        selectedText: '',
+        chapterId: 'ch1',
+        storyId: 'st1',
+        modelId: 'venice-small',
+      });
+    });
+
+    // Both headers fail the integer-only parse, so usage must stay null —
+    // not silently truncate `"1.5"` to 1 or `"abc"` to NaN.
+    expect(result.current.usage).toBeNull();
+  });
 });
 
 describe('F15 · AIResult component', () => {
