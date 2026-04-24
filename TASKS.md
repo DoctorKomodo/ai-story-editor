@@ -450,7 +450,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F6]** Create/edit story modal: title (required), genre, synopsis, worldNotes fields.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/StoryModal.test.tsx`
 
-- [ ] **[F7]** Editor layout: left sidebar (chapters), centre (TipTap), right (AI panel, collapsible). Story title in top bar.
+- [x] **[F7]** Editor layout: left sidebar (chapters), centre (TipTap), right (AI panel, collapsible). Story title in top bar.
   - verify: `cd frontend && npm run test:frontend -- --run tests/pages/editor.test.tsx`
 
 - [ ] **[F8]** TipTap editor: bold, italic, headings 1-3, paragraph, word count in footer.
