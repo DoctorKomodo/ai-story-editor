@@ -349,11 +349,12 @@ Outside the self-hosted single-container target. If we add a managed-hosting tie
 
 ---
 
-## Migration handling is deferred
+## Migration handling
 
-Pre-deployment there are no legacy rows and no existing users, so the auth and crypto services do **not** carry branches that handle pre-[E3] / pre-[AU14] data shapes in routine flows. In particular: [AU15] (`changePassword`) and [AU16] (`resetPassword`) assume every user has fully-populated password + recovery wrap columns — there is no lazy-wrap generation or null-column fallback. A few targeted legacy paths that already exist (e.g. `login()`'s lazy wrap for pre-[E3] users, `verifyPassword`'s bcrypt branch from [AU14], the dual-write / plaintext fallback in `repos/_narrative.ts`) are tracked under [X10] for re-examination once there is real legacy data to consider. When a future feature needs to deal with data predating a schema change, write the migration against the concrete state of the DB at that moment — don't scaffold migration branches speculatively.
+Pre-deployment there are no legacy rows and no existing users, so the auth and crypto services do **not** carry branches that handle pre-[E3] / pre-[AU14] data shapes. [AU15] (`changePassword`) and [AU16] (`resetPassword`) assume every user has fully-populated password + recovery wrap columns — no lazy-wrap generation, no null-column fallback. The small set of speculative legacy branches that had been tolerated under [X10] (`login()`'s lazy wrap, `verifyPassword`'s bcrypt branch + `needsRehash` upgrade, optional `sessionId` on tokens, `_narrative.ts` plaintext fallback, `message.repo`'s JSON-parse try/catch) was removed in situ — `bcryptjs` is no longer a dependency, `sessionId` is required on every token, and the only DEK wraps a user can ever have are the ones generated at signup. When a future feature needs to deal with data predating a schema change, write the migration against the concrete state of the DB at that moment — don't scaffold migration branches speculatively, and scope any such branch to a dated TODO for removal once the rollout window closes.
 
 ## Change log
 
 - **2026-04-22** — Initial document. Option B (server-side session + in-memory DEK cache) chosen. [E1].
 - **2026-04-22** — Noted pre-deployment migration-handling posture: no scaffolded migration branches in AU15/AU16; [X10] tracks revisiting other speculative migration paths.
+- **2026-04-24** — [X10] retired: every speculative legacy branch deleted (bcrypt verify path, needsRehash upgrade, login lazy-wrap, optional sessionId, `_narrative.ts` plaintext fallback, `message.repo` JSON-parse fallback). `bcryptjs` + `@types/bcryptjs` dropped from deps. sessionId is now required on all tokens.

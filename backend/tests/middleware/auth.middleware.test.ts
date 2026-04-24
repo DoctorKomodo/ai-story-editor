@@ -1,9 +1,11 @@
+import crypto from 'node:crypto';
 import express, { type Request, type Response } from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { requireAuth } from '../../src/middleware/auth.middleware';
 import { ACCESS_TOKEN_TTL_SECONDS } from '../../src/services/auth.service';
+import { closeSession, openSession } from '../../src/services/session-store';
 import '../setup';
 
 function makeApp() {
@@ -18,6 +20,26 @@ function makeApp() {
 function signAccess(payload: Record<string, unknown>, secret = process.env.JWT_SECRET!): string {
   return jwt.sign(payload, secret, { expiresIn: ACCESS_TOKEN_TTL_SECONDS });
 }
+
+// Open a real session so the middleware's DEK-lookup step succeeds. Without
+// this, tokens with a sessionId would 401 with session_expired. Returns the
+// sessionId to embed in the test token.
+const openedSessionIds: string[] = [];
+function openTestSession(userId: string): string {
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  openSession({
+    sessionId,
+    userId,
+    dek: crypto.randomBytes(32),
+    expiresAt: new Date(Date.now() + 60_000),
+  });
+  openedSessionIds.push(sessionId);
+  return sessionId;
+}
+
+afterEach(() => {
+  for (const id of openedSessionIds.splice(0)) closeSession(id);
+});
 
 describe('requireAuth middleware', () => {
   it('returns 401 with a JSON error body when no Authorization header is sent', async () => {
@@ -66,16 +88,36 @@ describe('requireAuth middleware', () => {
   });
 
   it('attaches req.user and calls next() on a valid token', async () => {
-    const token = signAccess({ sub: 'user-id-1', email: 'a@b.com' });
+    const sessionId = openTestSession('user-id-1');
+    const token = signAccess({ sub: 'user-id-1', email: 'a@b.com', sessionId });
     const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body.user).toEqual({ id: 'user-id-1', email: 'a@b.com' });
+    expect(res.body.user).toEqual({ id: 'user-id-1', email: 'a@b.com', sessionId });
   });
 
   it('accepts a token whose payload has email=null (post-D15 optional email)', async () => {
-    const token = signAccess({ sub: 'user-id-2', email: null });
+    const sessionId = openTestSession('user-id-2');
+    const token = signAccess({ sub: 'user-id-2', email: null, sessionId });
     const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(200);
-    expect(res.body.user).toEqual({ id: 'user-id-2', email: null });
+    expect(res.body.user).toEqual({ id: 'user-id-2', email: null, sessionId });
+  });
+
+  it('rejects a token with no sessionId claim (sessionId is required post-X10)', async () => {
+    const token = signAccess({ sub: 'user-id-3', email: 'x@y.com' });
+    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
+  });
+
+  it('rejects a token whose sessionId does not resolve in the session store', async () => {
+    const token = signAccess({
+      sub: 'user-id-4',
+      email: 'x@y.com',
+      sessionId: 'nonexistent-session-id',
+    });
+    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('session_expired');
   });
 });

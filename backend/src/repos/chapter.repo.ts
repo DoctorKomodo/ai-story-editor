@@ -1,7 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeCiphertextOnly, writeEncrypted } from './_narrative';
+import { projectDecrypted, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = ['title', 'body'] as const;
 
@@ -76,7 +76,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         // standard triple; `body` is the serialised TipTap JSON tree
         // encrypted into `bodyCiphertext/Iv/AuthTag` (no plaintext sibling).
         ...writeEncrypted(req, 'title', input.title),
-        ...writeCiphertextOnly(req, 'body', bodyPlaintext),
+        ...writeEncrypted(req, 'body', bodyPlaintext),
       },
     });
     return shape(row, req);
@@ -112,7 +112,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       // is serialised + encrypted. The literal string "null" must never land
       // in ciphertext.
       const plaintext = input.bodyJson === null ? null : JSON.stringify(input.bodyJson);
-      Object.assign(data, writeCiphertextOnly(req, 'body', plaintext));
+      Object.assign(data, writeEncrypted(req, 'body', plaintext));
     }
     if (input.status !== undefined) data.status = input.status;
     if (input.orderIndex !== undefined) data.orderIndex = input.orderIndex;

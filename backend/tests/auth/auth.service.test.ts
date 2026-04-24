@@ -1,10 +1,6 @@
 import * as argon2 from 'argon2';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import {
-  BCRYPT_ROUNDS,
-  createAuthService,
-  UsernameUnavailableError,
-} from '../../src/services/auth.service';
+import { createAuthService, UsernameUnavailableError } from '../../src/services/auth.service';
 import { prisma } from '../setup';
 
 const authService = createAuthService(prisma);
@@ -40,9 +36,6 @@ describe('auth.service register()', () => {
     expect(stored!.passwordHash).not.toBe('correct-horse-battery');
     expect(stored!.passwordHash.startsWith('$argon2id$')).toBe(true);
     expect(await argon2.verify(stored!.passwordHash, 'correct-horse-battery')).toBe(true);
-    // Retain BCRYPT_ROUNDS import as a reminder that legacy bcrypt hashes
-    // remain verifiable by login() for the migration path ([AU14]).
-    expect(BCRYPT_ROUNDS).toBe(12);
   });
 
   it('omits passwordHash from the returned user record', async () => {
