@@ -6,6 +6,7 @@ import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
 import { AIPanel, type AIAction } from '@/components/AIPanel';
 import { AIResult } from '@/components/AIResult';
+import { UsageIndicator } from '@/components/UsageIndicator';
 import { ModelSelector } from '@/components/ModelSelector';
 import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
@@ -220,6 +221,7 @@ export function EditorPage(): JSX.Element {
                 onDismiss={completion.reset}
               />
             }
+            usage={<UsageIndicator usage={completion.usage} />}
           />
         </aside>
       </div>

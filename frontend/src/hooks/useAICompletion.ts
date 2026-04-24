@@ -6,9 +6,15 @@
  * stays tightly scoped to the editor page; F22 may fold this into the layout
  * slice later if cross-component reads appear.
  *
+ * F16 extends the state with `usage` — the Venice rate-limit snapshot read
+ * from `x-venice-remaining-requests` / `x-venice-remaining-tokens` response
+ * headers. The snapshot is persistent across runs: a subsequent response that
+ * omits the headers does NOT wipe a prior snapshot (older Venice responses
+ * and many test doubles simply don't send them).
+ *
  * Unrelated but commonly-confused follow-ups:
- *  - F16 consumes the Venice rate-limit response headers (`x-venice-*`);
- *    it reads them from the same request but doesn't live inside this hook.
+ *  - F17 adds the Venice account balance display in the user menu (separate
+ *    endpoint / separate surface from the rate-limit snapshot above).
  *  - F33–F36 replace the right-panel result card with the in-editor
  *    selection bubble + inline-AI card; F38/F42 redesign the chat pane.
  */
@@ -18,10 +24,16 @@ import { parseAiSseStream } from '@/lib/sse';
 
 export type AICompletionStatus = 'idle' | 'streaming' | 'done' | 'error';
 
+export interface UsageInfo {
+  remainingRequests: number | null;
+  remainingTokens: number | null;
+}
+
 export interface AICompletionState {
   status: AICompletionStatus;
   text: string;
   error: ApiError | null;
+  usage: UsageInfo | null;
 }
 
 export interface RunArgs {
@@ -44,7 +56,16 @@ const INITIAL_STATE: AICompletionState = {
   status: 'idle',
   text: '',
   error: null,
+  usage: null,
 };
+
+function parseIntHeader(v: string | null): number | null {
+  if (v === null) return null;
+  const trimmed = v.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const parsed = Number.parseInt(trimmed, 10);
+  return Number.isNaN(parsed) ? null : parsed;
+}
 
 export function useAICompletion(): UseAICompletion {
   const [state, setState] = useState<AICompletionState>(INITIAL_STATE);
@@ -72,7 +93,9 @@ export function useAICompletion(): UseAICompletion {
     controllerRef.current?.abort();
     controllerRef.current = null;
     if (mountedRef.current) {
-      setState(INITIAL_STATE);
+      // Preserve the prior `usage` snapshot — a cancelled run still observed
+      // a valid response head, so the rate-limit numbers remain accurate.
+      setState((prev) => ({ ...INITIAL_STATE, usage: prev.usage }));
     }
   }, []);
 
@@ -91,7 +114,14 @@ export function useAICompletion(): UseAICompletion {
       const controller = new AbortController();
       controllerRef.current = controller;
 
-      safeSetState(() => ({ status: 'streaming', text: '', error: null }));
+      // Keep the prior `usage` snapshot on run-start — we only overwrite it
+      // when the new response carries at least one header value.
+      safeSetState((prev) => ({
+        status: 'streaming',
+        text: '',
+        error: null,
+        usage: prev.usage,
+      }));
 
       const body: Record<string, unknown> = {
         action: args.action,
@@ -121,15 +151,37 @@ export function useAICompletion(): UseAICompletion {
           err instanceof ApiError
             ? err
             : new ApiError(0, err instanceof Error ? err.message : 'Request failed');
-        safeSetState(() => ({ status: 'error', text: '', error: apiErr }));
+        safeSetState((prev) => ({
+          status: 'error',
+          text: '',
+          error: apiErr,
+          usage: prev.usage,
+        }));
         return;
       }
 
+      // F16: harvest Venice rate-limit headers before reading the body. If
+      // both are absent (tests / older Venice responses), leave the prior
+      // snapshot intact rather than wiping it with `null`s.
+      const remainingRequests = parseIntHeader(
+        res.headers.get('x-venice-remaining-requests'),
+      );
+      const remainingTokens = parseIntHeader(
+        res.headers.get('x-venice-remaining-tokens'),
+      );
+      if (remainingRequests !== null || remainingTokens !== null) {
+        safeSetState((prev) => ({
+          ...prev,
+          usage: { remainingRequests, remainingTokens },
+        }));
+      }
+
       if (!res.body) {
-        safeSetState(() => ({
+        safeSetState((prev) => ({
           status: 'error',
           text: '',
           error: new ApiError(502, 'Empty response body'),
+          usage: prev.usage,
         }));
         return;
       }
@@ -148,6 +200,7 @@ export function useAICompletion(): UseAICompletion {
               status: 'error',
               text: prev.text,
               error: new ApiError(502, event.error.error, code),
+              usage: prev.usage,
             }));
             return;
           } else {
@@ -170,7 +223,12 @@ export function useAICompletion(): UseAICompletion {
           err instanceof ApiError
             ? err
             : new ApiError(502, err instanceof Error ? err.message : 'Stream failed');
-        safeSetState((prev) => ({ status: 'error', text: prev.text, error: apiErr }));
+        safeSetState((prev) => ({
+          status: 'error',
+          text: prev.text,
+          error: apiErr,
+          usage: prev.usage,
+        }));
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;
@@ -184,6 +242,7 @@ export function useAICompletion(): UseAICompletion {
     status: state.status,
     text: state.text,
     error: state.error,
+    usage: state.usage,
     run,
     cancel,
     reset,
