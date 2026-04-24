@@ -53,12 +53,18 @@ function buildRotateRecoveryCodeSchema() {
 }
 
 // Per-user (not per-IP) rate limit for sensitive authenticated endpoints
-// (change-password and rotate-recovery-code). Each call-site passes its own
-// invocation so each route gets an independent 10/min bucket — they do NOT
-// share a quota. Scoped to authenticated requests via requireAuth — the
-// keyGenerator relies on req.user.id, which the middleware sets before this
-// limiter runs.
-function sensitiveAuthLimiter() {
+// (change-password and rotate-recovery-code). Scoped to authenticated
+// requests via requireAuth — the keyGenerator relies on req.user.id, which
+// the middleware sets before this limiter runs.
+//
+// One instance per route (not a shared quota) preserves the original
+// design: each sensitive endpoint has its own 10/min bucket. They're
+// exported as module-scope constants rather than factory invocations at
+// route-definition time so CodeQL's data-flow analysis can trace
+// `rateLimit(...)` directly to the route's middleware chain — a factory
+// call hides the pattern behind one indirection and trips the
+// "missing rate limiting" rule.
+function buildSensitiveAuthLimiter() {
   return rateLimit({
     windowMs: 60_000,
     // Generous enough that the test suite can exercise the endpoint
@@ -78,6 +84,9 @@ function sensitiveAuthLimiter() {
     skipFailedRequests: false,
   });
 }
+
+const changePasswordLimiter = buildSensitiveAuthLimiter();
+const rotateRecoveryCodeLimiter = buildSensitiveAuthLimiter();
 
 // Aggressive stacked rate limits for the unauthenticated reset-password
 // endpoint. Spec: "per-IP + per-username". Two limiters stack, so a single
@@ -122,10 +131,15 @@ function resetPasswordUsernameLimiter() {
 export function createAuthRouter(allowedOrigin: string) {
   const router = Router();
 
-  // CSRF defense for the two cookie-authenticated endpoints (/refresh and
-  // /logout). All other auth routes use Bearer JWT / no credentials and
-  // don't need the check. See origin-check.middleware.ts for design notes.
-  const csrfCheck = requireAllowedOrigin(allowedOrigin);
+  // CSRF defense — applied to the entire /api/auth tree, not just the two
+  // cookie-authed endpoints (/refresh, /logout). All auth endpoints are
+  // POSTs, so the middleware's safe-method (GET/HEAD/OPTIONS) exemption
+  // doesn't apply and every state-changing request gets the Origin check.
+  // Router-level application also makes the CSRF posture visible to
+  // static analysis (CodeQL) right alongside cookieParser mount point.
+  // See origin-check.middleware.ts for the design and non-browser-client
+  // exemption (supertest, curl, etc.).
+  router.use(requireAllowedOrigin(allowedOrigin));
 
   router.post('/register', async (req, res, next) => {
     try {
@@ -173,7 +187,7 @@ export function createAuthRouter(allowedOrigin: string) {
     }
   });
 
-  router.post('/refresh', csrfCheck, async (req: Request, res: Response, next) => {
+  router.post('/refresh', async (req: Request, res: Response, next) => {
     try {
       const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
       if (!token) {
@@ -201,7 +215,7 @@ export function createAuthRouter(allowedOrigin: string) {
     }
   });
 
-  router.post('/logout', csrfCheck, async (req: Request, res: Response, next) => {
+  router.post('/logout', async (req: Request, res: Response, next) => {
     try {
       const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
       if (token) await authService.logout(token);
@@ -244,7 +258,7 @@ export function createAuthRouter(allowedOrigin: string) {
     },
   );
 
-  router.post('/change-password', requireAuth, sensitiveAuthLimiter(), async (req, res, next) => {
+  router.post('/change-password', requireAuth, changePasswordLimiter, async (req, res, next) => {
     try {
       const authed = req.user;
       if (!authed) {
@@ -279,7 +293,7 @@ export function createAuthRouter(allowedOrigin: string) {
   router.post(
     '/rotate-recovery-code',
     requireAuth,
-    sensitiveAuthLimiter(),
+    rotateRecoveryCodeLimiter,
     async (req, res, next) => {
       try {
         const authed = req.user;

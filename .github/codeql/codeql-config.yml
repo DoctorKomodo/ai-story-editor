@@ -1,0 +1,20 @@
+name: "CodeQL config"
+
+# Tests build their own isolated Express apps to exercise middleware in
+# isolation (e.g. venice-key-verify.test.ts wires up helmet + cors +
+# cookieParser + express.json without the production CSRF middleware).
+# Those in-test apps are not reachable at runtime; scanning them yields
+# false positives on rules like "Missing CSRF middleware" that fire on
+# any `cookieParser()` mount.
+#
+# Excluding test paths keeps the signal focused on production code. If a
+# real-code pattern needs coverage that's currently only exercised in a
+# test, that's a signal to add an integration test against the real app,
+# not to re-enable test scanning.
+paths-ignore:
+  - "backend/tests/**"
+  - "frontend/tests/**"
+  - "tests/**"
+  - "**/*.test.ts"
+  - "**/*.test.tsx"
+  - "**/*.spec.ts"

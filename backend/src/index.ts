@@ -59,7 +59,10 @@ app.use(
 // 256kb limit: encrypted narrative-field Zod maxima (worldNotes 50k + others)
 // worst-case in multi-byte UTF-8 exceed Express's default 100kb body limit.
 app.use(express.json({ limit: '256kb' }));
-app.use(cookieParser());
+// cookieParser is NOT applied globally — only `/api/auth/*` uses cookies
+// (refresh-token flow). Scoping it to the auth mount below keeps cookies
+// off every other route and co-locates cookie parsing with the CSRF
+// Origin-check middleware that protects the cookie-authed endpoints.
 // morgan's dev format is for local debugging only. In production it would log
 // every request URL (including owned resource IDs like /api/stories/:id) to
 // stdout with no gating, which is both noisy and a minor ID-enumeration leak
@@ -78,7 +81,7 @@ app.use(
   }),
 );
 
-app.use('/api/auth', createAuthRouter(allowedOrigin));
+app.use('/api/auth', cookieParser(), createAuthRouter(allowedOrigin));
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());

@@ -52,6 +52,7 @@ jobs:
           # findings CodeQL sees that Biome doesn't. Tune downward if the
           # Security tab fills with low-priority noise.
           queries: security-and-quality
+          config-file: .github/codeql/codeql-config.yml
 
       # CodeQL auto-builds JS/TS projects — no explicit build step required.
       - name: Perform CodeQL Analysis
