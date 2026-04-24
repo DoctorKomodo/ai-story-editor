@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { App } from '@/App';
 
 describe('test setup', () => {
@@ -16,7 +16,13 @@ describe('test setup', () => {
   });
 
   it('renders the App via the @/ alias', () => {
+    // App mounts the router and kicks off initAuth which hits fetch.
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
+    );
     render(<App />);
-    expect(screen.getByRole('heading', { name: /story editor/i })).toBeVisible();
+    expect(screen.getByRole('status')).toBeInTheDocument();
+    vi.unstubAllGlobals();
   });
 });
