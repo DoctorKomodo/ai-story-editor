@@ -432,13 +432,13 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 
 ## 🎨 F — Frontend
 
-- [ ] **[F1]** React Router: `/login`, `/register`, `/` (dashboard), `/stories/:id` (editor). Auth guard redirects to `/login`.
+- [x] **[F1]** React Router: `/login`, `/register`, `/` (dashboard), `/stories/:id` (editor). Auth guard redirects to `/login`.
   - verify: `cd frontend && npm run test:frontend -- --run tests/routing.test.tsx`
 
-- [ ] **[F2]** `useAuth()` hook: provides `user`, `login()`, `logout()`, `register()`. JWT stored in memory. Calls `/api/auth/refresh` on app load.
+- [x] **[F2]** `useAuth()` hook: provides `user`, `login()`, `logout()`, `register()`. JWT stored in memory. Calls `/api/auth/refresh` on app load.
   - verify: `cd frontend && npm run test:frontend -- --run tests/hooks/useAuth.test.tsx`
 
-- [ ] **[F3]** API client `src/lib/api.ts`: attaches Bearer token, retries once after 401 refresh, throws typed errors.
+- [x] **[F3]** API client `src/lib/api.ts`: attaches Bearer token, retries once after 401 refresh, throws typed errors.
   - verify: `cd frontend && npm run test:frontend -- --run tests/lib/api.test.ts`
 
 - [ ] **[F4]** Login and Register pages with inline validation. Redirect to `/` on success.
