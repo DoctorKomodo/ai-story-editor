@@ -104,10 +104,34 @@ jobs:
         working-directory: backend
         run: npx prisma migrate deploy
 
+      # Vitest's JSON reporter emits `numTotalTests`. We assert it > 0 on
+      # top of `passWithNoTests: false` in each vitest.config.ts so a
+      # collection-time regression (e.g. a missing peer dep making every
+      # test file register 0 tests) can't sneak through CI as green.
       - name: Backend tests
         working-directory: backend
-        run: npx vitest run
+        run: npx vitest run --reporter=json --outputFile=vitest-result.json --reporter=default
+
+      - name: Assert backend ran > 0 tests
+        working-directory: backend
+        run: |
+          count=$(jq '.numTotalTests' vitest-result.json)
+          echo "backend ran $count tests"
+          if [ "$count" -lt 1 ]; then
+            echo "::error::Backend suite ran 0 tests — something collected nothing." >&2
+            exit 1
+          fi
 
       - name: Frontend tests
         working-directory: frontend
-        run: npx vitest run
+        run: npx vitest run --reporter=json --outputFile=vitest-result.json --reporter=default
+
+      - name: Assert frontend ran > 0 tests
+        working-directory: frontend
+        run: |
+          count=$(jq '.numTotalTests' vitest-result.json)
+          echo "frontend ran $count tests"
+          if [ "$count" -lt 1 ]; then
+            echo "::error::Frontend suite ran 0 tests — something collected nothing." >&2
+            exit 1
+          fi
