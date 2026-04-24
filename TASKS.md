@@ -489,7 +489,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F19]** Character sheet modal: all fields, save and delete with confirm dialog.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/CharacterSheet.test.tsx`
 
-- [ ] **[F20]** Export: download chapter or full story as `.txt`, client-side.
+- [x] **[F20]** Export: download chapter or full story as `.txt`, client-side.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/Export.test.tsx`
 
 - [ ] **[F21]** Dark mode: toggle in top nav, persisted to localStorage, TailwindCSS `dark:` classes.

@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Editor as TiptapEditor } from '@tiptap/core';
+import type { JSONContent } from '@tiptap/core';
 import { ApiError } from '@/lib/api';
 import { useStoryQuery } from '@/hooks/useStories';
+import { useChaptersQuery } from '@/hooks/useChapters';
 import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
 import { CharacterList } from '@/components/CharacterList';
@@ -13,6 +15,7 @@ import { UsageIndicator } from '@/components/UsageIndicator';
 import { ModelSelector } from '@/components/ModelSelector';
 import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { UserMenu } from '@/components/UserMenu';
+import { Export, type ExportStory } from '@/components/Export';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useAICompletion } from '@/hooks/useAICompletion';
@@ -46,6 +49,13 @@ export function EditorPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { data: story, isLoading, isError } = useStoryQuery(id);
+  // [F20] Export needs the full chapter list + bodyJson. Chapters come from
+  // their own query (loaded already by ChapterList); we reuse the cache here
+  // and build the Export payload lazily. When chapters are still loading,
+  // the Export component still renders — "Export full story" with an empty
+  // chapters array would produce just the title, so we only bind once the
+  // list resolves.
+  const chaptersQuery = useChaptersQuery(story?.id);
   // [F17] Venice account balance — fetched on editor load and rendered in the
   // user menu. Errors surface via dedicated copy (`venice_key_required` vs
   // generic) inside `<BalanceDisplay />`.
@@ -137,6 +147,21 @@ export function EditorPage(): JSX.Element {
     [activeChapterId, completion, selectedModelId, selectedText, story, webSearch],
   );
 
+  const exportStory: ExportStory | null = useMemo(() => {
+    if (!story) return null;
+    const chapters = chaptersQuery.data ?? [];
+    return {
+      id: story.id,
+      title: story.title,
+      chapters: chapters.map((c) => ({
+        id: c.id,
+        title: c.title,
+        orderIndex: c.orderIndex,
+        bodyJson: (c.bodyJson as JSONContent | null) ?? null,
+      })),
+    };
+  }, [story, chaptersQuery.data]);
+
   const handleInsertAtCursor = useCallback(
     (text: string): void => {
       if (!editor) return;
@@ -198,6 +223,9 @@ export function EditorPage(): JSX.Element {
           >
             {aiOpen ? 'Hide AI' : 'Show AI'}
           </button>
+          {exportStory ? (
+            <Export story={exportStory} activeChapterId={activeChapterId} />
+          ) : null}
           <UserMenu
             username={username}
             onSignOut={handleSignOut}
