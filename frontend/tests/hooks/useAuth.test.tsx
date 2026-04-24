@@ -36,7 +36,13 @@ describe('useAuth', () => {
     vi.unstubAllGlobals();
     setUnauthorizedHandler(null);
     resetApiClientForTests();
-    useSessionStore.setState({ user: null, status: 'idle' });
+    // Wrap the store reset in act(): Vitest runs afterEach hooks in reverse
+    // registration order, so the test-file hook fires BEFORE setup.ts's
+    // cleanup() unmounts the TestComponent — setting state here would
+    // otherwise notify still-mounted subscribers outside act.
+    act(() => {
+      useSessionStore.setState({ user: null, status: 'idle' });
+    });
   });
 
   it('login() calls POST /api/auth/login and populates the session', async () => {
@@ -55,8 +61,10 @@ describe('useAuth', () => {
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ username: 'alice', password: 'hunter2hunter2' }));
 
-    expect(result.current.user).toEqual({ id: 'u1', username: 'alice' });
-    expect(result.current.status).toBe('authenticated');
+    await waitFor(() => {
+      expect(result.current.user).toEqual({ id: 'u1', username: 'alice' });
+      expect(result.current.status).toBe('authenticated');
+    });
     expect(getAccessToken()).toBe('tok-1');
   });
 
@@ -73,7 +81,9 @@ describe('useAuth', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/auth/register');
-    expect(result.current.user).toEqual({ id: 'u2', username: 'bob' });
+    await waitFor(() => {
+      expect(result.current.user).toEqual({ id: 'u2', username: 'bob' });
+    });
     expect(getAccessToken()).toBe('tok-2');
   });
 
@@ -93,8 +103,10 @@ describe('useAuth', () => {
     expect(url).toBe('/api/auth/logout');
     expect(init.method).toBe('POST');
 
-    expect(result.current.user).toBeNull();
-    expect(result.current.status).toBe('unauthenticated');
+    await waitFor(() => {
+      expect(result.current.user).toBeNull();
+      expect(result.current.status).toBe('unauthenticated');
+    });
     expect(getAccessToken()).toBeNull();
   });
 
@@ -107,7 +119,9 @@ describe('useAuth', () => {
       await result.current.logout().catch(() => undefined);
     });
 
-    expect(result.current.user).toBeNull();
+    await waitFor(() => {
+      expect(result.current.user).toBeNull();
+    });
     expect(getAccessToken()).toBeNull();
   });
 
