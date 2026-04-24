@@ -8,7 +8,7 @@
 // fresh instance bound to exactly one user's credentials.
 
 import type { PrismaClient } from '@prisma/client';
-import OpenAI from 'openai';
+import OpenAI, { type ClientOptions } from 'openai';
 import { decrypt } from '../services/crypto.service';
 import { prisma as defaultPrisma } from './prisma';
 
@@ -39,7 +39,11 @@ export function createVeniceClient({ apiKey, endpoint }: VeniceClientOptions): O
     // venice-key.service, which also uses globalThis.fetch, and makes the
     // transport rebindable (e.g. vi.stubGlobal in tests). Resolved lazily
     // per-call so the stubbing stays live across the lifetime of a test.
-    fetch: (url, init) => globalThis.fetch(url as string, init as RequestInit),
+    // Cast via unknown because the OpenAI SDK's internal `Fetch` type resolves
+    // to node-fetch's `Response` under NodeNext module resolution, which doesn't
+    // structurally match the global `Response` from lib.dom.
+    fetch: ((url: string, init?: RequestInit) =>
+      globalThis.fetch(url, init)) as unknown as ClientOptions['fetch'],
     // Disable the SDK's automatic retry logic. We map Venice errors explicitly
     // ([V11]) and let the caller decide retry policy. Automatic retries would:
     // (a) exhaust rate-limit quotas silently on 429, and

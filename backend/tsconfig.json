@@ -1,8 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "commonjs",
-    "lib": ["ES2022"],
+    "target": "ES2023",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2023"],
     "rootDir": "src",
     "outDir": "dist",
     "esModuleInterop": true,
@@ -15,7 +16,6 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "declaration": false,
-    "moduleResolution": "node",
     "incremental": true,
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
