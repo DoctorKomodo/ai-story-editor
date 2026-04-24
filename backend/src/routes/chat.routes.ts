@@ -24,6 +24,7 @@ import { createMessageRepo } from '../repos/message.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
 import { badRequestFromZod } from '../lib/bad-request';
+import { projectVeniceCitations, type Citation } from '../lib/venice-citations';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,10 @@ const PostMessageBody = z
       })
       .strict()
       .optional(),
+    // [V26] Opt-in web search for this chat turn. When true, the handler
+    // enables Venice web search + citations + in-stream delivery; when
+    // false/omitted, the stream behaves exactly as today.
+    enableWebSearch: z.boolean().optional(),
   })
   .strict();
 
@@ -165,6 +170,9 @@ export function createChatMessagesRouter() {
         role: m.role,
         contentJson: m.contentJson,
         attachmentJson: m.attachmentJson ?? null,
+        // [V26] `citationsJson` is `Citation[] | null` — null when the turn
+        // had no web search or produced no valid results (see §6 of the spec).
+        citationsJson: m.citationsJson ?? null,
         model: m.model ?? null,
         tokens: m.tokens ?? null,
         latencyMs: m.latencyMs ?? null,
@@ -330,6 +338,17 @@ export function createChatMessagesRouter() {
         venice_parameters.strip_thinking_response = true;
       }
 
+      // [V26] Opt-in Venice web search for this chat turn. Sets the three
+      // Venice params that together cause (1) search to run, (2) citations
+      // to survive rather than get inlined as plain text, and (3) results
+      // to arrive in-band as a non-standard first chunk on the SSE stream.
+      // When `enableWebSearch` is false/omitted, none of these are set.
+      if (body.enableWebSearch === true) {
+        venice_parameters.enable_web_search = 'auto';
+        venice_parameters.enable_web_citations = true;
+        venice_parameters.include_search_results_in_stream = true;
+      }
+
       // ── 10. Call Venice with streaming ────────────────────────────────────
       // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
       // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
@@ -409,10 +428,41 @@ export function createChatMessagesRouter() {
       // ── 12. Stream chunks, accumulate content + usage ─────────────────────
       let accumulatedContent = '';
       let capturedTotalTokens: number | null = null;
+      // [V26] Citation capture state. `citationsHandled` latches on the first
+      // `venice_search_results` chunk (valid or malformed) so a later
+      // duplicate chunk can't re-trigger. `capturedCitations` stays null
+      // when Venice returned no valid results — that null gets persisted
+      // verbatim (null ≠ [] per §6).
+      let citationsHandled = false;
+      let capturedCitations: Citation[] | null = null;
 
       try {
         for await (const chunk of stream) {
           if (clientClosed) break;
+
+          // [V26] Venice's `include_search_results_in_stream: true` adds a
+          // non-standard first chunk carrying `venice_search_results`. It is
+          // not part of the OpenAI chunk shape, so we access it via cast.
+          // We CONSUME this chunk (do not forward it to the client) and
+          // instead emit a single `event: citations` SSE frame before any
+          // content frame. Empty / malformed results → latch, emit nothing.
+          if (!citationsHandled) {
+            const veniceChunk = chunk as unknown as {
+              venice_search_results?: unknown;
+            };
+            if (veniceChunk.venice_search_results !== undefined) {
+              citationsHandled = true;
+              const projected = projectVeniceCitations(veniceChunk.venice_search_results);
+              if (projected.length > 0) {
+                capturedCitations = projected;
+                res.write(
+                  `event: citations\ndata: ${JSON.stringify({ citations: projected })}\n\n`,
+                );
+              }
+              // Do NOT forward this chunk — continue to the next iteration.
+              continue;
+            }
+          }
 
           // Accumulate assistant content.
           const deltaContent = chunk.choices[0]?.delta?.content;
@@ -436,6 +486,8 @@ export function createChatMessagesRouter() {
               chatId,
               role: 'assistant' as MessageRole,
               contentJson: accumulatedContent,
+              // [V26] Persist captured citations (null when none).
+              citationsJson: capturedCitations,
               model: body.modelId,
               tokens: capturedTotalTokens,
               latencyMs,

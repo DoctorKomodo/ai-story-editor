@@ -2,14 +2,19 @@ import type { Request } from 'express';
 import type { PrismaClient } from '@prisma/client';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeCiphertextOnly } from './_narrative';
+import type { Citation } from '../lib/venice-citations';
 
-const ENCRYPTED_FIELDS = ['contentJson', 'attachmentJson'] as const;
+const ENCRYPTED_FIELDS = ['contentJson', 'attachmentJson', 'citationsJson'] as const;
 
 export interface MessageCreateInput {
   chatId: string;
   role: string;
   contentJson: unknown;
   attachmentJson?: unknown;
+  // [V26] Optional — only assistant turns backed by Venice web search carry
+  // a non-null `Citation[]`. An empty array must NOT be passed here; the
+  // caller is expected to translate `[]` → `null` per the null-vs-empty rule.
+  citationsJson?: Citation[] | null;
   model?: string | null;
   tokens?: number | null;
   latencyMs?: number | null;
@@ -53,6 +58,9 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
         // columns were dropped.
         ...writeCiphertextOnly(req, 'contentJson', serialiseJsonField(input.contentJson)),
         ...writeCiphertextOnly(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
+        // [V26] `citationsJson` follows the same ciphertext-triple pattern.
+        // Null input → null triple → `projectDecrypted` returns `null` on read.
+        ...writeCiphertextOnly(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
       },
     });
     return shape(row, req);

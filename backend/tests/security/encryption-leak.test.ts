@@ -131,6 +131,15 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       role: 'user',
       contentJson: { parts: [`message-content ${SENTINEL}`] },
       attachmentJson: { ref: `message-attach ${SENTINEL}` },
+      // [V26] Also seed the new encrypted-at-rest citations column.
+      citationsJson: [
+        {
+          title: `cit-title ${SENTINEL}`,
+          url: `https://example.com/${SENTINEL}`,
+          snippet: `cit-snippet ${SENTINEL}`,
+          publishedAt: null,
+        },
+      ],
       model: 'plain-model-ok',
     });
 
