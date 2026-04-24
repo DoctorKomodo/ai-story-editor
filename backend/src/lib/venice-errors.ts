@@ -19,29 +19,92 @@ export { AuthenticationError, RateLimitError } from 'openai';
 // NOT the DOM `Headers` type. Access via bracket notation.
 type SdkHeaders = Record<string, string | null | undefined>;
 
+// [V27] Threshold (in seconds) used to disambiguate a delta-seconds value from
+// a unix timestamp on `x-ratelimit-reset-*` headers. 10_000_000 s ≈ 116 days,
+// which is far larger than any plausible rate-limit window but far smaller
+// than any unix timestamp after 1970-04-26. Values above the threshold are
+// treated as unix seconds since epoch; values at-or-below are treated as a
+// delta-seconds countdown.
+const UNIX_TS_THRESHOLD_SECONDS = 10_000_000;
+
 /**
- * Parse the `retry-after` response header to a number of seconds.
- * Handles both the delta-seconds form ("60") and the HTTP-date form.
- * Returns null when the header is absent or unparseable.
+ * Parse one of the `x-ratelimit-reset-*` header forms to a delta in seconds
+ * from now. Returns null when the value is missing / unparseable.
+ *
+ * Accepted forms (in order):
+ *   1. integer delta-seconds (e.g. "30")
+ *   2. integer unix timestamp in seconds (e.g. "1714000000") — disambiguated
+ *      from delta-seconds by UNIX_TS_THRESHOLD_SECONDS.
+ *   3. ISO-8601 / RFC 2822 date string — parsed via Date.parse.
  */
-export function parseRetryAfter(
-  headers: SdkHeaders | null | undefined,
-): number | null {
-  const raw = headers?.['retry-after'] ?? null;
+function parseResetHeader(raw: string | null | undefined): number | null {
   if (!raw) return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
 
-  // Delta-seconds form: "60"
-  const asInt = parseInt(raw, 10);
-  if (!isNaN(asInt) && String(asInt) === raw.trim()) return asInt;
+  // Integer form — either delta-seconds or unix timestamp.
+  const asInt = parseInt(trimmed, 10);
+  if (!isNaN(asInt) && String(asInt) === trimmed) {
+    if (asInt > UNIX_TS_THRESHOLD_SECONDS) {
+      // Treat as unix seconds since epoch.
+      const diffSeconds = Math.ceil((asInt * 1000 - Date.now()) / 1000);
+      return diffSeconds > 0 ? diffSeconds : 0;
+    }
+    // Treat as delta-seconds countdown; clamp negatives to 0.
+    return asInt > 0 ? asInt : 0;
+  }
 
-  // HTTP-date form: "Thu, 23 Apr 2026 12:00:00 GMT"
-  const date = Date.parse(raw);
+  // Last resort: try ISO-8601 / RFC 2822.
+  const date = Date.parse(trimmed);
   if (!isNaN(date)) {
     const diffSeconds = Math.ceil((date - Date.now()) / 1000);
     return diffSeconds > 0 ? diffSeconds : 0;
   }
 
   return null;
+}
+
+/**
+ * Parse the `retry-after` response header to a number of seconds.
+ * Handles both the delta-seconds form ("60") and the HTTP-date form.
+ *
+ * [V27] When `retry-after` is absent or unparseable, falls back to
+ * `x-ratelimit-reset-requests` / `x-ratelimit-reset-tokens` (Venice may
+ * populate only these on chat-completion 429s per the V22 audit). Takes the
+ * minimum (soonest) of whichever reset-* values parse to a non-negative
+ * number. `retry-after` always wins when it parses — precedence beats
+ * magnitude.
+ *
+ * Returns null when none of the three headers are present / parseable.
+ */
+export function parseRetryAfter(
+  headers: SdkHeaders | null | undefined,
+): number | null {
+  const raw = headers?.['retry-after'] ?? null;
+  if (raw) {
+    // Delta-seconds form: "60"
+    const asInt = parseInt(raw, 10);
+    if (!isNaN(asInt) && String(asInt) === raw.trim()) return asInt;
+
+    // HTTP-date form: "Thu, 23 Apr 2026 12:00:00 GMT"
+    const date = Date.parse(raw);
+    if (!isNaN(date)) {
+      const diffSeconds = Math.ceil((date - Date.now()) / 1000);
+      return diffSeconds > 0 ? diffSeconds : 0;
+    }
+    // Retry-After was present but unparseable — fall through to reset-* fallback.
+  }
+
+  // [V27] Fallback to x-ratelimit-reset-* headers.
+  const resetRequests = parseResetHeader(headers?.['x-ratelimit-reset-requests']);
+  const resetTokens = parseResetHeader(headers?.['x-ratelimit-reset-tokens']);
+
+  const candidates: number[] = [];
+  if (resetRequests !== null) candidates.push(resetRequests);
+  if (resetTokens !== null) candidates.push(resetTokens);
+
+  if (candidates.length === 0) return null;
+  return Math.min(...candidates);
 }
 
 export interface VeniceErrorBody {
