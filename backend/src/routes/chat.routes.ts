@@ -88,7 +88,7 @@ export function createChapterChatsRouter() {
 
   // POST /api/chapters/:chapterId/chats — create a chat for the chapter.
   router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-    const { chapterId } = req.params;
+    const chapterId = req.params.chapterId as string;
 
     const parsed = CreateChatBody.safeParse(req.body);
     if (!parsed.success) {
@@ -118,7 +118,7 @@ export function createChapterChatsRouter() {
 
   // GET /api/chapters/:chapterId/chats — list chats for the chapter.
   router.get('/', async (req: Request, res: Response, next: NextFunction) => {
-    const { chapterId } = req.params;
+    const chapterId = req.params.chapterId as string;
     try {
       // Ownership: chapter must exist and belong to req.user.
       const chapter = await createChapterRepo(req).findById(chapterId);
@@ -154,7 +154,7 @@ export function createChatMessagesRouter() {
 
   // [V21] GET /api/chats/:chatId/messages — list messages in the chat (asc).
   router.get('/', async (req: Request, res: Response, next: NextFunction) => {
-    const { chatId } = req.params;
+    const chatId = req.params.chatId as string;
     try {
       // Pre-check via repo to return 404 cleanly for unowned / missing chats;
       // findManyForChat would otherwise throw a generic Error → 500.
@@ -188,7 +188,7 @@ export function createChatMessagesRouter() {
 
   // POST /api/chats/:chatId/messages — append a user message, stream assistant reply.
   router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-    const { chatId } = req.params;
+    const chatId = req.params.chatId as string;
     const userId = req.user!.id;
 
     const parsed = PostMessageBody.safeParse(req.body);

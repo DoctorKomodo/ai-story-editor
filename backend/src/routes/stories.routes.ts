@@ -17,9 +17,9 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import { prisma } from '../lib/prisma';
 import { badRequestFromZod } from '../lib/bad-request';
 import { createStoryRepo, type StoryUpdateInput } from '../repos/story.repo';
+import { createChapterRepo } from '../repos/chapter.repo';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
@@ -61,33 +61,12 @@ export function createStoriesRouter() {
   // GET /api/stories — list the caller's stories with per-story aggregates.
   router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const userId = req.user!.id;
-
       const stories = await createStoryRepo(req).findManyForUser();
       const ids = stories.map((s) => s.id as string);
 
-      // Aggregate chapterCount + totalWordCount in one round-trip. Scope by
-      // the story→user relation so a stray storyId can't pull in another
-      // user's chapters (defence-in-depth on top of the `ids` filter).
-      // `wordCount` is plaintext and not narrative content, so direct Prisma
-      // access is fine here — this is not a narrative entity read path.
-      const aggregates =
-        ids.length === 0
-          ? []
-          : await prisma.chapter.groupBy({
-              by: ['storyId'],
-              where: { storyId: { in: ids }, story: { userId } },
-              _count: { _all: true },
-              _sum: { wordCount: true },
-            });
-
-      const byStoryId = new Map<string, { chapterCount: number; totalWordCount: number }>();
-      for (const agg of aggregates) {
-        byStoryId.set(agg.storyId, {
-          chapterCount: agg._count._all,
-          totalWordCount: agg._sum.wordCount ?? 0,
-        });
-      }
+      // Aggregate chapterCount + totalWordCount in one round-trip via the
+      // chapter repo so routes don't bypass the narrative-entity boundary.
+      const byStoryId = await createChapterRepo(req).aggregateForStories(ids);
 
       const enriched = stories.map((s) => {
         const agg = byStoryId.get(s.id as string);
@@ -147,29 +126,21 @@ export function createStoriesRouter() {
     ownStory,
     async (req: Request, res: Response, next: NextFunction) => {
       const id = req.params.id as string;
-      const userId = req.user!.id;
       try {
-        // targetWords lives plaintext on Story; reading just that column
-        // keeps us off the ciphertext surface entirely. Scope by userId for
-        // defence-in-depth on top of ownership middleware.
-        const story = await prisma.story.findFirst({
-          where: { id, userId },
-          select: { targetWords: true },
-        });
-        if (!story) {
+        // Both lookups go through repos so the route never touches Prisma
+        // for narrative tables directly. `targetWords` and per-chapter
+        // `wordCount` are plaintext columns — the repos expose them via
+        // dedicated aggregate methods that never return ciphertext.
+        const targetWords = await createStoryRepo(req).findTargetWords(id);
+        if (targetWords === undefined) {
           // Race: ownership middleware saw the row, then it got deleted.
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
         }
 
-        const chapters = await prisma.chapter.findMany({
-          where: { storyId: id, story: { userId } },
-          orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-          select: { id: true, wordCount: true },
-        });
+        const chapters = await createChapterRepo(req).listWordCountsForStory(id);
 
         const wordCount = chapters.reduce((sum, c) => sum + c.wordCount, 0);
-        const targetWords = story.targetWords ?? null;
         const percent =
           targetWords && targetWords > 0 ? Math.floor((wordCount / targetWords) * 100) : 0;
 
@@ -177,7 +148,7 @@ export function createStoriesRouter() {
           wordCount,
           targetWords,
           percent,
-          chapters: chapters.map((c) => ({ id: c.id, wordCount: c.wordCount })),
+          chapters,
         });
       } catch (err) {
         next(err);

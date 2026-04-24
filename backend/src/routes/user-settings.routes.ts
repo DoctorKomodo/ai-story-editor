@@ -20,6 +20,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '../lib/prisma';
 import { deepMerge } from '../lib/deep-merge';
 import { badRequestFromZod } from '../lib/bad-request';
@@ -121,7 +122,7 @@ export function createUserSettingsRouter() {
 
       await prisma.user.update({
         where: { id: req.user!.id },
-        data: { settingsJson: nextStored },
+        data: { settingsJson: nextStored as Prisma.InputJsonValue },
       });
 
       // Response is defaults-merged so the client sees the fully-populated shape.

@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import { prisma } from '../lib/prisma';
 import { badRequestFromZod } from '../lib/bad-request';
 import {
   createOutlineRepo,
@@ -88,21 +87,17 @@ export function createOutlineRouter() {
     try {
       // [D16] Matches chapters.routes.ts: @@unique([storyId, order]) catches
       // the aggregate+insert race at the DB; we re-aggregate + retry on P2002.
-      const userId = req.user!.id;
+      const outlineRepo = createOutlineRepo(req);
 
       let lastErr: unknown;
       let created: Awaited<ReturnType<ReturnType<typeof createOutlineRepo>['create']>> | null =
         null;
       for (let attempt = 0; attempt < POST_ORDER_RETRY_ATTEMPTS; attempt++) {
-        const agg = await prisma.outlineItem.aggregate({
-          where: { storyId, story: { userId } },
-          _max: { order: true },
-        });
-        const nextOrder =
-          agg._max.order === null || agg._max.order === undefined ? 0 : agg._max.order + 1;
+        const currentMax = await outlineRepo.maxOrder(storyId);
+        const nextOrder = currentMax === null ? 0 : currentMax + 1;
 
         try {
-          created = await createOutlineRepo(req).create({
+          created = await outlineRepo.create({
             storyId,
             title: body.title,
             sub: body.sub,

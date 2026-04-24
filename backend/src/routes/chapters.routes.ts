@@ -6,7 +6,6 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import { prisma } from '../lib/prisma';
 import { badRequestFromZod } from '../lib/bad-request';
 import {
   ChapterNotOwnedError,
@@ -101,24 +100,18 @@ export function createChaptersRouter() {
       // the DB rejects the loser with P2002; we re-aggregate and retry. One
       // retry is almost always sufficient (the winner's row now shows up in
       // `_max`); `POST_ORDER_RETRY_ATTEMPTS` bounds the loop.
-      const userId = req.user!.id;
       const wordCount = body.bodyJson === undefined ? 0 : computeWordCount(body.bodyJson);
+      const chapterRepo = createChapterRepo(req);
 
       let lastErr: unknown;
       let created: Awaited<ReturnType<ReturnType<typeof createChapterRepo>['create']>> | null =
         null;
       for (let attempt = 0; attempt < POST_ORDER_RETRY_ATTEMPTS; attempt++) {
-        const agg = await prisma.chapter.aggregate({
-          where: { storyId, story: { userId } },
-          _max: { orderIndex: true },
-        });
-        const nextOrderIndex =
-          agg._max.orderIndex === null || agg._max.orderIndex === undefined
-            ? 0
-            : agg._max.orderIndex + 1;
+        const currentMax = await chapterRepo.maxOrderIndex(storyId);
+        const nextOrderIndex = currentMax === null ? 0 : currentMax + 1;
 
         try {
-          created = await createChapterRepo(req).create({
+          created = await chapterRepo.create({
             storyId,
             title: body.title,
             bodyJson: body.bodyJson,
