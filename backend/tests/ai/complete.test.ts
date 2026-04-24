@@ -397,7 +397,7 @@ describe('POST /api/ai/complete [V5]', () => {
     expect(auth).toBe(`Bearer ${VALID_KEY}`);
   });
 
-  it('Venice request carries the prompt builder messages and max_tokens', async () => {
+  it('Venice request carries the prompt builder messages and max_completion_tokens', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
@@ -427,7 +427,7 @@ describe('POST /api/ai/complete [V5]', () => {
     const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
     expect(Array.isArray(requestBody.messages)).toBe(true);
     expect((requestBody.messages as unknown[]).length).toBeGreaterThan(0);
-    expect(typeof requestBody.max_tokens).toBe('number');
+    expect(typeof requestBody.max_completion_tokens).toBe('number');
     expect(requestBody.stream).toBe(true);
   });
 

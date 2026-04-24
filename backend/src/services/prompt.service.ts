@@ -45,7 +45,7 @@ export interface BuiltPrompt {
   venice_parameters: {
     include_venice_system_prompt: boolean;
   };
-  max_tokens: number;
+  max_completion_tokens: number;
 }
 
 // ─── Exported constants ───────────────────────────────────────────────────────
@@ -200,6 +200,6 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     venice_parameters: {
       include_venice_system_prompt: includeVeniceSystemPrompt,
     },
-    max_tokens: responseBudgetTokens,
+    max_completion_tokens: responseBudgetTokens,
   };
 }

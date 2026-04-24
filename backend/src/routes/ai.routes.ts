@@ -173,7 +173,7 @@ export function createAiRouter() {
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
       const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
-      const { messages, venice_parameters: baseVeniceParams, max_tokens } = buildPrompt({
+      const { messages, venice_parameters: baseVeniceParams, max_completion_tokens } = buildPrompt({
         action: body.action,
         selectedText: body.selectedText,
         chapterContent,
@@ -219,7 +219,7 @@ export function createAiRouter() {
           model: body.modelId,
           messages,
           stream: true as const,
-          max_tokens,
+          max_completion_tokens,
           prompt_cache_key: promptCacheKey(body.storyId, body.modelId),
           venice_parameters,
         } as unknown as Parameters<typeof client.chat.completions.create>[0])
