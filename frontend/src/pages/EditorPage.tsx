@@ -6,6 +6,7 @@ import { useStoryQuery } from '@/hooks/useStories';
 import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
 import { CharacterList } from '@/components/CharacterList';
+import { CharacterSheet } from '@/components/CharacterSheet';
 import { AIPanel, type AIAction } from '@/components/AIPanel';
 import { AIResult } from '@/components/AIResult';
 import { UsageIndicator } from '@/components/UsageIndicator';
@@ -66,6 +67,10 @@ export function EditorPage(): JSX.Element {
   // [F18] Sidebar tab: Chapters vs Cast. Local state — F22 folds into slice;
   // F27 redesigns to the mockup Cast/Outline tabs.
   const [sidebarTab, setSidebarTab] = useState<'chapters' | 'characters'>('chapters');
+  // [F19] Character-sheet modal is driven by a single id — null means closed.
+  // F37 later adds a mention-popover as an alternate entry point; the sheet
+  // stays as the full "edit all fields" surface.
+  const [openCharacterId, setOpenCharacterId] = useState<string | null>(null);
   // [F12] Editor selection plumbed to the AI panel. F22 may fold this into
   // the Zustand `selection` slice once cross-component reads appear.
   const [selectedText, setSelectedText] = useState('');
@@ -274,16 +279,7 @@ export function EditorPage(): JSX.Element {
             aria-labelledby="sidebar-tab-characters"
             hidden={sidebarTab !== 'characters'}
           >
-            {/* TODO(F19): open the character-sheet modal here instead of
-                logging. For now, log so the wiring is observable during
-                manual testing. */}
-            <CharacterList
-              storyId={story.id}
-              onOpenCharacter={(characterId) => {
-                // eslint-disable-next-line no-console
-                console.info('F19 will open character sheet for', characterId);
-              }}
-            />
+            <CharacterList storyId={story.id} onOpenCharacter={setOpenCharacterId} />
           </div>
         </aside>
 
@@ -327,6 +323,14 @@ export function EditorPage(): JSX.Element {
           />
         </aside>
       </div>
+
+      <CharacterSheet
+        storyId={story.id}
+        characterId={openCharacterId}
+        onClose={() => {
+          setOpenCharacterId(null);
+        }}
+      />
     </div>
   );
 }
