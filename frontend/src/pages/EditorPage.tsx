@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useStoryQuery } from '@/hooks/useStories';
+import { Editor } from '@/components/Editor';
 
 /**
  * Three-pane editor shell (F7).
@@ -86,8 +87,8 @@ export function EditorPage(): JSX.Element {
         </aside>
 
         <main aria-label="Editor" className="flex-1 min-w-0 overflow-y-auto p-6">
-          <div className="mx-auto max-w-3xl rounded border border-dashed border-neutral-300 bg-white p-8 text-neutral-500">
-            Editor &mdash; TipTap mounts in F8.
+          <div className="mx-auto max-w-3xl">
+            <Editor />
           </div>
         </main>
 
