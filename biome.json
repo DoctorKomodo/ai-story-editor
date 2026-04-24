@@ -19,7 +19,7 @@
       "!backend/dist",
       "!mockups/frontend-prototype/design",
       "!**/*.min.js",
-      "!package-lock.json"
+      "!**/package-lock.json"
     ]
   },
   "formatter": {
