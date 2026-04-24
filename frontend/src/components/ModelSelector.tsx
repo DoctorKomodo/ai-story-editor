@@ -18,8 +18,8 @@
  * - [F42] replaces this with the mockup-spec custom popover.
  */
 import { useEffect } from 'react';
+import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { ApiError } from '@/lib/api';
-import { useModelsQuery, type Model } from '@/hooks/useModels';
 
 export interface ModelSelectorProps {
   value: string | null;

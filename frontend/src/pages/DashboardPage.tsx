@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useStoriesQuery } from '@/hooks/useStories';
+import { DarkModeToggle } from '@/components/DarkModeToggle';
 import { StoryCard } from '@/components/StoryCard';
 import { StoryModal } from '@/components/StoryModal';
-import { DarkModeToggle } from '@/components/DarkModeToggle';
+import { useStoriesQuery } from '@/hooks/useStories';
 
 export function DashboardPage(): JSX.Element {
   const [modalOpen, setModalOpen] = useState(false);

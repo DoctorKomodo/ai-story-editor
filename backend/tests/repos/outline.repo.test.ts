@@ -13,8 +13,20 @@ describe('[E9] outline.repo', () => {
     const story = await createStoryRepo(ctx.req).create({ title: 's' });
     const repo = createOutlineRepo(ctx.req);
 
-    const a = await repo.create({ storyId: story.id as string, order: 0, title: 'Act 1', sub: 'Setup', status: 'done' });
-    const b = await repo.create({ storyId: story.id as string, order: 1, title: 'Act 2', sub: 'Confrontation', status: 'active' });
+    const a = await repo.create({
+      storyId: story.id as string,
+      order: 0,
+      title: 'Act 1',
+      sub: 'Setup',
+      status: 'done',
+    });
+    const b = await repo.create({
+      storyId: story.id as string,
+      order: 1,
+      title: 'Act 2',
+      sub: 'Confrontation',
+      status: 'active',
+    });
 
     expect(a.title).toBe('Act 1');
     expect(a.sub).toBe('Setup');

@@ -1,16 +1,16 @@
 // [B5] Integration tests for character CRUD under
 // /api/stories/:storyId/characters.
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
+import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createCharacterRepo } from '../../src/repos/character.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 async function registerAndLogin(
@@ -18,12 +18,8 @@ async function registerAndLogin(
   password = 'characters-pw',
   name = 'Character Route User',
 ): Promise<string> {
-  await request(app)
-    .post('/api/auth/register')
-    .send({ name, username, password });
-  const login = await request(app)
-    .post('/api/auth/login')
-    .send({ username, password });
+  await request(app).post('/api/auth/register').send({ name, username, password });
+  const login = await request(app).post('/api/auth/login').send({ username, password });
   expect(login.status).toBe(200);
   return login.body.accessToken as string;
 }
@@ -86,9 +82,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('GET /:characterId returns 401 without Bearer', async () => {
-    const res = await request(app).get(
-      `/api/stories/${FAKE_ID}/characters/${FAKE_ID}`,
-    );
+    const res = await request(app).get(`/api/stories/${FAKE_ID}/characters/${FAKE_ID}`);
     expect(res.status).toBe(401);
   });
 
@@ -100,9 +94,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('DELETE /:characterId returns 401 without Bearer', async () => {
-    const res = await request(app).delete(
-      `/api/stories/${FAKE_ID}/characters/${FAKE_ID}`,
-    );
+    const res = await request(app).delete(`/api/stories/${FAKE_ID}/characters/${FAKE_ID}`);
     expect(res.status).toBe(401);
   });
 

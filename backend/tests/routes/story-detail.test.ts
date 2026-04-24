@@ -7,16 +7,16 @@
 //   - DELETE /:id auth (401), ownership (403), 204 on success + cascade to
 //     chapters via the schema's onDelete: Cascade.
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
+import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -26,12 +26,8 @@ async function registerAndLogin(
   password = 'story-detail-pw',
   name = 'Story Detail User',
 ): Promise<string> {
-  await request(app)
-    .post('/api/auth/register')
-    .send({ name, username, password });
-  const login = await request(app)
-    .post('/api/auth/login')
-    .send({ username, password });
+  await request(app).post('/api/auth/register').send({ name, username, password });
+  const login = await request(app).post('/api/auth/login').send({ username, password });
   expect(login.status).toBe(200);
   return login.body.accessToken as string;
 }
@@ -140,9 +136,7 @@ describe('Story detail routes [B2]', () => {
   // ── PATCH /api/stories/:id ────────────────────────────────────────────────
 
   it('PATCH /:id returns 401 without Bearer', async () => {
-    const res = await request(app)
-      .patch(`/api/stories/${FAKE_ID}`)
-      .send({ title: 'nope' });
+    const res = await request(app).patch(`/api/stories/${FAKE_ID}`).send({ title: 'nope' });
     expect(res.status).toBe(401);
   });
 

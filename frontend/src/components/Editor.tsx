@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useRef } from 'react';
-import type { Editor as TiptapEditor, JSONContent } from '@tiptap/core';
+import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import { useEffect, useMemo, useRef } from 'react';
 
 /**
  * TipTap editor (F8).
@@ -184,10 +184,7 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
 
       <EditorContent editor={editor} />
 
-      <div
-        role="status"
-        className="border-t border-neutral-200 pt-2 text-sm text-neutral-600"
-      >
+      <div role="status" className="border-t border-neutral-200 pt-2 text-sm text-neutral-600">
         {wordLabel}
       </div>
     </div>

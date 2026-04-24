@@ -1,5 +1,5 @@
-import { defineConfig } from 'vitest/config';
 import path from 'node:path';
+import { defineConfig } from 'vitest/config';
 
 // L-series live Venice tests. NEVER part of CI or the default backend suite.
 // Run explicitly via `npm run test:live` from the backend directory after

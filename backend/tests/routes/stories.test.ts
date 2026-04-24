@@ -9,16 +9,16 @@
 //   - GET /api/stories aggregates chapterCount + totalWordCount correctly
 //   - GET /api/stories orders by updatedAt desc
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
+import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -28,12 +28,8 @@ async function registerAndLogin(
   password = 'story-route-pw',
   name = 'Story Route User',
 ): Promise<string> {
-  await request(app)
-    .post('/api/auth/register')
-    .send({ name, username, password });
-  const login = await request(app)
-    .post('/api/auth/login')
-    .send({ username, password });
+  await request(app).post('/api/auth/register').send({ name, username, password });
+  const login = await request(app).post('/api/auth/login').send({ username, password });
   expect(login.status).toBe(200);
   return login.body.accessToken as string;
 }
@@ -81,9 +77,7 @@ describe('Stories routes [B1]', () => {
   });
 
   it('POST /api/stories returns 401 without Bearer', async () => {
-    const res = await request(app)
-      .post('/api/stories')
-      .send({ title: 'Nope' });
+    const res = await request(app).post('/api/stories').send({ title: 'Nope' });
     expect(res.status).toBe(401);
   });
 
@@ -163,7 +157,7 @@ describe('Stories routes [B1]', () => {
 
   // ── GET: owner scoping ───────────────────────────────────────────────────
 
-  it('GET /api/stories returns only the caller\'s stories', async () => {
+  it("GET /api/stories returns only the caller's stories", async () => {
     const tokenA = await registerAndLogin('stories-owner-a');
     const tokenB = await registerAndLogin('stories-owner-b');
 
@@ -174,9 +168,7 @@ describe('Stories routes [B1]', () => {
     await createStoryRepo(reqA).create({ title: 'A-Story-2' });
     await createStoryRepo(reqB).create({ title: 'B-Only-Story' });
 
-    const res = await request(app)
-      .get('/api/stories')
-      .set('Authorization', `Bearer ${tokenA}`);
+    const res = await request(app).get('/api/stories').set('Authorization', `Bearer ${tokenA}`);
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.stories)).toBe(true);
@@ -231,16 +223,12 @@ describe('Stories routes [B1]', () => {
     expect(res.status).toBe(200);
     expect(res.body.stories).toHaveLength(2);
 
-    const full = res.body.stories.find(
-      (s: { id: string }) => s.id === storyId,
-    );
+    const full = res.body.stories.find((s: { id: string }) => s.id === storyId);
     expect(full).toBeDefined();
     expect(full.chapterCount).toBe(3);
     expect(full.totalWordCount).toBe(425);
 
-    const empty = res.body.stories.find(
-      (s: { id: string }) => s.id === (emptyStory.id as string),
-    );
+    const empty = res.body.stories.find((s: { id: string }) => s.id === (emptyStory.id as string));
     expect(empty).toBeDefined();
     expect(empty.chapterCount).toBe(0);
     expect(empty.totalWordCount).toBe(0);

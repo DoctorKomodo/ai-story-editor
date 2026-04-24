@@ -6,7 +6,10 @@ function futureDate(daysFromNow = 7): Date {
 }
 
 async function makeUser(email = 'rt-user@example.com') {
-  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const username = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   return prisma.user.create({ data: { email, username, passwordHash: 'h' } });
 }
 

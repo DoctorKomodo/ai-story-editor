@@ -7,15 +7,11 @@
 // anchor click path with `URL.createObjectURL` stubbed).
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { JSONContent } from '@tiptap/core';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Export } from '@/components/Export';
-import {
-  serializeChapterTxt,
-  serializeStoryTxt,
-  tipTapJsonToPlainText,
-} from '@/lib/exportTxt';
 import { downloadTxt } from '@/lib/downloadTxt';
+import { serializeChapterTxt, serializeStoryTxt, tipTapJsonToPlainText } from '@/lib/exportTxt';
 
 function paragraph(text: string): JSONContent {
   return { type: 'paragraph', content: [{ type: 'text', text }] };
@@ -70,11 +66,7 @@ describe('F20 · tipTapJsonToPlainText', () => {
   });
 
   it('renders a horizontalRule as --- on its own line', () => {
-    const doc = makeDoc([
-      paragraph('Before.'),
-      { type: 'horizontalRule' },
-      paragraph('After.'),
-    ]);
+    const doc = makeDoc([paragraph('Before.'), { type: 'horizontalRule' }, paragraph('After.')]);
     expect(tipTapJsonToPlainText(doc)).toBe('Before.\n\n---\n\nAfter.');
   });
 
@@ -139,11 +131,11 @@ describe('F20 · downloadTxt', () => {
     URL.createObjectURL = vi.fn(() => 'blob:mock') as typeof URL.createObjectURL;
     URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
     capturedAnchor = null;
-    clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(function (this: HTMLAnchorElement): void {
-        capturedAnchor = this;
-      });
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ): void {
+      capturedAnchor = this;
+    });
   });
 
   afterEach(() => {
@@ -178,11 +170,11 @@ describe('F20 · <Export> component', () => {
       return 'blob:mock';
     }) as typeof URL.createObjectURL;
     URL.revokeObjectURL = vi.fn() as typeof URL.revokeObjectURL;
-    clickSpy = vi
-      .spyOn(HTMLAnchorElement.prototype, 'click')
-      .mockImplementation(function (this: HTMLAnchorElement): void {
-        capturedAnchor = this;
-      });
+    clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ): void {
+      capturedAnchor = this;
+    });
   });
 
   afterEach(() => {

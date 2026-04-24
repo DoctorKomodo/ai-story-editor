@@ -54,9 +54,11 @@ describe('[AU16] POST /api/auth/reset-password', () => {
 
   it('returns 401 for an unknown username AND for a wrong recovery code with identical body', async () => {
     await registerAndCaptureRecovery();
-    const unknownUser = await request(app)
-      .post('/api/auth/reset-password')
-      .send({ username: 'does-not-exist', recoveryCode: 'WRONG-CODE-HERE', newPassword: NEW_PASSWORD });
+    const unknownUser = await request(app).post('/api/auth/reset-password').send({
+      username: 'does-not-exist',
+      recoveryCode: 'WRONG-CODE-HERE',
+      newPassword: NEW_PASSWORD,
+    });
     const wrongCode = await request(app)
       .post('/api/auth/reset-password')
       .send({ username: USERNAME, recoveryCode: 'WRONG-CODE-HERE', newPassword: NEW_PASSWORD });
@@ -111,7 +113,9 @@ describe('[AU16] POST /api/auth/reset-password', () => {
     await request(app).post('/api/auth/login').send({ username: USERNAME, password: PASSWORD });
 
     const user = await prisma.user.findUniqueOrThrow({ where: { username: USERNAME } });
-    expect(await prisma.refreshToken.count({ where: { userId: user.id } })).toBeGreaterThanOrEqual(2);
+    expect(await prisma.refreshToken.count({ where: { userId: user.id } })).toBeGreaterThanOrEqual(
+      2,
+    );
 
     const res = await request(app)
       .post('/api/auth/reset-password')
@@ -172,7 +176,9 @@ describe('[AU16] POST /api/auth/reset-password', () => {
     const knownUsernames: string[] = [];
     for (let i = 0; i < samples + 1; i += 1) {
       const u = `timing-known-${i}`;
-      await request(app).post('/api/auth/register').send({ name: 'T', username: u, password: PASSWORD });
+      await request(app)
+        .post('/api/auth/register')
+        .send({ name: 'T', username: u, password: PASSWORD });
       knownUsernames.push(u);
     }
 
@@ -200,7 +206,8 @@ describe('[AU16] POST /api/auth/reset-password', () => {
       unknowns.push(await timedCall(`timing-unknown-${i}`));
       knowns.push(await timedCall(knownUsernames[i + 1]));
     }
-    const median = (xs: number[]): number => xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
+    const median = (xs: number[]): number =>
+      xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)];
     const mU = median(unknowns);
     const mK = median(knowns);
     const ratio = Math.max(mU, mK) / Math.max(1, Math.min(mU, mK));

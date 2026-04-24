@@ -1,7 +1,7 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { describe, expect, it, vi } from 'vitest';
-import type { Editor as TiptapEditor, JSONContent } from '@tiptap/core';
 import { Editor } from '@/components/Editor';
 
 /**
@@ -200,9 +200,7 @@ describe('Editor (F8)', () => {
   it('honours initialBodyJson on mount', async () => {
     const initial: JSONContent = {
       type: 'doc',
-      content: [
-        { type: 'paragraph', content: [{ type: 'text', text: 'one two three' }] },
-      ],
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one two three' }] }],
     };
     const { editor, unmount } = await renderAndGrab({ initialBodyJson: initial });
 

@@ -1,0 +1,67 @@
+name: CodeQL
+
+# GitHub's semantic security scanner. Catches classes that Biome and tsc
+# don't: prototype pollution, SSRF patterns, path traversal, some XSS /
+# injection patterns specific to Express + React. Runs on push / PR (fast,
+# caches across runs) and on a weekly cron so rule updates catch latent
+# issues without needing a code change.
+#
+# Findings appear in the repo's Security tab. Triage there; don't treat
+# CodeQL as a hard merge gate by default — early signal-to-noise is low
+# while rules learn the codebase's patterns.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly on Sunday 04:00 UTC — off-peak and catches rule-db updates
+    # between pushes.
+    - cron: "0 4 * * 0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Opt every JS action in this workflow into the Node 24 runtime ahead of
+# GitHub's forced cutover. Without this, checkout@v4 / codeql-action/*@v4
+# still boot on Node 20 and emit deprecation warnings on every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      # Required to upload SARIF results to the Security tab.
+      security-events: write
+      # Required for private repos; harmless for public.
+      contents: read
+      actions: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # `security-and-quality` is the broader query set — more noise
+          # than `security-extended` but surfaces more lint-adjacent
+          # findings CodeQL sees that Biome doesn't. Tune downward if the
+          # Security tab fills with low-priority noise.
+          queries: security-and-quality
+          config-file: .github/codeql/codeql-config.yml
+
+      # CodeQL auto-builds JS/TS projects — no explicit build step required.
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"

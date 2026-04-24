@@ -22,7 +22,11 @@ export interface WebSearchToggleProps {
 
 const HINT_ID = 'ai-web-search-hint';
 
-export function WebSearchToggle({ model, checked, onChange }: WebSearchToggleProps): JSX.Element | null {
+export function WebSearchToggle({
+  model,
+  checked,
+  onChange,
+}: WebSearchToggleProps): JSX.Element | null {
   if (model == null || model.supportsWebSearch === false) {
     return null;
   }

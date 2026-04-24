@@ -7,7 +7,10 @@ import { prisma } from '../setup';
 // plaintext telemetry columns (role, model, tokens, latencyMs).
 
 async function makeChat(email = 'msg-author@example.com') {
-  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const username = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
   const story = await prisma.story.create({ data: { userId: user.id } });
   const chapter = await prisma.chapter.create({

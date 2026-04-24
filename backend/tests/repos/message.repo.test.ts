@@ -10,7 +10,7 @@ describe('[E9] message.repo', () => {
   beforeEach(resetAllTables);
   afterEach(resetAllTables);
 
-  it('round-trips contentJson + attachmentJson as JSON objects', async () => {
+  it('round-trips contentJson + attachmentJson + citationsJson as JSON objects', async () => {
     const ctx = await makeUserContext();
     const story = await createStoryRepo(ctx.req).create({ title: 's' });
     const chapter = await createChapterRepo(ctx.req).create({
@@ -23,11 +23,13 @@ describe('[E9] message.repo', () => {
 
     const content = { parts: ['Hello', 'world'] };
     const attachment = { selectionText: 'draft passage', chapterId: chapter.id };
+    const citations = [{ title: 'Source', url: 'https://example.test/s', content: null }];
     const m = await repo.create({
       chatId: chat.id as string,
       role: 'user',
       contentJson: content,
       attachmentJson: attachment,
+      citationsJson: citations,
       model: 'venice-m1',
       tokens: 3,
       latencyMs: 12,
@@ -35,6 +37,7 @@ describe('[E9] message.repo', () => {
 
     expect(m.contentJson).toEqual(content);
     expect(m.attachmentJson).toEqual(attachment);
+    expect(m.citationsJson).toEqual(citations);
     expect(m.role).toBe('user');
     expect(m.model).toBe('venice-m1');
     expect(m.tokens).toBe(3);
@@ -42,6 +45,8 @@ describe('[E9] message.repo', () => {
     const raw = await prisma.message.findUniqueOrThrow({ where: { id: m.id as string } });
     expect(raw.contentJsonCiphertext).toBeTruthy();
     expect(raw.attachmentJsonCiphertext).toBeTruthy();
+    // [V26] citationsJson must also land as ciphertext, not plaintext.
+    expect(raw.citationsJsonCiphertext).toBeTruthy();
   });
 
   it('countForChat returns the number of messages in an owned chat', async () => {
@@ -98,7 +103,11 @@ describe('[E9] message.repo', () => {
     const repo = createMessageRepo(ctx.req);
 
     await repo.create({ chatId: chat.id as string, role: 'user', contentJson: { parts: ['q1'] } });
-    await repo.create({ chatId: chat.id as string, role: 'assistant', contentJson: { parts: ['a1'] } });
+    await repo.create({
+      chatId: chat.id as string,
+      role: 'assistant',
+      contentJson: { parts: ['a1'] },
+    });
 
     const list = await repo.findManyForChat(chat.id as string);
     expect(list).toHaveLength(2);

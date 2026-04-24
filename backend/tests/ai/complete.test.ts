@@ -3,26 +3,17 @@
 // Story + chapter data is created directly via repo layer after decoding the
 // session DEK from the in-process session store.
 
-import { createHash } from 'node:crypto';
-import request from 'supertest';
-import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
-import { createChapterRepo } from '../../src/repos/chapter.repo';
-import { createCharacterRepo } from '../../src/repos/character.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app } from '../../src/index';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
+import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -259,7 +250,7 @@ describe('POST /api/ai/complete [V5]', () => {
 
   it('returns 409 venice_key_required when user has no BYOK key', async () => {
     const accessToken = await registerAndLogin();
-    const req = makeFakeReq(accessToken);
+    const _req = makeFakeReq(accessToken);
 
     // Prime the models cache manually with a stub so we hit the "no BYOK key"
     // path from getVeniceClient, not from fetchModels. But the handler calls
@@ -349,7 +340,9 @@ describe('POST /api/ai/complete [V5]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
@@ -370,9 +363,7 @@ describe('POST /api/ai/complete [V5]', () => {
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Hi', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Hi', 'stop')]));
 
     await request(app)
       .post('/api/ai/complete')
@@ -380,7 +371,9 @@ describe('POST /api/ai/complete [V5]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
@@ -404,9 +397,7 @@ describe('POST /api/ai/complete [V5]', () => {
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('OK', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
     await request(app)
       .post('/api/ai/complete')
@@ -414,7 +405,9 @@ describe('POST /api/ai/complete [V5]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
@@ -453,7 +446,9 @@ describe('POST /api/ai/complete [V5]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
@@ -490,7 +485,9 @@ describe('POST /api/ai/complete [V5]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
@@ -520,7 +517,9 @@ describe('POST /api/ai/complete [V5]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });

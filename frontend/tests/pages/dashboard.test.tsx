@@ -1,11 +1,11 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { DashboardPage } from '@/pages/DashboardPage';
-import { createQueryClient } from '@/lib/queryClient';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
+import { DashboardPage } from '@/pages/DashboardPage';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -32,15 +32,17 @@ function renderDashboard(): ReturnType<typeof render> {
 // assert the "Edited Nh ago" string deterministically.
 const NOW = new Date('2026-04-24T12:00:00.000Z');
 
-function makeStory(overrides: Partial<{
-  id: string;
-  title: string;
-  genre: string | null;
-  synopsis: string | null;
-  chapterCount: number;
-  totalWordCount: number;
-  updatedAt: string;
-}> = {}): Record<string, unknown> {
+function makeStory(
+  overrides: Partial<{
+    id: string;
+    title: string;
+    genre: string | null;
+    synopsis: string | null;
+    chapterCount: number;
+    totalWordCount: number;
+    updatedAt: string;
+  }> = {},
+): Record<string, unknown> {
   return {
     id: 's1',
     title: 'Dune',
@@ -178,9 +180,7 @@ describe('DashboardPage (F5)', () => {
     await waitFor(() => {
       expect(screen.getByText(/no stories yet/i)).toBeInTheDocument();
     });
-    expect(
-      screen.getByRole('button', { name: /create your first story/i }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /create your first story/i })).toBeInTheDocument();
   });
 
   it('clicking "New Story" opens the StoryModal', async () => {
@@ -225,7 +225,9 @@ describe('DashboardPage (F5)', () => {
     // Refetch after invalidation.
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
-        stories: [makeStory({ id: 's-new', title: 'A new story', chapterCount: 0, totalWordCount: 0 })],
+        stories: [
+          makeStory({ id: 's-new', title: 'A new story', chapterCount: 0, totalWordCount: 0 }),
+        ],
       }),
     );
 

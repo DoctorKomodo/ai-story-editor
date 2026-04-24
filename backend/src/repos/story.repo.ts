@@ -1,5 +1,5 @@
-import type { Request } from 'express';
 import type { PrismaClient } from '@prisma/client';
+import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
@@ -105,5 +105,19 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForUser, update, remove };
+  // Plaintext scalar lookup used by the progress endpoint. Keeps the route off
+  // the narrative-table surface — Prisma access stays inside the repo.
+  // Returns `undefined` when the story is missing/unowned; `null` when the
+  // column is explicitly null.
+  async function findTargetWords(id: string): Promise<number | null | undefined> {
+    const userId = resolveUserId(req);
+    const row = await client.story.findFirst({
+      where: { id, userId },
+      select: { targetWords: true },
+    });
+    if (!row) return undefined;
+    return row.targetWords ?? null;
+  }
+
+  return { create, findById, findManyForUser, update, remove, findTargetWords };
 }

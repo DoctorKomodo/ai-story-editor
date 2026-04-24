@@ -1,12 +1,12 @@
 // Router uses `mergeParams: true` so :storyId from the parent mount is
 // visible on `req.params` inside handlers.
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { type NextFunction, type Request, type Response, Router } from 'express';
 import { z } from 'zod';
+import { badRequestFromZod } from '../lib/bad-request';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import { badRequestFromZod } from '../lib/bad-request';
-import { createCharacterRepo, type CharacterUpdateInput } from '../repos/character.repo';
+import { type CharacterUpdateInput, createCharacterRepo } from '../repos/character.repo';
 
 const CreateCharacterBody = z
   .object({

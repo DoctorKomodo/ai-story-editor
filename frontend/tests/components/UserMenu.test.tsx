@@ -5,26 +5,14 @@ import { UserMenu } from '@/components/UserMenu';
 
 describe('F17 · UserMenu component', () => {
   it('renders the username as the toggle label', () => {
-    render(
-      <UserMenu
-        username="alice"
-        onSignOut={vi.fn()}
-        balance={null}
-      />,
-    );
+    render(<UserMenu username="alice" onSignOut={vi.fn()} balance={null} />);
     const toggle = screen.getByRole('button', { name: 'alice' });
     expect(toggle).toBeInTheDocument();
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
   it('clicking the toggle opens the menu and reveals the balance + Sign out button', async () => {
-    render(
-      <UserMenu
-        username="alice"
-        onSignOut={vi.fn()}
-        balance={{ credits: 10, diem: 500 }}
-      />,
-    );
+    render(<UserMenu username="alice" onSignOut={vi.fn()} balance={{ credits: 10, diem: 500 }} />);
     const toggle = screen.getByRole('button', { name: 'alice' });
     await userEvent.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
@@ -35,13 +23,7 @@ describe('F17 · UserMenu component', () => {
   });
 
   it('pressing Escape closes the menu', async () => {
-    render(
-      <UserMenu
-        username="alice"
-        onSignOut={vi.fn()}
-        balance={{ credits: 10, diem: 500 }}
-      />,
-    );
+    render(<UserMenu username="alice" onSignOut={vi.fn()} balance={{ credits: 10, diem: 500 }} />);
     const toggle = screen.getByRole('button', { name: 'alice' });
     await userEvent.click(toggle);
     expect(screen.queryByRole('menu', { name: /user menu/i })).toBeInTheDocument();
@@ -57,11 +39,7 @@ describe('F17 · UserMenu component', () => {
         <button type="button" data-testid="outside">
           Outside
         </button>
-        <UserMenu
-          username="alice"
-          onSignOut={vi.fn()}
-          balance={{ credits: 10, diem: 500 }}
-        />
+        <UserMenu username="alice" onSignOut={vi.fn()} balance={{ credits: 10, diem: 500 }} />
       </div>,
     );
     const toggle = screen.getByRole('button', { name: 'alice' });
@@ -76,11 +54,7 @@ describe('F17 · UserMenu component', () => {
   it('clicking Sign out fires the onSignOut callback', async () => {
     const onSignOut = vi.fn();
     render(
-      <UserMenu
-        username="alice"
-        onSignOut={onSignOut}
-        balance={{ credits: 10, diem: 500 }}
-      />,
+      <UserMenu username="alice" onSignOut={onSignOut} balance={{ credits: 10, diem: 500 }} />,
     );
     const toggle = screen.getByRole('button', { name: 'alice' });
     await userEvent.click(toggle);

@@ -53,7 +53,8 @@ function mapModel(raw: VeniceRawModel): ModelInfo {
   return {
     id: raw.id,
     name: spec.name ?? raw.id,
-    contextLength: typeof spec.availableContextTokens === 'number' ? spec.availableContextTokens : 0,
+    contextLength:
+      typeof spec.availableContextTokens === 'number' ? spec.availableContextTokens : 0,
     supportsReasoning: Boolean(caps.supportsReasoning),
     supportsVision: Boolean(caps.supportsVision),
     supportsWebSearch: Boolean(caps.supportsWebSearch),
@@ -92,9 +93,7 @@ export function createVeniceModelsService(deps: VeniceModelsServiceDeps = {}) {
     const page = await client.models.list();
     const data = (page as unknown as { data: VeniceRawModel[] }).data ?? [];
 
-    const models = data
-      .filter((m) => (m.type ?? 'text') === 'text')
-      .map(mapModel);
+    const models = data.filter((m) => (m.type ?? 'text') === 'text').map(mapModel);
 
     byUser.set(userId, { models, fetchedAt: now() });
     return models;

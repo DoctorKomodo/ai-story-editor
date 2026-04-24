@@ -15,9 +15,9 @@ export type PromptAction =
   | 'expand'
   | 'summarise'
   | 'freeform'
-  | 'rewrite'   // mockup selection-bubble vocabulary (visible "Rewrite" button); rephrase is the AI-panel vocabulary from [F12] — both coexist to avoid breaking either surface's contract
-  | 'describe'  // elaborate with vivid sensory/physical/emotional detail
-  | 'ask';      // chat-attachment pathway — NOT valid on /complete; only used via the chat message route (V16)
+  | 'rewrite' // mockup selection-bubble vocabulary (visible "Rewrite" button); rephrase is the AI-panel vocabulary from [F12] — both coexist to avoid breaking either surface's contract
+  | 'describe' // elaborate with vivid sensory/physical/emotional detail
+  | 'ask'; // chat-attachment pathway — NOT valid on /complete; only used via the chat message route (V16)
 
 export interface CharacterContext {
   name: string;
@@ -138,9 +138,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
 
   // World notes block — never truncated
   const worldNotesBlock =
-    input.worldNotes && input.worldNotes.length > 0
-      ? `World notes:\n${input.worldNotes}`
-      : '';
+    input.worldNotes && input.worldNotes.length > 0 ? `World notes:\n${input.worldNotes}` : '';
 
   // Characters block — never truncated
   const charactersBlock =
@@ -183,8 +181,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     }
   }
 
-  const chapterBlock =
-    chapterText.length > 0 ? `Chapter so far:\n${chapterText}` : '';
+  const chapterBlock = chapterText.length > 0 ? `Chapter so far:\n${chapterText}` : '';
 
   // ── Assemble the user message ─────────────────────────────────────────────
   const userParts = [worldNotesBlock, charactersBlock, chapterBlock, taskBlock].filter(

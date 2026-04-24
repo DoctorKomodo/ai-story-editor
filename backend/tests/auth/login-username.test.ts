@@ -120,26 +120,25 @@ describe('[AU10] POST /api/auth/login — username-based supersede', () => {
 
     // Warm up — the first bcrypt.compare pays JIT / module load overhead
     // that can skew the two measurements.
-    await request(app).post('/api/auth/login').send({ username: 'warmup-user', password: PASSWORD });
-
-    const tsUnknown = process.hrtime.bigint();
     await request(app)
       .post('/api/auth/login')
-      .send({ username: 'ghost', password: PASSWORD });
+      .send({ username: 'warmup-user', password: PASSWORD });
+
+    const tsUnknown = process.hrtime.bigint();
+    await request(app).post('/api/auth/login').send({ username: 'ghost', password: PASSWORD });
     const unknownDuration = Number(process.hrtime.bigint() - tsUnknown) / 1_000_000;
 
     const tsWrong = process.hrtime.bigint();
-    await request(app)
-      .post('/api/auth/login')
-      .send({ username: USERNAME, password: 'incorrect' });
+    await request(app).post('/api/auth/login').send({ username: USERNAME, password: 'incorrect' });
     const wrongDuration = Number(process.hrtime.bigint() - tsWrong) / 1_000_000;
 
     // Both branches execute one bcrypt.compare against a 12-round hash (~200ms).
     // Require the two durations to be within a generous window — we're guarding
     // against a 10x-order gap (no compare at all on the unknown branch), not
     // sub-ms noise.
-    const ratio = Math.max(unknownDuration, wrongDuration)
-      / Math.max(1, Math.min(unknownDuration, wrongDuration));
+    const ratio =
+      Math.max(unknownDuration, wrongDuration) /
+      Math.max(1, Math.min(unknownDuration, wrongDuration));
     expect(ratio).toBeLessThan(3);
   });
 

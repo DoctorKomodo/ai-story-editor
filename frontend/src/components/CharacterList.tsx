@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 import {
+  type Character,
   useCharactersQuery,
   useCreateCharacterMutation,
-  type Character,
 } from '@/hooks/useCharacters';
 
 /**

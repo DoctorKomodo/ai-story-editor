@@ -7,15 +7,16 @@ import morgan from 'morgan';
 import { validateEncryptionEnv } from './boot/env-validation';
 import { prisma } from './lib/prisma';
 import { NoVeniceKeyError } from './lib/venice';
+import { requireAllowedOrigin } from './middleware/origin-check.middleware';
 import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
-import { createVeniceKeyRouter } from './routes/venice-key.routes';
-import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
+import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
 import { createOutlineRouter } from './routes/outline.routes';
 import { createStoriesRouter } from './routes/stories.routes';
 import { createUserSettingsRouter } from './routes/user-settings.routes';
+import { createVeniceKeyRouter } from './routes/venice-key.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
 // tests/setup.ts, so this runs cleanly there too.
@@ -59,7 +60,10 @@ app.use(
 // 256kb limit: encrypted narrative-field Zod maxima (worldNotes 50k + others)
 // worst-case in multi-byte UTF-8 exceed Express's default 100kb body limit.
 app.use(express.json({ limit: '256kb' }));
-app.use(cookieParser());
+// cookieParser is NOT applied globally — only `/api/auth/*` uses cookies
+// (refresh-token flow). Scoping it to the auth mount below keeps cookies
+// off every other route and co-locates cookie parsing with the CSRF
+// Origin-check middleware that protects the cookie-authed endpoints.
 // morgan's dev format is for local debugging only. In production it would log
 // every request URL (including owned resource IDs like /api/stories/:id) to
 // stdout with no gating, which is both noisy and a minor ID-enumeration leak
@@ -78,7 +82,7 @@ app.use(
   }),
 );
 
-app.use('/api/auth', createAuthRouter());
+app.use('/api/auth', cookieParser(), requireAllowedOrigin(allowedOrigin), createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());
@@ -130,7 +134,9 @@ export function globalErrorHandler(
   const isProd = process.env.NODE_ENV === 'production';
   const message = isProd
     ? 'Internal server error'
-    : (err instanceof Error ? err.message : 'Internal server error');
+    : err instanceof Error
+      ? err.message
+      : 'Internal server error';
   res.status(500).json({ error: { message, code: 'internal_error' } });
 }
 

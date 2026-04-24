@@ -2,24 +2,17 @@
 // Confirms that strip_thinking_response is set to true when the selected model
 // has supportsReasoning: true, and is absent otherwise.
 
-import request from 'supertest';
-import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
-import { createChapterRepo } from '../../src/repos/chapter.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app } from '../../src/index';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
+import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 const NAME = 'Reasoning Test User';
@@ -145,7 +138,9 @@ async function callComplete(
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
-      response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      response.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
       response.on('end', () => callback(null, data));
     })
     .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId });
@@ -198,7 +193,13 @@ describe('POST /api/ai/complete — reasoning model [V6]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const requestBody = await callComplete(accessToken, storyId, chapterId, REASONING_MODEL_ID, fetchSpy);
+    const requestBody = await callComplete(
+      accessToken,
+      storyId,
+      chapterId,
+      REASONING_MODEL_ID,
+      fetchSpy,
+    );
     const vp = requestBody.venice_parameters as Record<string, unknown>;
     expect(vp.strip_thinking_response).toBe(true);
   });
@@ -209,7 +210,13 @@ describe('POST /api/ai/complete — reasoning model [V6]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const requestBody = await callComplete(accessToken, storyId, chapterId, PLAIN_MODEL_ID, fetchSpy);
+    const requestBody = await callComplete(
+      accessToken,
+      storyId,
+      chapterId,
+      PLAIN_MODEL_ID,
+      fetchSpy,
+    );
     const vp = requestBody.venice_parameters as Record<string, unknown>;
     // Must be absent — setting it to false would still be wrong.
     expect(vp.strip_thinking_response).toBeUndefined();

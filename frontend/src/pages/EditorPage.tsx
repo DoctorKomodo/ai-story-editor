@@ -1,27 +1,26 @@
+import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import type { Editor as TiptapEditor } from '@tiptap/core';
-import type { JSONContent } from '@tiptap/core';
-import { ApiError } from '@/lib/api';
-import { useStoryQuery } from '@/hooks/useStories';
-import { useChaptersQuery } from '@/hooks/useChapters';
-import { Editor } from '@/components/Editor';
+import { type AIAction, AIPanel } from '@/components/AIPanel';
+import { AIResult } from '@/components/AIResult';
 import { ChapterList } from '@/components/ChapterList';
 import { CharacterList } from '@/components/CharacterList';
 import { CharacterSheet } from '@/components/CharacterSheet';
-import { AIPanel, type AIAction } from '@/components/AIPanel';
-import { AIResult } from '@/components/AIResult';
-import { UsageIndicator } from '@/components/UsageIndicator';
-import { ModelSelector } from '@/components/ModelSelector';
-import { WebSearchToggle } from '@/components/WebSearchToggle';
-import { UserMenu } from '@/components/UserMenu';
-import { Export, type ExportStory } from '@/components/Export';
 import { DarkModeToggle } from '@/components/DarkModeToggle';
-import { useSelectedModel } from '@/hooks/useSelectedModel';
-import { useModelsQuery } from '@/hooks/useModels';
+import { Editor } from '@/components/Editor';
+import { Export, type ExportStory } from '@/components/Export';
+import { ModelSelector } from '@/components/ModelSelector';
+import { UsageIndicator } from '@/components/UsageIndicator';
+import { UserMenu } from '@/components/UserMenu';
+import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { useAICompletion } from '@/hooks/useAICompletion';
-import { useBalanceQuery } from '@/hooks/useBalance';
 import { useAuth } from '@/hooks/useAuth';
+import { useBalanceQuery } from '@/hooks/useBalance';
+import { useChaptersQuery } from '@/hooks/useChapters';
+import { useModelsQuery } from '@/hooks/useModels';
+import { useSelectedModel } from '@/hooks/useSelectedModel';
+import { useStoryQuery } from '@/hooks/useStories';
+import { ApiError } from '@/lib/api';
 import { useSessionStore } from '@/store/session';
 
 function extractSelection(editor: TiptapEditor): string {
@@ -62,8 +61,7 @@ export function EditorPage(): JSX.Element {
   // generic) inside `<BalanceDisplay />`.
   const balanceQuery = useBalanceQuery();
   const balanceError = balanceQuery.error;
-  const balanceErrorCode =
-    balanceError instanceof ApiError ? balanceError.code ?? null : null;
+  const balanceErrorCode = balanceError instanceof ApiError ? (balanceError.code ?? null) : null;
   const username = useSessionStore((s) => s.user?.username) ?? '';
   const { logout } = useAuth();
   const handleSignOut = useCallback((): void => {
@@ -106,7 +104,7 @@ export function EditorPage(): JSX.Element {
 
   useEffect(() => {
     setWebSearch(false);
-  }, [selectedModelId]);
+  }, []);
 
   const handleEditorReady = useCallback((ed: TiptapEditor) => {
     setEditor(ed);
@@ -224,9 +222,7 @@ export function EditorPage(): JSX.Element {
           >
             {aiOpen ? 'Hide AI' : 'Show AI'}
           </button>
-          {exportStory ? (
-            <Export story={exportStory} activeChapterId={activeChapterId} />
-          ) : null}
+          {exportStory ? <Export story={exportStory} activeChapterId={activeChapterId} /> : null}
           <DarkModeToggle />
           <UserMenu
             username={username}
@@ -333,15 +329,9 @@ export function EditorPage(): JSX.Element {
             onAction={handleAIAction}
             pending={completion.status === 'streaming'}
             actionError={actionError}
-            modelSelector={
-              <ModelSelector value={selectedModelId} onChange={setSelectedModelId} />
-            }
+            modelSelector={<ModelSelector value={selectedModelId} onChange={setSelectedModelId} />}
             webSearchToggle={
-              <WebSearchToggle
-                model={selectedModel}
-                checked={webSearch}
-                onChange={setWebSearch}
-              />
+              <WebSearchToggle model={selectedModel} checked={webSearch} onChange={setWebSearch} />
             }
             result={
               <AIResult

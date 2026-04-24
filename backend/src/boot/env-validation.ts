@@ -18,7 +18,7 @@ export class BootValidationError extends Error {
 }
 
 const GENERATE_HINT =
-  'node -e "console.log(require(\'node:crypto\').randomBytes(32).toString(\'base64\'))"';
+  "node -e \"console.log(require('node:crypto').randomBytes(32).toString('base64'))\"";
 
 export interface ValidateOptions {
   env?: NodeJS.ProcessEnv;

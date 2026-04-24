@@ -1,10 +1,10 @@
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppRouter } from '@/router';
-import { useSessionStore } from '@/store/session';
 import { setAccessToken } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
+import { AppRouter } from '@/router';
+import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -37,9 +37,7 @@ describe('routing', () => {
 
   it('unauthenticated request to / redirects to /login', async () => {
     // initAuth's refresh fails → status becomes 'unauthenticated'.
-    fetchMock.mockResolvedValueOnce(
-      new Response(null, { status: 401 }),
-    );
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 401 }));
 
     renderAt('/');
 
@@ -50,9 +48,7 @@ describe('routing', () => {
 
   it('authenticated session lands on / (dashboard)', async () => {
     // Pre-seed the store as authenticated so RequireAuth admits us immediately.
-    useSessionStore
-      .getState()
-      .setSession({ id: 'u1', username: 'alice' }, 'tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice' }, 'tok-1');
     // initAuth will still try to refresh — return a successful refresh + /me
     // so state stays authenticated after bootstrap. The dashboard also fires
     // a GET /api/stories on mount, so mock every call via mockImplementation
@@ -89,16 +85,12 @@ describe('routing', () => {
     renderAt('/');
 
     await waitFor(() => {
-      expect(
-        screen.getByRole('heading', { name: /your stories/i }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /your stories/i })).toBeInTheDocument();
     });
   });
 
   it('authenticated session can load /stories/:id (editor)', async () => {
-    useSessionStore
-      .getState()
-      .setSession({ id: 'u1', username: 'alice' }, 'tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice' }, 'tok-1');
     // Router-based fetch mock: initAuth's refresh + /me keep the session
     // authenticated; EditorPage then fetches the story to render its title.
     fetchMock.mockImplementation((input: RequestInfo | URL) => {

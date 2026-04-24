@@ -19,7 +19,7 @@
  *    selection bubble + inline-AI card; F38/F42 redesign the chat pane.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { apiStream, ApiError } from '@/lib/api';
+import { ApiError, apiStream } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
 
 export type AICompletionStatus = 'idle' | 'streaming' | 'done' | 'error';
@@ -163,12 +163,8 @@ export function useAICompletion(): UseAICompletion {
       // F16: harvest Venice rate-limit headers before reading the body. If
       // both are absent (tests / older Venice responses), leave the prior
       // snapshot intact rather than wiping it with `null`s.
-      const remainingRequests = parseIntHeader(
-        res.headers.get('x-venice-remaining-requests'),
-      );
-      const remainingTokens = parseIntHeader(
-        res.headers.get('x-venice-remaining-tokens'),
-      );
+      const remainingRequests = parseIntHeader(res.headers.get('x-venice-remaining-requests'));
+      const remainingTokens = parseIntHeader(res.headers.get('x-venice-remaining-tokens'));
       if (remainingRequests !== null || remainingTokens !== null) {
         safeSetState((prev) => ({
           ...prev,
@@ -205,17 +201,13 @@ export function useAICompletion(): UseAICompletion {
             return;
           } else {
             // done
-            safeSetState((prev) =>
-              prev.status === 'error' ? prev : { ...prev, status: 'done' },
-            );
+            safeSetState((prev) => (prev.status === 'error' ? prev : { ...prev, status: 'done' }));
             return;
           }
         }
         // Stream ended without explicit [DONE] — treat as done unless aborted.
         if (!controller.signal.aborted) {
-          safeSetState((prev) =>
-            prev.status === 'error' ? prev : { ...prev, status: 'done' },
-          );
+          safeSetState((prev) => (prev.status === 'error' ? prev : { ...prev, status: 'done' }));
         }
       } catch (err) {
         if (controller.signal.aborted) return;

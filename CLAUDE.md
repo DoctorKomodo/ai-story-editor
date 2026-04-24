@@ -253,6 +253,33 @@ Agent(
 
 ---
 
+## Repo-Boundary Review
+
+The `repo-boundary-reviewer` subagent (`.claude/agents/repo-boundary-reviewer.md`) is a read-only reviewer tuned to the narrative-entity boundary and the encrypt-on-write / decrypt-on-read symmetry enforced by the repo layer. It owns a narrower surface than `security-reviewer` — specifically the repo-layer invariant from the "Database" rules and the ciphertext-egress / DEK-cache invariants from "Encryption at Rest". **Invoke it automatically** before marking any of these task groups `[x]`:
+
+- **E4–E8** — per-entity encryption schema + dual-write. Confirm new ciphertext columns are wired through both write and read paths in the matching repo.
+- **E9** — repo-layer boundary. The one that defines the invariant; review for any controller/service/route that still talks to Prisma for a narrative model.
+- **E10** — backfill migration (`backend/prisma/scripts/encrypt-backfill.ts`). Scripts are the most common place the repo layer gets bypassed.
+- **E11** — plaintext-column drop. Confirm every repo read has already migrated to ciphertext-only before the migration runs.
+- **E12** — leak test. Confirm the sentinel covers every narrative table and the test is not skipped.
+- Any change to: `backend/src/repos/**`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/prompt.service.ts` (reads chapter bodies), `backend/src/routes/{stories,chapters,characters,outline,chat}.routes.ts`, or any migration touching narrative columns.
+- Any new one-off script under `backend/prisma/scripts/**` or `scripts/**` that touches narrative tables.
+
+Invoke via the Agent tool with `subagent_type: repo-boundary-reviewer` and a concrete scope (e.g. "review the chapter repo changes on this branch" or "review the [E10] backfill script end-to-end"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box.
+
+`security-reviewer` and `repo-boundary-reviewer` are complements, not substitutes — run both when a change touches both surfaces (e.g. a new narrative route that also adds auth middleware). Each stays in its own lane: `security-reviewer` owns auth/session/key/crypto-primitive surface; `repo-boundary-reviewer` owns the narrative-entity boundary.
+
+**Example invocation:**
+```
+Agent(
+  description: "Review [E10] backfill",
+  subagent_type: "repo-boundary-reviewer",
+  prompt: "Review [E10] as currently implemented. Scope: backend/prisma/scripts/encrypt-backfill.ts + any new helpers it imports. Confirm: (1) the script writes via the repo layer, never raw Prisma for narrative tables; (2) idempotency check is based on ciphertext-column non-null, not plaintext presence; (3) no plaintext is logged; (4) transaction boundaries are per-user."
+)
+```
+
+---
+
 ## When to Stop and Ask
 
 Stop and ask before proceeding if:

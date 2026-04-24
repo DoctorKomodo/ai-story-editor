@@ -20,19 +20,22 @@ describe('[E2] validateEncryptionEnv()', () => {
   });
 
   it('throws BootValidationError when APP_ENCRYPTION_KEY is missing', () => {
-    expect(() => validateEncryptionEnv({ env: envWith({ APP_ENCRYPTION_KEY: undefined }) }))
-      .toThrowError(BootValidationError);
+    expect(() =>
+      validateEncryptionEnv({ env: envWith({ APP_ENCRYPTION_KEY: undefined }) }),
+    ).toThrowError(BootValidationError);
   });
 
   it('throws BootValidationError when APP_ENCRYPTION_KEY is empty', () => {
-    expect(() => validateEncryptionEnv({ env: envWith({ APP_ENCRYPTION_KEY: '' }) }))
-      .toThrowError(BootValidationError);
+    expect(() => validateEncryptionEnv({ env: envWith({ APP_ENCRYPTION_KEY: '' }) })).toThrowError(
+      BootValidationError,
+    );
   });
 
   it('throws BootValidationError when APP_ENCRYPTION_KEY decodes to the wrong length', () => {
     const tooShort = Buffer.alloc(16, 0xab).toString('base64');
-    expect(() => validateEncryptionEnv({ env: envWith({ APP_ENCRYPTION_KEY: tooShort }) }))
-      .toThrowError(/32 bytes/);
+    expect(() =>
+      validateEncryptionEnv({ env: envWith({ APP_ENCRYPTION_KEY: tooShort }) }),
+    ).toThrowError(/32 bytes/);
   });
 
   it('error message includes the generation one-liner so the operator can copy-paste', () => {

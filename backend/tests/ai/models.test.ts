@@ -117,14 +117,30 @@ describe('GET /api/ai/models [V1]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       models: [
-        { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', contextLength: 65536, supportsReasoning: false, supportsVision: false, supportsWebSearch: false },
-        { id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', contextLength: 32768, supportsReasoning: true, supportsVision: false, supportsWebSearch: false },
+        {
+          id: 'llama-3.3-70b',
+          name: 'Llama 3.3 70B',
+          contextLength: 65536,
+          supportsReasoning: false,
+          supportsVision: false,
+          supportsWebSearch: false,
+        },
+        {
+          id: 'qwen-qwq-32b',
+          name: 'Qwen QwQ 32B',
+          contextLength: 32768,
+          supportsReasoning: true,
+          supportsVision: false,
+          supportsWebSearch: false,
+        },
       ],
     });
 
     // The /models fetch went to the default Venice endpoint with the stored
     // Bearer key (decrypted from the BYOK columns).
-    const modelsCall = fetchSpy.mock.calls.find(([url]) => String(url).endsWith('/models') && !String(url).includes('venice-key'));
+    const modelsCall = fetchSpy.mock.calls.find(
+      ([url]) => String(url).endsWith('/models') && !String(url).includes('venice-key'),
+    );
     expect(modelsCall).toBeTruthy();
     const [url, init] = modelsCall!;
     expect(String(url)).toContain('/models');
@@ -146,8 +162,8 @@ describe('GET /api/ai/models [V1]', () => {
       .set('Authorization', `Bearer ${accessToken}`);
     expect(first.status).toBe(200);
 
-    const modelsCallsAfterFirst = fetchSpy.mock.calls.filter(
-      ([url]) => String(url).endsWith('/models'),
+    const modelsCallsAfterFirst = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).endsWith('/models'),
     ).length;
 
     // Second call within the TTL must not trigger another /models fetch.
@@ -157,8 +173,8 @@ describe('GET /api/ai/models [V1]', () => {
     expect(second.status).toBe(200);
     expect(second.body).toEqual(first.body);
 
-    const modelsCallsAfterSecond = fetchSpy.mock.calls.filter(
-      ([url]) => String(url).endsWith('/models'),
+    const modelsCallsAfterSecond = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).endsWith('/models'),
     ).length;
     expect(modelsCallsAfterSecond).toBe(modelsCallsAfterFirst);
   });

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 import {
-  SENTINEL,
   createChapterRow,
   createChatRow,
   createStoryRow,
   createUser,
   resetNarrativeTables,
+  SENTINEL,
 } from './_helpers';
 
 describe('[E8] Chat + Message — ciphertext columns', () => {

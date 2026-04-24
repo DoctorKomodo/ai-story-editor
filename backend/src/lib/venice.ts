@@ -9,8 +9,8 @@
 
 import type { PrismaClient } from '@prisma/client';
 import OpenAI from 'openai';
-import { prisma as defaultPrisma } from './prisma';
 import { decrypt } from '../services/crypto.service';
+import { prisma as defaultPrisma } from './prisma';
 
 export const DEFAULT_VENICE_BASE_URL = 'https://api.venice.ai/api/v1';
 
@@ -87,12 +87,7 @@ export function createGetVeniceClient(deps: GetVeniceClientDeps = {}) {
       },
     });
 
-    if (
-      !row ||
-      !row.veniceApiKeyEnc ||
-      !row.veniceApiKeyIv ||
-      !row.veniceApiKeyAuthTag
-    ) {
+    if (!row?.veniceApiKeyEnc || !row.veniceApiKeyIv || !row.veniceApiKeyAuthTag) {
       throw new NoVeniceKeyError();
     }
 

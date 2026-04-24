@@ -1,5 +1,5 @@
-import type { Request } from 'express';
 import type { PrismaClient } from '@prisma/client';
+import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeCiphertextOnly, writeEncrypted } from './_narrative';
 
@@ -176,7 +176,62 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     });
   }
 
-  return { create, findById, findManyForStory, update, remove, reorder };
+  // Aggregate over plaintext, non-narrative columns only. Ciphertext is never
+  // touched; this stays inside the repo so routes don't need to reach past it
+  // for "scalar" lookups either (CLAUDE.md Database rule).
+  async function maxOrderIndex(storyId: string): Promise<number | null> {
+    const userId = resolveUserId(req);
+    const agg = await client.chapter.aggregate({
+      where: { storyId, story: { userId } },
+      _max: { orderIndex: true },
+    });
+    return agg._max.orderIndex ?? null;
+  }
+
+  async function aggregateForStories(
+    storyIds: string[],
+  ): Promise<Map<string, { chapterCount: number; totalWordCount: number }>> {
+    const out = new Map<string, { chapterCount: number; totalWordCount: number }>();
+    if (storyIds.length === 0) return out;
+    const userId = resolveUserId(req);
+    const rows = await client.chapter.groupBy({
+      by: ['storyId'],
+      where: { storyId: { in: storyIds }, story: { userId } },
+      _count: { _all: true },
+      _sum: { wordCount: true },
+    });
+    for (const r of rows) {
+      out.set(r.storyId, {
+        chapterCount: r._count._all,
+        totalWordCount: r._sum.wordCount ?? 0,
+      });
+    }
+    return out;
+  }
+
+  async function listWordCountsForStory(
+    storyId: string,
+  ): Promise<Array<{ id: string; wordCount: number }>> {
+    const userId = resolveUserId(req);
+    const rows = await client.chapter.findMany({
+      where: { storyId, story: { userId } },
+      orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+      select: { id: true, wordCount: true },
+    });
+    return rows.map((r) => ({ id: r.id, wordCount: r.wordCount }));
+  }
+
+  return {
+    create,
+    findById,
+    findManyForStory,
+    update,
+    remove,
+    reorder,
+    maxOrderIndex,
+    aggregateForStories,
+    listWordCountsForStory,
+  };
 }
 
 function shape(row: unknown, req: Request) {

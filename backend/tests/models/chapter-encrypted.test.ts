@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
-import { SENTINEL, createStoryRow, createUser, resetNarrativeTables } from './_helpers';
+import { createStoryRow, createUser, resetNarrativeTables, SENTINEL } from './_helpers';
 
 // Post-[E11]: plaintext title/content/bodyJson on Chapter are dropped. Only
 // the ciphertext triples remain for narrative fields. Schema-shape tests.

@@ -7,9 +7,9 @@
 
 import { describe, expect, it } from 'vitest';
 import {
+  type BuildPromptInput,
   buildPrompt,
   DEFAULT_SYSTEM_PROMPT,
-  type BuildPromptInput,
 } from '../../src/services/prompt.service';
 
 function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput {

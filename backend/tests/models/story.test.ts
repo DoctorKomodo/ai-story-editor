@@ -6,7 +6,10 @@ import { prisma } from '../setup';
 // repo-layer encrypt/decrypt is covered by tests/repos/story.repo.test.ts.
 
 async function makeUser(email = 'author@example.com') {
-  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const username = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   return prisma.user.create({ data: { email, username, passwordHash: 'h' } });
 }
 

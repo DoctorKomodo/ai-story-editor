@@ -11,10 +11,10 @@ import {
   generateDekAndWraps,
   InvalidRecoveryCodeError,
   rewrapRecoveryWrap,
+  type UserDekColumns,
   unwrapDekWithPassword,
   unwrapDekWithRecoveryCode,
   wrapDek,
-  type UserDekColumns,
 } from './content-crypto.service';
 import {
   closeSession,
@@ -77,7 +77,10 @@ export interface PasswordVerifyResult {
   needsRehash: boolean;
 }
 
-export async function verifyPassword(hash: string, password: string): Promise<PasswordVerifyResult> {
+export async function verifyPassword(
+  hash: string,
+  password: string,
+): Promise<PasswordVerifyResult> {
   if (hash.startsWith('$argon2')) {
     try {
       // argon2.verify reads m/t/p from the hash string and does NOT consult
@@ -291,10 +294,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
       });
       return { user: toPublicUser(user), recoveryCode: dekAndWraps.recoveryCode };
     } catch (err) {
-      if (
-        err instanceof Prisma.PrismaClientKnownRequestError &&
-        err.code === 'P2002'
-      ) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
         // The uniqueness constraint did the lookup — do NOT probe for
         // existence separately, which would open a find-then-insert race
         // and timing oracle. The duplicate path paid the same crypto cost
@@ -601,10 +601,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
   // DB write commits. Password wrap, password hash, narrative ciphertext, and
   // all active refresh tokens / sessions are intentionally untouched — the
   // user is already authenticated and does not need to re-log-in.
-  async function rotateRecoveryCode(input: {
-    userId: string;
-    password: string;
-  }): Promise<string> {
+  async function rotateRecoveryCode(input: { userId: string; password: string }): Promise<string> {
     const user = await client.user.findUnique({ where: { id: input.userId } });
     if (!user) throw new InvalidCredentialsError();
 

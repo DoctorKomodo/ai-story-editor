@@ -15,7 +15,9 @@
     "skipLibCheck": true,
     "sourceMap": true,
     "declaration": false,
-    "moduleResolution": "node"
+    "moduleResolution": "node",
+    "incremental": true,
+    "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "tests"],

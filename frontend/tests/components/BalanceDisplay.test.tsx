@@ -1,10 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import {
-  BalanceDisplay,
-  formatUsd,
-  formatDiem,
-} from '@/components/BalanceDisplay';
+import { BalanceDisplay, formatDiem, formatUsd } from '@/components/BalanceDisplay';
 
 describe('F17 · BalanceDisplay component', () => {
   it('renders role="status" with "Loading balance…" when isLoading', () => {
@@ -14,13 +10,7 @@ describe('F17 · BalanceDisplay component', () => {
   });
 
   it('renders venice_key_required copy when errorCode is venice_key_required', () => {
-    render(
-      <BalanceDisplay
-        balance={null}
-        isError
-        errorCode="venice_key_required"
-      />,
-    );
+    render(<BalanceDisplay balance={null} isError errorCode="venice_key_required" />);
     const alert = screen.getByRole('alert');
     expect(alert.textContent ?? '').toMatch(/add a venice api key in settings/i);
   });

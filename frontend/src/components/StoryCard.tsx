@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
-import { formatRelative } from '@/lib/time';
 import type { StoryListItem } from '@/hooks/useStories';
+import { formatRelative } from '@/lib/time';
 
 export interface StoryCardProps {
   story: StoryListItem;

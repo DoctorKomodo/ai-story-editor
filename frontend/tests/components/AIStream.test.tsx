@@ -3,8 +3,8 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AIResult } from '@/components/AIResult';
 import { useAICompletion } from '@/hooks/useAICompletion';
-import { parseAiSseStream } from '@/lib/sse';
 import { ApiError, resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { parseAiSseStream } from '@/lib/sse';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -224,10 +224,7 @@ describe('F15 · useAICompletion hook', () => {
   it('captures x-venice-remaining-* headers into usage state after a run', async () => {
     fetchMock.mockResolvedValueOnce(
       streamResponse(
-        [
-          'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
-          'data: [DONE]\n\n',
-        ],
+        ['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', 'data: [DONE]\n\n'],
         undefined,
         {
           'x-venice-remaining-requests': '482',
@@ -261,10 +258,7 @@ describe('F15 · useAICompletion hook', () => {
     // First run: headers present → usage captured.
     fetchMock.mockResolvedValueOnce(
       streamResponse(
-        [
-          'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
-          'data: [DONE]\n\n',
-        ],
+        ['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', 'data: [DONE]\n\n'],
         undefined,
         {
           'x-venice-remaining-requests': '482',
@@ -274,10 +268,7 @@ describe('F15 · useAICompletion hook', () => {
     );
     // Second run: no rate-limit headers → should NOT wipe the snapshot.
     fetchMock.mockResolvedValueOnce(
-      streamResponse([
-        'data: {"choices":[{"delta":{"content":"again"}}]}\n\n',
-        'data: [DONE]\n\n',
-      ]),
+      streamResponse(['data: {"choices":[{"delta":{"content":"again"}}]}\n\n', 'data: [DONE]\n\n']),
     );
 
     const { result } = renderHook(() => useAICompletion());
@@ -317,10 +308,7 @@ describe('F15 · useAICompletion hook', () => {
   it('rejects non-integer rate-limit header values (no silent truncation)', async () => {
     fetchMock.mockResolvedValueOnce(
       streamResponse(
-        [
-          'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
-          'data: [DONE]\n\n',
-        ],
+        ['data: {"choices":[{"delta":{"content":"hi"}}]}\n\n', 'data: [DONE]\n\n'],
         undefined,
         {
           'x-venice-remaining-requests': '1.5',
@@ -433,9 +421,7 @@ describe('F15 · parseAiSseStream parser', () => {
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(encoder.encode('data: not-json\n\n'));
-        controller.enqueue(
-          encoder.encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'),
-        );
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"ok"}}]}\n\n'));
         controller.enqueue(encoder.encode('data: [DONE]\n\n'));
         controller.close();
       },

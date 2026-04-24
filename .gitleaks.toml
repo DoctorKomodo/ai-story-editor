@@ -1,0 +1,61 @@
+# Gitleaks config — extends the built-in default ruleset with project-specific
+# patterns. The default rules cover AWS/GCP/Azure/GitHub/etc. credentials and
+# high-entropy strings; the additions below target this repo's specific
+# threat model: Venice.ai API keys, APP_ENCRYPTION_KEY, and recovery codes.
+#
+# To test locally:
+#   gitleaks detect --source . --redact
+#   gitleaks protect --staged --redact   # scans what's about to be committed
+#
+# Docs: https://github.com/gitleaks/gitleaks/blob/master/README.md#configuration
+
+[extend]
+useDefault = true
+
+# ─── Venice.ai API key ───────────────────────────────────────────────────────
+# Venice keys issued via console.venice.ai follow the shape `veniceai-<base62>`.
+# Matching the prefix rather than raw entropy avoids a class of false
+# positives on lorem-ipsum / hash-looking test fixtures.
+[[rules]]
+id = "venice-api-key"
+description = "Venice.ai API key"
+regex = '''veniceai-[A-Za-z0-9]{32,}'''
+tags = ["key", "venice"]
+
+# ─── APP_ENCRYPTION_KEY in env files ─────────────────────────────────────────
+# Catches a plausibly-committed real key in a file named .env* that is not
+# .env.example or .env.test. The key is 32 bytes base64 (44 chars) — the
+# example placeholder is the word "REPLACE_ME…" or similar; a real one
+# decodes to random bytes. We match by file + variable to avoid over-firing.
+[[rules]]
+id = "app-encryption-key"
+description = "APP_ENCRYPTION_KEY in env file"
+regex = '''(?i)APP_ENCRYPTION_KEY\s*=\s*['"]?[A-Za-z0-9+/=]{40,}['"]?'''
+path = '''\.env($|\.(local|live|production|prod)$)'''
+tags = ["key", "encryption"]
+
+# ─── JWT / refresh-token secrets ─────────────────────────────────────────────
+# Same shape: if a non-test .env file contains a JWT_SECRET with enough
+# entropy to look real, flag it.
+[[rules]]
+id = "jwt-secret-env"
+description = "JWT_SECRET / REFRESH_TOKEN_SECRET in env file"
+regex = '''(?i)(JWT_SECRET|REFRESH_TOKEN_SECRET)\s*=\s*['"]?[A-Za-z0-9+/=_-]{32,}['"]?'''
+path = '''\.env($|\.(local|live|production|prod)$)'''
+tags = ["secret", "auth"]
+
+# ─── Allowlist ───────────────────────────────────────────────────────────────
+# These paths contain intentionally-placeholder values or test fixtures that
+# would otherwise trigger the generic high-entropy rules.
+[allowlist]
+description = "Global allowlist for known-safe paths"
+paths = [
+  '''\.env\.example$''',
+  '''\.env\.test$''',
+  '''docs/.*\.md$''',
+  '''mockups/.*''',
+  '''backend/tests/.*''',
+  '''frontend/tests/.*''',
+  '''package-lock\.json$''',
+  '''\.gitleaks\.toml$''',
+]

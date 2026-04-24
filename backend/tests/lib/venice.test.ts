@@ -1,9 +1,9 @@
-import { describe, expect, it } from 'vitest';
 import OpenAI from 'openai';
+import { describe, expect, it } from 'vitest';
 import {
+  createVeniceClient,
   DEFAULT_VENICE_BASE_URL,
   NoVeniceKeyError,
-  createVeniceClient,
 } from '../../src/lib/venice';
 
 describe('lib/venice', () => {

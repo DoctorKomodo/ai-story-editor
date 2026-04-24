@@ -1,15 +1,15 @@
-import { Router, type Request, type Response } from 'express';
+import { type Request, type Response, Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { z, ZodError } from 'zod';
-import { prisma } from '../lib/prisma';
+import { ZodError, z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
+import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
+  authService,
   InvalidCredentialsError,
   InvalidRefreshTokenError,
   REFRESH_TOKEN_TTL_SECONDS,
   UsernameUnavailableError,
-  authService,
 } from '../services/auth.service';
 
 export const REFRESH_COOKIE_NAME = 'refreshToken';
@@ -34,9 +34,7 @@ function buildChangePasswordSchema() {
   const min = minPasswordLength();
   return z.object({
     oldPassword: z.string().min(1, 'oldPassword is required'),
-    newPassword: z
-      .string()
-      .min(min, `Password must be at least ${min} characters`),
+    newPassword: z.string().min(min, `Password must be at least ${min} characters`),
   });
 }
 
@@ -45,9 +43,7 @@ function buildResetPasswordSchema() {
   return z.object({
     username: z.string().min(1, 'username is required'),
     recoveryCode: z.string().min(1, 'recoveryCode is required'),
-    newPassword: z
-      .string()
-      .min(min, `Password must be at least ${min} characters`),
+    newPassword: z.string().min(min, `Password must be at least ${min} characters`),
   });
 }
 
@@ -56,31 +52,35 @@ function buildRotateRecoveryCodeSchema() {
 }
 
 // Per-user (not per-IP) rate limit for sensitive authenticated endpoints
-// (change-password and rotate-recovery-code). Each call-site passes its own
-// invocation so each route gets an independent 10/min bucket — they do NOT
-// share a quota. Scoped to authenticated requests via requireAuth — the
-// keyGenerator relies on req.user.id, which the middleware sets before this
-// limiter runs.
-function sensitiveAuthLimiter() {
-  return rateLimit({
-    windowMs: 60_000,
-    // Generous enough that the test suite can exercise the endpoint
-    // several times per describe block without hitting the limit, but
-    // still meaningful as a brute-force defence. Tune in production via
-    // env if needed.
-    limit: 10,
-    standardHeaders: 'draft-7',
-    legacyHeaders: false,
-    // Keying on user id (not ip) matches the task spec — a shared NAT
-    // can't DOS a legitimate user's ability to change their own password,
-    // and a compromised session can't burn someone else's quota.
-    keyGenerator: (req) => req.user?.id ?? req.ip ?? 'unknown',
-    // Don't draw from the limit pool when bodies are malformed / unauthed;
-    // the endpoint's protection target is the crypto-verify path, not the
-    // schema / auth rejection path.
-    skipFailedRequests: false,
-  });
-}
+// (change-password and rotate-recovery-code). Scoped to authenticated
+// requests via requireAuth — the keyGenerator relies on req.user.id, which
+// the middleware sets before this limiter runs.
+//
+// Each endpoint gets its own independent 10/min bucket (constants, not a
+// shared middleware instance). The `rateLimit(...)` call is at module
+// scope with no factory indirection so CodeQL's "missing rate limiting"
+// rule can trace it directly from the route definition.
+const SENSITIVE_AUTH_LIMIT_OPTIONS = {
+  windowMs: 60_000,
+  // Generous enough that the test suite can exercise the endpoint
+  // several times per describe block without hitting the limit, but
+  // still meaningful as a brute-force defence. Tune in production via
+  // env if needed.
+  limit: 10,
+  standardHeaders: 'draft-7' as const,
+  legacyHeaders: false,
+  // Keying on user id (not ip) matches the task spec — a shared NAT
+  // can't DOS a legitimate user's ability to change their own password,
+  // and a compromised session can't burn someone else's quota.
+  keyGenerator: (req: Request) => req.user?.id ?? req.ip ?? 'unknown',
+  // Don't draw from the limit pool when bodies are malformed / unauthed;
+  // the endpoint's protection target is the crypto-verify path, not the
+  // schema / auth rejection path.
+  skipFailedRequests: false,
+};
+
+const changePasswordLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
+const rotateRecoveryCodeLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 
 // Aggressive stacked rate limits for the unauthenticated reset-password
 // endpoint. Spec: "per-IP + per-username". Two limiters stack, so a single
@@ -138,7 +138,9 @@ export function createAuthRouter() {
         return;
       }
       if (err instanceof UsernameUnavailableError) {
-        res.status(409).json({ error: { message: 'Username unavailable', code: 'username_unavailable' } });
+        res
+          .status(409)
+          .json({ error: { message: 'Username unavailable', code: 'username_unavailable' } });
         return;
       }
       next(err);
@@ -160,7 +162,9 @@ export function createAuthRouter() {
         return;
       }
       if (err instanceof InvalidCredentialsError) {
-        res.status(401).json({ error: { message: 'Invalid credentials', code: 'invalid_credentials' } });
+        res
+          .status(401)
+          .json({ error: { message: 'Invalid credentials', code: 'invalid_credentials' } });
         return;
       }
       next(err);
@@ -171,7 +175,9 @@ export function createAuthRouter() {
     try {
       const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
       if (!token) {
-        res.status(401).json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
+        res
+          .status(401)
+          .json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
         return;
       }
       const result = await authService.refresh(token);
@@ -184,7 +190,9 @@ export function createAuthRouter() {
     } catch (err) {
       if (err instanceof InvalidRefreshTokenError) {
         res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
-        res.status(401).json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
+        res
+          .status(401)
+          .json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
         return;
       }
       next(err);
@@ -234,47 +242,42 @@ export function createAuthRouter() {
     },
   );
 
-  router.post(
-    '/change-password',
-    requireAuth,
-    sensitiveAuthLimiter(),
-    async (req, res, next) => {
-      try {
-        const authed = req.user;
-        if (!authed) {
-          res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
-          return;
-        }
-        const parsed = buildChangePasswordSchema().parse(req.body);
-        await authService.changePassword({
-          userId: authed.id,
-          oldPassword: parsed.oldPassword,
-          newPassword: parsed.newPassword,
-        });
-        // 204 — caller stays authenticated on this request's access token
-        // until it expires, but all refresh tokens (including this one's)
-        // have been invalidated server-side so the next refresh will fail.
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof ZodError) {
-          badRequestFromZod(res, err);
-          return;
-        }
-        if (err instanceof InvalidCredentialsError) {
-          res.status(401).json({
-            error: { message: 'Invalid credentials', code: 'invalid_credentials' },
-          });
-          return;
-        }
-        next(err);
+  router.post('/change-password', requireAuth, changePasswordLimiter, async (req, res, next) => {
+    try {
+      const authed = req.user;
+      if (!authed) {
+        res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
+        return;
       }
-    },
-  );
+      const parsed = buildChangePasswordSchema().parse(req.body);
+      await authService.changePassword({
+        userId: authed.id,
+        oldPassword: parsed.oldPassword,
+        newPassword: parsed.newPassword,
+      });
+      // 204 — caller stays authenticated on this request's access token
+      // until it expires, but all refresh tokens (including this one's)
+      // have been invalidated server-side so the next refresh will fail.
+      res.status(204).send();
+    } catch (err) {
+      if (err instanceof ZodError) {
+        badRequestFromZod(res, err);
+        return;
+      }
+      if (err instanceof InvalidCredentialsError) {
+        res.status(401).json({
+          error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+        });
+        return;
+      }
+      next(err);
+    }
+  });
 
   router.post(
     '/rotate-recovery-code',
     requireAuth,
-    sensitiveAuthLimiter(),
+    rotateRecoveryCodeLimiter,
     async (req, res, next) => {
       try {
         const authed = req.user;

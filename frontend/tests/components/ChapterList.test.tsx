@@ -1,10 +1,10 @@
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChapterList } from '@/components/ChapterList';
-import { createQueryClient } from '@/lib/queryClient';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -28,7 +28,9 @@ interface ChapterFixture {
   updatedAt: string;
 }
 
-function chap(overrides: Partial<ChapterFixture> & { id: string; orderIndex: number }): ChapterFixture {
+function chap(
+  overrides: Partial<ChapterFixture> & { id: string; orderIndex: number },
+): ChapterFixture {
   return {
     storyId: 'story-1',
     title: `Chapter ${String(overrides.orderIndex + 1)}`,
@@ -49,11 +51,7 @@ function renderList(
   const qc = client ?? createQueryClient();
   render(
     <QueryClientProvider client={qc}>
-      <ChapterList
-        storyId="story-1"
-        activeChapterId={activeChapterId}
-        onSelectChapter={onSelect}
-      />
+      <ChapterList storyId="story-1" activeChapterId={activeChapterId} onSelectChapter={onSelect} />
     </QueryClientProvider>,
   );
   return { client: qc };

@@ -98,9 +98,7 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
   it('middleware attaches a DEK to the request; encrypt + decrypt round-trip', async () => {
     const { accessToken } = await registerAndLogin();
     const probeApp = buildProbeApp();
-    const res = await request(probeApp)
-      .get('/probe')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await request(probeApp).get('/probe').set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
     expect(res.body.dekAttached).toBe(true);
     expect(res.body.roundtrip).toBe('sentinel-plaintext');
@@ -118,8 +116,12 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
     const b = { accessToken: loginB.body.accessToken as string };
 
     const probeApp = buildProbeApp();
-    const resA = await request(probeApp).get('/probe').set('Authorization', `Bearer ${a.accessToken}`);
-    const resB = await request(probeApp).get('/probe').set('Authorization', `Bearer ${b.accessToken}`);
+    const resA = await request(probeApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${a.accessToken}`);
+    const resB = await request(probeApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${b.accessToken}`);
 
     expect(resA.body.dekAttached).toBe(true);
     expect(resB.body.dekAttached).toBe(true);
@@ -129,15 +131,11 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
   it('logout destroys the session; subsequent requests get 401 session_expired', async () => {
     const { accessToken, refreshCookie } = await registerAndLogin();
 
-    const logout = await request(app)
-      .post('/api/auth/logout')
-      .set('Cookie', refreshCookie);
+    const logout = await request(app).post('/api/auth/logout').set('Cookie', refreshCookie);
     expect(logout.status).toBe(204);
 
     const probeApp = buildProbeApp();
-    const res = await request(probeApp)
-      .get('/probe')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await request(probeApp).get('/probe').set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('session_expired');
   });
@@ -145,9 +143,7 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
   it('refresh extends the session and the old sessionId keeps working for the DEK', async () => {
     const { sessionId, refreshCookie } = await registerAndLogin();
 
-    const refreshRes = await request(app)
-      .post('/api/auth/refresh')
-      .set('Cookie', refreshCookie);
+    const refreshRes = await request(app).post('/api/auth/refresh').set('Cookie', refreshCookie);
     expect(refreshRes.status).toBe(200);
 
     const newAccessToken = refreshRes.body.accessToken as string;
@@ -166,9 +162,7 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
     const { accessToken } = await registerAndLogin();
     _resetSessionStore();
     const probeApp = buildProbeApp();
-    const res = await request(probeApp)
-      .get('/probe')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await request(probeApp).get('/probe').set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('session_expired');
   });
@@ -176,9 +170,7 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
   it('after restart, refresh also fails — the user must re-authenticate with password', async () => {
     const { refreshCookie } = await registerAndLogin();
     _resetSessionStore();
-    const res = await request(app)
-      .post('/api/auth/refresh')
-      .set('Cookie', refreshCookie);
+    const res = await request(app).post('/api/auth/refresh').set('Cookie', refreshCookie);
     expect(res.status).toBe(401);
     expect(res.body.error.code).toBe('invalid_refresh');
   });
@@ -241,9 +233,7 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
     );
 
     const probeApp = buildProbeApp();
-    const res = await request(probeApp)
-      .get('/probe')
-      .set('Authorization', `Bearer ${legacyToken}`);
+    const res = await request(probeApp).get('/probe').set('Authorization', `Bearer ${legacyToken}`);
     expect(res.status).toBe(200);
     expect(res.body.dekAttached).toBe(false);
   });

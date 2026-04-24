@@ -1,6 +1,6 @@
 import { act, render, screen } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useState } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutosaveIndicator } from '@/components/AutosaveIndicator';
 import { useAutosave } from '@/hooks/useAutosave';
 
@@ -24,10 +24,18 @@ function Harness({ save, initial = 'baseline' }: HarnessProps): JSX.Element {
   return (
     <>
       <AutosaveIndicator status={status} />
-      <button onClick={() => setPayload(`edit-${Math.random()}`)}>Edit</button>
-      <button onClick={() => setPayload('fixed-A')}>EditA</button>
-      <button onClick={() => setPayload('fixed-B')}>EditB</button>
-      <button onClick={() => setPayload('fixed-C')}>EditC</button>
+      <button type="button" onClick={() => setPayload(`edit-${Math.random()}`)}>
+        Edit
+      </button>
+      <button type="button" onClick={() => setPayload('fixed-A')}>
+        EditA
+      </button>
+      <button type="button" onClick={() => setPayload('fixed-B')}>
+        EditB
+      </button>
+      <button type="button" onClick={() => setPayload('fixed-C')}>
+        EditC
+      </button>
     </>
   );
 }

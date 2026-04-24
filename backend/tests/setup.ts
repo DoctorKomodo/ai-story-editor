@@ -13,7 +13,8 @@ process.env.APP_ENCRYPTION_KEY ??= Buffer.alloc(32, 0xab).toString('base64');
 // here and unconditionally pin to the test DB — the test suite must never
 // touch development data (CLAUDE.md: "never run tests against the dev DB").
 const explicitTestDb =
-  process.env.TEST_DATABASE_URL ?? 'postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test';
+  process.env.TEST_DATABASE_URL ??
+  'postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test';
 export const testDatabaseUrl = explicitTestDb;
 
 process.env.DATABASE_URL = testDatabaseUrl;

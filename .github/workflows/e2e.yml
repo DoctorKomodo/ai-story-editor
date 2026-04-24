@@ -1,0 +1,91 @@
+name: E2E (Playwright)
+
+# E2E scaffold for [T8]. Brings up the full docker-compose stack (postgres
+# + backend + frontend), waits for healthchecks, and runs Playwright against
+# the running frontend. Intentionally on manual trigger only until T8 ships
+# real tests — right now `tests/smoke.spec.ts` asserts the nginx placeholder,
+# which passes but doesn't prove anything useful.
+#
+# To enable on every push/PR once T8 lands: uncomment the `push` and
+# `pull_request` triggers below. Current gate is `workflow_dispatch` (manual
+# run from the Actions tab) so the workflow is discoverable and already
+# green before it starts blocking merges.
+
+on:
+  workflow_dispatch:
+  # Once [T8] ships real E2E coverage, flip these on:
+  # push:
+  #   branches: [main]
+  # pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Opt every JS action in this workflow into the Node 24 runtime ahead of
+# GitHub's forced cutover.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  e2e:
+    name: playwright
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+
+      - name: Write .env for compose
+        run: |
+          # Minimal env for the compose stack to boot. All values here are
+          # CI-only; real deploys use a separate .env managed by the operator.
+          cat > .env <<'ENV'
+          DATABASE_URL=postgresql://storyeditor:storyeditor@postgres:5432/storyeditor
+          POSTGRES_USER=storyeditor
+          POSTGRES_PASSWORD=storyeditor
+          POSTGRES_DB=storyeditor
+          JWT_SECRET=ci-jwt-secret-do-not-use-in-production
+          REFRESH_TOKEN_SECRET=ci-refresh-secret-do-not-use-in-production
+          FRONTEND_URL=http://localhost:3000
+          PORT=4000
+          ENV
+
+      - name: Bring up compose stack
+        run: |
+          docker compose up -d --wait
+          docker compose ps
+
+      - name: Apply Prisma migrations
+        run: docker compose exec -T backend npx prisma migrate deploy
+
+      - name: Run Playwright
+        run: npx playwright test --reporter=line
+
+      - name: Upload Playwright artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
+
+      - name: Tear down compose
+        if: always()
+        run: docker compose down -v
