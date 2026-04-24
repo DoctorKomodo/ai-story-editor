@@ -327,6 +327,44 @@ describe('Chapter reorder route [B4]', () => {
     expect(byId.get(C.id)).toBe(1);
   });
 
+  // [D16] Regression test: without the two-phase swap, a direct two-row swap
+  // under @@unique([storyId, orderIndex]) raises P2002 mid-transaction as
+  // soon as the first UPDATE tries to set A.orderIndex=1 (still held by B).
+  it('handles a direct two-chapter swap without tripping the unique constraint [D16]', async () => {
+    const accessToken = await registerAndLogin('reorder-swap-d16');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'Swap' });
+    const storyId = story.id as string;
+
+    const repo = createChapterRepo(req);
+    const A = (await repo.create({ storyId, title: 'A', orderIndex: 0 })) as unknown as {
+      id: string;
+    };
+    const B = (await repo.create({ storyId, title: 'B', orderIndex: 1 })) as unknown as {
+      id: string;
+    };
+
+    const res = await request(app)
+      .patch(`/api/stories/${storyId}/chapters/reorder`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({
+        chapters: [
+          { id: A.id, orderIndex: 1 },
+          { id: B.id, orderIndex: 0 },
+        ],
+      });
+    expect(res.status).toBe(204);
+
+    const list = await request(app)
+      .get(`/api/stories/${storyId}/chapters`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    const byId = new Map<string, number>(
+      list.body.chapters.map((c: { id: string; orderIndex: number }) => [c.id, c.orderIndex]),
+    );
+    expect(byId.get(A.id)).toBe(1);
+    expect(byId.get(B.id)).toBe(0);
+  });
+
   it('returns 204 for a partial reorder — non-included chapter keeps its orderIndex', async () => {
     const accessToken = await registerAndLogin('reorder-partial');
     const req = makeFakeReq(accessToken);

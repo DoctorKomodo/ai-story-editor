@@ -152,17 +152,28 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       throw new ChapterNotOwnedError();
     }
 
-    // TODO(B3-deferred): once @@unique([storyId, orderIndex]) lands, this
-    // transaction must use a two-phase swap (negative temp values, then final)
-    // to avoid unique-constraint violations mid-transaction.
-    await client.$transaction(
-      items.map((item) =>
-        client.chapter.update({
+    // [D16] Two-phase swap. With @@unique([storyId, orderIndex]) enabled, a
+    // simple swap (e.g. A:0->1 when B already holds 1) would raise P2002
+    // mid-transaction. Phase 1 parks every targeted row at a NEGATIVE temp
+    // value (which cannot collide with real data, since orderIndex >= 0 is
+    // enforced by the Zod schema and every persisted value is >= 0). Phase 2
+    // writes the final values; the unique constraint now sees each target
+    // slot vacated. Both phases run inside a single interactive transaction
+    // so the intermediate negative state is never visible to readers.
+    await client.$transaction(async (tx) => {
+      for (let i = 0; i < items.length; i++) {
+        await tx.chapter.update({
+          where: { id: items[i]!.id },
+          data: { orderIndex: -(i + 1) },
+        });
+      }
+      for (const item of items) {
+        await tx.chapter.update({
           where: { id: item.id },
           data: { orderIndex: item.orderIndex },
-        }),
-      ),
-    );
+        });
+      }
+    });
   }
 
   return { create, findById, findManyForStory, update, remove, reorder };

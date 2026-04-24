@@ -3,6 +3,7 @@
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { prisma } from '../lib/prisma';
@@ -12,6 +13,14 @@ import {
   OutlineNotOwnedError,
   type OutlineUpdateInput,
 } from '../repos/outline.repo';
+
+// [D16] See chapters.routes.ts for the full rationale — mirror constant here
+// so both POST handlers behave identically under the race.
+const POST_ORDER_RETRY_ATTEMPTS = 3;
+
+function isPrismaUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 const CreateOutlineBody = z
   .object({
@@ -77,27 +86,41 @@ export function createOutlineRouter() {
     const body = parsed.data;
 
     try {
-      // TODO(schema): aggregate+insert is not transactionally safe; concurrent
-      // POSTs to the same story can produce duplicate order values. Mirrors
-      // the chapters POST auto-assign pattern — deferred until a schema-level
-      // @@unique([storyId, order]) lands alongside a two-phase reorder swap.
+      // [D16] Matches chapters.routes.ts: @@unique([storyId, order]) catches
+      // the aggregate+insert race at the DB; we re-aggregate + retry on P2002.
       const userId = req.user!.id;
-      const agg = await prisma.outlineItem.aggregate({
-        where: { storyId, story: { userId } },
-        _max: { order: true },
-      });
-      const nextOrder =
-        agg._max.order === null || agg._max.order === undefined ? 0 : agg._max.order + 1;
 
-      const outlineItem = await createOutlineRepo(req).create({
-        storyId,
-        title: body.title,
-        sub: body.sub,
-        status: body.status,
-        order: nextOrder,
-      });
+      let lastErr: unknown;
+      let created: Awaited<ReturnType<ReturnType<typeof createOutlineRepo>['create']>> | null =
+        null;
+      for (let attempt = 0; attempt < POST_ORDER_RETRY_ATTEMPTS; attempt++) {
+        const agg = await prisma.outlineItem.aggregate({
+          where: { storyId, story: { userId } },
+          _max: { order: true },
+        });
+        const nextOrder =
+          agg._max.order === null || agg._max.order === undefined ? 0 : agg._max.order + 1;
 
-      res.status(201).json({ outlineItem });
+        try {
+          created = await createOutlineRepo(req).create({
+            storyId,
+            title: body.title,
+            sub: body.sub,
+            status: body.status,
+            order: nextOrder,
+          });
+          break;
+        } catch (err) {
+          if (!isPrismaUniqueViolation(err)) throw err;
+          lastErr = err;
+        }
+      }
+
+      if (created === null) {
+        throw lastErr ?? new Error('outline POST: failed to allocate order');
+      }
+
+      res.status(201).json({ outlineItem: created });
     } catch (err) {
       next(err);
     }

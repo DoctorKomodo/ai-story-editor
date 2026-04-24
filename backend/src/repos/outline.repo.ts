@@ -120,13 +120,24 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
       throw new OutlineNotOwnedError();
     }
 
-    // TODO(schema): once @@unique([storyId, order]) lands, this transaction
-    // must use a two-phase swap to avoid unique-constraint violations mid-txn.
-    await client.$transaction(
-      items.map((item) =>
-        client.outlineItem.update({ where: { id: item.id }, data: { order: item.order } }),
-      ),
-    );
+    // [D16] Two-phase swap — see chapter.repo.ts:reorder for the rationale.
+    // Phase 1 parks every targeted row at a NEGATIVE temp value; Phase 2
+    // writes the final order. Both inside one interactive transaction so the
+    // intermediate negative state is never visible to readers.
+    await client.$transaction(async (tx) => {
+      for (let i = 0; i < items.length; i++) {
+        await tx.outlineItem.update({
+          where: { id: items[i]!.id },
+          data: { order: -(i + 1) },
+        });
+      }
+      for (const item of items) {
+        await tx.outlineItem.update({
+          where: { id: item.id },
+          data: { order: item.order },
+        });
+      }
+    });
   }
 
   return { create, findById, findManyForStory, update, remove, reorder };
