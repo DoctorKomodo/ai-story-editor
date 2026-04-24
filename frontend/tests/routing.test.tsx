@@ -99,28 +99,57 @@ describe('routing', () => {
     useSessionStore
       .getState()
       .setSession({ id: 'u1', username: 'alice' }, 'tok-1');
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ accessToken: 'tok-1' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ user: { id: 'u1', username: 'alice' } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
+    // Router-based fetch mock: initAuth's refresh + /me keep the session
+    // authenticated; EditorPage then fetches the story to render its title.
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/auth/refresh')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ accessToken: 'tok-1' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      if (url.endsWith('/auth/me')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ user: { id: 'u1', username: 'alice' } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      if (url.endsWith('/stories/story-123')) {
+        return Promise.resolve(
+          new Response(
+            JSON.stringify({
+              story: {
+                id: 'story-123',
+                title: 'Dune',
+                genre: null,
+                synopsis: null,
+                worldNotes: null,
+                targetWords: null,
+                systemPrompt: null,
+                createdAt: '2026-04-01T00:00:00.000Z',
+                updatedAt: '2026-04-24T10:00:00.000Z',
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          ),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
 
     renderAt('/stories/story-123');
 
+    // F7 replaces the stub "Editor" heading with the story's title.
     await waitFor(() => {
-      expect(
-        screen.getByRole('heading', { name: /editor/i }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /dune/i })).toBeInTheDocument();
     });
-    expect(screen.getByText(/story-123/)).toBeInTheDocument();
+    // Three-pane shell is mounted.
+    expect(screen.getByRole('main', { name: /editor/i })).toBeInTheDocument();
   });
 
   it('unauthenticated request to /stories/:id redirects to /login', async () => {
