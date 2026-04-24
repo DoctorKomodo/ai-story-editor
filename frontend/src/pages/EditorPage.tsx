@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Editor as TiptapEditor } from '@tiptap/core';
+import { ApiError } from '@/lib/api';
 import { useStoryQuery } from '@/hooks/useStories';
 import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
@@ -9,9 +10,13 @@ import { AIResult } from '@/components/AIResult';
 import { UsageIndicator } from '@/components/UsageIndicator';
 import { ModelSelector } from '@/components/ModelSelector';
 import { WebSearchToggle } from '@/components/WebSearchToggle';
+import { UserMenu } from '@/components/UserMenu';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useAICompletion } from '@/hooks/useAICompletion';
+import { useBalanceQuery } from '@/hooks/useBalance';
+import { useAuth } from '@/hooks/useAuth';
+import { useSessionStore } from '@/store/session';
 
 function extractSelection(editor: TiptapEditor): string {
   const { from, to } = editor.state.selection;
@@ -37,7 +42,22 @@ function extractSelection(editor: TiptapEditor): string {
  */
 export function EditorPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { data: story, isLoading, isError } = useStoryQuery(id);
+  // [F17] Venice account balance — fetched on editor load and rendered in the
+  // user menu. Errors surface via dedicated copy (`venice_key_required` vs
+  // generic) inside `<BalanceDisplay />`.
+  const balanceQuery = useBalanceQuery();
+  const balanceError = balanceQuery.error;
+  const balanceErrorCode =
+    balanceError instanceof ApiError ? balanceError.code ?? null : null;
+  const username = useSessionStore((s) => s.user?.username) ?? '';
+  const { logout } = useAuth();
+  const handleSignOut = useCallback((): void => {
+    void logout().finally(() => {
+      navigate('/login');
+    });
+  }, [logout, navigate]);
   const [aiOpen, setAiOpen] = useState(true);
   // [F10] Selected chapter is local state for now — F22 moves it into the
   // Zustand layout slice once cross-route persistence is required.
@@ -157,17 +177,27 @@ export function EditorPage(): JSX.Element {
           </Link>
           <h1 className="text-lg font-semibold truncate">{story.title}</h1>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            setAiOpen((v) => !v);
-          }}
-          aria-expanded={aiOpen}
-          aria-controls="ai-panel"
-          className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors"
-        >
-          {aiOpen ? 'Hide AI' : 'Show AI'}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => {
+              setAiOpen((v) => !v);
+            }}
+            aria-expanded={aiOpen}
+            aria-controls="ai-panel"
+            className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors"
+          >
+            {aiOpen ? 'Hide AI' : 'Show AI'}
+          </button>
+          <UserMenu
+            username={username}
+            onSignOut={handleSignOut}
+            balance={balanceQuery.data ?? null}
+            isLoading={balanceQuery.isLoading}
+            isError={balanceQuery.isError}
+            errorCode={balanceErrorCode}
+          />
+        </div>
       </header>
 
       <div className="flex flex-1 min-h-0">

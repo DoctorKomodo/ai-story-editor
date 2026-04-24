@@ -480,7 +480,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F16]** Venice usage indicator: reads `x-venice-remaining-requests` and `x-venice-remaining-tokens` headers after each AI call. Shows in AI panel (e.g. "482 requests / 1.2M tokens remaining").
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/UsageIndicator.test.tsx`
 
-- [ ] **[F17]** Account balance: calls `GET /api/ai/balance` on editor load. Shows USD and Diem balance in user menu.
+- [x] **[F17]** Account balance: calls `GET /api/ai/balance` on editor load. Shows USD and Diem balance in user menu.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/BalanceDisplay.test.tsx`
 
 - [ ] **[F18]** Characters panel: sidebar tab listing story characters. "Add character" button. Click to open character sheet.
