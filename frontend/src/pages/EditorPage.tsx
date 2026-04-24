@@ -6,7 +6,9 @@ import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
 import { AIPanel, type AIAction } from '@/components/AIPanel';
 import { ModelSelector } from '@/components/ModelSelector';
+import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
+import { useModelsQuery } from '@/hooks/useModels';
 
 function extractSelection(editor: TiptapEditor): string {
   const { from, to } = editor.state.selection;
@@ -45,6 +47,17 @@ export function EditorPage(): JSX.Element {
   // editor keeps the user's last pick. [F15] will read this when calling
   // /api/ai/complete.
   const { selectedModelId, setSelectedModelId } = useSelectedModel();
+  // [F14] Web-search opt-in. Only surfaces in the UI when the selected model's
+  // `supportsWebSearch` is true; resets to false when the user switches models
+  // so a stranded `true` from a capable model doesn't silently persist onto a
+  // non-capable one. [F15] forwards this as `enableWebSearch` in the body.
+  const [webSearch, setWebSearch] = useState(false);
+  const { data: models } = useModelsQuery();
+  const selectedModel = models?.find((m) => m.id === selectedModelId) ?? null;
+
+  useEffect(() => {
+    setWebSearch(false);
+  }, [selectedModelId]);
 
   const handleEditorReady = useCallback((ed: TiptapEditor) => {
     setEditor(ed);
@@ -69,9 +82,10 @@ export function EditorPage(): JSX.Element {
         action,
         freeformInstruction,
         selectedText,
+        webSearch,
       });
     },
-    [selectedText],
+    [selectedText, webSearch],
   );
 
   if (isLoading) {
@@ -160,6 +174,13 @@ export function EditorPage(): JSX.Element {
             onAction={handleAIAction}
             modelSelector={
               <ModelSelector value={selectedModelId} onChange={setSelectedModelId} />
+            }
+            webSearchToggle={
+              <WebSearchToggle
+                model={selectedModel}
+                checked={webSearch}
+                onChange={setWebSearch}
+              />
             }
           />
         </aside>

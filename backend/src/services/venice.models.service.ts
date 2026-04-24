@@ -16,6 +16,7 @@ export interface ModelInfo {
   contextLength: number;
   supportsReasoning: boolean;
   supportsVision: boolean;
+  supportsWebSearch: boolean;
 }
 
 export class UnknownModelError extends Error {
@@ -31,6 +32,7 @@ const TTL_MS = 10 * 60 * 1000;
 interface VeniceRawCapabilities {
   supportsReasoning?: boolean;
   supportsVision?: boolean;
+  supportsWebSearch?: boolean;
 }
 
 interface VeniceRawModelSpec {
@@ -54,6 +56,7 @@ function mapModel(raw: VeniceRawModel): ModelInfo {
     contextLength: typeof spec.availableContextTokens === 'number' ? spec.availableContextTokens : 0,
     supportsReasoning: Boolean(caps.supportsReasoning),
     supportsVision: Boolean(caps.supportsVision),
+    supportsWebSearch: Boolean(caps.supportsWebSearch),
   };
 }
 

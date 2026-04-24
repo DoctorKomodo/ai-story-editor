@@ -19,6 +19,7 @@ type VeniceRawModel = {
     capabilities?: {
       supportsReasoning?: boolean;
       supportsVision?: boolean;
+      supportsWebSearch?: boolean;
     };
   };
 };
@@ -64,6 +65,17 @@ const VISION: VeniceRawModel = {
   },
 };
 
+const WEB_SEARCH: VeniceRawModel = {
+  id: 'llama-web-search',
+  object: 'model',
+  type: 'text',
+  model_spec: {
+    name: 'Llama Web Search',
+    availableContextTokens: 65536,
+    capabilities: { supportsReasoning: false, supportsVision: false, supportsWebSearch: true },
+  },
+};
+
 const IMAGE: VeniceRawModel = {
   id: 'flux-schnell',
   object: 'model',
@@ -86,10 +98,19 @@ describe('venice.models.service [V2]', () => {
 
       expect(spy).toHaveBeenCalledTimes(1);
       expect(models).toEqual([
-        { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', contextLength: 65536, supportsReasoning: false, supportsVision: false },
-        { id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', contextLength: 32768, supportsReasoning: true, supportsVision: false },
-        { id: 'mistral-vision', name: 'Mistral Vision', contextLength: 131072, supportsReasoning: false, supportsVision: true },
+        { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', contextLength: 65536, supportsReasoning: false, supportsVision: false, supportsWebSearch: false },
+        { id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', contextLength: 32768, supportsReasoning: true, supportsVision: false, supportsWebSearch: false },
+        { id: 'mistral-vision', name: 'Mistral Vision', contextLength: 131072, supportsReasoning: false, supportsVision: true, supportsWebSearch: false },
       ]);
+    });
+
+    it('maps supportsWebSearch: true when Venice advertises it', async () => {
+      const { client } = makeListStub([WEB_SEARCH]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.id).toBe('llama-web-search');
+      expect(only.supportsWebSearch).toBe(true);
     });
 
     it('falls back sensibly when Venice omits model_spec fields', async () => {
@@ -107,6 +128,7 @@ describe('venice.models.service [V2]', () => {
       expect(only.contextLength).toBe(0);
       expect(only.supportsReasoning).toBe(false);
       expect(only.supportsVision).toBe(false);
+      expect(only.supportsWebSearch).toBe(false);
     });
 
     it('serves from cache within the 10-minute TTL without re-calling Venice', async () => {

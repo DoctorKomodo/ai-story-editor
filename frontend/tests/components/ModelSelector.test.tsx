@@ -36,6 +36,7 @@ const THREE_MODELS = {
       contextLength: 32768,
       supportsReasoning: false,
       supportsVision: false,
+      supportsWebSearch: false,
     },
     {
       id: 'llama-3.3-70b',
@@ -43,6 +44,7 @@ const THREE_MODELS = {
       contextLength: 128000,
       supportsReasoning: false,
       supportsVision: false,
+      supportsWebSearch: false,
     },
     {
       id: 'deepseek-r1',
@@ -50,6 +52,7 @@ const THREE_MODELS = {
       contextLength: 64000,
       supportsReasoning: true,
       supportsVision: false,
+      supportsWebSearch: false,
     },
   ],
 };
