@@ -49,7 +49,10 @@ export async function initAuth(signal?: AbortSignal): Promise<void> {
     }
     // Push the token into the api-client BEFORE issuing /auth/me so any
     // concurrent api() call during this window picks up the bearer instead
-    // of firing unauthenticated and triggering its own refresh cycle.
+    // of firing unauthenticated and triggering its own refresh cycle. Abort
+    // gate goes immediately before the mutation so a post-refresh abort
+    // doesn't leave the module-level token out of sync with the store.
+    if (signal?.aborted) return;
     setAccessToken(newToken);
     const me = await api<MeResponse>('/auth/me');
     if (signal?.aborted) return;
