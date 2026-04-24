@@ -48,11 +48,7 @@ function listItemInline(item: JSONContent): readonly JSONContent[] {
   const children = item.content ?? [];
   if (children.length === 1) {
     const only = children[0]!;
-    if (
-      only.type === 'paragraph' ||
-      only.type === 'heading' ||
-      only.type === 'blockquote'
-    ) {
+    if (only.type === 'paragraph' || only.type === 'heading' || only.type === 'blockquote') {
       return only.content ?? [];
     }
   }
@@ -137,9 +133,9 @@ export function tipTapJsonToPlainText(doc: JSONContent | null): string {
     }
     const prev = segments[i - 1]!;
     if (prev.kind === 'listItem' && cur.kind === 'listItem') {
-      result += '\n' + cur.text;
+      result += `\n${cur.text}`;
     } else {
-      result += '\n\n' + cur.text;
+      result += `\n\n${cur.text}`;
     }
   }
 

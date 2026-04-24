@@ -107,7 +107,9 @@ function parseBase64Field(
 export function decrypt(payload: EncryptedPayload): string {
   const key = loadAppEncryptionKey();
   const iv = parseBase64Field(payload.iv, 'iv', { expectedLength: AES_IV_BYTES });
-  const authTag = parseBase64Field(payload.authTag, 'authTag', { expectedLength: AES_AUTH_TAG_BYTES });
+  const authTag = parseBase64Field(payload.authTag, 'authTag', {
+    expectedLength: AES_AUTH_TAG_BYTES,
+  });
   // GCM of an empty plaintext produces an empty ciphertext + a 16-byte auth tag.
   // Allow an empty base64 string here so round-tripping "" is lossless.
   const ciphertext = parseBase64Field(payload.ciphertext, 'ciphertext', { allowEmpty: true });

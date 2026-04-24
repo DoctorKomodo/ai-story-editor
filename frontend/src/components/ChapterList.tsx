@@ -1,27 +1,17 @@
-import { useCallback, useState } from 'react';
-import {
-  DndContext,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import {
-  SortableContext,
-  useSortable,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
+import { DndContext, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
-import { ApiError } from '@/lib/api';
+import { useCallback, useState } from 'react';
 import {
+  type Chapter,
   chaptersQueryKey,
   computeReorderedChapters,
   useChaptersQuery,
   useCreateChapterMutation,
   useReorderChaptersMutation,
-  type Chapter,
 } from '@/hooks/useChapters';
+import { ApiError } from '@/lib/api';
 
 export interface ChapterListProps {
   storyId: string;
@@ -94,9 +84,7 @@ function ChapterRow({ chapter, active, onSelect }: ChapterRowProps): JSX.Element
         <span className="block truncate text-sm font-medium text-neutral-900">
           {chapterDisplayTitle(chapter)}
         </span>
-        <span className="block text-xs text-neutral-500">
-          {formatWordCount(chapter.wordCount)}
-        </span>
+        <span className="block text-xs text-neutral-500">{formatWordCount(chapter.wordCount)}</span>
       </button>
     </li>
   );
@@ -143,9 +131,7 @@ export function ChapterList({
       reorderChapters.mutate(next, {
         onError: (err: Error) => {
           const message =
-            err instanceof ApiError
-              ? 'Reorder failed — reverted'
-              : 'Reorder failed — reverted';
+            err instanceof ApiError ? 'Reorder failed — reverted' : 'Reorder failed — reverted';
           setReorderStatus(message);
         },
         onSuccess: () => {
@@ -168,7 +154,8 @@ export function ChapterList({
     return (
       <div className="flex flex-col gap-3">
         <p role="alert" className="text-sm text-red-600">
-          Could not load chapters{error instanceof Error && error.message ? `: ${error.message}` : ''}
+          Could not load chapters
+          {error instanceof Error && error.message ? `: ${error.message}` : ''}
         </p>
       </div>
     );

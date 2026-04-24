@@ -1,24 +1,17 @@
 // [V7] Web search — enable_web_search + enable_web_citations.
 // Confirms flags are set when enableWebSearch: true and absent otherwise.
 
-import request from 'supertest';
-import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
-import { createChapterRepo } from '../../src/repos/chapter.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app } from '../../src/index';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
+import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 const NAME = 'Web Search Test User';
@@ -144,7 +137,9 @@ async function callCompleteAndGetVeniceParams(
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
-      response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      response.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
       response.on('end', () => callback(null, data));
     })
     .send(body);
@@ -198,7 +193,13 @@ describe('POST /api/ai/complete — web search [V7]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const vp = await callCompleteAndGetVeniceParams(accessToken, storyId, chapterId, true, fetchSpy);
+    const vp = await callCompleteAndGetVeniceParams(
+      accessToken,
+      storyId,
+      chapterId,
+      true,
+      fetchSpy,
+    );
     expect(vp.enable_web_search).toBe('auto');
     expect(vp.enable_web_citations).toBe(true);
   });
@@ -209,7 +210,13 @@ describe('POST /api/ai/complete — web search [V7]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const vp = await callCompleteAndGetVeniceParams(accessToken, storyId, chapterId, undefined, fetchSpy);
+    const vp = await callCompleteAndGetVeniceParams(
+      accessToken,
+      storyId,
+      chapterId,
+      undefined,
+      fetchSpy,
+    );
     expect(vp.enable_web_search).toBeUndefined();
     expect(vp.enable_web_citations).toBeUndefined();
   });
@@ -220,7 +227,13 @@ describe('POST /api/ai/complete — web search [V7]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const vp = await callCompleteAndGetVeniceParams(accessToken, storyId, chapterId, false, fetchSpy);
+    const vp = await callCompleteAndGetVeniceParams(
+      accessToken,
+      storyId,
+      chapterId,
+      false,
+      fetchSpy,
+    );
     expect(vp.enable_web_search).toBeUndefined();
     expect(vp.enable_web_citations).toBeUndefined();
   });

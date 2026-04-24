@@ -13,25 +13,18 @@
 //   - History included on subsequent message (prior user+assistant pair present)
 
 import { createHash } from 'node:crypto';
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -138,9 +131,7 @@ function makeFakeReq(accessToken: string): Request {
   return req;
 }
 
-async function setupStoryAndChapter(
-  req: Request,
-): Promise<{ storyId: string; chapterId: string }> {
+async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; chapterId: string }> {
   const story = await createStoryRepo(req).create({
     title: 'Test Story',
     worldNotes: 'A magical world.',
@@ -245,9 +236,7 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('POST /api/chapters/:chapterId/chats returns 401 without Bearer', async () => {
-    const res = await request(app)
-      .post('/api/chapters/some-id/chats')
-      .send({ title: 'x' });
+    const res = await request(app).post('/api/chapters/some-id/chats').send({ title: 'x' });
     expect(res.status).toBe(401);
   });
 
@@ -377,7 +366,9 @@ describe('Chat persistence [V15]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ content: 'Tell me a story.', modelId: BASE_MODEL_ID });
@@ -475,7 +466,9 @@ describe('Chat persistence [V15]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ content: 'Trigger error.', modelId: BASE_MODEL_ID });
@@ -504,9 +497,7 @@ describe('Chat persistence [V15]', () => {
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Assistant reply.', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Assistant reply.', 'stop')]));
 
     await request(app)
       .post(`/api/chats/${chatId}/messages`)
@@ -514,7 +505,9 @@ describe('Chat persistence [V15]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ content: MSG_SENTINEL, modelId: BASE_MODEL_ID });
@@ -538,32 +531,32 @@ describe('Chat persistence [V15]', () => {
 
     // First message
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('First reply.', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('First reply.', 'stop')]));
     await request(app)
       .post(`/api/chats/${chatId}/messages`)
       .set('Authorization', `Bearer ${accessToken}`)
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ content: 'First user message.', modelId: BASE_MODEL_ID });
 
     // Second message
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Second reply.', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Second reply.', 'stop')]));
     await request(app)
       .post(`/api/chats/${chatId}/messages`)
       .set('Authorization', `Bearer ${accessToken}`)
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ content: 'Second user message.', modelId: BASE_MODEL_ID });
@@ -576,7 +569,10 @@ describe('Chat persistence [V15]', () => {
     expect(completionCalls.length).toBe(2);
 
     const [, secondCallInit] = completionCalls[1];
-    const requestBody = JSON.parse((secondCallInit as RequestInit).body as string) as Record<string, unknown>;
+    const requestBody = JSON.parse((secondCallInit as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
     const sentMessages = requestBody.messages as Array<{ role: string; content: string }>;
 
     // Should be: [system, user(first), assistant(first reply), user(second)]
@@ -606,9 +602,7 @@ describe('Chat persistence [V15]', () => {
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Reply.', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
 
     await request(app)
       .post(`/api/chats/${chatId}/messages`)
@@ -616,7 +610,9 @@ describe('Chat persistence [V15]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({ content: 'Hi.', modelId: BASE_MODEL_ID });

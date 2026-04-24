@@ -9,13 +9,13 @@ import { prisma } from './lib/prisma';
 import { NoVeniceKeyError } from './lib/venice';
 import { createAiRouter } from './routes/ai.routes';
 import { createAuthRouter } from './routes/auth.routes';
-import { createVeniceKeyRouter } from './routes/venice-key.routes';
-import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
+import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
 import { createOutlineRouter } from './routes/outline.routes';
 import { createStoriesRouter } from './routes/stories.routes';
 import { createUserSettingsRouter } from './routes/user-settings.routes';
+import { createVeniceKeyRouter } from './routes/venice-key.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
 // tests/setup.ts, so this runs cleanly there too.
@@ -130,7 +130,9 @@ export function globalErrorHandler(
   const isProd = process.env.NODE_ENV === 'production';
   const message = isProd
     ? 'Internal server error'
-    : (err instanceof Error ? err.message : 'Internal server error');
+    : err instanceof Error
+      ? err.message
+      : 'Internal server error';
   res.status(500).json({ error: { message, code: 'internal_error' } });
 }
 

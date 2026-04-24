@@ -1,10 +1,10 @@
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CharacterList } from '@/components/CharacterList';
-import { createQueryClient } from '@/lib/queryClient';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -141,10 +141,7 @@ describe('CharacterList (F18)', () => {
       if (url.endsWith('/stories/story-1/characters')) {
         return Promise.resolve(
           jsonResponse(200, {
-            characters: [
-              char({ id: 'c1', name: 'Ada' }),
-              char({ id: 'c2', name: 'Brin' }),
-            ],
+            characters: [char({ id: 'c1', name: 'Ada' }), char({ id: 'c2', name: 'Brin' })],
           }),
         );
       }

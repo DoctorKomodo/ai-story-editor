@@ -1,5 +1,5 @@
-import type { Request } from 'express';
 import type { PrismaClient } from '@prisma/client';
+import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
@@ -140,5 +140,16 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
     });
   }
 
-  return { create, findById, findManyForStory, update, remove, reorder };
+  // Aggregate over the plaintext `order` column only. Keeps raw Prisma access
+  // inside the repo layer per CLAUDE.md.
+  async function maxOrder(storyId: string): Promise<number | null> {
+    const userId = resolveUserId(req);
+    const agg = await client.outlineItem.aggregate({
+      where: { storyId, story: { userId } },
+      _max: { order: true },
+    });
+    return agg._max.order ?? null;
+  }
+
+  return { create, findById, findManyForStory, update, remove, reorder, maxOrder };
 }

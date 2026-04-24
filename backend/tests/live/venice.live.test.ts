@@ -14,9 +14,9 @@
  * `it.skipIf(!process.env.LIVE_VENICE_API_KEY)`.
  */
 
-import { describe, it, expect, beforeAll } from 'vitest';
-import dotenv from 'dotenv';
 import path from 'node:path';
+import dotenv from 'dotenv';
+import { beforeAll, describe, expect, it } from 'vitest';
 import { createVeniceClient } from '@/lib/venice';
 
 // Load .env.live relative to `backend/` (the vitest cwd for this config).
@@ -52,9 +52,7 @@ describe('Venice.ai live integration tests', () => {
 
     expect(Array.isArray(page.data)).toBe(true);
 
-    const textModels = page.data.filter(
-      (m) => (m as Record<string, unknown>)['type'] === 'text',
-    );
+    const textModels = page.data.filter((m) => (m as Record<string, unknown>).type === 'text');
 
     expect(textModels.length).toBeGreaterThan(0);
   });
@@ -79,25 +77,22 @@ describe('Venice.ai live integration tests', () => {
   // The OpenAI SDK consumes the [DONE] sentinel internally; the assertion is
   // that the async iterator ends normally after yielding ≥1 content chunk.
   // -------------------------------------------------------------------------
-  skipUnlessKey(
-    'streaming completion yields ≥1 SSE delta then completes cleanly',
-    async () => {
-      const stream = await client.chat.completions.create({
-        model: model(),
-        messages: [{ role: 'user', content: 'Say hi.' }],
-        stream: true,
-      });
+  skipUnlessKey('streaming completion yields ≥1 SSE delta then completes cleanly', async () => {
+    const stream = await client.chat.completions.create({
+      model: model(),
+      messages: [{ role: 'user', content: 'Say hi.' }],
+      stream: true,
+    });
 
-      let chunkCount = 0;
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta?.content;
-        if (delta) {
-          chunkCount += 1;
-        }
+    let chunkCount = 0;
+    for await (const chunk of stream) {
+      const delta = chunk.choices[0]?.delta?.content;
+      if (delta) {
+        chunkCount += 1;
       }
+    }
 
-      // Stream completed without throwing — and we saw at least one delta.
-      expect(chunkCount).toBeGreaterThanOrEqual(1);
-    },
-  );
+    // Stream completed without throwing — and we saw at least one delta.
+    expect(chunkCount).toBeGreaterThanOrEqual(1);
+  });
 });

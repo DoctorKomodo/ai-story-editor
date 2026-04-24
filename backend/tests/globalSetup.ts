@@ -15,8 +15,9 @@ export async function setup(): Promise<void> {
   }
 
   const migrationsDir = path.resolve(rootDir, 'prisma', 'migrations');
-  const hasMigrations = fs.existsSync(migrationsDir)
-    && fs.readdirSync(migrationsDir).some((name) => /^\d+_/.test(name));
+  const hasMigrations =
+    fs.existsSync(migrationsDir) &&
+    fs.readdirSync(migrationsDir).some((name) => /^\d+_/.test(name));
 
   const syncCmd = hasMigrations
     ? 'npx prisma migrate deploy'

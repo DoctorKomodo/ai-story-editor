@@ -5,11 +5,7 @@
 import type { Response } from 'express';
 import { APIError } from 'openai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import {
-  mapVeniceError,
-  mapVeniceErrorToSse,
-  parseRetryAfter,
-} from '../../src/lib/venice-errors';
+import { mapVeniceError, mapVeniceErrorToSse, parseRetryAfter } from '../../src/lib/venice-errors';
 
 describe('parseRetryAfter', () => {
   afterEach(() => {
@@ -79,18 +75,14 @@ describe('parseRetryAfter', () => {
     });
 
     it('(b) only x-ratelimit-reset-tokens set (delta-seconds "15") → 15', () => {
-      expect(
-        parseRetryAfter({ 'x-ratelimit-reset-tokens': '15' }),
-      ).toBe(15);
+      expect(parseRetryAfter({ 'x-ratelimit-reset-tokens': '15' })).toBe(15);
     });
 
     it('(b) only x-ratelimit-reset-tokens set (unix-ts) → delta from now', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-05-01T12:00:00Z'));
       // unix seconds for 2026-05-01T12:00:45Z = 45 s in the future
-      const futureTs = Math.floor(
-        new Date('2026-05-01T12:00:45Z').getTime() / 1000,
-      );
+      const futureTs = Math.floor(new Date('2026-05-01T12:00:45Z').getTime() / 1000);
       expect(
         parseRetryAfter({
           'x-ratelimit-reset-tokens': String(futureTs),
@@ -99,9 +91,7 @@ describe('parseRetryAfter', () => {
     });
 
     it('(b) only x-ratelimit-reset-requests set (delta-seconds "25") → 25', () => {
-      expect(
-        parseRetryAfter({ 'x-ratelimit-reset-requests': '25' }),
-      ).toBe(25);
+      expect(parseRetryAfter({ 'x-ratelimit-reset-requests': '25' })).toBe(25);
     });
 
     it('(c) both reset-requests and reset-tokens set — soonest (smaller) wins', () => {
@@ -170,9 +160,7 @@ describe('parseRetryAfter', () => {
     it('reset-* unix-ts in the past → clamped to 0', () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date('2026-05-01T12:00:00Z'));
-      const pastTs = Math.floor(
-        new Date('2026-05-01T11:59:00Z').getTime() / 1000,
-      );
+      const pastTs = Math.floor(new Date('2026-05-01T11:59:00Z').getTime() / 1000);
       expect(
         parseRetryAfter({
           'x-ratelimit-reset-tokens': String(pastTs),

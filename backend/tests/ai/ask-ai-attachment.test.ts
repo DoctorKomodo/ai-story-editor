@@ -8,26 +8,19 @@
 //   - Attachment ciphertext: sentinel in selectionText must not appear raw
 //   - Attachment-less path still works (re-assertion from V15)
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -160,7 +153,9 @@ async function sendMessage(
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
-      response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      response.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
       response.on('end', () => callback(null, data));
     })
     .send(payload);
@@ -210,9 +205,7 @@ describe('Ask-AI attachment payload [V16]', () => {
     const { chapterId, chatId } = await setupStoryChapterAndChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Good question!', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Good question!', 'stop')]));
 
     await sendMessage(accessToken, chatId, {
       content: 'What is the significance of this?',
@@ -255,7 +248,7 @@ describe('Ask-AI attachment payload [V16]', () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
-    const { storyId, chapterId, chatId } = await setupStoryChapterAndChat(req);
+    const { storyId, chatId } = await setupStoryChapterAndChat(req);
 
     // Create a second chapter in the same story.
     const chapter2 = await createChapterRepo(req).create({
@@ -288,9 +281,7 @@ describe('Ask-AI attachment payload [V16]', () => {
     const { chapterId, chatId } = await setupStoryChapterAndChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Reply.', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
 
     await sendMessage(accessToken, chatId, {
       content: 'Question.',
@@ -314,9 +305,7 @@ describe('Ask-AI attachment payload [V16]', () => {
 
     // ── Turn 1: user sends a message WITH an attachment ──────────────────────
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Turn-one reply.', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Turn-one reply.', 'stop')]));
 
     await sendMessage(accessToken, chatId, {
       content: 'What is the significance of this passage?',
@@ -326,9 +315,7 @@ describe('Ask-AI attachment payload [V16]', () => {
 
     // ── Turn 2: user sends WITHOUT attachment ────────────────────────────────
     // The models list is already cached, so only one Venice call needed here.
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([makeChunk('Turn-two reply.', 'stop')]),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Turn-two reply.', 'stop')]));
 
     await sendMessage(accessToken, chatId, {
       content: 'Can you elaborate on that?',

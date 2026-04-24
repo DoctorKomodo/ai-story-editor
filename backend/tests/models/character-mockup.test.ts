@@ -8,7 +8,10 @@ import { prisma } from '../setup';
 // tests/repos/character.repo.test.ts.
 
 async function makeStory(email = 'char-mockup-author@example.com') {
-  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const username = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
   return prisma.story.create({ data: { userId: user.id } });
 }

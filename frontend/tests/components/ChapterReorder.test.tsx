@@ -1,16 +1,16 @@
-import { act, renderHook, waitFor } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   arrayMove,
+  type Chapter,
   chaptersQueryKey,
   computeReorderedChapters,
   useReorderChaptersMutation,
-  type Chapter,
 } from '@/hooks/useChapters';
-import { createQueryClient } from '@/lib/queryClient';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -143,7 +143,9 @@ describe('useReorderChaptersMutation', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toMatch(/\/stories\/story-1\/chapters\/reorder$/);
     expect(init.method).toBe('PATCH');
-    const body = JSON.parse(init.body as string) as { chapters: Array<{ id: string; orderIndex: number }> };
+    const body = JSON.parse(init.body as string) as {
+      chapters: Array<{ id: string; orderIndex: number }>;
+    };
     expect(body.chapters).toEqual([
       { id: 'b', orderIndex: 0 },
       { id: 'c', orderIndex: 1 },

@@ -14,10 +14,7 @@ vi.mock('argon2', async (importOriginal) => {
 
 import * as argon2 from 'argon2';
 import { app } from '../../src/index';
-import {
-  UsernameUnavailableError,
-  createAuthService,
-} from '../../src/services/auth.service';
+import { createAuthService, UsernameUnavailableError } from '../../src/services/auth.service';
 import { prisma } from '../setup';
 
 const authService = createAuthService(prisma);

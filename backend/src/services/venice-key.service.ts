@@ -1,9 +1,9 @@
 import type { PrismaClient } from '@prisma/client';
+import type OpenAI from 'openai';
 import { z } from 'zod';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { decrypt, encrypt } from './crypto.service';
 import { getVeniceClient } from '../lib/venice';
-import type OpenAI from 'openai';
+import { decrypt, encrypt } from './crypto.service';
 
 export const DEFAULT_VENICE_ENDPOINT = 'https://api.venice.ai/api/v1';
 
@@ -106,7 +106,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
       },
     });
 
-    if (!row || !row.veniceApiKeyEnc || !row.veniceApiKeyIv || !row.veniceApiKeyAuthTag) {
+    if (!row?.veniceApiKeyEnc || !row.veniceApiKeyIv || !row.veniceApiKeyAuthTag) {
       return { hasKey: false, lastFour: null, endpoint: null };
     }
 
@@ -186,8 +186,8 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
 
     return {
       verified: true,
-      credits: creditsVal !== null && !isNaN(creditsVal) ? creditsVal : null,
-      diem: diemVal !== null && !isNaN(diemVal) ? diemVal : null,
+      credits: creditsVal !== null && !Number.isNaN(creditsVal) ? creditsVal : null,
+      diem: diemVal !== null && !Number.isNaN(diemVal) ? diemVal : null,
       endpoint: status.endpoint,
       lastFour: status.lastFour,
     };

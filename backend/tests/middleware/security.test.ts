@@ -33,9 +33,7 @@ describe('security middleware', () => {
     });
 
     it('does not set Access-Control-Allow-Origin for a non-matching origin', async () => {
-      const res = await request(app)
-        .get('/api/health')
-        .set('Origin', 'http://evil.example.com');
+      const res = await request(app).get('/api/health').set('Origin', 'http://evil.example.com');
 
       // Strict: the header must be absent — not echoed, not wildcarded, not null.
       expect(res.headers['access-control-allow-origin']).toBeUndefined();
@@ -79,7 +77,7 @@ describe('security middleware', () => {
       const res = await request(mini).get('/api/ai/anything');
 
       // standardHeaders: 'draft-7' produces headers like `RateLimit` and `RateLimit-Policy`.
-      expect(res.headers['ratelimit']).toBeDefined();
+      expect(res.headers.ratelimit).toBeDefined();
       expect(res.headers['ratelimit-policy']).toBeDefined();
       // Legacy headers must be off per config.
       expect(res.headers['x-ratelimit-limit']).toBeUndefined();

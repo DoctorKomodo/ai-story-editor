@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { buildPrompt, type BuildPromptInput } from '../../src/services/prompt.service';
+import { type BuildPromptInput, buildPrompt } from '../../src/services/prompt.service';
 
 function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput {
   return {
@@ -48,10 +48,7 @@ describe('[V4] venice_parameters.include_venice_system_prompt', () => {
 
 describe('[V4] source-code: flag is not hardcoded', () => {
   it('include_venice_system_prompt is never assigned the literal boolean true directly', () => {
-    const sourcePath = resolve(
-      __dirname,
-      '../../src/services/prompt.service.ts',
-    );
+    const sourcePath = resolve(__dirname, '../../src/services/prompt.service.ts');
     const source = readFileSync(sourcePath, 'utf-8');
 
     // Pattern that would indicate a hardcoded true assignment, e.g.:

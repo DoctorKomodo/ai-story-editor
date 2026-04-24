@@ -14,8 +14,7 @@ const USERNAME = 'change-pw-user';
 const PASSWORD = 'correct-horse-battery';
 const NEW_PASSWORD = 'new-horse-battery-staple';
 
-async function registerAndLogin(): Promise<{ accessToken: string; refreshCookie: string }>
-{
+async function registerAndLogin(): Promise<{ accessToken: string; refreshCookie: string }> {
   await request(app)
     .post('/api/auth/register')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
@@ -122,9 +121,7 @@ describe('[AU15] POST /api/auth/change-password', () => {
   it('deletes all refresh tokens and sessions for the user (forces re-login elsewhere)', async () => {
     const { accessToken } = await registerAndLogin();
     // Open a second session from a different "device"
-    await request(app)
-      .post('/api/auth/login')
-      .send({ username: USERNAME, password: PASSWORD });
+    await request(app).post('/api/auth/login').send({ username: USERNAME, password: PASSWORD });
 
     const rtBefore = await prisma.refreshToken.count();
     const sBefore = await prisma.session.count();
@@ -149,7 +146,8 @@ describe('[AU15] POST /api/auth/change-password', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ oldPassword: PASSWORD, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(204);
-    const bodyText = typeof res.body === 'object' ? JSON.stringify(res.body) : String(res.body ?? '');
+    const bodyText =
+      typeof res.body === 'object' ? JSON.stringify(res.body) : String(res.body ?? '');
     expect(bodyText).not.toContain(PASSWORD);
     expect(bodyText).not.toContain(NEW_PASSWORD);
     expect(res.text).not.toContain(PASSWORD);

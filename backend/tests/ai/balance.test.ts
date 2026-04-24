@@ -40,10 +40,7 @@ async function registerAndLogin(): Promise<string> {
   return login.body.accessToken as string;
 }
 
-async function storeKey(
-  accessToken: string,
-  fetchSpy: ReturnType<typeof vi.fn>,
-): Promise<void> {
+async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
   const res = await request(app)
     .put('/api/users/me/venice-key')
@@ -93,10 +90,14 @@ describe('GET /api/ai/balance [V10]', () => {
     await storeKey(accessToken, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(
-      jsonResponse(200, { object: 'list', data: [] }, {
-        'x-venice-balance-usd': '2.25',
-        'x-venice-balance-diem': '1800',
-      }),
+      jsonResponse(
+        200,
+        { object: 'list', data: [] },
+        {
+          'x-venice-balance-usd': '2.25',
+          'x-venice-balance-diem': '1800',
+        },
+      ),
     );
 
     const res = await request(app)
@@ -112,10 +113,14 @@ describe('GET /api/ai/balance [V10]', () => {
     await storeKey(accessToken, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(
-      jsonResponse(200, { object: 'list', data: [] }, {
-        'x-venice-balance-diem': '500',
-        // x-venice-balance-usd intentionally absent
-      }),
+      jsonResponse(
+        200,
+        { object: 'list', data: [] },
+        {
+          'x-venice-balance-diem': '500',
+          // x-venice-balance-usd intentionally absent
+        },
+      ),
     );
 
     const res = await request(app)
@@ -132,10 +137,14 @@ describe('GET /api/ai/balance [V10]', () => {
     await storeKey(accessToken, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(
-      jsonResponse(200, { object: 'list', data: [] }, {
-        'x-venice-balance-usd': '1.50',
-        // x-venice-balance-diem intentionally absent
-      }),
+      jsonResponse(
+        200,
+        { object: 'list', data: [] },
+        {
+          'x-venice-balance-usd': '1.50',
+          // x-venice-balance-diem intentionally absent
+        },
+      ),
     );
 
     const res = await request(app)

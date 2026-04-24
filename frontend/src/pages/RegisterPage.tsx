@@ -1,6 +1,6 @@
 import { Navigate } from 'react-router-dom';
-import { useAuth } from '@/hooks/useAuth';
 import { AuthForm } from '@/components/AuthForm';
+import { useAuth } from '@/hooks/useAuth';
 
 export function RegisterPage(): JSX.Element {
   const { user, register } = useAuth();

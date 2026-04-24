@@ -4,10 +4,10 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { REFRESH_COOKIE_NAME } from '../../src/routes/auth.routes';
 import {
+  type AccessTokenPayload,
+  createAuthService,
   InvalidRefreshTokenError,
   REFRESH_TOKEN_TTL_SECONDS,
-  createAuthService,
-  type AccessTokenPayload,
   type RefreshTokenPayload,
 } from '../../src/services/auth.service';
 import { prisma } from '../setup';
@@ -29,8 +29,12 @@ function getCookie(headers: Record<string, unknown>): string | undefined {
   return raw?.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
 }
 
-async function registerAndLogin(): Promise<{ accessToken: string; cookie: string; token: string; userId: string }>
-{
+async function registerAndLogin(): Promise<{
+  accessToken: string;
+  cookie: string;
+  token: string;
+  userId: string;
+}> {
   const reg = await authService.register({ name: NAME, username: USERNAME, password: PASSWORD });
   const loginRes = await request(app)
     .post('/api/auth/login')
@@ -87,9 +91,7 @@ describe('auth.service refresh()', () => {
 
   it('rejects a tampered JWT with InvalidRefreshTokenError', async () => {
     await registerAndLogin();
-    await expect(authService.refresh('not-a-jwt')).rejects.toBeInstanceOf(
-      InvalidRefreshTokenError,
-    );
+    await expect(authService.refresh('not-a-jwt')).rejects.toBeInstanceOf(InvalidRefreshTokenError);
   });
 
   it('rejects a refresh token that is valid JWT but not in the DB (revoked / already rotated)', async () => {

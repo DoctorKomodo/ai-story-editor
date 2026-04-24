@@ -17,10 +17,7 @@ describe('test setup', () => {
 
   it('renders the App via the @/ alias', () => {
     // App mounts the router and kicks off initAuth which hits fetch.
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(new Response(null, { status: 401 })),
-    );
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 401 })));
     render(<App />);
     expect(screen.getByRole('status')).toBeInTheDocument();
     vi.unstubAllGlobals();

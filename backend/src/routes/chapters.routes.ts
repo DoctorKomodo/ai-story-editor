@@ -1,17 +1,16 @@
 // Router uses `mergeParams: true` so :storyId from the parent mount is
 // visible on `req.params` inside handlers.
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import { type NextFunction, type Request, type Response, Router } from 'express';
+import { z } from 'zod';
+import { badRequestFromZod } from '../lib/bad-request';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import { prisma } from '../lib/prisma';
-import { badRequestFromZod } from '../lib/bad-request';
 import {
   ChapterNotOwnedError,
-  createChapterRepo,
   type ChapterUpdateInput,
+  createChapterRepo,
 } from '../repos/chapter.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
 
@@ -101,24 +100,18 @@ export function createChaptersRouter() {
       // the DB rejects the loser with P2002; we re-aggregate and retry. One
       // retry is almost always sufficient (the winner's row now shows up in
       // `_max`); `POST_ORDER_RETRY_ATTEMPTS` bounds the loop.
-      const userId = req.user!.id;
       const wordCount = body.bodyJson === undefined ? 0 : computeWordCount(body.bodyJson);
+      const chapterRepo = createChapterRepo(req);
 
       let lastErr: unknown;
       let created: Awaited<ReturnType<ReturnType<typeof createChapterRepo>['create']>> | null =
         null;
       for (let attempt = 0; attempt < POST_ORDER_RETRY_ATTEMPTS; attempt++) {
-        const agg = await prisma.chapter.aggregate({
-          where: { storyId, story: { userId } },
-          _max: { orderIndex: true },
-        });
-        const nextOrderIndex =
-          agg._max.orderIndex === null || agg._max.orderIndex === undefined
-            ? 0
-            : agg._max.orderIndex + 1;
+        const currentMax = await chapterRepo.maxOrderIndex(storyId);
+        const nextOrderIndex = currentMax === null ? 0 : currentMax + 1;
 
         try {
-          created = await createChapterRepo(req).create({
+          created = await chapterRepo.create({
             storyId,
             title: body.title,
             bodyJson: body.bodyJson,
@@ -146,58 +139,54 @@ export function createChaptersRouter() {
 
   // [B4] PATCH /reorder — declared BEFORE /:chapterId so Express doesn't
   // match the literal "reorder" path segment against the :chapterId param.
-  router.patch(
-    '/reorder',
-    ownStory,
-    async (req: Request, res: Response, next: NextFunction) => {
-      const storyId = req.params.storyId as string;
+  router.patch('/reorder', ownStory, async (req: Request, res: Response, next: NextFunction) => {
+    const storyId = req.params.storyId as string;
 
-      const parsed = ReorderChaptersBody.safeParse(req.body);
-      if (!parsed.success) {
-        badRequestFromZod(res, parsed.error);
+    const parsed = ReorderChaptersBody.safeParse(req.body);
+    if (!parsed.success) {
+      badRequestFromZod(res, parsed.error);
+      return;
+    }
+    const items = parsed.data.chapters;
+
+    // Uniqueness checks the Zod schema can't express cleanly — these are
+    // semantic validation (duplicate id / duplicate orderIndex) rather than
+    // schema-shape issues, but still return the contract's `validation_error`
+    // code so clients can handle all 400s uniformly. The human-readable
+    // message disambiguates the specific failure.
+    const seenIds = new Set<string>();
+    const seenOrders = new Set<number>();
+    for (const item of items) {
+      if (seenIds.has(item.id)) {
+        res.status(400).json({
+          error: { message: 'Duplicate chapter id in payload', code: 'validation_error' },
+        });
         return;
       }
-      const items = parsed.data.chapters;
-
-      // Uniqueness checks the Zod schema can't express cleanly — these are
-      // semantic validation (duplicate id / duplicate orderIndex) rather than
-      // schema-shape issues, but still return the contract's `validation_error`
-      // code so clients can handle all 400s uniformly. The human-readable
-      // message disambiguates the specific failure.
-      const seenIds = new Set<string>();
-      const seenOrders = new Set<number>();
-      for (const item of items) {
-        if (seenIds.has(item.id)) {
-          res.status(400).json({
-            error: { message: 'Duplicate chapter id in payload', code: 'validation_error' },
-          });
-          return;
-        }
-        seenIds.add(item.id);
-        if (seenOrders.has(item.orderIndex)) {
-          res.status(400).json({
-            error: {
-              message: 'Duplicate orderIndex in payload',
-              code: 'validation_error',
-            },
-          });
-          return;
-        }
-        seenOrders.add(item.orderIndex);
+      seenIds.add(item.id);
+      if (seenOrders.has(item.orderIndex)) {
+        res.status(400).json({
+          error: {
+            message: 'Duplicate orderIndex in payload',
+            code: 'validation_error',
+          },
+        });
+        return;
       }
+      seenOrders.add(item.orderIndex);
+    }
 
-      try {
-        await createChapterRepo(req).reorder(storyId, items);
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof ChapterNotOwnedError) {
-          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
-          return;
-        }
-        next(err);
+    try {
+      await createChapterRepo(req).reorder(storyId, items);
+      res.status(204).send();
+    } catch (err) {
+      if (err instanceof ChapterNotOwnedError) {
+        res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
+        return;
       }
-    },
-  );
+      next(err);
+    }
+  });
 
   // Ownership middleware confirms the caller owns the chapter but not that
   // the chapter lives under :storyId — each per-chapter handler 404s a

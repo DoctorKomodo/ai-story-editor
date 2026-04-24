@@ -10,16 +10,15 @@
 // rejected promise. Rejecting fetch causes the SDK to produce APIConnectionError
 // (status: undefined), which bypasses the instanceof checks.
 
-import express from 'express';
 import cookieParser from 'cookie-parser';
-import helmet from 'helmet';
 import cors from 'cors';
+import express from 'express';
+import helmet from 'helmet';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app } from '../../src/index';
-import { createVeniceKeyRouter } from '../../src/routes/venice-key.routes';
+import { app, globalErrorHandler } from '../../src/index';
 import { createAuthRouter } from '../../src/routes/auth.routes';
-import { globalErrorHandler } from '../../src/index';
+import { createVeniceKeyRouter } from '../../src/routes/venice-key.routes';
 import { DEFAULT_VENICE_ENDPOINT } from '../../src/services/venice-key.service';
 import { prisma } from '../setup';
 
@@ -41,10 +40,7 @@ const PASSWORD_B = 'venice-verify-password-b';
  * Build a Response that includes optional balance headers.
  * Used to simulate a successful Venice models.list() call.
  */
-function modelsResponse(
-  status: number,
-  extraHeaders: Record<string, string> = {},
-): Response {
+function modelsResponse(status: number, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify({ object: 'list', data: [] }), {
     status,
     statusText: status === 200 ? 'OK' : 'err',
@@ -73,12 +69,8 @@ async function registerAndLogin(
   username: string,
   password: string,
 ): Promise<string> {
-  await request(appUnderTest)
-    .post('/api/auth/register')
-    .send({ name, username, password });
-  const login = await request(appUnderTest)
-    .post('/api/auth/login')
-    .send({ username, password });
+  await request(appUnderTest).post('/api/auth/register').send({ name, username, password });
+  const login = await request(appUnderTest).post('/api/auth/login').send({ username, password });
   expect(login.status).toBe(200);
   return login.body.accessToken as string;
 }
@@ -184,9 +176,7 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(
-      modelsResponse(200, { 'x-venice-balance-diem': '500' }),
-    );
+    fetchSpy.mockResolvedValueOnce(modelsResponse(200, { 'x-venice-balance-diem': '500' }));
 
     const res = await request(app)
       .post('/api/users/me/venice-key/verify')
@@ -202,9 +192,7 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(
-      modelsResponse(200, { 'x-venice-balance-usd': '1.50' }),
-    );
+    fetchSpy.mockResolvedValueOnce(modelsResponse(200, { 'x-venice-balance-usd': '1.50' }));
 
     const res = await request(app)
       .post('/api/users/me/venice-key/verify')
@@ -278,9 +266,7 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(
-      errorResponse(429, 'rate limited', { 'retry-after': '30' }),
-    );
+    fetchSpy.mockResolvedValueOnce(errorResponse(429, 'rate limited', { 'retry-after': '30' }));
 
     const res = await request(app)
       .post('/api/users/me/venice-key/verify')

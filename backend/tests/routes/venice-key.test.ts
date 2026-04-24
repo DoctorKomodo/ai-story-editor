@@ -52,9 +52,7 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('PUT /api/users/me/venice-key returns 401 without a Bearer token', async () => {
-      const res = await request(app)
-        .put('/api/users/me/venice-key')
-        .send({ apiKey: VALID_KEY });
+      const res = await request(app).put('/api/users/me/venice-key').send({ apiKey: VALID_KEY });
       expect(res.status).toBe(401);
     });
 
@@ -114,7 +112,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
         .send({ apiKey: VALID_KEY });
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: 'saved', lastFour: 'LAST', endpoint: DEFAULT_VENICE_ENDPOINT });
+      expect(res.body).toEqual({
+        status: 'saved',
+        lastFour: 'LAST',
+        endpoint: DEFAULT_VENICE_ENDPOINT,
+      });
 
       // Exactly one fetch call was made, with the correct URL + Bearer auth header.
       expect(fetchSpy).toHaveBeenCalledTimes(1);

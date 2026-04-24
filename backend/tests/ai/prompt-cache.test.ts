@@ -2,24 +2,17 @@
 // Confirms the key is deterministic, always present, and varies by model.
 
 import { createHash } from 'node:crypto';
-import request from 'supertest';
-import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
-import { createChapterRepo } from '../../src/repos/chapter.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app } from '../../src/index';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
+import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 const NAME = 'Prompt Cache Test User';
@@ -149,7 +142,9 @@ async function callCompleteAndGetRequestBody(
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
-      response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      response.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
       response.on('end', () => callback(null, data));
     })
     .send({
@@ -214,7 +209,13 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const body = await callCompleteAndGetRequestBody(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
+    const body = await callCompleteAndGetRequestBody(
+      accessToken,
+      storyId,
+      chapterId,
+      MODEL_A,
+      fetchSpy,
+    );
 
     // [V23] prompt_cache_key is a Venice TOP-LEVEL field, not nested under
     // venice_parameters — nesting causes Venice to silently ignore it.
@@ -235,7 +236,13 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const body1 = await callCompleteAndGetRequestBody(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
+    const body1 = await callCompleteAndGetRequestBody(
+      accessToken,
+      storyId,
+      chapterId,
+      MODEL_A,
+      fetchSpy,
+    );
     // Reset spy between calls, but cache is warm so no second models fetch needed
     fetchSpy.mockClear();
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
@@ -246,7 +253,9 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({
@@ -273,7 +282,13 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const bodyA = await callCompleteAndGetRequestBody(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
+    const bodyA = await callCompleteAndGetRequestBody(
+      accessToken,
+      storyId,
+      chapterId,
+      MODEL_A,
+      fetchSpy,
+    );
     fetchSpy.mockClear();
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
@@ -283,7 +298,9 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
-        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
         response.on('end', () => callback(null, data));
       })
       .send({

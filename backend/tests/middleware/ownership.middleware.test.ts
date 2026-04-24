@@ -1,9 +1,9 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { requireOwnership, type OwnedResource } from '../../src/middleware/ownership.middleware';
-import { prisma } from '../setup';
+import { type OwnedResource, requireOwnership } from '../../src/middleware/ownership.middleware';
 import { makeUser } from '../helpers/makeUser';
+import { prisma } from '../setup';
 
 function mountProtected(resource: OwnedResource, idParam: string, userId: string) {
   const app = express();
@@ -11,20 +11,16 @@ function mountProtected(resource: OwnedResource, idParam: string, userId: string
     req.user = { id: userId, email: null };
     next();
   });
-  app.get(
-    `/:${idParam}`,
-    requireOwnership(resource, { idParam, client: prisma }),
-    (_req, res) => res.json({ ok: true }),
+  app.get(`/:${idParam}`, requireOwnership(resource, { idParam, client: prisma }), (_req, res) =>
+    res.json({ ok: true }),
   );
   return app;
 }
 
 function mountAnonymous(resource: OwnedResource, idParam: string) {
   const app = express();
-  app.get(
-    `/:${idParam}`,
-    requireOwnership(resource, { idParam, client: prisma }),
-    (_req, res) => res.json({ ok: true }),
+  app.get(`/:${idParam}`, requireOwnership(resource, { idParam, client: prisma }), (_req, res) =>
+    res.json({ ok: true }),
   );
   return app;
 }
@@ -134,31 +130,45 @@ describe('requireOwnership middleware', () => {
 
   it('returns 403 (not 404) for an unknown id — no enumeration oracle', async () => {
     const { ownerId } = await seedTwoUsersAndAStory();
-    const res = await request(mountProtected('story', 'storyId', ownerId)).get('/cm-definitely-not-real');
+    const res = await request(mountProtected('story', 'storyId', ownerId)).get(
+      '/cm-definitely-not-real',
+    );
     expect(res.status).toBe(403);
   });
 
   it('traverses Chapter → Story → User', async () => {
     const { ownerId, strangerId, chapterId } = await seedTwoUsersAndAStory();
-    const okRes = await request(mountProtected('chapter', 'chapterId', ownerId)).get(`/${chapterId}`);
+    const okRes = await request(mountProtected('chapter', 'chapterId', ownerId)).get(
+      `/${chapterId}`,
+    );
     expect(okRes.status).toBe(200);
-    const denyRes = await request(mountProtected('chapter', 'chapterId', strangerId)).get(`/${chapterId}`);
+    const denyRes = await request(mountProtected('chapter', 'chapterId', strangerId)).get(
+      `/${chapterId}`,
+    );
     expect(denyRes.status).toBe(403);
   });
 
   it('traverses Character → Story → User', async () => {
     const { ownerId, strangerId, characterId } = await seedTwoUsersAndAStory();
-    const okRes = await request(mountProtected('character', 'characterId', ownerId)).get(`/${characterId}`);
+    const okRes = await request(mountProtected('character', 'characterId', ownerId)).get(
+      `/${characterId}`,
+    );
     expect(okRes.status).toBe(200);
-    const denyRes = await request(mountProtected('character', 'characterId', strangerId)).get(`/${characterId}`);
+    const denyRes = await request(mountProtected('character', 'characterId', strangerId)).get(
+      `/${characterId}`,
+    );
     expect(denyRes.status).toBe(403);
   });
 
   it('traverses OutlineItem → Story → User', async () => {
     const { ownerId, strangerId, outlineId } = await seedTwoUsersAndAStory();
-    const okRes = await request(mountProtected('outline', 'outlineId', ownerId)).get(`/${outlineId}`);
+    const okRes = await request(mountProtected('outline', 'outlineId', ownerId)).get(
+      `/${outlineId}`,
+    );
     expect(okRes.status).toBe(200);
-    const denyRes = await request(mountProtected('outline', 'outlineId', strangerId)).get(`/${outlineId}`);
+    const denyRes = await request(mountProtected('outline', 'outlineId', strangerId)).get(
+      `/${outlineId}`,
+    );
     expect(denyRes.status).toBe(403);
   });
 
@@ -172,9 +182,13 @@ describe('requireOwnership middleware', () => {
 
   it('traverses Message → Chat → Chapter → Story → User', async () => {
     const { ownerId, strangerId, messageId } = await seedTwoUsersAndAStory();
-    const okRes = await request(mountProtected('message', 'messageId', ownerId)).get(`/${messageId}`);
+    const okRes = await request(mountProtected('message', 'messageId', ownerId)).get(
+      `/${messageId}`,
+    );
     expect(okRes.status).toBe(200);
-    const denyRes = await request(mountProtected('message', 'messageId', strangerId)).get(`/${messageId}`);
+    const denyRes = await request(mountProtected('message', 'messageId', strangerId)).get(
+      `/${messageId}`,
+    );
     expect(denyRes.status).toBe(403);
   });
 });

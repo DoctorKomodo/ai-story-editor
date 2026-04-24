@@ -15,18 +15,18 @@
 //   - PATCH /:chapterId 400 on unknown key
 //   - DELETE /:chapterId 204, follow-up GET 403
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
+import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
-import { createChapterRepo } from '../../src/repos/chapter.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
-import { prisma } from '../setup';
 import { prisma as appPrisma } from '../../src/lib/prisma';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
+import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -35,12 +35,8 @@ async function registerAndLogin(
   password = 'chapters-pw',
   name = 'Chapter Route User',
 ): Promise<string> {
-  await request(app)
-    .post('/api/auth/register')
-    .send({ name, username, password });
-  const login = await request(app)
-    .post('/api/auth/login')
-    .send({ username, password });
+  await request(app).post('/api/auth/register').send({ name, username, password });
+  const login = await request(app).post('/api/auth/login').send({ username, password });
   expect(login.status).toBe(200);
   return login.body.accessToken as string;
 }
@@ -110,9 +106,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('POST /api/stories/:storyId/chapters returns 401 without Bearer', async () => {
-    const res = await request(app)
-      .post(`/api/stories/${FAKE_ID}/chapters`)
-      .send({ title: 'Ch 1' });
+    const res = await request(app).post(`/api/stories/${FAKE_ID}/chapters`).send({ title: 'Ch 1' });
     expect(res.status).toBe(401);
   });
 
@@ -302,9 +296,7 @@ describe('Chapter routes [B3]', () => {
     const story = await createStoryRepo(req).create({ title: 'Boom' });
     const storyId = story.id as string;
 
-    const aggSpy = vi
-      .spyOn(appPrisma.chapter, 'aggregate')
-      .mockRejectedValue(new Error('boom'));
+    const aggSpy = vi.spyOn(appPrisma.chapter, 'aggregate').mockRejectedValue(new Error('boom'));
     try {
       const res = await request(app)
         .post(`/api/stories/${storyId}/chapters`)
@@ -417,7 +409,7 @@ describe('Chapter routes [B3]', () => {
     }
   });
 
-  it('GET list returns 403 when storyId is not the caller\'s', async () => {
+  it("GET list returns 403 when storyId is not the caller's", async () => {
     const tokenA = await registerAndLogin('chapters-list-a');
     const tokenB = await registerAndLogin('chapters-list-b');
     const reqA = makeFakeReq(tokenA);

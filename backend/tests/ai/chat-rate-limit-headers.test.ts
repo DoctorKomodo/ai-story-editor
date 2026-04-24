@@ -14,25 +14,18 @@
 //   x-ratelimit-reset-requests      -> x-venice-reset-requests       [V28]
 //   x-ratelimit-reset-tokens        -> x-venice-reset-tokens         [V28]
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -76,9 +69,7 @@ function jsonResponse(status: number, body: unknown): Response {
  * Emits a single content chunk, a usage chunk, then [DONE] so the chat
  * route's persistence path runs to completion.
  */
-function sseStreamResponse(
-  headers: Record<string, string> = {},
-): Response {
+function sseStreamResponse(headers: Record<string, string> = {}): Response {
   const enc = new TextEncoder();
   const contentChunk = JSON.stringify({
     id: 'chatcmpl-test',
@@ -118,10 +109,7 @@ async function registerAndLogin(): Promise<string> {
   return login.body.accessToken as string;
 }
 
-async function storeKey(
-  accessToken: string,
-  fetchSpy: ReturnType<typeof vi.fn>,
-): Promise<void> {
+async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
   const res = await request(app)
     .put('/api/users/me/venice-key')
@@ -140,9 +128,7 @@ function makeFakeReq(accessToken: string): Request {
   return req;
 }
 
-async function setupChat(
-  req: Request,
-): Promise<{ chatId: string }> {
+async function setupChat(req: Request): Promise<{ chatId: string }> {
   const story = await createStoryRepo(req).create({ title: 'Test Story' });
   const storyId = story.id as string;
   const chapter = await createChapterRepo(req).create({
@@ -170,7 +156,9 @@ async function doChatMessageRequest(
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
-      response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+      response.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
       response.on('end', () => callback(null, data));
     })
     .send({ content: 'Tell me a story.', modelId: BASE_MODEL_ID });
@@ -240,9 +228,7 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
     const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse({ 'x-ratelimit-remaining-tokens': '5000' }),
-    );
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse({ 'x-ratelimit-remaining-tokens': '5000' }));
 
     const res = await doChatMessageRequest(accessToken, chatId);
 

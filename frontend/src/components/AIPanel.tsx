@@ -90,7 +90,6 @@ export function AIPanel({
       <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500">AI</h2>
 
       <section
-        role="region"
         aria-label="Selection context"
         className="rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-700"
       >

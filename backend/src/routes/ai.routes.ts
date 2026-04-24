@@ -1,16 +1,16 @@
 import { createHash } from 'node:crypto';
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { type NextFunction, type Request, type Response, Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.middleware';
 import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
-import { veniceModelsService } from '../services/venice.models.service';
-import { buildPrompt, type CharacterContext } from '../services/prompt.service';
-import { createStoryRepo } from '../repos/story.repo';
+import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
+import { requireAuth } from '../middleware/auth.middleware';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
+import { createStoryRepo } from '../repos/story.repo';
+import { buildPrompt, type CharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
-import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
+import { veniceModelsService } from '../services/venice.models.service';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -18,7 +18,15 @@ const CompleteBody = z
   .object({
     // 'ask' is intentionally excluded: it routes into chat (V16), not /complete.
     // 'rewrite' and 'describe' are V14 additions for the selection-bubble surface.
-    action: z.enum(['continue', 'rephrase', 'expand', 'summarise', 'freeform', 'rewrite', 'describe']),
+    action: z.enum([
+      'continue',
+      'rephrase',
+      'expand',
+      'summarise',
+      'freeform',
+      'rewrite',
+      'describe',
+    ]),
     selectedText: z.string(),
     chapterId: z.string().min(1),
     storyId: z.string().min(1),
@@ -27,8 +35,13 @@ const CompleteBody = z
     enableWebSearch: z.boolean().optional(),
   })
   .refine(
-    (d) => d.action !== 'freeform' || (typeof d.freeformInstruction === 'string' && d.freeformInstruction.length > 0),
-    { message: 'freeformInstruction is required when action is "freeform"', path: ['freeformInstruction'] },
+    (d) =>
+      d.action !== 'freeform' ||
+      (typeof d.freeformInstruction === 'string' && d.freeformInstruction.length > 0),
+    {
+      message: 'freeformInstruction is required when action is "freeform"',
+      path: ['freeformInstruction'],
+    },
   );
 
 // ─── Prompt-cache key helper ──────────────────────────────────────────────────
@@ -106,7 +119,13 @@ export function createAiRouter() {
     // ── 1. Validate request body ─────────────────────────────────────────────
     const parsed = CompleteBody.safeParse(req.body);
     if (!parsed.success) {
-      res.status(400).json({ error: { message: 'Invalid request', code: 'invalid_request', details: parsed.error.flatten() } });
+      res.status(400).json({
+        error: {
+          message: 'Invalid request',
+          code: 'invalid_request',
+          details: parsed.error.flatten(),
+        },
+      });
       return;
     }
     const body = parsed.data;
@@ -173,7 +192,11 @@ export function createAiRouter() {
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
       const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
-      const { messages, venice_parameters: baseVeniceParams, max_completion_tokens } = buildPrompt({
+      const {
+        messages,
+        venice_parameters: baseVeniceParams,
+        max_completion_tokens,
+      } = buildPrompt({
         action: body.action,
         selectedText: body.selectedText,
         chapterContent,
@@ -214,8 +237,8 @@ export function createAiRouter() {
       // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
       // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
       // Deterministic per (storyId, modelId).
-      const streamWithResp = await (
-        client.chat.completions.create({
+      const streamWithResp = (await client.chat.completions
+        .create({
           model: body.modelId,
           messages,
           stream: true as const,
@@ -223,8 +246,10 @@ export function createAiRouter() {
           prompt_cache_key: promptCacheKey(body.storyId, body.modelId),
           venice_parameters,
         } as unknown as Parameters<typeof client.chat.completions.create>[0])
-      ).withResponse() as unknown as {
-        data: AsyncIterable<{ choices: Array<{ delta: { content?: string }; finish_reason: string | null }> }>;
+        .withResponse()) as unknown as {
+        data: AsyncIterable<{
+          choices: Array<{ delta: { content?: string }; finish_reason: string | null }>;
+        }>;
         // Fetch API Response (not Express Response) — use structural type to avoid
         // the import collision between Express.Response and globalThis.Response.
         response: { headers: { get(name: string): string | null } };
@@ -304,7 +329,9 @@ export function createAiRouter() {
           // generic stream_error for unknown errors.
           const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), userId);
           if (!handled) {
-            res.write(`data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`);
+            res.write(
+              `data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`,
+            );
             res.write('data: [DONE]\n\n');
           }
         }

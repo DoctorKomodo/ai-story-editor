@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from 'react';
+import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { ApiError } from '@/lib/api';
 import type { Credentials } from '@/hooks/useAuth';
+import { ApiError } from '@/lib/api';
 
 export type AuthMode = 'login' | 'register';
 

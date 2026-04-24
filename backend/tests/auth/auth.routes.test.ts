@@ -14,8 +14,10 @@ function getRefreshCookie(setCookieHeader: string[] | undefined): string | undef
   return setCookieHeader?.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
 }
 
-async function registerAndLogin(): Promise<{ accessToken: string; refreshCookie: string | undefined }>
-{
+async function registerAndLogin(): Promise<{
+  accessToken: string;
+  refreshCookie: string | undefined;
+}> {
   await request(app)
     .post('/api/auth/register')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
@@ -25,7 +27,9 @@ async function registerAndLogin(): Promise<{ accessToken: string; refreshCookie:
   expect(loginRes.status).toBe(200);
   return {
     accessToken: loginRes.body.accessToken,
-    refreshCookie: getRefreshCookie(loginRes.headers['set-cookie'] as unknown as string[] | undefined),
+    refreshCookie: getRefreshCookie(
+      loginRes.headers['set-cookie'] as unknown as string[] | undefined,
+    ),
   };
 }
 
@@ -108,7 +112,10 @@ describe('auth routes', () => {
       expect(cookie!.toLowerCase()).toContain('httponly');
       expect(cookie!.toLowerCase()).toContain('samesite=lax');
 
-      const decoded = jwt.verify(res.body.accessToken, process.env.JWT_SECRET!) as AccessTokenPayload;
+      const decoded = jwt.verify(
+        res.body.accessToken,
+        process.env.JWT_SECRET!,
+      ) as AccessTokenPayload;
       expect(decoded.username).toBe(USERNAME);
 
       expect(await prisma.refreshToken.count()).toBe(1);
@@ -149,7 +156,9 @@ describe('auth routes', () => {
       expect(res.status).toBe(204);
       expect(await prisma.refreshToken.count()).toBe(0);
 
-      const clearCookie = getRefreshCookie(res.headers['set-cookie'] as unknown as string[] | undefined);
+      const clearCookie = getRefreshCookie(
+        res.headers['set-cookie'] as unknown as string[] | undefined,
+      );
       expect(clearCookie).toBeDefined();
       expect(clearCookie!.toLowerCase()).toMatch(/max-age=0|expires=thu, 01 jan 1970/);
     });
@@ -168,17 +177,19 @@ describe('auth routes', () => {
     });
 
     it('returns 401 with a malformed token', async () => {
-      const res = await request(app)
-        .get('/api/auth/me')
-        .set('Authorization', 'Bearer not-a-jwt');
+      const res = await request(app).get('/api/auth/me').set('Authorization', 'Bearer not-a-jwt');
       expect(res.status).toBe(401);
     });
 
     it('returns 401 with a JWT signed by the wrong secret', async () => {
       await registerAndLogin();
-      const rogueToken = jwt.sign({ sub: 'whatever', email: null, username: USERNAME }, 'totally-different-secret', {
-        expiresIn: 60,
-      });
+      const rogueToken = jwt.sign(
+        { sub: 'whatever', email: null, username: USERNAME },
+        'totally-different-secret',
+        {
+          expiresIn: 60,
+        },
+      );
       const res = await request(app)
         .get('/api/auth/me')
         .set('Authorization', `Bearer ${rogueToken}`);

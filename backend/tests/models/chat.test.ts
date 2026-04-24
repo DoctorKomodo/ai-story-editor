@@ -4,7 +4,10 @@ import { prisma } from '../setup';
 // Post-[E11] Chat.title is ciphertext-only. Schema-shape + cascade tests.
 
 async function makeChapter(email = 'chat-author@example.com') {
-  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const username = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
   const story = await prisma.story.create({ data: { userId: user.id } });
   return prisma.chapter.create({ data: { orderIndex: 0, storyId: story.id } });

@@ -10,8 +10,8 @@
  * intentionally stable so F26 is layout-only.
  */
 import { useEffect, useRef, useState } from 'react';
-import { BalanceDisplay } from './BalanceDisplay';
 import type { Balance } from '@/hooks/useBalance';
+import { BalanceDisplay } from './BalanceDisplay';
 
 export interface UserMenuProps {
   username: string;
@@ -39,7 +39,7 @@ export function UserMenu({
     const handleMouseDown = (event: MouseEvent): void => {
       const target = event.target;
       if (!(target instanceof Node)) return;
-      if (containerRef.current && containerRef.current.contains(target)) return;
+      if (containerRef.current?.contains(target)) return;
       setOpen(false);
     };
 

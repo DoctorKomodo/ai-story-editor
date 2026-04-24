@@ -1,9 +1,9 @@
-import { describe, expect, it, vi } from 'vitest';
 import OpenAI from 'openai';
+import { describe, expect, it, vi } from 'vitest';
 import {
+  createGetVeniceClient,
   DEFAULT_VENICE_BASE_URL,
   NoVeniceKeyError,
-  createGetVeniceClient,
 } from '../../src/lib/venice';
 import { encrypt } from '../../src/services/crypto.service';
 
@@ -123,12 +123,14 @@ describe('lib/venice — getVeniceClient (per-user) [V17]', () => {
       'user-b': { ...storeKey('sk-user-b-key'), veniceEndpoint: null },
     });
 
-    const buildClient = vi.fn(({ apiKey, endpoint }: { apiKey: string; endpoint?: string | null }) => {
-      return new OpenAI({
-        apiKey,
-        baseURL: endpoint && endpoint.length > 0 ? endpoint : DEFAULT_VENICE_BASE_URL,
-      });
-    });
+    const buildClient = vi.fn(
+      ({ apiKey, endpoint }: { apiKey: string; endpoint?: string | null }) => {
+        return new OpenAI({
+          apiKey,
+          baseURL: endpoint && endpoint.length > 0 ? endpoint : DEFAULT_VENICE_BASE_URL,
+        });
+      },
+    );
 
     const getVeniceClient = createGetVeniceClient({ client, buildClient });
 
@@ -197,12 +199,14 @@ describe('lib/venice — getVeniceClient (per-user) [V17]', () => {
       'user-c': { ...storeKey('sk-user-c-key'), veniceEndpoint: null },
     });
 
-    const buildClient = vi.fn(({ apiKey, endpoint }: { apiKey: string; endpoint?: string | null }) => {
-      return new OpenAI({
-        apiKey,
-        baseURL: endpoint && endpoint.length > 0 ? endpoint : DEFAULT_VENICE_BASE_URL,
-      });
-    });
+    const buildClient = vi.fn(
+      ({ apiKey, endpoint }: { apiKey: string; endpoint?: string | null }) => {
+        return new OpenAI({
+          apiKey,
+          baseURL: endpoint && endpoint.length > 0 ? endpoint : DEFAULT_VENICE_BASE_URL,
+        });
+      },
+    );
 
     const getVeniceClient = createGetVeniceClient({ client, buildClient });
 

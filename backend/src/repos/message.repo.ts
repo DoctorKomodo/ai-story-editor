@@ -1,8 +1,8 @@
-import type { Request } from 'express';
 import type { PrismaClient } from '@prisma/client';
+import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeCiphertextOnly } from './_narrative';
 import type { Citation } from '../lib/venice-citations';
+import { projectDecrypted, writeCiphertextOnly } from './_narrative';
 
 const ENCRYPTED_FIELDS = ['contentJson', 'attachmentJson', 'citationsJson'] as const;
 
@@ -60,7 +60,11 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
         ...writeCiphertextOnly(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
         // [V26] `citationsJson` follows the same ciphertext-triple pattern.
         // Null input → null triple → `projectDecrypted` returns `null` on read.
-        ...writeCiphertextOnly(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
+        ...writeCiphertextOnly(
+          req,
+          'citationsJson',
+          serialiseJsonField(input.citationsJson ?? null),
+        ),
       },
     });
     return shape(row, req);

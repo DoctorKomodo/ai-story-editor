@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
-import { SENTINEL, createUser, resetNarrativeTables } from './_helpers';
+import { createUser, resetNarrativeTables, SENTINEL } from './_helpers';
 
 describe('[E4] Story — ciphertext columns', () => {
   beforeEach(resetNarrativeTables);

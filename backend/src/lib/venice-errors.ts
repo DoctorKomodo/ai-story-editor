@@ -44,7 +44,7 @@ function parseResetHeader(raw: string | null | undefined): number | null {
 
   // Integer form — either delta-seconds or unix timestamp.
   const asInt = parseInt(trimmed, 10);
-  if (!isNaN(asInt) && String(asInt) === trimmed) {
+  if (!Number.isNaN(asInt) && String(asInt) === trimmed) {
     if (asInt > UNIX_TS_THRESHOLD_SECONDS) {
       // Treat as unix seconds since epoch.
       const diffSeconds = Math.ceil((asInt * 1000 - Date.now()) / 1000);
@@ -56,7 +56,7 @@ function parseResetHeader(raw: string | null | undefined): number | null {
 
   // Last resort: try ISO-8601 / RFC 2822.
   const date = Date.parse(trimmed);
-  if (!isNaN(date)) {
+  if (!Number.isNaN(date)) {
     const diffSeconds = Math.ceil((date - Date.now()) / 1000);
     return diffSeconds > 0 ? diffSeconds : 0;
   }
@@ -77,18 +77,16 @@ function parseResetHeader(raw: string | null | undefined): number | null {
  *
  * Returns null when none of the three headers are present / parseable.
  */
-export function parseRetryAfter(
-  headers: SdkHeaders | null | undefined,
-): number | null {
+export function parseRetryAfter(headers: SdkHeaders | null | undefined): number | null {
   const raw = headers?.['retry-after'] ?? null;
   if (raw) {
     // Delta-seconds form: "60"
     const asInt = parseInt(raw, 10);
-    if (!isNaN(asInt) && String(asInt) === raw.trim()) return asInt;
+    if (!Number.isNaN(asInt) && String(asInt) === raw.trim()) return asInt;
 
     // HTTP-date form: "Thu, 23 Apr 2026 12:00:00 GMT"
     const date = Date.parse(raw);
-    if (!isNaN(date)) {
+    if (!Number.isNaN(date)) {
       const diffSeconds = Math.ceil((date - Date.now()) / 1000);
       return diffSeconds > 0 ? diffSeconds : 0;
     }
@@ -124,11 +122,7 @@ export interface VeniceErrorBody {
  * @returns true  when the error was handled (response written).
  *          false when `err` is not a Venice APIError — caller should next(err).
  */
-export function mapVeniceError(
-  err: unknown,
-  res: Response,
-  userId?: string,
-): boolean {
+export function mapVeniceError(err: unknown, res: Response, userId?: string): boolean {
   if (!(err instanceof APIError)) return false;
 
   // 401 — Venice rejected the key. Log server-side only; never echo Venice's
@@ -184,7 +178,12 @@ export function mapVeniceError(
   }
 
   // Any other non-2xx from Venice
-  console.error('[V11] Venice returned unexpected status', err.status, 'for user', userId ?? '(unknown)');
+  console.error(
+    '[V11] Venice returned unexpected status',
+    err.status,
+    'for user',
+    userId ?? '(unknown)',
+  );
   res.status(502).json({
     error: {
       code: 'venice_error',
@@ -228,7 +227,12 @@ export function mapVeniceErrorToSse(
   } else if (err.status === 502 || err.status === 503 || err.status === 504) {
     code = 'venice_unavailable';
   } else {
-    console.error('[V11] Venice unexpected status (SSE)', err.status, 'for user', userId ?? '(unknown)');
+    console.error(
+      '[V11] Venice unexpected status (SSE)',
+      err.status,
+      'for user',
+      userId ?? '(unknown)',
+    );
     code = 'venice_error';
   }
 

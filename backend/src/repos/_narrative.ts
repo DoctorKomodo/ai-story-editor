@@ -11,9 +11,9 @@ import type { Request } from 'express';
 import {
   DekNotAvailableError,
   decryptForRequest,
+  type EncPayload,
   encryptForRequest,
   hasDekForRequest,
-  type EncPayload,
 } from '../services/content-crypto.service';
 
 export interface Ciphered {

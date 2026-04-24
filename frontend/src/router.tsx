@@ -1,19 +1,23 @@
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
-import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { useInitAuth } from '@/hooks/useAuth';
-import { useSessionStore } from '@/store/session';
 import { queryClient } from '@/lib/queryClient';
-import { LoginPage } from '@/pages/LoginPage';
-import { RegisterPage } from '@/pages/RegisterPage';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EditorPage } from '@/pages/EditorPage';
+import { LoginPage } from '@/pages/LoginPage';
+import { RegisterPage } from '@/pages/RegisterPage';
+import { useSessionStore } from '@/store/session';
 
 function RequireAuth(): JSX.Element {
   const status = useSessionStore((s) => s.status);
 
   if (status === 'idle' || status === 'loading') {
     return (
-      <div role="status" aria-live="polite" className="min-h-screen flex items-center justify-center">
+      <div
+        role="status"
+        aria-live="polite"
+        className="min-h-screen flex items-center justify-center"
+      >
         Loading…
       </div>
     );

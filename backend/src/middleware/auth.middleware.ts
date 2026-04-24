@@ -1,8 +1,8 @@
 import type { NextFunction, Request, Response } from 'express';
 import jwt, { JsonWebTokenError, TokenExpiredError } from 'jsonwebtoken';
+import type { AccessTokenPayload } from '../services/auth.service';
 import { attachDekToRequest } from '../services/content-crypto.service';
 import { getSession } from '../services/session-store';
-import type { AccessTokenPayload } from '../services/auth.service';
 
 export interface AuthenticatedUser {
   id: string;

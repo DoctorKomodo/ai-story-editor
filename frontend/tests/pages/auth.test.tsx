@@ -2,10 +2,10 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppRouter } from '@/router';
-import { useSessionStore } from '@/store/session';
 import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
+import { AppRouter } from '@/router';
+import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -165,15 +165,11 @@ describe('auth pages (F4)', () => {
     });
 
     // The second fetch call is the login.
-    const loginCall = fetchMock.mock.calls.find(
-      ([url]: [string]) => url === '/api/auth/login',
-    );
+    const loginCall = fetchMock.mock.calls.find(([url]: [string]) => url === '/api/auth/login');
     expect(loginCall).toBeDefined();
     const [, init] = loginCall as [string, RequestInit];
     expect(init.method).toBe('POST');
-    expect(init.body).toBe(
-      JSON.stringify({ username: 'alice', password: 'hunter2hunter2' }),
-    );
+    expect(init.body).toBe(JSON.stringify({ username: 'alice', password: 'hunter2hunter2' }));
   });
 
   it('login: 401 shows the friendly "Invalid username or password" message (not server message)', async () => {
@@ -240,15 +236,15 @@ describe('auth pages (F4)', () => {
     expect(registerCall).toBeDefined();
     const [, init] = registerCall as [string, RequestInit];
     expect(init.method).toBe('POST');
-    expect(init.body).toBe(
-      JSON.stringify({ username: 'bob', password: 'hunter2hunter2' }),
-    );
+    expect(init.body).toBe(JSON.stringify({ username: 'bob', password: 'hunter2hunter2' }));
   });
 
   it('register: 409 shows the friendly "Username is already taken" message (not server message)', async () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(409, { error: { message: 'db unique constraint: users_username_key', code: 'DUP' } }),
+      jsonResponse(409, {
+        error: { message: 'db unique constraint: users_username_key', code: 'DUP' },
+      }),
     );
 
     const user = userEvent.setup();
