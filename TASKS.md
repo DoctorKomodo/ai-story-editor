@@ -483,7 +483,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F17]** Account balance: calls `GET /api/ai/balance` on editor load. Shows USD and Diem balance in user menu.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/BalanceDisplay.test.tsx`
 
-- [ ] **[F18]** Characters panel: sidebar tab listing story characters. "Add character" button. Click to open character sheet.
+- [x] **[F18]** Characters panel: sidebar tab listing story characters. "Add character" button. Click to open character sheet.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/CharacterList.test.tsx`
 
 - [ ] **[F19]** Character sheet modal: all fields, save and delete with confirm dialog.
