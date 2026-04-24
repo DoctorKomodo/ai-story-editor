@@ -143,15 +143,14 @@ export function EditorPage(): JSX.Element {
           </div>
         </main>
 
-        {aiOpen ? (
-          <aside
-            id="ai-panel"
-            aria-label="AI assistant"
-            className="w-80 shrink-0 border-l border-neutral-200 bg-white p-4 overflow-y-auto"
-          >
-            <AIPanel selectedText={selectedText} onAction={handleAIAction} />
-          </aside>
-        ) : null}
+        <aside
+          id="ai-panel"
+          aria-label="AI assistant"
+          hidden={!aiOpen}
+          className="w-80 shrink-0 border-l border-neutral-200 bg-white p-4 overflow-y-auto"
+        >
+          <AIPanel selectedText={selectedText} onAction={handleAIAction} />
+        </aside>
       </div>
     </div>
   );
