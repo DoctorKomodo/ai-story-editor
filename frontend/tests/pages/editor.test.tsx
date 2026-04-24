@@ -65,6 +65,14 @@ function mockImpl(
     if (url.endsWith('/stories/abc123')) {
       return storyHandler(url);
     }
+    // Sidebar panels fetch chapters + characters as soon as the story resolves.
+    // Tests that don't care about these endpoints get empty responses by default.
+    if (url.endsWith('/stories/abc123/chapters')) {
+      return Promise.resolve(jsonResponse(200, { chapters: [] }));
+    }
+    if (url.endsWith('/stories/abc123/characters')) {
+      return Promise.resolve(jsonResponse(200, { characters: [] }));
+    }
     return Promise.reject(new Error(`Unexpected fetch: ${url}`));
   };
 }
@@ -181,6 +189,43 @@ describe('EditorPage (F7)', () => {
       'aria-expanded',
       'true',
     );
+  });
+
+  it('[F18] clicking the "Cast" tab reveals the character panel and hides the chapter panel', async () => {
+    fetchMock.mockImplementation(
+      mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() }))),
+    );
+
+    renderEditor();
+
+    // Wait for the shell to mount.
+    await waitFor(() => {
+      expect(screen.getByRole('complementary', { name: /chapters/i })).toBeInTheDocument();
+    });
+
+    // Default: Chapters panel is visible, Cast panel is hidden.
+    const chaptersTab = screen.getByRole('tab', { name: /chapters/i });
+    const castTab = screen.getByRole('tab', { name: /cast/i });
+    expect(chaptersTab).toHaveAttribute('aria-selected', 'true');
+    expect(castTab).toHaveAttribute('aria-selected', 'false');
+
+    const chaptersPanel = document.getElementById('sidebar-panel-chapters');
+    const charactersPanel = document.getElementById('sidebar-panel-characters');
+    expect(chaptersPanel).not.toBeNull();
+    expect(charactersPanel).not.toBeNull();
+    expect(chaptersPanel?.hasAttribute('hidden')).toBe(false);
+    expect(charactersPanel?.hasAttribute('hidden')).toBe(true);
+
+    // Click Cast: chapters panel hides, characters panel shows.
+    await userEvent.setup().click(castTab);
+
+    expect(castTab).toHaveAttribute('aria-selected', 'true');
+    expect(chaptersTab).toHaveAttribute('aria-selected', 'false');
+    expect(chaptersPanel?.hasAttribute('hidden')).toBe(true);
+    expect(charactersPanel?.hasAttribute('hidden')).toBe(false);
+
+    // "Add character" button is now visible.
+    expect(screen.getByRole('button', { name: /add character/i })).toBeInTheDocument();
   });
 
   it('renders a neutral error state when the story fetch 403s', async () => {
