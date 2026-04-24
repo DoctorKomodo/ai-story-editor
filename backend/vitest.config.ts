@@ -15,6 +15,11 @@ export default defineConfig({
     },
     fileParallelism: false,
     sequence: { concurrent: false },
+    // Fail if the run collected no tests at all — defence against config
+    // drift (e.g. an `include` glob that silently matches nothing) or an
+    // import-time failure that manifests as "0 tests per file" without an
+    // obvious red flag. CI also asserts `numTotalTests > 0` on top of this.
+    passWithNoTests: false,
   },
   resolve: {
     alias: {
