@@ -459,10 +459,10 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F9]** Autosave: 2s debounce, shows "Saving…" / "Saved ✓" / "Save failed — retrying".
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/Autosave.test.tsx`
 
-- [ ] **[F10]** Chapter list sidebar: ordered, with word counts. Click to load. "Add chapter" button. Drag handles via dnd-kit.
+- [x] **[F10]** Chapter list sidebar: ordered, with word counts. Click to load. "Add chapter" button. Drag handles via dnd-kit.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/ChapterList.test.tsx`
 
-- [ ] **[F11]** Chapter drag-to-reorder: optimistic update, calls reorder endpoint, reverts on failure.
+- [x] **[F11]** Chapter drag-to-reorder: optimistic update, calls reorder endpoint, reverts on failure.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/ChapterReorder.test.tsx`
 
 - [ ] **[F12]** AI assistant panel: action buttons (Continue, Rephrase, Expand, Summarise) + freeform input. Shows highlighted editor text as context.
