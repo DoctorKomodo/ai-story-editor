@@ -7,7 +7,7 @@ import { getSession } from '../services/session-store';
 export interface AuthenticatedUser {
   id: string;
   email: string | null;
-  sessionId?: string;
+  sessionId: string;
 }
 
 declare global {
@@ -52,27 +52,31 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
 
   try {
     const decoded = jwt.verify(token, secret, { algorithms: ['HS256'] }) as AccessTokenPayload;
-    if (typeof decoded !== 'object' || typeof decoded.sub !== 'string') {
+    if (
+      typeof decoded !== 'object' ||
+      typeof decoded.sub !== 'string' ||
+      typeof decoded.sessionId !== 'string'
+    ) {
       unauthorized(res);
       return;
     }
-    req.user = { id: decoded.sub, email: decoded.email ?? null };
 
-    // [E3] If the token carries a sessionId, the session store must have the
-    // unwrapped DEK. Missing it means the process restarted, the entry was
-    // evicted, or the session was revoked — either way the request can't
-    // proceed on anything that needs content decryption. Surface a distinct
+    // [E3] The session store must have the unwrapped DEK. Missing it means
+    // the process restarted, the entry was evicted, or the session was
+    // revoked — either way the request can't proceed. Surface a distinct
     // code so the frontend can route to /login with a "please sign in again"
     // message instead of the generic Unauthorized.
-    if (decoded.sessionId) {
-      const session = getSession(decoded.sessionId);
-      if (!session || session.userId !== decoded.sub) {
-        sessionExpired(res);
-        return;
-      }
-      attachDekToRequest(req, session.dek);
-      req.user.sessionId = decoded.sessionId;
+    const session = getSession(decoded.sessionId);
+    if (!session || session.userId !== decoded.sub) {
+      sessionExpired(res);
+      return;
     }
+    req.user = {
+      id: decoded.sub,
+      email: decoded.email ?? null,
+      sessionId: decoded.sessionId,
+    };
+    attachDekToRequest(req, session.dek);
 
     next();
   } catch (err) {

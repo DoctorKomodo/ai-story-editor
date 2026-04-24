@@ -218,23 +218,22 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
     expect(dek.equals(gen.dek)).toBe(true);
   });
 
-  it('legacy access token without sessionId: authenticates but has no DEK attached', async () => {
-    // Register a user so we have a real userId, then manually sign a token
-    // shaped like pre-[E3] output (no sessionId claim).
+  it('access token without sessionId is rejected (sessionId is required post-X10)', async () => {
     await request(app)
       .post('/api/auth/register')
-      .send({ name: 'Legacy', username: 'legacy-user', password: PASSWORD });
-    const user = await prisma.user.findUniqueOrThrow({ where: { username: 'legacy-user' } });
+      .send({ name: 'No Session', username: 'nosession-user', password: PASSWORD });
+    const user = await prisma.user.findUniqueOrThrow({ where: { username: 'nosession-user' } });
 
-    const legacyToken = jwt.sign(
-      { sub: user.id, email: user.email, username: user.username } satisfies AccessTokenPayload,
+    const malformedToken = jwt.sign(
+      { sub: user.id, email: user.email, username: user.username },
       process.env.JWT_SECRET!,
       { expiresIn: 60 },
     );
 
     const probeApp = buildProbeApp();
-    const res = await request(probeApp).get('/probe').set('Authorization', `Bearer ${legacyToken}`);
-    expect(res.status).toBe(200);
-    expect(res.body.dekAttached).toBe(false);
+    const res = await request(probeApp)
+      .get('/probe')
+      .set('Authorization', `Bearer ${malformedToken}`);
+    expect(res.status).toBe(401);
   });
 });
