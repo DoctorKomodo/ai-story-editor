@@ -24,7 +24,10 @@ case "$FILE_PATH" in
   *) exit 0 ;;
 esac
 
-OUT=$(cd "$WS" && npx --no-install tsc --noEmit 2>&1)
+# `tsc -b` works for both workspaces — single-project (backend) and project
+# references (frontend). Incremental caching via tsconfig's `incremental: true`
+# + `tsBuildInfoFile` means warm runs are sub-second.
+OUT=$(cd "$WS" && npx --no-install tsc -b --noEmit 2>&1)
 CODE=$?
 if [ $CODE -ne 0 ]; then
   echo "tsc --noEmit failed in $WS:" >&2

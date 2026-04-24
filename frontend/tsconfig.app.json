@@ -19,7 +19,9 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"]
-    }
+    },
+    "incremental": true,
+    "tsBuildInfoFile": "./tsconfig.app.tsbuildinfo"
   },
   "include": ["src"]
 }
