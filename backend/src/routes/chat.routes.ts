@@ -329,10 +329,11 @@ export function createChatMessagesRouter() {
       if (modelInfo?.supportsReasoning === true) {
         venice_parameters.strip_thinking_response = true;
       }
-      // [V8] Prompt cache key — scoped to chatId + modelId for chat surface.
-      venice_parameters.prompt_cache_key = chatPromptCacheKey(chatId, body.modelId);
 
       // ── 10. Call Venice with streaming ────────────────────────────────────
+      // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
+      // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
+      // Scoped to (chatId, modelId) for the chat surface.
       const startedAt = Date.now();
 
       const streamWithResp = await (
@@ -343,6 +344,7 @@ export function createChatMessagesRouter() {
           max_tokens,
           // Request usage in the final chunk so we can persist token counts.
           stream_options: { include_usage: true },
+          prompt_cache_key: chatPromptCacheKey(chatId, body.modelId),
           venice_parameters,
         } as unknown as Parameters<typeof client.chat.completions.create>[0])
       ).withResponse() as unknown as {

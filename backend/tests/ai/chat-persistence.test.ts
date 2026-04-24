@@ -12,6 +12,7 @@
 //   - Ciphertext check: sentinel must not appear in raw contentJsonCiphertext
 //   - History included on subsequent message (prior user+assistant pair present)
 
+import { createHash } from 'node:crypto';
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
 import {
@@ -593,5 +594,54 @@ describe('Chat persistence [V15]', () => {
       (m) => m.role === 'assistant' && m.content.includes('First reply.'),
     );
     expect(assistantTurn).toBeDefined();
+  });
+
+  it('[V23] sends prompt_cache_key at top level, not inside venice_parameters', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { chapterId } = await setupStoryAndChapter(req);
+
+    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chatId = chat.id as string;
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([makeChunk('Reply.', 'stop')]),
+    );
+
+    await request(app)
+      .post(`/api/chats/${chatId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ content: 'Hi.', modelId: BASE_MODEL_ID });
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const [, init] = completionCall!;
+    const body = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+
+    const expectedKey = createHash('sha256')
+      .update(`${chatId}:${BASE_MODEL_ID}`)
+      .digest('hex')
+      .slice(0, 32);
+
+    // [V23] Venice documents prompt_cache_key as a TOP-LEVEL field alongside
+    // model/messages/stream. Burying it inside venice_parameters makes Venice
+    // silently ignore it and every call pays cold-prompt cost.
+    expect(body.prompt_cache_key).toBe(expectedKey);
+    expect(typeof body.prompt_cache_key).toBe('string');
+    expect((body.prompt_cache_key as string).length).toBe(32);
+
+    // [V23] Must NOT be duplicated into venice_parameters.
+    const vp = body.venice_parameters as Record<string, unknown>;
+    expect(vp.prompt_cache_key).toBeUndefined();
   });
 });
