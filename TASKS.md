@@ -456,7 +456,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F8]** TipTap editor: bold, italic, headings 1-3, paragraph, word count in footer.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/Editor.test.tsx`
 
-- [ ] **[F9]** Autosave: 2s debounce, shows "Saving…" / "Saved ✓" / "Save failed — retrying".
+- [x] **[F9]** Autosave: 2s debounce, shows "Saving…" / "Saved ✓" / "Save failed — retrying".
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/Autosave.test.tsx`
 
 - [ ] **[F10]** Chapter list sidebar: ordered, with word counts. Click to load. "Add chapter" button. Drag handles via dnd-kit.
