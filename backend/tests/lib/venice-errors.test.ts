@@ -62,6 +62,153 @@ describe('parseRetryAfter', () => {
     const result = parseRetryAfter({ 'retry-after': 'Fri, 01 May 2026 11:59:00 GMT' });
     expect(result).toBe(0);
   });
+
+  // [V27] Fallback to x-ratelimit-reset-* headers when Retry-After is absent.
+  describe('[V27] x-ratelimit-reset-* fallback', () => {
+    it('(a) only Retry-After set (delta-seconds) → Retry-After wins', () => {
+      expect(parseRetryAfter({ 'retry-after': '42' })).toBe(42);
+    });
+
+    it('(a) only Retry-After set (HTTP-date) → Retry-After wins', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-01T12:00:00Z'));
+      const result = parseRetryAfter({
+        'retry-after': 'Fri, 01 May 2026 12:00:30 GMT',
+      });
+      expect(result).toBe(30);
+    });
+
+    it('(b) only x-ratelimit-reset-tokens set (delta-seconds "15") → 15', () => {
+      expect(
+        parseRetryAfter({ 'x-ratelimit-reset-tokens': '15' }),
+      ).toBe(15);
+    });
+
+    it('(b) only x-ratelimit-reset-tokens set (unix-ts) → delta from now', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-01T12:00:00Z'));
+      // unix seconds for 2026-05-01T12:00:45Z = 45 s in the future
+      const futureTs = Math.floor(
+        new Date('2026-05-01T12:00:45Z').getTime() / 1000,
+      );
+      expect(
+        parseRetryAfter({
+          'x-ratelimit-reset-tokens': String(futureTs),
+        }),
+      ).toBe(45);
+    });
+
+    it('(b) only x-ratelimit-reset-requests set (delta-seconds "25") → 25', () => {
+      expect(
+        parseRetryAfter({ 'x-ratelimit-reset-requests': '25' }),
+      ).toBe(25);
+    });
+
+    it('(c) both reset-requests and reset-tokens set — soonest (smaller) wins', () => {
+      expect(
+        parseRetryAfter({
+          'x-ratelimit-reset-requests': '60',
+          'x-ratelimit-reset-tokens': '10',
+        }),
+      ).toBe(10);
+    });
+
+    it('(c) both reset-* set, reverse order — soonest still wins', () => {
+      expect(
+        parseRetryAfter({
+          'x-ratelimit-reset-requests': '5',
+          'x-ratelimit-reset-tokens': '90',
+        }),
+      ).toBe(5);
+    });
+
+    it('(d) none of the three headers set → null', () => {
+      expect(parseRetryAfter({})).toBeNull();
+    });
+
+    it('(d) all three headers null-valued → null', () => {
+      expect(
+        parseRetryAfter({
+          'retry-after': null,
+          'x-ratelimit-reset-requests': null,
+          'x-ratelimit-reset-tokens': null,
+        }),
+      ).toBeNull();
+    });
+
+    it('(e) Retry-After takes precedence over reset-* when both present', () => {
+      expect(
+        parseRetryAfter({
+          'retry-after': '7',
+          'x-ratelimit-reset-requests': '100',
+          'x-ratelimit-reset-tokens': '200',
+        }),
+      ).toBe(7);
+    });
+
+    it('(f) all three set but reset-* numerically smaller → Retry-After still wins', () => {
+      // Precedence beats magnitude: the spec says "try Retry-After first".
+      expect(
+        parseRetryAfter({
+          'retry-after': '120',
+          'x-ratelimit-reset-requests': '10',
+          'x-ratelimit-reset-tokens': '5',
+        }),
+      ).toBe(120);
+    });
+
+    it('reset-tokens as ISO-8601 date string → delta from now', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-01T12:00:00Z'));
+      expect(
+        parseRetryAfter({
+          'x-ratelimit-reset-tokens': '2026-05-01T12:00:20Z',
+        }),
+      ).toBe(20);
+    });
+
+    it('reset-* unix-ts in the past → clamped to 0', () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date('2026-05-01T12:00:00Z'));
+      const pastTs = Math.floor(
+        new Date('2026-05-01T11:59:00Z').getTime() / 1000,
+      );
+      expect(
+        parseRetryAfter({
+          'x-ratelimit-reset-tokens': String(pastTs),
+        }),
+      ).toBe(0);
+    });
+
+    it('reset-* unparseable garbage → null (when no other header parses)', () => {
+      expect(
+        parseRetryAfter({
+          'x-ratelimit-reset-requests': 'not-a-time',
+          'x-ratelimit-reset-tokens': 'also-garbage',
+        }),
+      ).toBeNull();
+    });
+
+    it('Retry-After unparseable but reset-* present → fall through to reset-*', () => {
+      // When Retry-After is present but garbage, we fall through to the
+      // reset-* fallback rather than returning null immediately.
+      expect(
+        parseRetryAfter({
+          'retry-after': 'garbage',
+          'x-ratelimit-reset-tokens': '20',
+        }),
+      ).toBe(20);
+    });
+
+    it('only one reset-* parses, the other is garbage → returns the parsed one', () => {
+      expect(
+        parseRetryAfter({
+          'x-ratelimit-reset-requests': 'garbage',
+          'x-ratelimit-reset-tokens': '12',
+        }),
+      ).toBe(12);
+    });
+  });
 });
 
 // [V24] 402 INSUFFICIENT_BALANCE mapping.
