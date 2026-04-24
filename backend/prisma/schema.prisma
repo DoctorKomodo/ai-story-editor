@@ -230,6 +230,13 @@ model Message {
   attachmentJsonCiphertext String?
   attachmentJsonIv         String?
   attachmentJsonAuthTag    String?
+  // [V26] Encrypted-at-rest citations for assistant turns backed by Venice
+  // web search. Stored as serialised JSON (`Citation[]`) via the repo layer.
+  // Only populated when the turn produced ≥1 valid citation; otherwise all
+  // three columns are NULL (see docs/venice-integration.md § Citations).
+  citationsJsonCiphertext  String?
+  citationsJsonIv          String?
+  citationsJsonAuthTag     String?
   createdAt      DateTime @default(now())
 
   chatId         String

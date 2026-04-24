@@ -93,8 +93,9 @@ erDiagram
         string  id PK
         string  chatId FK
         string  role "user / assistant / system"
-        json    contentJson
-        json    attachmentJson "{ selectionText, chapterId }"
+        json    contentJson "encrypted at rest — [E8]"
+        json    attachmentJson "encrypted — { selectionText, chapterId }"
+        json    citationsJson "encrypted — Citation[] | null — [V26], assistant turns with web search only"
         string  model
         int     tokens
         int     latencyMs

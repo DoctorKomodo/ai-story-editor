@@ -159,12 +159,24 @@ Body: `{ "title?": "…" }`. Response `201`: `{ "chat": { "id", "chapterId", "ti
 Response `200`: `{ "chats": [{ "id", "title", "updatedAt" }] }`.
 
 ### `GET /api/chats/:chatId/messages`
-Response `200`: `{ "messages": [{ "id", "role", "contentJson", "attachmentJson", "model", "tokens", "latencyMs", "createdAt" }] }`.
+Response `200`: `{ "messages": [{ "id", "role", "contentJson", "attachmentJson", "citationsJson", "model", "tokens", "latencyMs", "createdAt" }] }`. `citationsJson` is `Citation[] | null` — non-null only for assistant turns where Venice web search returned ≥1 valid citation ([V26]).
+
+```ts
+// Shared with POST SSE frame payloads.
+interface Citation {
+  title: string;
+  url: string;
+  snippet: string;
+  publishedAt: string | null;
+}
+```
 
 ### `POST /api/chats/:chatId/messages` — SSE stream
-Body: `{ "userMessage": { "contentJson": {…} }, "attachment?": { "selectionText", "chapterId" }, "modelId", "params?": { "temperature", "top_p", "max_tokens", "frequency_penalty" } }`.
+Body: `{ "userMessage": { "contentJson": {…} }, "attachment?": { "selectionText", "chapterId" }, "modelId", "enableWebSearch?": boolean, "params?": { "temperature", "top_p", "max_tokens", "frequency_penalty" } }`.
 
-Persists the user message (with optional `attachmentJson`), calls Venice via per-user client ([V17]), streams the assistant tokens back as SSE (`event: token`, `event: done`), then persists the assistant message with captured `tokens` + `latencyMs`.
+`enableWebSearch` ([V26]) defaults to `false`. When `true`, the backend sets `venice_parameters.enable_web_search: 'auto'`, `enable_web_citations: true`, and `include_search_results_in_stream: true` for this turn only. When the assistant turn is backed by web search and Venice returned results, the stream opens with a single `event: citations\ndata: {"citations":[...]}\n\n` frame before the first content frame. Absent otherwise (web search off, or on but no results).
+
+Persists the user message (with optional `attachmentJson`), calls Venice via per-user client ([V17]), streams the assistant tokens back as SSE, then persists the assistant message with captured `tokens`, `latencyMs`, and (when present) the projected `citationsJson`.
 
 Errors: `409 { code: "venice_key_required" }` when the user has no stored key.
 

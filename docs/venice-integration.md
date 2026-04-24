@@ -39,8 +39,9 @@ Venice-specific behaviour passed under `body.venice_parameters`:
 |---|---|---|---|
 | `include_venice_system_prompt` | `userSettings.ai.includeVeniceSystemPrompt ?? true` | Every call | [V4] — user-configurable via Settings → Venice. |
 | `strip_thinking_response` | `true` | Selected model has `supportsReasoning: true` | [V6] — avoid leaking chain-of-thought tokens into the final text. |
-| `enable_web_search` | `"auto"` | Caller opts in via `enableWebSearch: true` | [V7] — research hook for world-building. |
+| `enable_web_search` | `"auto"` | Caller opts in via `enableWebSearch: true` (both `/api/ai/complete` and chat POST per [V26]) | [V7] — research hook for world-building. |
 | `enable_web_citations` | `true` | Same as above | [V7] — keep citations for fact claims. |
+| `include_search_results_in_stream` | `true` | Chat POST only, when `enableWebSearch: true` | [V26] — projected and delivered as a one-shot `event: citations` SSE frame. |
 | `prompt_cache_key` | `sha256(storyId + modelId)` | Always, on every `/api/ai/complete` call | [V8] — route same-story requests to the same backend for cache-hit uplift. |
 
 All five flags pass through the `openai` SDK via `body.venice_parameters`. Tests pin each invariant ([V4] / [V6] / [V7] / [V8] test files in `tests/ai/` + `tests/services/`).
@@ -171,6 +172,56 @@ The editor's usage indicator ([F16]) reads those headers after each AI call.
 
 ---
 
+## Citations ([V26])
+
+When the chat POST sets `enableWebSearch: true`, the backend enables three Venice params together — `enable_web_search: 'auto'`, `enable_web_citations: true`, and `include_search_results_in_stream: true`. The third flag causes Venice to emit a non-standard **first chunk** carrying a `venice_search_results` array before the usual OpenAI-shaped content chunks start arriving.
+
+Delivery-mode choice: we picked `include_search_results_in_stream` over `return_search_results_as_documents` because the latter surfaces results as an OpenAI-compatible tool call (`venice_web_search_documents`), which would require tool-declaration plumbing on every AI route. In-stream delivery is a strict drop-in: the existing SSE passthrough loop intercepts the first chunk, projects it, emits one `event: citations` SSE frame, and forwards zero raw `venice_search_results` bytes to the client.
+
+**Projection** (`backend/src/lib/venice-citations.ts`):
+
+```ts
+interface Citation {
+  title: string;
+  url: string;
+  snippet: string;           // renamed from Venice's `content`
+  publishedAt: string | null; // renamed from Venice's `date`
+}
+```
+
+- `content → snippet` — avoids collision with the dropped `Chapter.content` mirror and makes "this is a short preview, not the full page" explicit.
+- `date → publishedAt` — `| null` type prevents frontend from assuming presence.
+- Items missing `title` or `url` are dropped silently. Hard cap of 10 items; extras discarded silently.
+
+**SSE wire format:**
+
+```
+<optional, when web search produced results>
+event: citations
+data: {"citations":[{"title":"...","url":"...","snippet":"...","publishedAt":"2025-..."|null}, ...]}
+
+<content frames, verbatim from Venice>
+data: {"id":"chatcmpl-...","choices":[{"delta":{"content":"Thick fog..."}, ...}]}
+...
+
+<terminator>
+data: [DONE]
+```
+
+The `event: citations` frame is emitted at most once per turn, before the first content frame. If Venice returns no search results (or web search was off), the frame is skipped and the consumer sees only content frames.
+
+**Null vs empty persistence:**
+
+- `citationsJson === null` — web search was off, OR on but Venice returned no valid results. The persisted `citationsJsonCiphertext` triple is all-null.
+- `citationsJson: [{…}]` (1–10 items) — the normal non-empty case; persisted encrypted via the repo layer.
+- `citationsJson === []` is explicitly **not** used. Projection either yields ≥1 valid citation (array) or 0 (null).
+
+Citations ride the same AES-256-GCM wrap as other narrative content; the encryption leak test ([E12]) scans the `Message.citationsJsonCiphertext` column for narrative sentinels.
+
+URL sanitisation is intentionally **not** done server-side — the frontend (task `[F50]`) MUST render URLs via `<a href={url} target="_blank" rel="noopener noreferrer">` and must never render `snippet` as HTML.
+
+---
+
 ## Error Handling ([V11])
 
 | Venice status | Mapped response | User-visible message |
@@ -253,6 +304,6 @@ This is the [V22] read-only compliance audit of the Story Editor Venice integrat
 - ❌ `[V23]` move `prompt_cache_key` out of `venice_parameters` into the top-level chat-completion body — currently buried at `backend/src/routes/ai.routes.ts:204` and `backend/src/routes/chat.routes.ts:333`, which almost certainly means Venice ignores it and we are paying for cold prompts on every call.
 - ⚠ `[V24]` handle 402 `INSUFFICIENT_BALANCE` in `backend/src/lib/venice-errors.ts` — map to a distinct `venice_insufficient_balance` code with a user-facing message pointing at `venice.ai/settings/api`, so the frontend can render a "Top up credits" CTA rather than a generic "unexpected error".
 - ⚠ `[V25]` migrate `max_tokens` → `max_completion_tokens` — `max_tokens` is documented as deprecated; bump the field name in `buildPrompt`'s return shape and the two `chat.completions.create` call sites.
-- ⚠ `[V26]` decide on a citations delivery mode and parse it — either set `venice_parameters.include_search_results_in_stream: true` and parse the first SSE chunk, or set `return_search_results_as_documents: true` and parse the `venice_web_search_documents` tool call. Until one is wired, the `enable_web_citations: true` we send is effectively decorative — citations land as inline text and the frontend cannot render a sources panel.
+- ✓ `[V26]` citations delivery mode decided and wired — `include_search_results_in_stream: true` on the chat POST (per-turn opt-in via `enableWebSearch`), projected to `Citation` shape (`content → snippet`, `date → publishedAt`), delivered on a one-shot `event: citations` SSE frame, persisted encrypted on `Message.citationsJsonCiphertext`. Design in `docs/superpowers/specs/2026-04-23-v26-chat-citations-design.md`; see § Citations above. Frontend rendering is queued as `[F50]`; `/api/ai/complete` decision is deferred to `[X11]`.
 - ⚠ `[V27]` verify `retry-after` header presence on Venice 429s — if Venice sends `x-ratelimit-reset-tokens` instead of / in addition to `Retry-After`, extend `parseRetryAfter` in `backend/src/lib/venice-errors.ts:27–45` to fall back to the `x-ratelimit-reset-*` headers.
 - ⚠ `[V28]` (low priority) surface `x-ratelimit-limit-{requests,tokens}` and `x-ratelimit-reset-{requests,tokens}` alongside the remaining-* headers we already forward, so the frontend can compute "X / Y remaining until HH:MM" without a second round-trip.
