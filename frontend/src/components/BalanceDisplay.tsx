@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * [F17] Venice account balance display.
  *

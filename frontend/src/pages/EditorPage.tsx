@@ -1,4 +1,5 @@
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
+import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { type AIAction, AIPanel } from '@/components/AIPanel';

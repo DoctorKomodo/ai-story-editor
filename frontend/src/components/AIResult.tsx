@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * AI result card (F15).
  *

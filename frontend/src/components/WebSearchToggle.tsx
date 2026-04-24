@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * [F14] Web-search toggle for the AI panel.
  *
