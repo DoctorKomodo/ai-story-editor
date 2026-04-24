@@ -36,9 +36,9 @@ function characterDisplayName(c: Character): string {
 }
 
 /**
- * Secondary line under the character name: role and/or age, comma-separated.
- * Empty string when both are null/blank — in which case the caller skips
- * rendering the node entirely.
+ * Secondary line under the character name: role and/or age, separated by
+ * a middle dot. Empty string when both are null/blank — in which case the
+ * caller skips rendering the node entirely.
  */
 function characterSecondary(c: Character): string {
   const parts: string[] = [];
@@ -46,7 +46,7 @@ function characterSecondary(c: Character): string {
   const age = c.age?.trim() ?? '';
   if (role.length > 0) parts.push(role);
   if (age.length > 0) parts.push(`Age ${age}`);
-  return parts.join(', ');
+  return parts.join(' · ');
 }
 
 export function CharacterList({

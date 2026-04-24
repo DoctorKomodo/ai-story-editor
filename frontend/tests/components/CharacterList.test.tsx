@@ -111,8 +111,8 @@ describe('CharacterList (F18)', () => {
     expect(screen.getByText('Brin')).toBeInTheDocument();
     expect(screen.getByText('Cal')).toBeInTheDocument();
     expect(screen.getByText('Dia')).toBeInTheDocument();
-    // Ada: role + age comma-separated
-    expect(screen.getByText(/Protagonist.*Age 28/)).toBeInTheDocument();
+    // Ada: role + age, middle-dot separated
+    expect(screen.getByText('Protagonist · Age 28')).toBeInTheDocument();
     // Brin: role only
     expect(screen.getByText('Antagonist')).toBeInTheDocument();
     // Cal: age only
