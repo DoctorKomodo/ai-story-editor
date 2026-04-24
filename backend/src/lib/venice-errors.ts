@@ -94,6 +94,21 @@ export function mapVeniceError(
     return true;
   }
 
+  // [V24] 402 — Venice account is out of credits (INSUFFICIENT_BALANCE).
+  // Emit a dedicated code so the frontend can render a "Top up credits" CTA.
+  // Never echo Venice's raw body (it may include key fragments).
+  if (err.status === 402) {
+    res.status(402).json({
+      error: {
+        code: 'venice_insufficient_balance',
+        message:
+          'Your Venice account is out of credits. Top up at https://venice.ai/settings/api to continue.',
+        retryAfterSeconds: null,
+      },
+    } satisfies VeniceErrorBody);
+    return true;
+  }
+
   // 502 / 503 / 504 — service unavailable
   if (err.status === 502 || err.status === 503 || err.status === 504) {
     res.status(502).json({
@@ -132,6 +147,7 @@ export function mapVeniceErrorToSse(
 
   let code: string;
   let retryAfterSeconds: number | null | undefined;
+  let message: string | undefined;
 
   if (err instanceof AuthenticationError) {
     console.error('[V11] Venice rejected key for user (SSE)', userId ?? '(unknown)');
@@ -139,6 +155,13 @@ export function mapVeniceErrorToSse(
   } else if (err instanceof RateLimitError) {
     code = 'venice_rate_limited';
     retryAfterSeconds = parseRetryAfter(err.headers);
+  } else if (err.status === 402) {
+    // [V24] 402 — Venice account is out of credits (INSUFFICIENT_BALANCE).
+    // Include the top-up hint URL so the frontend can render a "Top up credits" CTA.
+    code = 'venice_insufficient_balance';
+    retryAfterSeconds = null;
+    message =
+      'Your Venice account is out of credits. Top up at https://venice.ai/settings/api to continue.';
   } else if (err.status === 502 || err.status === 503 || err.status === 504) {
     code = 'venice_unavailable';
   } else {
@@ -148,6 +171,7 @@ export function mapVeniceErrorToSse(
 
   const payload: Record<string, unknown> = { error: code };
   if (retryAfterSeconds !== undefined) payload.retryAfterSeconds = retryAfterSeconds;
+  if (message !== undefined) payload.message = message;
   write(`data: ${JSON.stringify(payload)}\n\n`);
   write('data: [DONE]\n\n');
   return true;
