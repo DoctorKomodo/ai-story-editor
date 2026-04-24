@@ -30,6 +30,7 @@
 // might carry those.
 
 import { parseArgs } from 'node:util';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 
 export type ForceRecoveryRotationStatus = 'invalidated' | 'would-invalidate' | 'not-found';
@@ -151,7 +152,14 @@ async function runCli(): Promise<number> {
     return 1;
   }
 
-  const client = new PrismaClient();
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    process.stderr.write('force-recovery-rotation: DATABASE_URL is required\n');
+    return 1;
+  }
+  const client = new PrismaClient({
+    adapter: new PrismaPg({ connectionString }),
+  });
   try {
     const result = await forceRecoveryRotation(client, parsed.username, {
       dryRun: parsed.dryRun,

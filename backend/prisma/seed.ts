@@ -28,6 +28,7 @@
 // do NOT log any narrative plaintext (story title, character bios, etc.).
 // Keeping that discipline here matches the production contract even in dev.
 
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { createChapterRepo } from '../src/repos/chapter.repo';
@@ -36,7 +37,14 @@ import { createStoryRepo } from '../src/repos/story.repo';
 import { createAuthService } from '../src/services/auth.service';
 import { attachDekToRequest, unwrapDekWithPassword } from '../src/services/content-crypto.service';
 
-const prisma = new PrismaClient();
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error('DATABASE_URL is required to run the seed script');
+}
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString }),
+});
 
 const DEMO_USERNAME = 'demo';
 const DEMO_NAME = 'Demo Writer';
