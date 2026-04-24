@@ -14,10 +14,18 @@ import { APIError, AuthenticationError, RateLimitError } from 'openai';
 // Keeps the SDK import surface contained to this module + lib/venice.ts.
 export { AuthenticationError, RateLimitError } from 'openai';
 
-// The openai SDK's `APIError.headers` is typed as
-// `Record<string, string | null | undefined>` — a plain lowercase-keyed object,
-// NOT the DOM `Headers` type. Access via bracket notation.
-type SdkHeaders = Record<string, string | null | undefined>;
+// In openai v6 the SDK's `APIError.headers` is the WHATWG `Headers` class
+// (from `fetch`). Access via `.get(name)`. We accept either that shape or a
+// plain lowercase-keyed record so tests can still pass literal objects.
+type SdkHeaders = Headers | Record<string, string | null | undefined>;
+
+function readHeader(headers: SdkHeaders | null | undefined, name: string): string | null {
+  if (!headers) return null;
+  if (typeof (headers as Headers).get === 'function') {
+    return (headers as Headers).get(name);
+  }
+  return (headers as Record<string, string | null | undefined>)[name] ?? null;
+}
 
 // [V27] Threshold (in seconds) used to disambiguate a delta-seconds value from
 // a unix timestamp on `x-ratelimit-reset-*` headers. 10_000_000 s ≈ 116 days,
@@ -78,7 +86,7 @@ function parseResetHeader(raw: string | null | undefined): number | null {
  * Returns null when none of the three headers are present / parseable.
  */
 export function parseRetryAfter(headers: SdkHeaders | null | undefined): number | null {
-  const raw = headers?.['retry-after'] ?? null;
+  const raw = readHeader(headers, 'retry-after');
   if (raw) {
     // Delta-seconds form: "60"
     const asInt = parseInt(raw, 10);
@@ -94,8 +102,8 @@ export function parseRetryAfter(headers: SdkHeaders | null | undefined): number 
   }
 
   // [V27] Fallback to x-ratelimit-reset-* headers.
-  const resetRequests = parseResetHeader(headers?.['x-ratelimit-reset-requests']);
-  const resetTokens = parseResetHeader(headers?.['x-ratelimit-reset-tokens']);
+  const resetRequests = parseResetHeader(readHeader(headers, 'x-ratelimit-reset-requests'));
+  const resetTokens = parseResetHeader(readHeader(headers, 'x-ratelimit-reset-tokens'));
 
   const candidates: number[] = [];
   if (resetRequests !== null) candidates.push(resetRequests);
