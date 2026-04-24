@@ -80,10 +80,15 @@ jobs:
         run: npx tsc -b
 
       # ── Production build ───────────────────────────────────────────────────
-      # `tsc -b` above is --noEmit; a real vite build catches a different
-      # class of errors — PostCSS chain breakage, asset resolution, bundler-
-      # specific import issues, Tailwind compilation. Cheap to run (~2s) and
-      # the only gate before a broken build would otherwise surface in prod.
+      # The typechecks above are --noEmit; a real build catches a different
+      # class of errors — emit-time issues in the backend, and PostCSS /
+      # asset / bundler / Tailwind issues in the frontend. Cheap to run
+      # (~2–3s each) and the only gate before a broken build would
+      # otherwise surface in prod.
+      - name: Backend build
+        working-directory: backend
+        run: npm run build
+
       - name: Frontend build
         working-directory: frontend
         run: npm run build
