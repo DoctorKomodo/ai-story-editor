@@ -1,15 +1,15 @@
-import { Router, type Request, type Response } from 'express';
+import { type Request, type Response, Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { z, ZodError } from 'zod';
-import { prisma } from '../lib/prisma';
+import { ZodError, z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
+import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
+  authService,
   InvalidCredentialsError,
   InvalidRefreshTokenError,
   REFRESH_TOKEN_TTL_SECONDS,
   UsernameUnavailableError,
-  authService,
 } from '../services/auth.service';
 
 export const REFRESH_COOKIE_NAME = 'refreshToken';
@@ -34,9 +34,7 @@ function buildChangePasswordSchema() {
   const min = minPasswordLength();
   return z.object({
     oldPassword: z.string().min(1, 'oldPassword is required'),
-    newPassword: z
-      .string()
-      .min(min, `Password must be at least ${min} characters`),
+    newPassword: z.string().min(min, `Password must be at least ${min} characters`),
   });
 }
 
@@ -45,9 +43,7 @@ function buildResetPasswordSchema() {
   return z.object({
     username: z.string().min(1, 'username is required'),
     recoveryCode: z.string().min(1, 'recoveryCode is required'),
-    newPassword: z
-      .string()
-      .min(min, `Password must be at least ${min} characters`),
+    newPassword: z.string().min(min, `Password must be at least ${min} characters`),
   });
 }
 
@@ -138,7 +134,9 @@ export function createAuthRouter() {
         return;
       }
       if (err instanceof UsernameUnavailableError) {
-        res.status(409).json({ error: { message: 'Username unavailable', code: 'username_unavailable' } });
+        res
+          .status(409)
+          .json({ error: { message: 'Username unavailable', code: 'username_unavailable' } });
         return;
       }
       next(err);
@@ -160,7 +158,9 @@ export function createAuthRouter() {
         return;
       }
       if (err instanceof InvalidCredentialsError) {
-        res.status(401).json({ error: { message: 'Invalid credentials', code: 'invalid_credentials' } });
+        res
+          .status(401)
+          .json({ error: { message: 'Invalid credentials', code: 'invalid_credentials' } });
         return;
       }
       next(err);
@@ -171,7 +171,9 @@ export function createAuthRouter() {
     try {
       const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
       if (!token) {
-        res.status(401).json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
+        res
+          .status(401)
+          .json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
         return;
       }
       const result = await authService.refresh(token);
@@ -184,7 +186,9 @@ export function createAuthRouter() {
     } catch (err) {
       if (err instanceof InvalidRefreshTokenError) {
         res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
-        res.status(401).json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
+        res
+          .status(401)
+          .json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
         return;
       }
       next(err);
@@ -234,42 +238,37 @@ export function createAuthRouter() {
     },
   );
 
-  router.post(
-    '/change-password',
-    requireAuth,
-    sensitiveAuthLimiter(),
-    async (req, res, next) => {
-      try {
-        const authed = req.user;
-        if (!authed) {
-          res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
-          return;
-        }
-        const parsed = buildChangePasswordSchema().parse(req.body);
-        await authService.changePassword({
-          userId: authed.id,
-          oldPassword: parsed.oldPassword,
-          newPassword: parsed.newPassword,
-        });
-        // 204 — caller stays authenticated on this request's access token
-        // until it expires, but all refresh tokens (including this one's)
-        // have been invalidated server-side so the next refresh will fail.
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof ZodError) {
-          badRequestFromZod(res, err);
-          return;
-        }
-        if (err instanceof InvalidCredentialsError) {
-          res.status(401).json({
-            error: { message: 'Invalid credentials', code: 'invalid_credentials' },
-          });
-          return;
-        }
-        next(err);
+  router.post('/change-password', requireAuth, sensitiveAuthLimiter(), async (req, res, next) => {
+    try {
+      const authed = req.user;
+      if (!authed) {
+        res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
+        return;
       }
-    },
-  );
+      const parsed = buildChangePasswordSchema().parse(req.body);
+      await authService.changePassword({
+        userId: authed.id,
+        oldPassword: parsed.oldPassword,
+        newPassword: parsed.newPassword,
+      });
+      // 204 — caller stays authenticated on this request's access token
+      // until it expires, but all refresh tokens (including this one's)
+      // have been invalidated server-side so the next refresh will fail.
+      res.status(204).send();
+    } catch (err) {
+      if (err instanceof ZodError) {
+        badRequestFromZod(res, err);
+        return;
+      }
+      if (err instanceof InvalidCredentialsError) {
+        res.status(401).json({
+          error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+        });
+        return;
+      }
+      next(err);
+    }
+  });
 
   router.post(
     '/rotate-recovery-code',

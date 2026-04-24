@@ -1,10 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import {
-  UsageIndicator,
-  formatRequests,
-  formatTokens,
-} from '@/components/UsageIndicator';
+import { formatRequests, formatTokens, UsageIndicator } from '@/components/UsageIndicator';
 
 describe('F16 · UsageIndicator component', () => {
   it('returns null when usage is null', () => {
@@ -14,51 +10,33 @@ describe('F16 · UsageIndicator component', () => {
 
   it('returns null when both fields are null', () => {
     const { container } = render(
-      <UsageIndicator
-        usage={{ remainingRequests: null, remainingTokens: null }}
-      />,
+      <UsageIndicator usage={{ remainingRequests: null, remainingTokens: null }} />,
     );
     expect(container.firstChild).toBeNull();
   });
 
   it('renders both fields with the canonical separator', () => {
-    render(
-      <UsageIndicator
-        usage={{ remainingRequests: 482, remainingTokens: 1_200_000 }}
-      />,
-    );
+    render(<UsageIndicator usage={{ remainingRequests: 482, remainingTokens: 1_200_000 }} />);
     const status = screen.getByRole('status', { name: /venice usage/i });
     expect(status).toHaveTextContent('482 requests / 1.2M tokens remaining');
   });
 
   it('formats requests with a K suffix and omits the separator when tokens are absent', () => {
-    render(
-      <UsageIndicator
-        usage={{ remainingRequests: 1250, remainingTokens: null }}
-      />,
-    );
+    render(<UsageIndicator usage={{ remainingRequests: 1250, remainingTokens: null }} />);
     const status = screen.getByRole('status', { name: /venice usage/i });
     expect(status).toHaveTextContent('1.3K requests remaining');
     expect(status.textContent ?? '').not.toContain('/');
   });
 
   it('formats tokens with an M suffix when only tokens are present', () => {
-    render(
-      <UsageIndicator
-        usage={{ remainingRequests: null, remainingTokens: 2_500_000 }}
-      />,
-    );
+    render(<UsageIndicator usage={{ remainingRequests: null, remainingTokens: 2_500_000 }} />);
     const status = screen.getByRole('status', { name: /venice usage/i });
     expect(status).toHaveTextContent('2.5M tokens remaining');
     expect(status.textContent ?? '').not.toContain('/');
   });
 
   it('formats tokens with a K suffix (rounded integer) when only tokens are present', () => {
-    render(
-      <UsageIndicator
-        usage={{ remainingRequests: null, remainingTokens: 482_000 }}
-      />,
-    );
+    render(<UsageIndicator usage={{ remainingRequests: null, remainingTokens: 482_000 }} />);
     const status = screen.getByRole('status', { name: /venice usage/i });
     expect(status).toHaveTextContent('482K tokens remaining');
   });

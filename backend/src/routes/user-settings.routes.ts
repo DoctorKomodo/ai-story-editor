@@ -17,13 +17,13 @@
 // Defaults for `ai.includeVeniceSystemPrompt` stay aligned with the chat
 // route's `resolveIncludeVeniceSystemPrompt` fallback (`true` when absent).
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.middleware';
 import type { Prisma } from '@prisma/client';
-import { prisma } from '../lib/prisma';
-import { deepMerge } from '../lib/deep-merge';
+import { type NextFunction, type Request, type Response, Router } from 'express';
+import { z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
+import { deepMerge } from '../lib/deep-merge';
+import { prisma } from '../lib/prisma';
+import { requireAuth } from '../middleware/auth.middleware';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -88,7 +88,9 @@ export function createUserSettingsRouter() {
         select: { settingsJson: true },
       });
       const stored =
-        user?.settingsJson && typeof user.settingsJson === 'object' && !Array.isArray(user.settingsJson)
+        user?.settingsJson &&
+        typeof user.settingsJson === 'object' &&
+        !Array.isArray(user.settingsJson)
           ? (user.settingsJson as Record<string, unknown>)
           : {};
       const merged = deepMerge(DEFAULT_SETTINGS, stored);
@@ -111,7 +113,9 @@ export function createUserSettingsRouter() {
         select: { settingsJson: true },
       });
       const stored =
-        user?.settingsJson && typeof user.settingsJson === 'object' && !Array.isArray(user.settingsJson)
+        user?.settingsJson &&
+        typeof user.settingsJson === 'object' &&
+        !Array.isArray(user.settingsJson)
           ? (user.settingsJson as Record<string, unknown>)
           : {};
 

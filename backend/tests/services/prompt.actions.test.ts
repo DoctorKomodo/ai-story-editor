@@ -5,10 +5,10 @@
 
 import { describe, expect, it } from 'vitest';
 import {
-  buildPrompt,
-  renderAskUserContent,
-  DEFAULT_SYSTEM_PROMPT,
   type BuildPromptInput,
+  buildPrompt,
+  DEFAULT_SYSTEM_PROMPT,
+  renderAskUserContent,
 } from '../../src/services/prompt.service';
 
 function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput {
@@ -222,7 +222,10 @@ describe('renderAskUserContent', () => {
     const builtUserContent = built.messages.find((m) => m.role === 'user')?.content ?? '';
 
     // Via renderAskUserContent (history-reconstruction path).
-    const rendered = renderAskUserContent({ freeformInstruction: instruction, selectionText: selection });
+    const rendered = renderAskUserContent({
+      freeformInstruction: instruction,
+      selectionText: selection,
+    });
 
     // The task block is embedded inside a larger user message (chapter, characters, etc.),
     // but both must agree on the key framing strings.

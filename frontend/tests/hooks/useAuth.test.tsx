@@ -1,8 +1,8 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { useAuth, initAuth } from '@/hooks/useAuth';
-import { useSessionStore } from '@/store/session';
+import { initAuth, useAuth } from '@/hooks/useAuth';
 import { getAccessToken, resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
+import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 

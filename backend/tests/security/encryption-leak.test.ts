@@ -12,16 +12,16 @@
 
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { Client } from 'pg';
+import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import { prisma, testDatabaseUrl } from '../setup';
 import { makeUserContext, resetAllTables } from '../repos/_req';
+import { prisma, testDatabaseUrl } from '../setup';
 
 const SENTINEL = 'SENTINEL_E12_DO_NOT_LEAK';
 
@@ -148,9 +148,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     const hits: Hit[] = [];
 
     for (const table of NARRATIVE_TABLES) {
-      const { rows } = await pg.query<Record<string, unknown>>(
-        `SELECT * FROM "${table}"`,
-      );
+      const { rows } = await pg.query<Record<string, unknown>>(`SELECT * FROM "${table}"`);
       for (const row of rows) {
         const rowId = typeof row.id === 'string' ? row.id : null;
         for (const [col, val] of Object.entries(row)) {
@@ -264,9 +262,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     const hits: Hit[] = [];
 
     for (const table of NARRATIVE_TABLES) {
-      const { rows } = await pg.query<Record<string, unknown>>(
-        `SELECT * FROM "${table}"`,
-      );
+      const { rows } = await pg.query<Record<string, unknown>>(`SELECT * FROM "${table}"`);
       for (const row of rows) {
         const rowId = typeof row.id === 'string' ? row.id : null;
         for (const [col, val] of Object.entries(row)) {

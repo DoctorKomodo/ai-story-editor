@@ -9,7 +9,7 @@
  * - [F15] consumes the selected model id when calling `/api/ai/complete`.
  * - [F42] redesigns the picker to the mockup spec (custom popover, grouping).
  */
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export interface Model {

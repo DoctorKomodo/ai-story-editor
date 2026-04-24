@@ -9,8 +9,8 @@
  * same response headers but lives outside this component.
  */
 import { useEffect, useRef, useState } from 'react';
-import type { ApiError } from '@/lib/api';
 import type { AICompletionStatus } from '@/hooks/useAICompletion';
+import type { ApiError } from '@/lib/api';
 
 export interface AIResultProps {
   status: AICompletionStatus;

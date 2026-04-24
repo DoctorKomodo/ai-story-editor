@@ -1,10 +1,10 @@
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CharacterSheet } from '@/components/CharacterSheet';
-import { createQueryClient } from '@/lib/queryClient';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -138,9 +138,7 @@ describe('CharacterSheet (F19)', () => {
   it('fetch error shows role="alert" with "Could not load character"', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
-        return Promise.resolve(
-          jsonResponse(500, { error: { message: 'boom', code: 'internal' } }),
-        );
+        return Promise.resolve(jsonResponse(500, { error: { message: 'boom', code: 'internal' } }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
@@ -154,9 +152,7 @@ describe('CharacterSheet (F19)', () => {
   it('Save button disabled when name is empty', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
-        return Promise.resolve(
-          jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-        );
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
@@ -179,9 +175,7 @@ describe('CharacterSheet (F19)', () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
         if (!init || init.method === undefined || init.method === 'GET') {
-          return Promise.resolve(
-            jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-          );
+          return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
         }
         if (init.method === 'PATCH') {
           return Promise.resolve(
@@ -261,9 +255,7 @@ describe('CharacterSheet (F19)', () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
         if (!init || init.method === undefined || init.method === 'GET') {
-          return Promise.resolve(
-            jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-          );
+          return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
         }
         if (init.method === 'PATCH') {
           return Promise.resolve(
@@ -293,9 +285,7 @@ describe('CharacterSheet (F19)', () => {
   it('Delete button opens an in-modal confirm dialog (alertdialog)', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
-        return Promise.resolve(
-          jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-        );
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
@@ -317,9 +307,7 @@ describe('CharacterSheet (F19)', () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
         if (!init || init.method === undefined || init.method === 'GET') {
-          return Promise.resolve(
-            jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-          );
+          return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
         }
         if (init.method === 'DELETE') {
           return Promise.resolve(noContent());
@@ -355,9 +343,7 @@ describe('CharacterSheet (F19)', () => {
   it('Cancel Delete dismisses the confirm dialog and keeps the main modal open', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
-        return Promise.resolve(
-          jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-        );
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
@@ -375,9 +361,9 @@ describe('CharacterSheet (F19)', () => {
 
     // Cancel inside the confirm dialog — match the button scoped to alertdialog.
     const confirmDialog = screen.getByRole('alertdialog');
-    const cancelBtn = Array.from(
-      confirmDialog.querySelectorAll('button'),
-    ).find((b) => /cancel/i.test(b.textContent ?? ''));
+    const cancelBtn = Array.from(confirmDialog.querySelectorAll('button')).find((b) =>
+      /cancel/i.test(b.textContent ?? ''),
+    );
     expect(cancelBtn).toBeDefined();
     await user.click(cancelBtn as HTMLElement);
 
@@ -389,9 +375,7 @@ describe('CharacterSheet (F19)', () => {
   it('Escape closes main dialog when no confirm is open; with confirm open, closes only the confirm first', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
-        return Promise.resolve(
-          jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-        );
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
@@ -421,9 +405,7 @@ describe('CharacterSheet (F19)', () => {
   it('click-outside the main dialog closes it', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
-        return Promise.resolve(
-          jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-        );
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });
@@ -446,9 +428,7 @@ describe('CharacterSheet (F19)', () => {
   it('Name input is focused after open', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {
-        return Promise.resolve(
-          jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }),
-        );
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
     });

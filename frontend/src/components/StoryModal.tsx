@@ -1,10 +1,10 @@
-import { useEffect, useId, useRef, useState, type FormEvent, type MouseEvent } from 'react';
-import { ApiError } from '@/lib/api';
+import { type FormEvent, type MouseEvent, useEffect, useId, useRef, useState } from 'react';
 import {
+  type StoryInput,
   useCreateStoryMutation,
   useUpdateStoryMutation,
-  type StoryInput,
 } from '@/hooks/useStories';
+import { ApiError } from '@/lib/api';
 
 export type StoryModalMode = 'create' | 'edit';
 
@@ -87,8 +87,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
 
   const createMutation = useCreateStoryMutation();
   const updateMutation = useUpdateStoryMutation();
-  const pending =
-    mode === 'create' ? createMutation.isPending : updateMutation.isPending;
+  const pending = mode === 'create' ? createMutation.isPending : updateMutation.isPending;
 
   // Reset fields whenever the modal is re-opened or the initial payload changes.
   useEffect(() => {

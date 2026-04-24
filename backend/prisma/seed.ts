@@ -28,16 +28,13 @@
 // do NOT log any narrative plaintext (story title, character bios, etc.).
 // Keeping that discipline here matches the production contract even in dev.
 
-import type { Request } from 'express';
 import { PrismaClient } from '@prisma/client';
-import { createAuthService } from '../src/services/auth.service';
-import {
-  attachDekToRequest,
-  unwrapDekWithPassword,
-} from '../src/services/content-crypto.service';
+import type { Request } from 'express';
 import { createChapterRepo } from '../src/repos/chapter.repo';
 import { createCharacterRepo } from '../src/repos/character.repo';
 import { createStoryRepo } from '../src/repos/story.repo';
+import { createAuthService } from '../src/services/auth.service';
+import { attachDekToRequest, unwrapDekWithPassword } from '../src/services/content-crypto.service';
 
 const prisma = new PrismaClient();
 
@@ -99,8 +96,7 @@ async function main(): Promise<void> {
     synopsis:
       'A young lantern-keeper on the cliffs of Oren discovers the lights she tends are not meant for ships.',
     genre: 'fantasy',
-    worldNotes:
-      'Coastal kingdom of Oren. Two moons. Sea mist hides things that walk between them.',
+    worldNotes: 'Coastal kingdom of Oren. Two moons. Sea mist hides things that walk between them.',
   });
 
   const chapter1Text =
@@ -137,8 +133,7 @@ async function main(): Promise<void> {
     role: 'protagonist',
     physicalDescription:
       'Nineteen, short and wiry, hair the colour of damp rope. A burn scar across her right palm.',
-    personality:
-      'Stubborn, observant, more comfortable with machines than with people.',
+    personality: 'Stubborn, observant, more comfortable with machines than with people.',
     backstory:
       'Orphaned at seven when the west lighthouse keeper — her father — vanished during a green-tide storm.',
     notes: 'Left-handed. Keeps a salt-stained notebook of every ship she sees.',

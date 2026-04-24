@@ -9,22 +9,26 @@
 // parent mount point down into the handler.
 
 import { createHash } from 'node:crypto';
-import { Router, type Request, type Response, type NextFunction } from 'express';
+import { type NextFunction, type Request, type Response, Router } from 'express';
 import { z } from 'zod';
-import { requireAuth } from '../middleware/auth.middleware';
+import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
-import { veniceModelsService } from '../services/venice.models.service';
-import { buildPrompt, renderAskUserContent, type CharacterContext } from '../services/prompt.service';
-import { createChatRepo } from '../repos/chat.repo';
-import { createChapterRepo } from '../repos/chapter.repo';
-import { createStoryRepo } from '../repos/story.repo';
-import { createCharacterRepo } from '../repos/character.repo';
-import { createMessageRepo } from '../repos/message.repo';
-import { tipTapJsonToText } from '../services/tiptap-text';
+import { type Citation, projectVeniceCitations } from '../lib/venice-citations';
 import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
-import { badRequestFromZod } from '../lib/bad-request';
-import { projectVeniceCitations, type Citation } from '../lib/venice-citations';
+import { requireAuth } from '../middleware/auth.middleware';
+import { createChapterRepo } from '../repos/chapter.repo';
+import { createCharacterRepo } from '../repos/character.repo';
+import { createChatRepo } from '../repos/chat.repo';
+import { createMessageRepo } from '../repos/message.repo';
+import { createStoryRepo } from '../repos/story.repo';
+import {
+  buildPrompt,
+  type CharacterContext,
+  renderAskUserContent,
+} from '../services/prompt.service';
+import { tipTapJsonToText } from '../services/tiptap-text';
+import { veniceModelsService } from '../services/venice.models.service';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
 
@@ -211,7 +215,7 @@ export function createChatMessagesRouter() {
       if (body.attachment && body.attachment.chapterId !== chatChapterId) {
         res.status(400).json({
           error: {
-            message: 'Attachment chapterId does not match the chat\'s chapter',
+            message: "Attachment chapterId does not match the chat's chapter",
             code: 'attachment_chapter_mismatch',
           },
         });
@@ -268,7 +272,11 @@ export function createChatMessagesRouter() {
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
       const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
-      const { messages: baseMessages, venice_parameters: baseVeniceParams, max_completion_tokens } = buildPrompt({
+      const {
+        messages: baseMessages,
+        venice_parameters: baseVeniceParams,
+        max_completion_tokens,
+      } = buildPrompt({
         action: 'ask',
         selectedText: body.attachment?.selectionText ?? '',
         chapterContent,
@@ -355,8 +363,8 @@ export function createChatMessagesRouter() {
       // Scoped to (chatId, modelId) for the chat surface.
       const startedAt = Date.now();
 
-      const streamWithResp = await (
-        client.chat.completions.create({
+      const streamWithResp = (await client.chat.completions
+        .create({
           model: body.modelId,
           messages,
           stream: true as const,
@@ -366,7 +374,7 @@ export function createChatMessagesRouter() {
           prompt_cache_key: chatPromptCacheKey(chatId, body.modelId),
           venice_parameters,
         } as unknown as Parameters<typeof client.chat.completions.create>[0])
-      ).withResponse() as unknown as {
+        .withResponse()) as unknown as {
         data: AsyncIterable<{
           choices: Array<{ delta: { content?: string | null }; finish_reason: string | null }>;
           usage?: { total_tokens?: number } | null;
@@ -503,7 +511,9 @@ export function createChatMessagesRouter() {
         if (!clientClosed) {
           const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), userId);
           if (!handled) {
-            res.write(`data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`);
+            res.write(
+              `data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`,
+            );
             res.write('data: [DONE]\n\n');
           }
         }

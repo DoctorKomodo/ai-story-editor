@@ -11,16 +11,16 @@
 //   - 204 success — reorders 3 chapters, follow-up GET confirms new order
 //   - 204 for partial reorder (subset of chapters); non-included keep their orderIndex
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
+import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -72,9 +72,21 @@ async function createThreeChapters(
 ): Promise<{ A: CreatedChapter; B: CreatedChapter; C: CreatedChapter }> {
   const req = makeFakeReq(accessToken);
   const repo = createChapterRepo(req);
-  const A = (await repo.create({ storyId, title: 'A', orderIndex: 0 })) as unknown as CreatedChapter;
-  const B = (await repo.create({ storyId, title: 'B', orderIndex: 1 })) as unknown as CreatedChapter;
-  const C = (await repo.create({ storyId, title: 'C', orderIndex: 2 })) as unknown as CreatedChapter;
+  const A = (await repo.create({
+    storyId,
+    title: 'A',
+    orderIndex: 0,
+  })) as unknown as CreatedChapter;
+  const B = (await repo.create({
+    storyId,
+    title: 'B',
+    orderIndex: 1,
+  })) as unknown as CreatedChapter;
+  const C = (await repo.create({
+    storyId,
+    title: 'C',
+    orderIndex: 2,
+  })) as unknown as CreatedChapter;
   return { A, B, C };
 }
 
@@ -186,7 +198,7 @@ describe('Chapter reorder route [B4]', () => {
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
-        chapters: Array.from({ length: 501 }, (_, i) => ({ id: 'x' + i, orderIndex: i })),
+        chapters: Array.from({ length: 501 }, (_, i) => ({ id: `x${i}`, orderIndex: i })),
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');

@@ -1,8 +1,8 @@
-import { Router, type Request, type Response } from 'express';
+import { type Request, type Response, Router } from 'express';
 import rateLimit from 'express-rate-limit';
 import { ZodError } from 'zod';
-import { requireAuth } from '../middleware/auth.middleware';
 import { AuthenticationError, mapVeniceError } from '../lib/venice-errors';
+import { requireAuth } from '../middleware/auth.middleware';
 import {
   VeniceKeyCheckError,
   VeniceKeyInvalidError,
@@ -82,11 +82,15 @@ export function createVeniceKeyRouter(options: VeniceKeyRouterOptions = {}) {
         return;
       }
       if (err instanceof VeniceKeyInvalidError) {
-        res.status(400).json({ error: { message: 'venice_key_invalid', code: 'venice_key_invalid' } });
+        res
+          .status(400)
+          .json({ error: { message: 'venice_key_invalid', code: 'venice_key_invalid' } });
         return;
       }
       if (err instanceof VeniceKeyCheckError) {
-        res.status(502).json({ error: { message: 'venice_unreachable', code: 'venice_unreachable' } });
+        res
+          .status(502)
+          .json({ error: { message: 'venice_unreachable', code: 'venice_unreachable' } });
         return;
       }
       next(err);
@@ -135,7 +139,9 @@ export function createVeniceKeyRouter(options: VeniceKeyRouterOptions = {}) {
             });
           } catch {
             // If getStatus itself fails, return minimal verified:false response.
-            res.status(200).json({ verified: false, credits: null, diem: null, endpoint: null, lastFour: null });
+            res
+              .status(200)
+              .json({ verified: false, credits: null, diem: null, endpoint: null, lastFour: null });
           }
           return;
         }

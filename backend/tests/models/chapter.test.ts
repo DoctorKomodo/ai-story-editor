@@ -5,7 +5,10 @@ import { prisma } from '../setup';
 // ciphertext-only. Schema-shape + cascade tests only.
 
 async function makeStory(email = 'ch-author@example.com') {
-  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const username = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
   return prisma.story.create({ data: { userId: user.id } });
 }

@@ -2,27 +2,17 @@
 // Verifies that Venice API errors are mapped to user-friendly HTTP responses
 // and that raw Venice error bodies / stack traces are never exposed.
 
-import request from 'supertest';
-import jwt from 'jsonwebtoken';
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  vi,
-} from 'vitest';
-// APIError imported for instanceof checks in helper — the SDK exports it
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-import { APIError } from 'openai';
-import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
-import { createChapterRepo } from '../../src/repos/chapter.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
+import jwt from 'jsonwebtoken';
+import request from 'supertest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { app } from '../../src/index';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
+import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -84,13 +74,10 @@ function errorResponse(
   message: string,
   extraHeaders: Record<string, string> = {},
 ): Response {
-  return new Response(
-    JSON.stringify({ error: { message } }),
-    {
-      status,
-      headers: { 'content-type': 'application/json', ...extraHeaders },
-    },
-  );
+  return new Response(JSON.stringify({ error: { message } }), {
+    status,
+    headers: { 'content-type': 'application/json', ...extraHeaders },
+  });
 }
 
 async function registerAndLogin(): Promise<string> {
@@ -104,10 +91,7 @@ async function registerAndLogin(): Promise<string> {
   return login.body.accessToken as string;
 }
 
-async function storeKey(
-  accessToken: string,
-  fetchSpy: ReturnType<typeof vi.fn>,
-): Promise<void> {
+async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
   const res = await request(app)
     .put('/api/users/me/venice-key')
@@ -126,9 +110,7 @@ function makeFakeReq(accessToken: string): Request {
   return req;
 }
 
-async function setupStoryAndChapter(
-  req: Request,
-): Promise<{ storyId: string; chapterId: string }> {
+async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; chapterId: string }> {
   const story = await createStoryRepo(req).create({ title: 'Test Story' });
   const storyId = story.id as string;
   const chapter = await createChapterRepo(req).create({
@@ -216,9 +198,7 @@ describe('Venice error handling [V11]', () => {
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-      fetchSpy.mockResolvedValueOnce(
-        errorResponse(429, 'rate limited', { 'retry-after': '60' }),
-      );
+      fetchSpy.mockResolvedValueOnce(errorResponse(429, 'rate limited', { 'retry-after': '60' }));
 
       const res = await request(app)
         .post('/api/ai/complete')
@@ -274,7 +254,9 @@ describe('Venice error handling [V11]', () => {
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-      fetchSpy.mockResolvedValueOnce(errorResponse(418, `I am a teapot ${VENICE_RAW_ERROR_SENTINEL}`));
+      fetchSpy.mockResolvedValueOnce(
+        errorResponse(418, `I am a teapot ${VENICE_RAW_ERROR_SENTINEL}`),
+      );
 
       const res = await request(app)
         .post('/api/ai/complete')
@@ -313,7 +295,10 @@ describe('Venice error handling [V11]', () => {
         ...warnSpy.mock.calls,
         ...logSpy.mock.calls,
         ...infoSpy.mock.calls,
-      ].flat().map(String).join(' ');
+      ]
+        .flat()
+        .map(String)
+        .join(' ');
       expect(allLoggedArgs).not.toContain(VALID_KEY);
 
       vi.restoreAllMocks();
@@ -344,9 +329,7 @@ describe('Venice error handling [V11]', () => {
       const accessToken = await registerAndLogin();
       await storeKey(accessToken, fetchSpy);
 
-      fetchSpy.mockResolvedValueOnce(
-        errorResponse(429, 'rate limited', { 'retry-after': '30' }),
-      );
+      fetchSpy.mockResolvedValueOnce(errorResponse(429, 'rate limited', { 'retry-after': '30' }));
 
       const res = await request(app)
         .get('/api/ai/balance')
@@ -375,9 +358,7 @@ describe('Venice error handling [V11]', () => {
       const accessToken = await registerAndLogin();
       await storeKey(accessToken, fetchSpy);
 
-      fetchSpy.mockResolvedValueOnce(
-        errorResponse(418, `teapot ${VENICE_RAW_ERROR_SENTINEL}`),
-      );
+      fetchSpy.mockResolvedValueOnce(errorResponse(418, `teapot ${VENICE_RAW_ERROR_SENTINEL}`));
 
       const res = await request(app)
         .get('/api/ai/balance')

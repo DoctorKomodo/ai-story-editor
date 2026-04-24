@@ -46,11 +46,11 @@ See backend/.env.live.example for the full variable list.
 const { values, positionals } = parseArgs({
   args: process.argv.slice(2),
   options: {
-    help:   { type: 'boolean', default: false },
+    help: { type: 'boolean', default: false },
     models: { type: 'boolean', default: false },
     prompt: { type: 'string' },
     stream: { type: 'boolean', default: false },
-    model:  { type: 'string' },
+    model: { type: 'string' },
   },
   allowPositionals: true,
   strict: true,
@@ -102,9 +102,7 @@ async function main(): Promise<void> {
 
   if (values.models) {
     const page = await client.models.list();
-    const textModels = page.data.filter(
-      (m: Record<string, unknown>) => m['type'] === 'text',
-    );
+    const textModels = page.data.filter((m: Record<string, unknown>) => m.type === 'text');
     console.log(JSON.stringify(textModels, null, 2));
     return;
   }

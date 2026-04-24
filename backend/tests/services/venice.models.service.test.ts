@@ -1,8 +1,8 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type OpenAI from 'openai';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  UnknownModelError,
   createVeniceModelsService,
+  UnknownModelError,
 } from '../../src/services/venice.models.service';
 
 // Shape of a Venice /v1/models entry. The `openai` SDK types its response as
@@ -98,9 +98,30 @@ describe('venice.models.service [V2]', () => {
 
       expect(spy).toHaveBeenCalledTimes(1);
       expect(models).toEqual([
-        { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', contextLength: 65536, supportsReasoning: false, supportsVision: false, supportsWebSearch: false },
-        { id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', contextLength: 32768, supportsReasoning: true, supportsVision: false, supportsWebSearch: false },
-        { id: 'mistral-vision', name: 'Mistral Vision', contextLength: 131072, supportsReasoning: false, supportsVision: true, supportsWebSearch: false },
+        {
+          id: 'llama-3.3-70b',
+          name: 'Llama 3.3 70B',
+          contextLength: 65536,
+          supportsReasoning: false,
+          supportsVision: false,
+          supportsWebSearch: false,
+        },
+        {
+          id: 'qwen-qwq-32b',
+          name: 'Qwen QwQ 32B',
+          contextLength: 32768,
+          supportsReasoning: true,
+          supportsVision: false,
+          supportsWebSearch: false,
+        },
+        {
+          id: 'mistral-vision',
+          name: 'Mistral Vision',
+          contextLength: 131072,
+          supportsReasoning: false,
+          supportsVision: true,
+          supportsWebSearch: false,
+        },
       ]);
     });
 

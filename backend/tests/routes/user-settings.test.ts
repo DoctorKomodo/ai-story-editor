@@ -23,12 +23,8 @@ async function registerAndLogin(
   password = 'settings-password',
   name = 'Settings User',
 ): Promise<string> {
-  await request(app)
-    .post('/api/auth/register')
-    .send({ name, username, password });
-  const login = await request(app)
-    .post('/api/auth/login')
-    .send({ username, password });
+  await request(app).post('/api/auth/register').send({ name, username, password });
+  const login = await request(app).post('/api/auth/login').send({ username, password });
   expect(login.status).toBe(200);
   return login.body.accessToken as string;
 }
@@ -58,9 +54,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('PATCH /api/users/me/settings returns 401 without Bearer', async () => {
-    const res = await request(app)
-      .patch('/api/users/me/settings')
-      .send({ theme: 'dark' });
+    const res = await request(app).patch('/api/users/me/settings').send({ theme: 'dark' });
     expect(res.status).toBe(401);
   });
 

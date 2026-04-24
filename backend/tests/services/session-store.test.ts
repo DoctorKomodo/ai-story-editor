@@ -43,8 +43,18 @@ describe('session-store', () => {
   });
 
   it('closeSession removes a specific entry', () => {
-    openSession({ sessionId: 's1', userId: 'u1', dek: Buffer.alloc(32), expiresAt: future(60_000) });
-    openSession({ sessionId: 's2', userId: 'u2', dek: Buffer.alloc(32), expiresAt: future(60_000) });
+    openSession({
+      sessionId: 's1',
+      userId: 'u1',
+      dek: Buffer.alloc(32),
+      expiresAt: future(60_000),
+    });
+    openSession({
+      sessionId: 's2',
+      userId: 'u2',
+      dek: Buffer.alloc(32),
+      expiresAt: future(60_000),
+    });
     closeSession('s1');
     expect(getSession('s1')).toBeNull();
     expect(getSession('s2')).not.toBeNull();
@@ -63,7 +73,12 @@ describe('session-store', () => {
 
   it('extendSessionExpiry keeps an entry alive past its original expiry', () => {
     const originalExpiry = future(10);
-    openSession({ sessionId: 's1', userId: 'u1', dek: Buffer.alloc(32), expiresAt: originalExpiry });
+    openSession({
+      sessionId: 's1',
+      userId: 'u1',
+      dek: Buffer.alloc(32),
+      expiresAt: originalExpiry,
+    });
     extendSessionExpiry('s1', future(60_000));
     // Wait past the original 10ms expiry via setImmediate semantics isn't
     // reliable — re-assert by reading immediately; the entry is still live

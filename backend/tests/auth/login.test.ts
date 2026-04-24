@@ -13,10 +13,10 @@ vi.mock('argon2', async (importOriginal) => {
 import * as argon2 from 'argon2';
 import {
   ACCESS_TOKEN_TTL_SECONDS,
-  REFRESH_TOKEN_TTL_SECONDS,
+  type AccessTokenPayload,
   createAuthService,
   InvalidCredentialsError,
-  type AccessTokenPayload,
+  REFRESH_TOKEN_TTL_SECONDS,
   type RefreshTokenPayload,
 } from '../../src/services/auth.service';
 import { prisma } from '../setup';
@@ -169,9 +169,7 @@ describe('auth.service login()', () => {
     const verifyMock = vi.mocked(argon2.verify);
     verifyMock.mockClear();
 
-    await authService
-      .login({ username: 'ghost', password: PASSWORD })
-      .catch(() => undefined);
+    await authService.login({ username: 'ghost', password: PASSWORD }).catch(() => undefined);
 
     expect(verifyMock).toHaveBeenCalledTimes(1);
     const [hashArg] = verifyMock.mock.calls[0]!;
@@ -180,9 +178,9 @@ describe('auth.service login()', () => {
   });
 
   it('rejects a missing password with a zod validation error (not InvalidCredentialsError)', async () => {
-    await expect(
-      authService.login({ username: USERNAME, password: '' }),
-    ).rejects.toThrow(/password is required/i);
+    await expect(authService.login({ username: USERNAME, password: '' })).rejects.toThrow(
+      /password is required/i,
+    );
   });
 
   it('rejects a malformed username with a zod validation error', async () => {

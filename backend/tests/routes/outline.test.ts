@@ -16,18 +16,18 @@
 //   - Reorder 204 — full 3-item reorder; follow-up list confirms new order
 //   - Reorder 204 — partial reorder; non-listed items unchanged
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
+import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
-import { createOutlineRepo } from '../../src/repos/outline.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
-import { prisma } from '../setup';
 import { prisma as appPrisma } from '../../src/lib/prisma';
+import { createOutlineRepo } from '../../src/repos/outline.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
+import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -343,8 +343,7 @@ describe('Outline routes [B8]', () => {
 
     const res = await request(app)
       .get(`/api/stories/${storyId}/outline`)
-      .set('Authorization', `Bearer ${accessToken}`)
-      ;
+      .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.outline)).toBe(true);
     expect(res.body.outline).toHaveLength(3);
@@ -568,7 +567,7 @@ describe('Outline routes [B8]', () => {
       .patch(`/api/stories/${story.id as string}/outline/reorder`)
       .set('Authorization', `Bearer ${accessToken}`)
       .send({
-        items: Array.from({ length: 501 }, (_, i) => ({ id: 'x' + i, order: i })),
+        items: Array.from({ length: 501 }, (_, i) => ({ id: `x${i}`, order: i })),
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');

@@ -3,10 +3,7 @@
 // that existing actions (rephrase, summarise) were not removed.
 
 import { describe, expect, it } from 'vitest';
-import {
-  buildPrompt,
-  type BuildPromptInput,
-} from '../../src/services/prompt.service';
+import { type BuildPromptInput, buildPrompt } from '../../src/services/prompt.service';
 
 function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput {
   return {
@@ -53,16 +50,12 @@ describe('[V14] action=rewrite', () => {
 
 describe('[V14] action=describe', () => {
   it('user message contains "describe" instruction', () => {
-    const content = userContent(
-      baseInput({ action: 'describe', selectedText: 'The old tower.' }),
-    );
+    const content = userContent(baseInput({ action: 'describe', selectedText: 'The old tower.' }));
     expect(content.toLowerCase()).toContain('describe');
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {
-    const content = userContent(
-      baseInput({ action: 'describe', selectedText: 'The old tower.' }),
-    );
+    const content = userContent(baseInput({ action: 'describe', selectedText: 'The old tower.' }));
     expect(content).toContain('«The old tower.»');
   });
 
@@ -138,17 +131,13 @@ describe('[V14] action=ask', () => {
 
 describe('[V14] action=continue — word-count hint', () => {
   it('user message contains roughly 80–150 word target', () => {
-    const content = userContent(
-      baseInput({ action: 'continue', selectedText: 'She looked up.' }),
-    );
+    const content = userContent(baseInput({ action: 'continue', selectedText: 'She looked up.' }));
     // Template: "Aim for roughly 80–150 words"
     expect(content).toMatch(/80.{0,5}150/);
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {
-    const content = userContent(
-      baseInput({ action: 'continue', selectedText: 'She looked up.' }),
-    );
+    const content = userContent(baseInput({ action: 'continue', selectedText: 'She looked up.' }));
     expect(content).toContain('«She looked up.»');
   });
 });

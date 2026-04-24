@@ -1,12 +1,12 @@
 // [B8] Router uses `mergeParams: true` so :storyId from the parent mount is
 // visible on `req.params` inside handlers.
 
-import { Router, type Request, type Response, type NextFunction } from 'express';
-import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import { type NextFunction, type Request, type Response, Router } from 'express';
+import { z } from 'zod';
+import { badRequestFromZod } from '../lib/bad-request';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import { badRequestFromZod } from '../lib/bad-request';
 import {
   createOutlineRepo,
   OutlineNotOwnedError,
@@ -123,55 +123,51 @@ export function createOutlineRouter() {
 
   // PATCH /reorder — declared BEFORE /:outlineId so Express doesn't match the
   // literal "reorder" path segment against the :outlineId param.
-  router.patch(
-    '/reorder',
-    ownStory,
-    async (req: Request, res: Response, next: NextFunction) => {
-      const storyId = req.params.storyId as string;
+  router.patch('/reorder', ownStory, async (req: Request, res: Response, next: NextFunction) => {
+    const storyId = req.params.storyId as string;
 
-      const parsed = ReorderOutlineBody.safeParse(req.body);
-      if (!parsed.success) {
-        badRequestFromZod(res, parsed.error);
+    const parsed = ReorderOutlineBody.safeParse(req.body);
+    if (!parsed.success) {
+      badRequestFromZod(res, parsed.error);
+      return;
+    }
+    const items = parsed.data.items;
+
+    // Uniqueness checks the Zod schema can't express cleanly — these are
+    // semantic validation (duplicate id / duplicate order) rather than
+    // schema-shape issues, but still return the contract's `validation_error`
+    // code so clients can handle all 400s uniformly. The human-readable
+    // message disambiguates the specific failure.
+    const seenIds = new Set<string>();
+    const seenOrders = new Set<number>();
+    for (const item of items) {
+      if (seenIds.has(item.id)) {
+        res.status(400).json({
+          error: { message: 'Duplicate outline id in payload', code: 'validation_error' },
+        });
         return;
       }
-      const items = parsed.data.items;
-
-      // Uniqueness checks the Zod schema can't express cleanly — these are
-      // semantic validation (duplicate id / duplicate order) rather than
-      // schema-shape issues, but still return the contract's `validation_error`
-      // code so clients can handle all 400s uniformly. The human-readable
-      // message disambiguates the specific failure.
-      const seenIds = new Set<string>();
-      const seenOrders = new Set<number>();
-      for (const item of items) {
-        if (seenIds.has(item.id)) {
-          res.status(400).json({
-            error: { message: 'Duplicate outline id in payload', code: 'validation_error' },
-          });
-          return;
-        }
-        seenIds.add(item.id);
-        if (seenOrders.has(item.order)) {
-          res.status(400).json({
-            error: { message: 'Duplicate order in payload', code: 'validation_error' },
-          });
-          return;
-        }
-        seenOrders.add(item.order);
+      seenIds.add(item.id);
+      if (seenOrders.has(item.order)) {
+        res.status(400).json({
+          error: { message: 'Duplicate order in payload', code: 'validation_error' },
+        });
+        return;
       }
+      seenOrders.add(item.order);
+    }
 
-      try {
-        await createOutlineRepo(req).reorder(storyId, items);
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof OutlineNotOwnedError) {
-          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
-          return;
-        }
-        next(err);
+    try {
+      await createOutlineRepo(req).reorder(storyId, items);
+      res.status(204).send();
+    } catch (err) {
+      if (err instanceof OutlineNotOwnedError) {
+        res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
+        return;
       }
-    },
-  );
+      next(err);
+    }
+  });
 
   // Ownership middleware confirms the caller owns the outline item but not
   // that the item lives under :storyId — each per-item handler 404s a

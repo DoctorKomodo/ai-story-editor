@@ -1,21 +1,21 @@
 import {
+  type ChangeEvent,
+  type FormEvent,
+  type MouseEvent,
   useCallback,
   useEffect,
   useId,
   useRef,
   useState,
-  type ChangeEvent,
-  type FormEvent,
-  type MouseEvent,
 } from 'react';
-import { ApiError } from '@/lib/api';
 import {
+  type Character,
+  type UpdateCharacterPatch,
   useCharacterQuery,
   useDeleteCharacterMutation,
   useUpdateCharacterMutation,
-  type Character,
-  type UpdateCharacterPatch,
 } from '@/hooks/useCharacters';
+import { ApiError } from '@/lib/api';
 
 /**
  * F19 — Character sheet modal. Full "edit all fields" surface for a single
@@ -156,7 +156,7 @@ export function CharacterSheet({
     setFormError(null);
     setConfirmOpen(false);
     setDeleteError(null);
-  }, [open, characterId]);
+  }, [open]);
 
   // Focus the name input once fields are available.
   useEffect(() => {

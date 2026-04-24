@@ -11,7 +11,7 @@
  * `enabled` flag exists so future surfaces (pages that don't need it) can
  * opt out without duplicating the query definition.
  */
-import { useQuery, type UseQueryResult } from '@tanstack/react-query';
+import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
 export interface Balance {

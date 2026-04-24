@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel stale runs when a new push lands on the same branch / PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: lint · typecheck · test
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: storyeditor
+          POSTGRES_PASSWORD: storyeditor
+          POSTGRES_DB: storyeditor_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U storyeditor"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Backend test env. These values match .env.test; CI owns its own DB
+      # lifecycle (prisma migrate deploy below), so no docker compose needed.
+      # APP_ENCRYPTION_KEY is auto-synthesised by backend/tests/setup.ts when
+      # absent, so we don't set it here.
+      DATABASE_URL: postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test
+      JWT_SECRET: ci-jwt-secret-do-not-use-in-production
+      REFRESH_TOKEN_SECRET: ci-refresh-secret-do-not-use-in-production
+      VENICE_API_KEY: ci-venice-key-mocked
+      FRONTEND_URL: http://localhost:3000
+      PORT: 4001
+      NODE_ENV: test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            backend/package-lock.json
+            frontend/package-lock.json
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install backend deps
+        working-directory: backend
+        run: npm ci
+
+      - name: Install frontend deps
+        working-directory: frontend
+        run: npm ci
+
+      # ── Lint ───────────────────────────────────────────────────────────────
+      - name: Biome (lint + format check)
+        run: npx biome ci .
+
+      # ── Typecheck ──────────────────────────────────────────────────────────
+      - name: Backend typecheck
+        working-directory: backend
+        run: npx tsc --noEmit
+
+      - name: Frontend typecheck
+        working-directory: frontend
+        run: npx tsc -b
+
+      # ── Test ───────────────────────────────────────────────────────────────
+      - name: Prisma migrate (test DB)
+        working-directory: backend
+        run: npx prisma migrate deploy
+
+      - name: Backend tests
+        working-directory: backend
+        run: npx vitest run
+
+      - name: Frontend tests
+        working-directory: frontend
+        run: npx vitest run

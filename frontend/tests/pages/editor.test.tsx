@@ -2,9 +2,9 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AppRouter } from '@/router';
-import { createQueryClient } from '@/lib/queryClient';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { createQueryClient } from '@/lib/queryClient';
+import { AppRouter } from '@/router';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -58,9 +58,7 @@ function mockImpl(
       return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
     }
     if (url.endsWith('/auth/me')) {
-      return Promise.resolve(
-        jsonResponse(200, { user: { id: 'u1', username: 'alice' } }),
-      );
+      return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
     }
     if (url.endsWith('/stories/abc123')) {
       return storyHandler(url);

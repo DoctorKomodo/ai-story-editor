@@ -6,7 +6,10 @@ import { prisma } from '../setup';
 // is in tests/repos/story.repo.test.ts.
 
 async function makeUser(email = 'settings-user@example.com') {
-  const username = email.split('@')[0].toLowerCase().replace(/[^a-z0-9_-]/g, '');
+  const username = email
+    .split('@')[0]
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '');
   return prisma.user.create({ data: { email, username, passwordHash: 'h' } });
 }
 

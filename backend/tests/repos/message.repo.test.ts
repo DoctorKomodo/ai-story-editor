@@ -103,7 +103,11 @@ describe('[E9] message.repo', () => {
     const repo = createMessageRepo(ctx.req);
 
     await repo.create({ chatId: chat.id as string, role: 'user', contentJson: { parts: ['q1'] } });
-    await repo.create({ chatId: chat.id as string, role: 'assistant', contentJson: { parts: ['a1'] } });
+    await repo.create({
+      chatId: chat.id as string,
+      role: 'assistant',
+      contentJson: { parts: ['a1'] },
+    });
 
     const list = await repo.findManyForChat(chat.id as string);
     expect(list).toHaveLength(2);

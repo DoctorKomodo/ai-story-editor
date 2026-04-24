@@ -1,12 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
-  DekNotAvailableError,
-  DEK_BYTES,
-  InvalidPasswordError,
-  InvalidRecoveryCodeError,
-  RECOVERY_CODE_GROUPS,
-  RECOVERY_CODE_GROUP_LEN,
   attachDekToRequest,
+  DEK_BYTES,
+  DekNotAvailableError,
   decryptForRequest,
   decryptWithDek,
   encryptForRequest,
@@ -14,7 +10,11 @@ import {
   generateDekAndWraps,
   generateRecoveryCode,
   hasDekForRequest,
+  InvalidPasswordError,
+  InvalidRecoveryCodeError,
   normaliseRecoveryCode,
+  RECOVERY_CODE_GROUP_LEN,
+  RECOVERY_CODE_GROUPS,
   rewrapPasswordWrap,
   rewrapRecoveryWrap,
   unwrapDek,
@@ -119,7 +119,9 @@ describe('content-crypto.service — generateDekAndWraps', () => {
     const { dek, recoveryCode, passwordWrap, recoveryWrap } = await generateDekAndWraps(PASSWORD);
 
     expect(dek).toHaveLength(DEK_BYTES);
-    expect(recoveryCode).toMatch(/^[0-9A-HJKMNP-TV-Z]{8}-[0-9A-HJKMNP-TV-Z]{8}-[0-9A-HJKMNP-TV-Z]{8}-[0-9A-HJKMNP-TV-Z]{8}$/);
+    expect(recoveryCode).toMatch(
+      /^[0-9A-HJKMNP-TV-Z]{8}-[0-9A-HJKMNP-TV-Z]{8}-[0-9A-HJKMNP-TV-Z]{8}-[0-9A-HJKMNP-TV-Z]{8}$/,
+    );
 
     const fromPassword = await unwrapDek(passwordWrap, PASSWORD);
     const fromRecovery = await unwrapDek(recoveryWrap, normaliseRecoveryCode(recoveryCode));
@@ -176,7 +178,9 @@ describe('content-crypto.service — unwrap with DB record', () => {
       },
     });
     const fresh = await prisma.user.findUniqueOrThrow({ where: { id: user.id } });
-    await expect(unwrapDekWithPassword(fresh, 'wrong')).rejects.toBeInstanceOf(InvalidPasswordError);
+    await expect(unwrapDekWithPassword(fresh, 'wrong')).rejects.toBeInstanceOf(
+      InvalidPasswordError,
+    );
   });
 
   it('unwrapDekWithRecoveryCode returns the original DEK, tolerates hyphens + case', async () => {
@@ -264,8 +268,12 @@ describe('content-crypto.service — rewrap helpers', () => {
   });
 
   it('rewrapRecoveryWrap rewrites recovery columns and returns a new one-time recovery code', async () => {
-    const { dek, recoveryCode: originalCode, passwordWrap, recoveryWrap } =
-      await generateDekAndWraps(PASSWORD);
+    const {
+      dek,
+      recoveryCode: originalCode,
+      passwordWrap,
+      recoveryWrap,
+    } = await generateDekAndWraps(PASSWORD);
     const user = await makeUserRow();
     await prisma.user.update({
       where: { id: user.id },
@@ -319,7 +327,7 @@ describe('content-crypto.service — request-scoped DEK cache', () => {
     );
   });
 
-  it('keys are per-request: attaching to one object doesn\'t leak to another', () => {
+  it("keys are per-request: attaching to one object doesn't leak to another", () => {
     const reqA = {} as object;
     const reqB = {} as object;
     attachDekToRequest(reqA, Buffer.alloc(DEK_BYTES, 0xbb));

@@ -1,10 +1,10 @@
 import {
-  useMutation,
-  useQuery,
-  useQueryClient,
   type QueryClient,
   type UseMutationResult,
   type UseQueryResult,
+  useMutation,
+  useQuery,
+  useQueryClient,
 } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
@@ -63,13 +63,10 @@ export function useCreateChapterMutation(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateChapterInput): Promise<Chapter> => {
-      const res = await api<ChapterResponse>(
-        `/stories/${encodeURIComponent(storyId)}/chapters`,
-        {
-          method: 'POST',
-          body: input,
-        },
-      );
+      const res = await api<ChapterResponse>(`/stories/${encodeURIComponent(storyId)}/chapters`, {
+        method: 'POST',
+        body: input,
+      });
       return res.chapter;
     },
     onSuccess: () => {
@@ -185,9 +182,6 @@ export function computeReorderedChapters(
  * Read the chapters cache for a story. Thin wrapper that keeps tests + the
  * drag handler from having to spell out the query key.
  */
-export function getChaptersFromCache(
-  qc: QueryClient,
-  storyId: string,
-): Chapter[] | undefined {
+export function getChaptersFromCache(qc: QueryClient, storyId: string): Chapter[] | undefined {
   return qc.getQueryData<Chapter[]>(chaptersQueryKey(storyId));
 }

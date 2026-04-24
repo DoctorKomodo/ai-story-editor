@@ -1,9 +1,6 @@
-import type { Request } from 'express';
 import crypto from 'node:crypto';
-import {
-  attachDekToRequest,
-  generateDekAndWraps,
-} from '../../src/services/content-crypto.service';
+import type { Request } from 'express';
+import { attachDekToRequest, generateDekAndWraps } from '../../src/services/content-crypto.service';
 import { prisma } from '../setup';
 
 export interface TestUserContext {

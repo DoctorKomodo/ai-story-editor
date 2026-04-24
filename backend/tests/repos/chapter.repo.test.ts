@@ -15,9 +15,7 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
 
     const body = {
       type: 'doc',
-      content: [
-        { type: 'paragraph', content: [{ type: 'text', text: 'The night was young.' }] },
-      ],
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'The night was young.' }] }],
     };
     const created = await repo.create({
       storyId: story.id as string,

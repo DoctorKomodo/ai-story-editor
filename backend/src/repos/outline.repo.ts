@@ -1,5 +1,5 @@
-import type { Request } from 'express';
 import type { PrismaClient } from '@prisma/client';
+import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 

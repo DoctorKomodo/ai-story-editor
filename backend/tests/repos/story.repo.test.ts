@@ -73,7 +73,7 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
     expect(after.synopsisCiphertext).toBe(before.synopsisCiphertext);
   });
 
-  it('update() respects user ownership — Bob cannot mutate Alice\'s row', async () => {
+  it("update() respects user ownership — Bob cannot mutate Alice's row", async () => {
     const alice = await makeUserContext('alice-upd');
     const bob = await makeUserContext('bob-upd');
     const aliceRepo = createStoryRepo(alice.req);
@@ -100,7 +100,9 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
 
     // Construct a fresh req without calling attachDekToRequest.
     const { createStoryRepo: freshRepo } = await import('../../src/repos/story.repo');
-    const noDekReq = { user: { id: ctx.user.id, email: null } } as unknown as import('express').Request;
+    const noDekReq = {
+      user: { id: ctx.user.id, email: null },
+    } as unknown as import('express').Request;
     const { DekNotAvailableError } = await import('../../src/services/content-crypto.service');
     await expect(freshRepo(noDekReq).findById(s.id as string)).rejects.toBeInstanceOf(
       DekNotAvailableError,

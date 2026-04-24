@@ -11,18 +11,18 @@
 //   8. No ciphertext leak on the list endpoint.
 //   9. Leak sentinel does not appear in raw citationsJsonCiphertext column.
 
-import request from 'supertest';
+import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
+import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { veniceModelsService } from '../../src/services/venice.models.service';
-import { getSession, _resetSessionStore } from '../../src/services/session-store';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
-import type { Request } from 'express';
+import { attachDekToRequest } from '../../src/services/content-crypto.service';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -120,9 +120,7 @@ function makeFakeReq(accessToken: string): Request {
   return req;
 }
 
-async function setupStoryAndChapter(
-  req: Request,
-): Promise<{ storyId: string; chapterId: string }> {
+async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; chapterId: string }> {
   const story = await createStoryRepo(req).create({
     title: 'Cit Story',
     worldNotes: null,
@@ -282,10 +280,7 @@ describe('[V26] Chat web-search citations', () => {
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([
-        { venice_search_results: [] },
-        makeChunk('just text.', 'stop'),
-      ]),
+      sseStreamResponse([{ venice_search_results: [] }, makeChunk('just text.', 'stop')]),
     );
 
     const res = await runPost(accessToken, chatId, {
@@ -399,10 +394,7 @@ describe('[V26] Chat web-search citations', () => {
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
-      sseStreamResponse([
-        { venice_search_results: input },
-        makeChunk('Reply.', 'stop'),
-      ]),
+      sseStreamResponse([{ venice_search_results: input }, makeChunk('Reply.', 'stop')]),
     );
 
     const res = await runPost(accessToken, chatId, {

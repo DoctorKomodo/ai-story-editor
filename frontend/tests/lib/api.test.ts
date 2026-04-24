@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  ApiError,
   api,
   apiStream,
-  ApiError,
-  setAccessToken,
   getAccessToken,
   resetApiClientForTests,
+  setAccessToken,
 } from '@/lib/api';
 
 type FetchMock = ReturnType<typeof vi.fn>;

@@ -9,10 +9,10 @@
 // caller and does all the work in the browser. No backend route; the task
 // text explicitly forbids one.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
 import type { JSONContent } from '@tiptap/core';
-import { serializeChapterTxt, serializeStoryTxt } from '@/lib/exportTxt';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { downloadTxt } from '@/lib/downloadTxt';
+import { serializeChapterTxt, serializeStoryTxt } from '@/lib/exportTxt';
 
 export interface ExportStoryChapter {
   id: string;
@@ -49,7 +49,7 @@ export function Export({ story, activeChapterId }: ExportProps): JSX.Element {
   const activeChapter =
     activeChapterId === null
       ? null
-      : story.chapters.find((c) => c.id === activeChapterId) ?? null;
+      : (story.chapters.find((c) => c.id === activeChapterId) ?? null);
 
   useEffect(() => {
     if (!open) return;
@@ -57,7 +57,7 @@ export function Export({ story, activeChapterId }: ExportProps): JSX.Element {
     const handleMouseDown = (event: MouseEvent): void => {
       const target = event.target;
       if (!(target instanceof Node)) return;
-      if (containerRef.current && containerRef.current.contains(target)) return;
+      if (containerRef.current?.contains(target)) return;
       setOpen(false);
     };
 

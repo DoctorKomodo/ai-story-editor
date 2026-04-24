@@ -1,10 +1,9 @@
 import * as argon2 from 'argon2';
-import bcrypt from 'bcryptjs';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   BCRYPT_ROUNDS,
-  UsernameUnavailableError,
   createAuthService,
+  UsernameUnavailableError,
 } from '../../src/services/auth.service';
 import { prisma } from '../setup';
 

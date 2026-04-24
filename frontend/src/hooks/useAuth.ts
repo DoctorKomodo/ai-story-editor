@@ -1,6 +1,6 @@
 import { useCallback, useEffect } from 'react';
 import { api, refreshAccessToken, setAccessToken } from '@/lib/api';
-import { useSessionStore, type SessionUser } from '@/store/session';
+import { type SessionUser, useSessionStore } from '@/store/session';
 
 export interface Credentials {
   username: string;

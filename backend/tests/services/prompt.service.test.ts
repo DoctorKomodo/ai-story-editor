@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
-  buildPrompt,
-  estimateTokens,
-  DEFAULT_SYSTEM_PROMPT,
   type BuildPromptInput,
+  buildPrompt,
+  DEFAULT_SYSTEM_PROMPT,
+  estimateTokens,
 } from '../../src/services/prompt.service';
 
 // ─── estimateTokens ──────────────────────────────────────────────────────────
@@ -152,18 +152,20 @@ describe('buildPrompt — action task block', () => {
 
 describe('buildPrompt — worldNotes and characters', () => {
   it('includes worldNotes in the user message', () => {
-    const content = buildPrompt(
-      baseInput({ worldNotes: 'The world is a vast ocean.' }),
-    ).messages.find((m) => m.role === 'user')?.content ?? '';
+    const content =
+      buildPrompt(baseInput({ worldNotes: 'The world is a vast ocean.' })).messages.find(
+        (m) => m.role === 'user',
+      )?.content ?? '';
     expect(content).toContain('The world is a vast ocean.');
   });
 
   it('includes character name, role, and keyTraits in the user message', () => {
-    const content = buildPrompt(
-      baseInput({
-        characters: [{ name: 'Eira', role: 'Protagonist', keyTraits: 'brave, reckless' }],
-      }),
-    ).messages.find((m) => m.role === 'user')?.content ?? '';
+    const content =
+      buildPrompt(
+        baseInput({
+          characters: [{ name: 'Eira', role: 'Protagonist', keyTraits: 'brave, reckless' }],
+        }),
+      ).messages.find((m) => m.role === 'user')?.content ?? '';
     expect(content).toContain('Eira');
     expect(content).toContain('Protagonist');
     expect(content).toContain('brave, reckless');
@@ -190,9 +192,7 @@ describe('buildPrompt — chapterContent truncation', () => {
     const HEAD = 'HEAD_DROPPED_SENTINEL';
     const TAIL = 'TAIL_CONTENT_SURVIVES';
     const bigContent = HEAD + 'x'.repeat(200_000) + TAIL;
-    const result = buildPrompt(
-      baseInput({ chapterContent: bigContent, modelContextLength: 4096 }),
-    );
+    const result = buildPrompt(baseInput({ chapterContent: bigContent, modelContextLength: 4096 }));
     const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
     // The tail (newest content) must survive
     expect(userContent).toContain(TAIL);
@@ -224,9 +224,7 @@ describe('buildPrompt — chapterContent truncation', () => {
 
   it('worldNotes are never truncated even when they alone exceed the budget', () => {
     const fatWorldNotes = 'W'.repeat(4096 * 4 * 2);
-    const result = buildPrompt(
-      baseInput({ worldNotes: fatWorldNotes, modelContextLength: 4096 }),
-    );
+    const result = buildPrompt(baseInput({ worldNotes: fatWorldNotes, modelContextLength: 4096 }));
     const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
     expect(userContent).toContain(fatWorldNotes);
   });
