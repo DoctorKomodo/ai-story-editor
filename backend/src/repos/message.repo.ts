@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import type { Citation } from '../lib/venice-citations';
-import { projectDecrypted, writeCiphertextOnly } from './_narrative';
+import { projectDecrypted, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = ['contentJson', 'attachmentJson', 'citationsJson'] as const;
 
@@ -56,15 +56,11 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
         // Post-[E11]: JSON payloads live only in the ciphertext triples —
         // serialised + encrypted. Plaintext `contentJson` / `attachmentJson`
         // columns were dropped.
-        ...writeCiphertextOnly(req, 'contentJson', serialiseJsonField(input.contentJson)),
-        ...writeCiphertextOnly(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
+        ...writeEncrypted(req, 'contentJson', serialiseJsonField(input.contentJson)),
+        ...writeEncrypted(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
         // [V26] `citationsJson` follows the same ciphertext-triple pattern.
         // Null input → null triple → `projectDecrypted` returns `null` on read.
-        ...writeCiphertextOnly(
-          req,
-          'citationsJson',
-          serialiseJsonField(input.citationsJson ?? null),
-        ),
+        ...writeEncrypted(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
       },
     });
     return shape(row, req);
@@ -106,12 +102,7 @@ function shape(row: unknown, req: Request) {
   for (const f of ENCRYPTED_FIELDS) {
     const v = projected[f];
     if (typeof v === 'string' && v.length > 0) {
-      try {
-        projected[f] = JSON.parse(v);
-      } catch {
-        // Non-JSON plaintext after decryption — shouldn't happen post-[E11];
-        // leave as string so callers can see something went wrong.
-      }
+      projected[f] = JSON.parse(v);
     }
   }
   return projected;

@@ -59,15 +59,6 @@ export function writeEncrypted(
   };
 }
 
-// Alias kept for callers that used to distinguish "dual-write" from
-// "ciphertext-only" during the [E9]–[E10] dual-write window. Post-[E11] both
-// helpers behave identically — only the ciphertext triple is ever written.
-// Use this alias (or `writeEncrypted`) interchangeably; prefer this name
-// when the caller separately writes a different plaintext column that is NOT
-// the encrypted field's sibling (e.g. Chapter writes `wordCount` plaintext
-// alongside `bodyCiphertext`).
-export const writeCiphertextOnly = writeEncrypted;
-
 // Read the ciphertext triple for `field` and decrypt it.
 // Post-[E11] there is no plaintext fallback — if the triple is null across
 // the board, the field was stored as null and we return null. If the triple
