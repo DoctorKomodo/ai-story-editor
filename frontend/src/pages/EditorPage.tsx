@@ -5,6 +5,7 @@ import { ApiError } from '@/lib/api';
 import { useStoryQuery } from '@/hooks/useStories';
 import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
+import { CharacterList } from '@/components/CharacterList';
 import { AIPanel, type AIAction } from '@/components/AIPanel';
 import { AIResult } from '@/components/AIResult';
 import { UsageIndicator } from '@/components/UsageIndicator';
@@ -62,6 +63,9 @@ export function EditorPage(): JSX.Element {
   // [F10] Selected chapter is local state for now — F22 moves it into the
   // Zustand layout slice once cross-route persistence is required.
   const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
+  // [F18] Sidebar tab: Chapters vs Cast. Local state — F22 folds into slice;
+  // F27 redesigns to the mockup Cast/Outline tabs.
+  const [sidebarTab, setSidebarTab] = useState<'chapters' | 'characters'>('chapters');
   // [F12] Editor selection plumbed to the AI panel. F22 may fold this into
   // the Zustand `selection` slice once cross-component reads appear.
   const [selectedText, setSelectedText] = useState('');
@@ -205,14 +209,82 @@ export function EditorPage(): JSX.Element {
           aria-label="Chapters"
           className="w-64 shrink-0 border-r border-neutral-200 bg-white p-4 overflow-y-auto"
         >
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">
-            Chapters
-          </h2>
-          <ChapterList
-            storyId={story.id}
-            activeChapterId={activeChapterId}
-            onSelectChapter={setActiveChapterId}
-          />
+          {/* [F18] Tab switcher — Chapters / Cast. Both panels stay mounted
+              (via `hidden`) so query cache + scroll position survive toggling.
+              Keyboard arrow-key navigation between tabs is F27's concern. */}
+          <div
+            role="tablist"
+            aria-label="Sidebar sections"
+            className="flex gap-1 mb-3 border-b border-neutral-200"
+          >
+            <button
+              type="button"
+              role="tab"
+              id="sidebar-tab-chapters"
+              aria-selected={sidebarTab === 'chapters'}
+              aria-controls="sidebar-panel-chapters"
+              onClick={() => {
+                setSidebarTab('chapters');
+              }}
+              className={[
+                'px-2 py-1 text-xs font-semibold uppercase tracking-wide transition-colors',
+                sidebarTab === 'chapters'
+                  ? 'text-neutral-900 border-b-2 border-neutral-900 -mb-px'
+                  : 'text-neutral-500 hover:text-neutral-700',
+              ].join(' ')}
+            >
+              Chapters
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="sidebar-tab-characters"
+              aria-selected={sidebarTab === 'characters'}
+              aria-controls="sidebar-panel-characters"
+              onClick={() => {
+                setSidebarTab('characters');
+              }}
+              className={[
+                'px-2 py-1 text-xs font-semibold uppercase tracking-wide transition-colors',
+                sidebarTab === 'characters'
+                  ? 'text-neutral-900 border-b-2 border-neutral-900 -mb-px'
+                  : 'text-neutral-500 hover:text-neutral-700',
+              ].join(' ')}
+            >
+              Cast
+            </button>
+          </div>
+
+          <div
+            role="tabpanel"
+            id="sidebar-panel-chapters"
+            aria-labelledby="sidebar-tab-chapters"
+            hidden={sidebarTab !== 'chapters'}
+          >
+            <ChapterList
+              storyId={story.id}
+              activeChapterId={activeChapterId}
+              onSelectChapter={setActiveChapterId}
+            />
+          </div>
+
+          <div
+            role="tabpanel"
+            id="sidebar-panel-characters"
+            aria-labelledby="sidebar-tab-characters"
+            hidden={sidebarTab !== 'characters'}
+          >
+            {/* TODO(F19): open the character-sheet modal here instead of
+                logging. For now, log so the wiring is observable during
+                manual testing. */}
+            <CharacterList
+              storyId={story.id}
+              onOpenCharacter={(characterId) => {
+                // eslint-disable-next-line no-console
+                console.info('F19 will open character sheet for', characterId);
+              }}
+            />
+          </div>
         </aside>
 
         <main aria-label="Editor" className="flex-1 min-w-0 overflow-y-auto p-6">
