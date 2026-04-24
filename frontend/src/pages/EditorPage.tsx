@@ -5,6 +5,8 @@ import { useStoryQuery } from '@/hooks/useStories';
 import { Editor } from '@/components/Editor';
 import { ChapterList } from '@/components/ChapterList';
 import { AIPanel, type AIAction } from '@/components/AIPanel';
+import { ModelSelector } from '@/components/ModelSelector';
+import { useSelectedModel } from '@/hooks/useSelectedModel';
 
 function extractSelection(editor: TiptapEditor): string {
   const { from, to } = editor.state.selection;
@@ -39,6 +41,10 @@ export function EditorPage(): JSX.Element {
   // the Zustand `selection` slice once cross-component reads appear.
   const [selectedText, setSelectedText] = useState('');
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
+  // [F13] Selected Venice model — persisted to localStorage so reopening the
+  // editor keeps the user's last pick. [F15] will read this when calling
+  // /api/ai/complete.
+  const { selectedModelId, setSelectedModelId } = useSelectedModel();
 
   const handleEditorReady = useCallback((ed: TiptapEditor) => {
     setEditor(ed);
@@ -149,7 +155,13 @@ export function EditorPage(): JSX.Element {
           hidden={!aiOpen}
           className="w-80 shrink-0 border-l border-neutral-200 bg-white p-4 overflow-y-auto"
         >
-          <AIPanel selectedText={selectedText} onAction={handleAIAction} />
+          <AIPanel
+            selectedText={selectedText}
+            onAction={handleAIAction}
+            modelSelector={
+              <ModelSelector value={selectedModelId} onChange={setSelectedModelId} />
+            }
+          />
         </aside>
       </div>
     </div>
