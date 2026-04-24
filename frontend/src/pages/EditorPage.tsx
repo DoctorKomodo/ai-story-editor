@@ -16,6 +16,7 @@ import { ModelSelector } from '@/components/ModelSelector';
 import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { UserMenu } from '@/components/UserMenu';
 import { Export, type ExportStory } from '@/components/Export';
+import { DarkModeToggle } from '@/components/DarkModeToggle';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useAICompletion } from '@/hooks/useAICompletion';
@@ -199,13 +200,13 @@ export function EditorPage(): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-neutral-50">
-      <header className="flex items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6 py-3">
+    <div className="min-h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 dark:text-neutral-100">
+      <header className="flex items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6 py-3 dark:border-neutral-700 dark:bg-neutral-900">
         <div className="flex items-center gap-4 min-w-0">
           <Link
             to="/"
             aria-label="Back to dashboard"
-            className="text-neutral-600 hover:text-neutral-900"
+            className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
           >
             &larr;
           </Link>
@@ -219,13 +220,14 @@ export function EditorPage(): JSX.Element {
             }}
             aria-expanded={aiOpen}
             aria-controls="ai-panel"
-            className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors"
+            className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
           >
             {aiOpen ? 'Hide AI' : 'Show AI'}
           </button>
           {exportStory ? (
             <Export story={exportStory} activeChapterId={activeChapterId} />
           ) : null}
+          <DarkModeToggle />
           <UserMenu
             username={username}
             onSignOut={handleSignOut}
@@ -240,7 +242,7 @@ export function EditorPage(): JSX.Element {
       <div className="flex flex-1 min-h-0">
         <aside
           aria-label="Chapters"
-          className="w-64 shrink-0 border-r border-neutral-200 bg-white p-4 overflow-y-auto"
+          className="w-64 shrink-0 border-r border-neutral-200 bg-white p-4 overflow-y-auto dark:border-neutral-700 dark:bg-neutral-900"
         >
           {/* [F18] Tab switcher — Chapters / Cast. Both panels stay mounted
               (via `hidden`) so query cache + scroll position survive toggling.
@@ -311,7 +313,10 @@ export function EditorPage(): JSX.Element {
           </div>
         </aside>
 
-        <main aria-label="Editor" className="flex-1 min-w-0 overflow-y-auto p-6">
+        <main
+          aria-label="Editor"
+          className="flex-1 min-w-0 overflow-y-auto p-6 dark:bg-neutral-950"
+        >
           <div className="mx-auto max-w-3xl">
             <Editor onReady={handleEditorReady} />
           </div>
@@ -321,7 +326,7 @@ export function EditorPage(): JSX.Element {
           id="ai-panel"
           aria-label="AI assistant"
           hidden={!aiOpen}
-          className="w-80 shrink-0 border-l border-neutral-200 bg-white p-4 overflow-y-auto"
+          className="w-80 shrink-0 border-l border-neutral-200 bg-white p-4 overflow-y-auto dark:border-neutral-700 dark:bg-neutral-900"
         >
           <AIPanel
             selectedText={selectedText}

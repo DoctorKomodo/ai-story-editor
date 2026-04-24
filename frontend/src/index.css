@@ -1,3 +1,13 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* [F21] Global dark-mode body override. Tailwind's `dark:` utilities cover
+   most surfaces, but the un-classed <body> still inherits its default light
+   colours — this rule pulls it in line when `html.dark` is present so a
+   flash of near-white background doesn't leak around the page shells.
+   F46 replaces this with the full CSS-custom-properties theme system. */
+html.dark body {
+  color: rgb(245 245 245);
+  background-color: rgb(10 10 10);
+}
