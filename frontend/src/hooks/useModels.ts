@@ -18,6 +18,7 @@ export interface Model {
   contextLength: number;
   supportsReasoning: boolean;
   supportsVision: boolean;
+  supportsWebSearch: boolean;
 }
 
 export interface ModelsResponse {

@@ -31,6 +31,12 @@ export interface AIPanelProps {
    * / localStorage concerns — the parent page owns wiring.
    */
   modelSelector?: React.ReactNode;
+  /**
+   * [F14] Optional web-search toggle slot rendered between the selection-context
+   * block and the action buttons. Parent (`EditorPage`) owns the checked state
+   * and the capability-gated render via `<WebSearchToggle />`.
+   */
+  webSearchToggle?: React.ReactNode;
 }
 
 const SELECTION_DISPLAY_MAX = 200;
@@ -49,6 +55,7 @@ export function AIPanel({
   onAction,
   pending = false,
   modelSelector,
+  webSearchToggle,
 }: AIPanelProps): JSX.Element {
   const [freeform, setFreeform] = useState('');
 
@@ -78,6 +85,8 @@ export function AIPanel({
           {modelSelector}
         </section>
       )}
+
+      {webSearchToggle !== undefined && webSearchToggle}
 
       <div className="grid grid-cols-2 gap-2">
         <button

@@ -117,8 +117,8 @@ describe('GET /api/ai/models [V1]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       models: [
-        { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', contextLength: 65536, supportsReasoning: false, supportsVision: false },
-        { id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', contextLength: 32768, supportsReasoning: true, supportsVision: false },
+        { id: 'llama-3.3-70b', name: 'Llama 3.3 70B', contextLength: 65536, supportsReasoning: false, supportsVision: false, supportsWebSearch: false },
+        { id: 'qwen-qwq-32b', name: 'Qwen QwQ 32B', contextLength: 32768, supportsReasoning: true, supportsVision: false, supportsWebSearch: false },
       ],
     });
 

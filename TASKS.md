@@ -471,7 +471,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F13]** Venice model selector: dropdown from `GET /api/ai/models`. Shows model name and context window size (e.g. "128K"). Groups reasoning-capable models. Persists to localStorage.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/ModelSelector.test.tsx`
 
-- [ ] **[F14]** Web search toggle: checkbox in AI panel enabling `enableWebSearch`. Only visible when selected model supports it.
+- [x] **[F14]** Web search toggle: checkbox in AI panel enabling `enableWebSearch`. Only visible when selected model supports it.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/WebSearchToggle.test.tsx`
 
 - [ ] **[F15]** Streaming AI response: renders tokens as they arrive. "Insert at cursor" appends into TipTap at cursor position. "Copy" button.
