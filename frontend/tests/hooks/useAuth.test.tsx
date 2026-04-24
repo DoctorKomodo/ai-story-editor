@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAuth, initAuth } from '@/hooks/useAuth';
 import { useSessionStore } from '@/store/session';
-import { getAccessToken, setAccessToken } from '@/lib/api';
+import { getAccessToken, resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -21,17 +21,22 @@ describe('useAuth', () => {
   let fetchMock: FetchMock;
 
   beforeEach(() => {
+    resetApiClientForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    setAccessToken(null);
-    // Reset the session store.
-    useSessionStore.setState({ user: null, accessToken: null, status: 'idle' });
+    // Re-install the unauthorized handler that session.ts wires up at module
+    // load — `resetApiClientForTests` clears it so each test starts clean.
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({ user: null, status: 'idle' });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    setAccessToken(null);
-    useSessionStore.setState({ user: null, accessToken: null, status: 'idle' });
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
   });
 
   it('login() calls POST /api/auth/login and populates the session', async () => {
@@ -120,6 +125,13 @@ describe('useAuth', () => {
     expect(refreshUrl).toBe('/api/auth/refresh');
     expect(refreshInit.method).toBe('POST');
 
+    // /auth/me must carry the freshly-refreshed bearer — the api client
+    // attaches it automatically because setAccessToken ran before /auth/me.
+    const [meUrl, meInit] = fetchMock.mock.calls[1] as [string, RequestInit];
+    expect(meUrl).toBe('/api/auth/me');
+    const meHeaders = new Headers(meInit.headers);
+    expect(meHeaders.get('Authorization')).toBe('Bearer refreshed-tok');
+
     await waitFor(() => {
       expect(useSessionStore.getState().status).toBe('authenticated');
     });
@@ -142,5 +154,31 @@ describe('useAuth', () => {
     expect(useSessionStore.getState().status).toBe('unauthenticated');
     expect(useSessionStore.getState().user).toBeNull();
     expect(getAccessToken()).toBeNull();
+  });
+
+  it('initAuth() does not mutate the store after the abort signal fires', async () => {
+    // Slow refresh — gives us a window to abort before /auth/me runs.
+    let resolveRefresh!: (value: Response) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveRefresh = resolve;
+        }),
+    );
+
+    const controller = new AbortController();
+    const initPromise = initAuth(controller.signal);
+    // Abort BEFORE refresh resolves.
+    controller.abort();
+    resolveRefresh(jsonResponse(200, { accessToken: 'late-tok' }));
+    await initPromise;
+
+    // Status was set to 'loading' synchronously before the abort check on the
+    // first await — but no further mutations should land. Specifically, user
+    // must remain null and the access token must NOT be set.
+    expect(useSessionStore.getState().user).toBeNull();
+    expect(getAccessToken()).toBeNull();
+    // Only the refresh fetch fired — /auth/me must not have been called.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

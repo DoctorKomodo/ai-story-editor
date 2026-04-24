@@ -1,5 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { api, ApiError, setAccessToken, getAccessToken } from '@/lib/api';
+import {
+  api,
+  ApiError,
+  setAccessToken,
+  getAccessToken,
+  resetApiClientForTests,
+} from '@/lib/api';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -19,6 +25,7 @@ describe('api client', () => {
   let fetchMock: FetchMock;
 
   beforeEach(() => {
+    resetApiClientForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     setAccessToken(null);
@@ -26,7 +33,7 @@ describe('api client', () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    setAccessToken(null);
+    resetApiClientForTests();
     vi.restoreAllMocks();
   });
 
@@ -139,5 +146,52 @@ describe('api client', () => {
     await api('/auth/login', { method: 'POST', body: { username: 'u', password: 'p' } });
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/auth/login');
+  });
+
+  it('dedupes concurrent refresh calls when two requests 401 simultaneously', async () => {
+    setAccessToken('old-tok');
+
+    // Slow refresh response so both 401 retries land while it's in flight.
+    let resolveRefresh!: (value: Response) => void;
+    const refreshPromise = new Promise<Response>((resolve) => {
+      resolveRefresh = resolve;
+    });
+
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/auth/refresh')) {
+        return refreshPromise;
+      }
+      // Return responses in order of original/retry calls.
+      const callsSoFar = fetchMock.mock.calls.length;
+      // First two non-refresh calls: 401 originals.
+      if (callsSoFar <= 2) {
+        return Promise.resolve(jsonResponse(401, { error: { message: 'expired' } }));
+      }
+      // After refresh resolves, retries get 200.
+      return Promise.resolve(jsonResponse(200, { ok: true, n: callsSoFar }));
+    });
+
+    const p1 = api<{ ok: boolean }>('/a');
+    const p2 = api<{ ok: boolean }>('/b');
+
+    // Yield so both 401s land before refresh resolves.
+    await Promise.resolve();
+    await Promise.resolve();
+
+    resolveRefresh(jsonResponse(200, { accessToken: 'new-tok' }));
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(r1.ok).toBe(true);
+    expect(r2.ok).toBe(true);
+
+    // Exactly one refresh call across both concurrent flows.
+    const refreshCalls = fetchMock.mock.calls.filter(([input]) => {
+      const url = typeof input === 'string' ? input : (input as URL | Request).toString();
+      return url.includes('/auth/refresh');
+    });
+    expect(refreshCalls).toHaveLength(1);
+
+    expect(getAccessToken()).toBe('new-tok');
   });
 });

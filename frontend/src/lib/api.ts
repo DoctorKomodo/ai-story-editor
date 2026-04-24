@@ -23,6 +23,10 @@ function resolveBaseUrl(): string {
 
 let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
+// Module-level dedup sentinel: while a refresh is in flight, all callers
+// await the same promise rather than each issuing their own POST /auth/refresh
+// (which would race against the backend's refresh-cookie rotation).
+let refreshInFlight: Promise<string | null> | null = null;
 
 export function setAccessToken(token: string | null): void {
   accessToken = token;
@@ -39,6 +43,17 @@ export function getAccessToken(): string | null {
  */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
+}
+
+/**
+ * Test-only helper. Clears the in-memory access token, the unauthorized
+ * handler, and any in-flight refresh promise so tests get a clean module
+ * state in `beforeEach` / `afterEach`.
+ */
+export function resetApiClientForTests(): void {
+  accessToken = null;
+  onUnauthorized = null;
+  refreshInFlight = null;
 }
 
 export interface ApiErrorBody {
@@ -153,22 +168,40 @@ async function parseSuccessBody<T>(res: Response): Promise<T> {
  * the 401-retry branch. Returns the new access token on success, or null if
  * refresh failed. Exported so `initAuth()` can bootstrap without triggering
  * a redundant 401-retry cycle.
+ *
+ * Concurrent callers are deduped via `refreshInFlight`: the first caller
+ * issues the network request, all subsequent callers await the same promise
+ * until it settles. Without this, two simultaneous 401s would each POST
+ * /auth/refresh, the backend would rotate the refresh cookie on the first
+ * call, and the second's retry would fire with a token the backend has
+ * already invalidated.
  */
 export async function refreshAccessToken(): Promise<string | null> {
-  try {
-    const res = await fetch(buildUrl('/auth/refresh'), {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { accessToken?: string };
-    if (typeof data.accessToken === 'string' && data.accessToken.length > 0) {
-      return data.accessToken;
+  if (refreshInFlight) return refreshInFlight;
+  const run = (async (): Promise<string | null> => {
+    try {
+      const res = await fetch(buildUrl('/auth/refresh'), {
+        method: 'POST',
+        credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { accessToken?: string };
+      if (typeof data.accessToken === 'string' && data.accessToken.length > 0) {
+        return data.accessToken;
+      }
+      return null;
+    } catch {
+      return null;
     }
-    return null;
-  } catch {
-    return null;
+  })();
+  refreshInFlight = run;
+  try {
+    return await run;
+  } finally {
+    // Clear only if we're still the in-flight promise — defensive against a
+    // synchronous re-entry by a future caller.
+    if (refreshInFlight === run) refreshInFlight = null;
   }
 }
 

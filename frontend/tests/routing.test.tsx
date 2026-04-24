@@ -22,13 +22,13 @@ describe('routing', () => {
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     setAccessToken(null);
-    useSessionStore.setState({ user: null, accessToken: null, status: 'idle' });
+    useSessionStore.setState({ user: null, status: 'idle' });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
     setAccessToken(null);
-    useSessionStore.setState({ user: null, accessToken: null, status: 'idle' });
+    useSessionStore.setState({ user: null, status: 'idle' });
   });
 
   it('unauthenticated request to / redirects to /login', async () => {

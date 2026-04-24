@@ -10,7 +10,6 @@ export type SessionStatus = 'idle' | 'loading' | 'authenticated' | 'unauthentica
 
 export interface SessionState {
   user: SessionUser | null;
-  accessToken: string | null;
   status: SessionStatus;
   setSession: (user: SessionUser, accessToken: string) => void;
   clearSession: () => void;
@@ -19,15 +18,16 @@ export interface SessionState {
 
 export const useSessionStore = create<SessionState>((set) => ({
   user: null,
-  accessToken: null,
   status: 'idle',
   setSession: (user, accessToken) => {
+    // The token is the source-of-truth in the api-client module; the slice
+    // intentionally does NOT mirror it here to avoid drift.
     setAccessToken(accessToken);
-    set({ user, accessToken, status: 'authenticated' });
+    set({ user, status: 'authenticated' });
   },
   clearSession: () => {
     setAccessToken(null);
-    set({ user: null, accessToken: null, status: 'unauthenticated' });
+    set({ user: null, status: 'unauthenticated' });
   },
   setStatus: (status) => set({ status }),
 }));
