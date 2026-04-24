@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { useStoryQuery } from '@/hooks/useStories';
 import { Editor } from '@/components/Editor';
+import { ChapterList } from '@/components/ChapterList';
 
 /**
  * Three-pane editor shell (F7).
@@ -20,6 +21,9 @@ export function EditorPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const { data: story, isLoading, isError } = useStoryQuery(id);
   const [aiOpen, setAiOpen] = useState(true);
+  // [F10] Selected chapter is local state for now — F22 moves it into the
+  // Zustand layout slice once cross-route persistence is required.
+  const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
 
   if (isLoading) {
     return (
@@ -83,7 +87,11 @@ export function EditorPage(): JSX.Element {
           <h2 className="text-sm font-semibold uppercase tracking-wide text-neutral-500 mb-3">
             Chapters
           </h2>
-          <p className="text-sm text-neutral-500">Chapter list mounts in F10.</p>
+          <ChapterList
+            storyId={story.id}
+            activeChapterId={activeChapterId}
+            onSelectChapter={setActiveChapterId}
+          />
         </aside>
 
         <main aria-label="Editor" className="flex-1 min-w-0 overflow-y-auto p-6">
