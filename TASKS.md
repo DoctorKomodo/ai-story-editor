@@ -453,7 +453,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F7]** Editor layout: left sidebar (chapters), centre (TipTap), right (AI panel, collapsible). Story title in top bar.
   - verify: `cd frontend && npm run test:frontend -- --run tests/pages/editor.test.tsx`
 
-- [ ] **[F8]** TipTap editor: bold, italic, headings 1-3, paragraph, word count in footer.
+- [x] **[F8]** TipTap editor: bold, italic, headings 1-3, paragraph, word count in footer.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/Editor.test.tsx`
 
 - [ ] **[F9]** Autosave: 2s debounce, shows "Saving…" / "Saved ✓" / "Save failed — retrying".
