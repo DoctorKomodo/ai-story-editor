@@ -76,7 +76,12 @@ paths-ignore:
 #   - A /api/ai/*-wide 20/min IP limiter at the app root (index.ts)
 #   - Reset-password has two stacked limiters (IP + username)
 query-filters:
+  # NOTE: the display name is "Missing CSRF middleware" and the query file
+  # is Security/CWE-352/MissingCsrfMiddleware.ql, but the actual interpreted
+  # query ID is `js/missing-token-validation` (confirmed from the analyze
+  # action log line: `Interpreted problem query "Missing CSRF middleware"
+  # (js/missing-token-validation)`). Don't rename without re-checking.
   - exclude:
-      id: js/missing-csrf-middleware
+      id: js/missing-token-validation
   - exclude:
       id: js/missing-rate-limiting
