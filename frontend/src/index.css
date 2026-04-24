@@ -1,6 +1,9 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* [F21] Class-based dark mode: add `.dark` to <html> to enable `dark:`
+   utilities on descendants. v4 replaces v3's `darkMode: 'class'` config
+   with a variant declaration in CSS. */
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* [F21] Global dark-mode body override. Tailwind's `dark:` utilities cover
    most surfaces, but the un-classed <body> still inherits its default light

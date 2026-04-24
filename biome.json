@@ -19,8 +19,7 @@
       "!backend/dist",
       "!mockups/frontend-prototype/design",
       "!**/*.min.js",
-      "!package-lock.json",
-      "!**/*.css"
+      "!package-lock.json"
     ]
   },
   "formatter": {
@@ -37,6 +36,11 @@
       "trailingCommas": "all",
       "semicolons": "always",
       "arrowParentheses": "always"
+    }
+  },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
     }
   },
   "linter": {
