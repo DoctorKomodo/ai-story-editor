@@ -200,9 +200,6 @@ export function createAiRouter() {
         venice_parameters.enable_web_citations = true;
       }
 
-      // [V8] Prompt cache key — deterministic per (storyId, modelId)
-      venice_parameters.prompt_cache_key = promptCacheKey(body.storyId, body.modelId);
-
       // ── 11. Get the Venice client ─────────────────────────────────────────
       const client = await getVeniceClient(userId);
 
@@ -214,12 +211,16 @@ export function createAiRouter() {
       // unknown at the call site. Also cast .withResponse() return so TS
       // treats `data` as AsyncIterable<ChatCompletionChunk> (stream: true
       // guarantees this at runtime but the overload union obscures it).
+      // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
+      // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
+      // Deterministic per (storyId, modelId).
       const streamWithResp = await (
         client.chat.completions.create({
           model: body.modelId,
           messages,
           stream: true as const,
           max_tokens,
+          prompt_cache_key: promptCacheKey(body.storyId, body.modelId),
           venice_parameters,
         } as unknown as Parameters<typeof client.chat.completions.create>[0])
       ).withResponse() as unknown as {

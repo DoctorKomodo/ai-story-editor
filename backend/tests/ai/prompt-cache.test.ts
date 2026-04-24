@@ -133,7 +133,7 @@ async function setupTestData(req: Request): Promise<{ storyId: string; chapterId
   return { storyId, chapterId: chapter.id as string };
 }
 
-async function callCompleteAndGetVeniceParams(
+async function callCompleteAndGetRequestBody(
   accessToken: string,
   storyId: string,
   chapterId: string,
@@ -171,7 +171,7 @@ async function callCompleteAndGetVeniceParams(
   expect(completionCall).toBeTruthy();
   const [, init] = completionCall!;
   const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
-  return requestBody.venice_parameters as Record<string, unknown>;
+  return requestBody;
 }
 
 describe('POST /api/ai/complete — prompt cache key [V8]', () => {
@@ -208,19 +208,25 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     await prisma.user.deleteMany();
   });
 
-  it('sets prompt_cache_key to sha256(storyId:modelId) first 32 hex chars', async () => {
+  it('sets prompt_cache_key at top level to sha256(storyId:modelId) first 32 hex chars', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const vp = await callCompleteAndGetVeniceParams(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
+    const body = await callCompleteAndGetRequestBody(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
 
-    expect(vp.prompt_cache_key).toBe(expectedCacheKey(storyId, MODEL_A));
+    // [V23] prompt_cache_key is a Venice TOP-LEVEL field, not nested under
+    // venice_parameters — nesting causes Venice to silently ignore it.
+    expect(body.prompt_cache_key).toBe(expectedCacheKey(storyId, MODEL_A));
     // Sanity: must be exactly 32 hex chars
-    expect(typeof vp.prompt_cache_key).toBe('string');
-    expect((vp.prompt_cache_key as string).length).toBe(32);
-    expect(/^[0-9a-f]+$/.test(vp.prompt_cache_key as string)).toBe(true);
+    expect(typeof body.prompt_cache_key).toBe('string');
+    expect((body.prompt_cache_key as string).length).toBe(32);
+    expect(/^[0-9a-f]+$/.test(body.prompt_cache_key as string)).toBe(true);
+
+    // [V23] Must NOT live under venice_parameters.
+    const vp = body.venice_parameters as Record<string, unknown>;
+    expect(vp.prompt_cache_key).toBeUndefined();
   });
 
   it('same storyId + modelId produces the same cache key across requests', async () => {
@@ -229,7 +235,7 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const vp1 = await callCompleteAndGetVeniceParams(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
+    const body1 = await callCompleteAndGetRequestBody(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
     // Reset spy between calls, but cache is warm so no second models fetch needed
     fetchSpy.mockClear();
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
@@ -257,9 +263,8 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     expect(completionCall2).toBeTruthy();
     const [, init2] = completionCall2!;
     const body2 = JSON.parse((init2 as RequestInit).body as string) as Record<string, unknown>;
-    const vp2 = body2.venice_parameters as Record<string, unknown>;
 
-    expect(vp1.prompt_cache_key).toBe(vp2.prompt_cache_key);
+    expect(body1.prompt_cache_key).toBe(body2.prompt_cache_key);
   });
 
   it('different modelId produces a different cache key', async () => {
@@ -268,7 +273,7 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const vpA = await callCompleteAndGetVeniceParams(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
+    const bodyA = await callCompleteAndGetRequestBody(accessToken, storyId, chapterId, MODEL_A, fetchSpy);
     fetchSpy.mockClear();
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
@@ -295,9 +300,8 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     expect(completionCallB).toBeTruthy();
     const [, initB] = completionCallB!;
     const bodyB = JSON.parse((initB as RequestInit).body as string) as Record<string, unknown>;
-    const vpB = bodyB.venice_parameters as Record<string, unknown>;
 
-    expect(vpA.prompt_cache_key).not.toBe(vpB.prompt_cache_key);
-    expect(vpB.prompt_cache_key).toBe(expectedCacheKey(storyId, MODEL_B));
+    expect(bodyA.prompt_cache_key).not.toBe(bodyB.prompt_cache_key);
+    expect(bodyB.prompt_cache_key).toBe(expectedCacheKey(storyId, MODEL_B));
   });
 });
