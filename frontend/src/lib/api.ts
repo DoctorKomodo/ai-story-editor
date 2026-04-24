@@ -215,7 +215,15 @@ export async function refreshAccessToken(): Promise<string | null> {
   }
 }
 
-export async function api<T = unknown>(path: string, init?: ApiRequestInit): Promise<T> {
+/**
+ * Core request driver shared by `api<T>()` and `apiStream()`.
+ *
+ * Handles the 401 → refresh → retry-once flow and throws `ApiError` on any
+ * non-2xx response *other than the retried 401*. Success responses are
+ * returned raw so streaming callers can consume `res.body`; the JSON helper
+ * `api<T>()` wraps this and parses the body.
+ */
+async function doRequest(path: string, init?: ApiRequestInit): Promise<Response> {
   const url = buildUrl(path);
   const firstInit = buildRequestInit(init);
   const firstRes = await fetch(url, firstInit);
@@ -225,7 +233,7 @@ export async function api<T = unknown>(path: string, init?: ApiRequestInit): Pro
       const { message, code } = await parseErrorBody(firstRes);
       throw new ApiError(firstRes.status, message, code);
     }
-    return parseSuccessBody<T>(firstRes);
+    return firstRes;
   }
 
   // 401: try refresh once, then retry original request once.
@@ -250,5 +258,25 @@ export async function api<T = unknown>(path: string, init?: ApiRequestInit): Pro
     throw new ApiError(retryRes.status, message, code);
   }
 
-  return parseSuccessBody<T>(retryRes);
+  return retryRes;
+}
+
+export async function api<T = unknown>(path: string, init?: ApiRequestInit): Promise<T> {
+  const res = await doRequest(path, init);
+  return parseSuccessBody<T>(res);
+}
+
+/**
+ * Streaming variant of `api<T>()` used by F15's `/api/ai/complete` call.
+ *
+ * Builds the request identically (same base URL, same Bearer-token header,
+ * same 401 → refresh → retry-once flow, same error parsing for non-2xx
+ * non-401 responses) but returns the raw `Response` on success so the
+ * caller can consume `res.body` as a `ReadableStream` for SSE parsing.
+ *
+ * Do NOT read the body here — a single `ReadableStream` can only be
+ * consumed once.
+ */
+export async function apiStream(path: string, init?: ApiRequestInit): Promise<Response> {
+  return doRequest(path, init);
 }

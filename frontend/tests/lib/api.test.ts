@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   api,
+  apiStream,
   ApiError,
   setAccessToken,
   getAccessToken,
@@ -192,6 +193,57 @@ describe('api client', () => {
     });
     expect(refreshCalls).toHaveLength(1);
 
+    expect(getAccessToken()).toBe('new-tok');
+  });
+
+  it('apiStream returns the raw Response so callers can read res.body', async () => {
+    setAccessToken('tok-stream');
+    const streamBody = 'data: {"choices":[{"delta":{"content":"hi"}}]}\n\ndata: [DONE]\n\n';
+    fetchMock.mockResolvedValueOnce(
+      new Response(streamBody, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    );
+
+    const res = await apiStream('/ai/complete', {
+      method: 'POST',
+      body: { foo: 'bar' },
+    });
+
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).toBe(streamBody);
+
+    // Request shape: JSON-encoded body, Bearer token attached.
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe(JSON.stringify({ foo: 'bar' }));
+    const headers = new Headers(init.headers);
+    expect(headers.get('Authorization')).toBe('Bearer tok-stream');
+    expect(headers.get('Content-Type')).toBe('application/json');
+  });
+
+  it('apiStream performs the 401 → refresh → retry flow and returns the retry Response', async () => {
+    setAccessToken('old-tok');
+    const retryBody = 'data: [DONE]\n\n';
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(401, { error: { message: 'expired' } })) // original
+      .mockResolvedValueOnce(jsonResponse(200, { accessToken: 'new-tok' })) // refresh
+      .mockResolvedValueOnce(
+        new Response(retryBody, {
+          status: 200,
+          headers: { 'Content-Type': 'text/event-stream' },
+        }),
+      ); // retry
+
+    const res = await apiStream('/ai/complete', { method: 'POST', body: { x: 1 } });
+    expect(res.status).toBe(200);
+    expect(await res.text()).toBe(retryBody);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    const [, retryInit] = fetchMock.mock.calls[2] as [string, RequestInit];
+    const retryHeaders = new Headers(retryInit.headers);
+    expect(retryHeaders.get('Authorization')).toBe('Bearer new-tok');
     expect(getAccessToken()).toBe('new-tok');
   });
 });
