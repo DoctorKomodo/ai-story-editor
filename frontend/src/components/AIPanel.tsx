@@ -49,6 +49,13 @@ export interface AIPanelProps {
    * selected, no chapter selected). Rendered with `role="alert"`.
    */
   actionError?: string | null;
+  /**
+   * [F16] Optional usage indicator slot rendered beneath the result slot.
+   * Persistent across requests — the parent drives render by passing a
+   * `<UsageIndicator usage={completion.usage} />` that returns null when
+   * no snapshot exists yet.
+   */
+  usage?: React.ReactNode;
 }
 
 const SELECTION_DISPLAY_MAX = 200;
@@ -70,6 +77,7 @@ export function AIPanel({
   webSearchToggle,
   result,
   actionError,
+  usage,
 }: AIPanelProps): JSX.Element {
   const [freeform, setFreeform] = useState('');
 
@@ -178,6 +186,8 @@ export function AIPanel({
       )}
 
       {result !== undefined && result !== null && result}
+
+      {usage !== undefined && usage !== null && usage}
     </div>
   );
 }

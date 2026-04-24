@@ -8,7 +8,11 @@ import { ApiError, resetApiClientForTests, setAccessToken } from '@/lib/api';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
-function streamResponse(chunks: string[], init?: ResponseInit): Response {
+function streamResponse(
+  chunks: string[],
+  init?: ResponseInit,
+  extraHeaders?: Record<string, string>,
+): Response {
   const encoder = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -18,9 +22,13 @@ function streamResponse(chunks: string[], init?: ResponseInit): Response {
       controller.close();
     },
   });
+  const headers: Record<string, string> = {
+    'Content-Type': 'text/event-stream',
+    ...(extraHeaders ?? {}),
+  };
   return new Response(stream, {
     status: 200,
-    headers: { 'Content-Type': 'text/event-stream' },
+    headers,
     ...init,
   });
 }
@@ -211,6 +219,99 @@ describe('F15 · useAICompletion hook', () => {
 
     expect(result.current.status).toBe('idle');
     expect(result.current.text).toBe('');
+  });
+
+  it('captures x-venice-remaining-* headers into usage state after a run', async () => {
+    fetchMock.mockResolvedValueOnce(
+      streamResponse(
+        [
+          'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ],
+        undefined,
+        {
+          'x-venice-remaining-requests': '482',
+          'x-venice-remaining-tokens': '1200000',
+        },
+      ),
+    );
+
+    const { result } = renderHook(() => useAICompletion());
+
+    expect(result.current.usage).toBeNull();
+
+    await act(async () => {
+      await result.current.run({
+        action: 'continue',
+        selectedText: '',
+        chapterId: 'ch1',
+        storyId: 'st1',
+        modelId: 'venice-small',
+      });
+    });
+
+    expect(result.current.status).toBe('done');
+    expect(result.current.usage).toEqual({
+      remainingRequests: 482,
+      remainingTokens: 1_200_000,
+    });
+  });
+
+  it('preserves prior usage snapshot when a subsequent response omits the headers', async () => {
+    // First run: headers present → usage captured.
+    fetchMock.mockResolvedValueOnce(
+      streamResponse(
+        [
+          'data: {"choices":[{"delta":{"content":"hi"}}]}\n\n',
+          'data: [DONE]\n\n',
+        ],
+        undefined,
+        {
+          'x-venice-remaining-requests': '482',
+          'x-venice-remaining-tokens': '1200000',
+        },
+      ),
+    );
+    // Second run: no rate-limit headers → should NOT wipe the snapshot.
+    fetchMock.mockResolvedValueOnce(
+      streamResponse([
+        'data: {"choices":[{"delta":{"content":"again"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]),
+    );
+
+    const { result } = renderHook(() => useAICompletion());
+
+    await act(async () => {
+      await result.current.run({
+        action: 'continue',
+        selectedText: '',
+        chapterId: 'ch1',
+        storyId: 'st1',
+        modelId: 'venice-small',
+      });
+    });
+
+    expect(result.current.usage).toEqual({
+      remainingRequests: 482,
+      remainingTokens: 1_200_000,
+    });
+
+    await act(async () => {
+      await result.current.run({
+        action: 'continue',
+        selectedText: '',
+        chapterId: 'ch1',
+        storyId: 'st1',
+        modelId: 'venice-small',
+      });
+    });
+
+    // Prior snapshot preserved — nullish update must not overwrite.
+    expect(result.current.usage).toEqual({
+      remainingRequests: 482,
+      remainingTokens: 1_200_000,
+    });
   });
 });
 
