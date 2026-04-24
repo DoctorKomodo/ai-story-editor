@@ -492,7 +492,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F20]** Export: download chapter or full story as `.txt`, client-side.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/Export.test.tsx`
 
-- [ ] **[F21]** Dark mode: toggle in top nav, persisted to localStorage, TailwindCSS `dark:` classes.
+- [x] **[F21]** Dark mode: toggle in top nav, persisted to localStorage, TailwindCSS `dark:` classes.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/DarkMode.test.tsx`
 
 ### F — Mockup-fidelity implementation (Inkwell design)
