@@ -441,13 +441,13 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[F3]** API client `src/lib/api.ts`: attaches Bearer token, retries once after 401 refresh, throws typed errors.
   - verify: `cd frontend && npm run test:frontend -- --run tests/lib/api.test.ts`
 
-- [ ] **[F4]** Login and Register pages with inline validation. Redirect to `/` on success.
+- [x] **[F4]** Login and Register pages with inline validation. Redirect to `/` on success.
   - verify: `cd frontend && npm run test:frontend -- --run tests/pages/auth.test.tsx`
 
-- [ ] **[F5]** Dashboard: story card grid with title, genre, synopsis, chapter count, word count, last edited. "New Story" opens create modal.
+- [x] **[F5]** Dashboard: story card grid with title, genre, synopsis, chapter count, word count, last edited. "New Story" opens create modal.
   - verify: `cd frontend && npm run test:frontend -- --run tests/pages/dashboard.test.tsx`
 
-- [ ] **[F6]** Create/edit story modal: title (required), genre, synopsis, worldNotes fields.
+- [x] **[F6]** Create/edit story modal: title (required), genre, synopsis, worldNotes fields.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/StoryModal.test.tsx`
 
 - [ ] **[F7]** Editor layout: left sidebar (chapters), centre (TipTap), right (AI panel, collapsible). Story title in top bar.
