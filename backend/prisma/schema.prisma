@@ -115,7 +115,11 @@ model Chapter {
   chats       Chat[]
 
   @@index([storyId])
-  @@index([storyId, orderIndex])
+  // [D16] Uniqueness at the DB level is the only reliable guard against the
+  // aggregate(_max)+insert race in the POST handler; a unique constraint also
+  // creates the btree index Postgres needs for `ORDER BY orderIndex ASC`, so
+  // the separate `@@index([storyId, orderIndex])` becomes redundant.
+  @@unique([storyId, orderIndex])
 }
 
 model Character {
@@ -186,7 +190,8 @@ model OutlineItem {
   story     Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@index([storyId])
-  @@index([storyId, order])
+  // [D16] See Chapter — same race, same fix.
+  @@unique([storyId, order])
 }
 
 model Chat {

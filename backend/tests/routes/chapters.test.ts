@@ -17,7 +17,7 @@
 
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { getSession, _resetSessionStore } from '../../src/services/session-store';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
@@ -26,6 +26,7 @@ import { createChapterRepo } from '../../src/repos/chapter.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
 import { prisma } from '../setup';
+import { prisma as appPrisma } from '../../src/lib/prisma';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -245,6 +246,76 @@ describe('Chapter routes [B3]', () => {
     expect(res2.status).toBe(201);
     expect(res2.body.chapter.wordCount).toBe(0);
     expect(res2.body.chapter.orderIndex).toBe(1);
+  });
+
+  // ── [D16] POST race: aggregate+insert must retry on unique-constraint P2002
+
+  it('POST retries on P2002 when the aggregate returns a stale _max (race simulation)', async () => {
+    const accessToken = await registerAndLogin('chapters-race');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'Racing' });
+    const storyId = story.id as string;
+
+    // Seed chapter at orderIndex=0 so the next POST's _max aggregate will
+    // legitimately return 0 (so its first attempt picks 1 — no collision yet).
+    await createChapterRepo(req).create({ storyId, title: 'seed-0', orderIndex: 0 });
+
+    // Simulate a racing writer: the first aggregate reads a STALE _max that
+    // still shows 0, but between aggregate and insert another request wins
+    // slot 1. Model that by (a) inserting a real row at orderIndex=1 mid-race,
+    // and (b) forcing the first aggregate to report { _max: { orderIndex: 0 } }
+    // so the handler tries `0+1=1`, hits P2002, and retries.
+    await createChapterRepo(req).create({ storyId, title: 'racer-1', orderIndex: 1 });
+
+    const aggSpy = vi.spyOn(appPrisma.chapter, 'aggregate');
+    // First call → pretend _max is still 0 (the losing side of the race).
+    // Subsequent calls → real aggregate (now returns 1, so handler picks 2).
+    aggSpy.mockImplementationOnce(
+      async () =>
+        ({ _max: { orderIndex: 0 } }) as unknown as Awaited<
+          ReturnType<typeof appPrisma.chapter.aggregate>
+        >,
+    );
+
+    try {
+      const res = await request(app)
+        .post(`/api/stories/${storyId}/chapters`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ title: 'after-race' });
+      expect(res.status).toBe(201);
+      // After retry, the new chapter lands at slot 2 (seed took 0, racer took 1).
+      expect(res.body.chapter.orderIndex).toBe(2);
+      expect(res.body.chapter.title).toBe('after-race');
+      // The spy must have been called at least twice: once for the losing
+      // attempt, once for the retry that succeeded.
+      expect(aggSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      aggSpy.mockRestore();
+    }
+  });
+
+  it('POST surfaces a non-P2002 error without retrying indefinitely', async () => {
+    // Defence-in-depth: the retry loop only catches P2002. Any other error
+    // must propagate out of the first attempt unchanged.
+    const accessToken = await registerAndLogin('chapters-nonp2002');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'Boom' });
+    const storyId = story.id as string;
+
+    const aggSpy = vi
+      .spyOn(appPrisma.chapter, 'aggregate')
+      .mockRejectedValue(new Error('boom'));
+    try {
+      const res = await request(app)
+        .post(`/api/stories/${storyId}/chapters`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ title: 'never-lands' });
+      expect(res.status).toBe(500);
+      // Exactly one call — no silent retry on non-unique errors.
+      expect(aggSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      aggSpy.mockRestore();
+    }
   });
 
   // ── GET /:chapterId ───────────────────────────────────────────────────────

@@ -18,7 +18,7 @@
 
 import request from 'supertest';
 import jwt from 'jsonwebtoken';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { getSession, _resetSessionStore } from '../../src/services/session-store';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
@@ -27,6 +27,7 @@ import { createOutlineRepo } from '../../src/repos/outline.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
 import { prisma } from '../setup';
+import { prisma as appPrisma } from '../../src/lib/prisma';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -253,6 +254,63 @@ describe('Outline routes [B8]', () => {
     expect(r2.body.outlineItem.order).toBe(1);
     expect(r2.body.outlineItem.sub).toBeNull();
     assertNoCiphertextKeys(r2.body.outlineItem);
+  });
+
+  // ── [D16] POST race: aggregate+insert must retry on P2002 ────────────────
+
+  it('POST retries on P2002 when the aggregate returns a stale _max', async () => {
+    const accessToken = await registerAndLogin('outline-race');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'Racing outline' });
+    const storyId = story.id as string;
+
+    // Seed order=0, then the "winning racer" at order=1.
+    await createOutlineRepo(req).create({ storyId, title: 's0', status: 'queued', order: 0 });
+    await createOutlineRepo(req).create({ storyId, title: 'r1', status: 'queued', order: 1 });
+
+    // Force the first aggregate to claim _max is still 0 — handler picks
+    // 0+1=1, collides with the seeded racer, hits P2002, and retries.
+    const aggSpy = vi.spyOn(appPrisma.outlineItem, 'aggregate');
+    aggSpy.mockImplementationOnce(
+      async () =>
+        ({ _max: { order: 0 } }) as unknown as Awaited<
+          ReturnType<typeof appPrisma.outlineItem.aggregate>
+        >,
+    );
+
+    try {
+      const res = await request(app)
+        .post(`/api/stories/${storyId}/outline`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ title: 'after-race', status: 'queued' });
+      expect(res.status).toBe(201);
+      expect(res.body.outlineItem.order).toBe(2);
+      expect(res.body.outlineItem.title).toBe('after-race');
+      expect(aggSpy.mock.calls.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      aggSpy.mockRestore();
+    }
+  });
+
+  it('POST surfaces a non-P2002 error without retrying', async () => {
+    const accessToken = await registerAndLogin('outline-nonp2002');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'Boom' });
+    const storyId = story.id as string;
+
+    const aggSpy = vi
+      .spyOn(appPrisma.outlineItem, 'aggregate')
+      .mockRejectedValue(new Error('boom'));
+    try {
+      const res = await request(app)
+        .post(`/api/stories/${storyId}/outline`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ title: 'never', status: 'queued' });
+      expect(res.status).toBe(500);
+      expect(aggSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      aggSpy.mockRestore();
+    }
   });
 
   // ── GET list ──────────────────────────────────────────────────────────────

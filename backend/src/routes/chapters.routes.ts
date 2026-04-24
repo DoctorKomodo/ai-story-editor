@@ -3,6 +3,7 @@
 
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { z } from 'zod';
+import { Prisma } from '@prisma/client';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { prisma } from '../lib/prisma';
@@ -13,6 +14,18 @@ import {
   type ChapterUpdateInput,
 } from '../repos/chapter.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
+
+// [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
+// After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
+// POSTs computing the same `_max + 1` will race: the first insert wins, the
+// second raises Prisma P2002. Re-running the aggregate picks up the winner's
+// row, so one retry is almost always enough. 3 gives headroom for 3-way races
+// without letting a bug spin forever.
+const POST_ORDER_RETRY_ATTEMPTS = 3;
+
+function isPrismaUniqueViolation(err: unknown): boolean {
+  return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
+}
 
 const ChapterStatus = z.enum(['draft', 'revision', 'final']);
 
@@ -83,32 +96,49 @@ export function createChaptersRouter() {
     const body = parsed.data;
 
     try {
-      // TODO(B4): aggregate+insert is not transactionally safe; concurrent POSTs
-      // to the same story can produce duplicate orderIndex rows. Schema-level
-      // @@unique([storyId, orderIndex]) is deferred until B4's reorder design
-      // (requires migration + schema-change approval per CLAUDE.md).
+      // [D16] aggregate(_max)+insert is racy: two concurrent POSTs can compute
+      // the same `nextOrderIndex`. @@unique([storyId, orderIndex]) guarantees
+      // the DB rejects the loser with P2002; we re-aggregate and retry. One
+      // retry is almost always sufficient (the winner's row now shows up in
+      // `_max`); `POST_ORDER_RETRY_ATTEMPTS` bounds the loop.
       const userId = req.user!.id;
-      const agg = await prisma.chapter.aggregate({
-        where: { storyId, story: { userId } },
-        _max: { orderIndex: true },
-      });
-      const nextOrderIndex =
-        agg._max.orderIndex === null || agg._max.orderIndex === undefined
-          ? 0
-          : agg._max.orderIndex + 1;
-
       const wordCount = body.bodyJson === undefined ? 0 : computeWordCount(body.bodyJson);
 
-      const chapter = await createChapterRepo(req).create({
-        storyId,
-        title: body.title,
-        bodyJson: body.bodyJson,
-        status: body.status,
-        orderIndex: nextOrderIndex,
-        wordCount,
-      });
+      let lastErr: unknown;
+      let created: Awaited<ReturnType<ReturnType<typeof createChapterRepo>['create']>> | null =
+        null;
+      for (let attempt = 0; attempt < POST_ORDER_RETRY_ATTEMPTS; attempt++) {
+        const agg = await prisma.chapter.aggregate({
+          where: { storyId, story: { userId } },
+          _max: { orderIndex: true },
+        });
+        const nextOrderIndex =
+          agg._max.orderIndex === null || agg._max.orderIndex === undefined
+            ? 0
+            : agg._max.orderIndex + 1;
 
-      res.status(201).json({ chapter });
+        try {
+          created = await createChapterRepo(req).create({
+            storyId,
+            title: body.title,
+            bodyJson: body.bodyJson,
+            status: body.status,
+            orderIndex: nextOrderIndex,
+            wordCount,
+          });
+          break;
+        } catch (err) {
+          if (!isPrismaUniqueViolation(err)) throw err;
+          lastErr = err;
+          // loop — re-aggregate picks up the winning row.
+        }
+      }
+
+      if (created === null) {
+        throw lastErr ?? new Error('chapters POST: failed to allocate orderIndex');
+      }
+
+      res.status(201).json({ chapter: created });
     } catch (err) {
       next(err);
     }
