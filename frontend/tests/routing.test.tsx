@@ -50,26 +50,43 @@ describe('routing', () => {
       .getState()
       .setSession({ id: 'u1', username: 'alice' }, 'tok-1');
     // initAuth will still try to refresh — return a successful refresh + /me
-    // so state stays authenticated after bootstrap.
-    fetchMock
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ accessToken: 'tok-1' }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      )
-      .mockResolvedValueOnce(
-        new Response(JSON.stringify({ user: { id: 'u1', username: 'alice' } }), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        }),
-      );
+    // so state stays authenticated after bootstrap. The dashboard also fires
+    // a GET /api/stories on mount, so mock every call via mockImplementation
+    // rather than a brittle ordered queue.
+    fetchMock.mockImplementation((input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.endsWith('/auth/refresh')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ accessToken: 'tok-1' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      if (url.endsWith('/auth/me')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ user: { id: 'u1', username: 'alice' } }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      if (url.endsWith('/stories')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ stories: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.resolve(new Response(null, { status: 404 }));
+    });
 
     renderAt('/');
 
     await waitFor(() => {
       expect(
-        screen.getByRole('heading', { name: /dashboard/i }),
+        screen.getByRole('heading', { name: /your stories/i }),
       ).toBeInTheDocument();
     });
   });

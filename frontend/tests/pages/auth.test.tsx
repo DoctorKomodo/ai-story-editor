@@ -157,7 +157,7 @@ describe('auth pages (F4)', () => {
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /your stories/i })).toBeInTheDocument();
     });
 
     // The second fetch call is the login.
@@ -227,7 +227,7 @@ describe('auth pages (F4)', () => {
     await user.click(submit);
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dashboard/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /your stories/i })).toBeInTheDocument();
     });
 
     const registerCall = fetchMock.mock.calls.find(
