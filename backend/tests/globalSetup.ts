@@ -10,7 +10,14 @@ export async function setup(): Promise<void> {
   const rootDir = path.resolve(__dirname, '..');
   const resetScript = path.resolve(rootDir, '..', 'scripts', 'db-test-reset.sh');
 
-  if (fs.existsSync(resetScript)) {
+  // `db-test-reset.sh` drops + recreates the test DB via `docker exec` against
+  // the local docker-compose stack and sources `.env.test`. Neither exists in
+  // CI: the postgres service container is minted fresh per run (so no reset
+  // needed), `.env.test` is gitignored, and CI sets DATABASE_URL directly in
+  // the workflow env block. Skip the reset when CI=true; the migrate below
+  // handles schema sync against whatever DB the CI env points at.
+  const inCI = process.env.CI === 'true' || process.env.CI === '1';
+  if (!inCI && fs.existsSync(resetScript)) {
     execSync(`bash ${resetScript}`, { stdio: 'inherit' });
   }
 
