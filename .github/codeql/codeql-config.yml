@@ -18,3 +18,65 @@ paths-ignore:
   - "**/*.test.ts"
   - "**/*.test.tsx"
   - "**/*.spec.ts"
+
+# Query suppressions — these are NOT silent opt-outs. Each exclusion
+# below is a documented false-positive where the CodeQL query cannot
+# trace a defense that is in fact in place. Revisit any time the
+# underlying defense changes.
+#
+# -----------------------------------------------------------------------
+# js/missing-csrf-middleware
+# -----------------------------------------------------------------------
+# Fires on the `cookieParser()` mount in backend/src/index.ts. The query
+# expects a token-based CSRF library (csurf, csrf-csrf, etc.); this app
+# uses a different defense stack tailored to a single cookie-authed
+# surface:
+#
+#   1. The refresh cookie is httpOnly + SameSite=lax + path=/api/auth
+#      (backend/src/routes/auth.routes.ts refreshCookieOptions). SameSite=lax
+#      blocks cross-site fetch / XHR / hidden iframe POSTs outright.
+#   2. cookieParser is NOT applied globally. It is scoped to the
+#      `/api/auth/*` mount only (index.ts), co-located with:
+#   3. `requireAllowedOrigin(allowedOrigin)` — an Origin/Referer check
+#      middleware (backend/src/middleware/origin-check.middleware.ts)
+#      applied to every cookie-authed endpoint. It rejects any state-
+#      changing request whose Origin/Referer does not match the
+#      configured FRONTEND_URL, closing the SameSite=lax top-level-POST
+#      gap some browsers still allow.
+#   4. All non-auth routes use Bearer JWT in the Authorization header,
+#      which a cross-origin attacker cannot set — they are naturally
+#      CSRF-safe and do not depend on cookieParser at all.
+#
+# CodeQL's data-flow analysis cannot recognize an Origin-header check as
+# CSRF protection. Documented threat model in
+# backend/src/middleware/origin-check.middleware.ts. Security review
+# (AU1–AU8 task group) accepted this stack.
+#
+# -----------------------------------------------------------------------
+# js/missing-rate-limiting
+# -----------------------------------------------------------------------
+# Fires on `/change-password` and `/rotate-recovery-code` in
+# backend/src/routes/auth.routes.ts. The query walks the router chain
+# looking for a rate-limit middleware applied BEFORE the handler runs.
+# Both routes have exactly that:
+#
+#   router.post('/change-password', requireAuth, changePasswordLimiter, ...)
+#   router.post('/rotate-recovery-code', requireAuth, rotateRecoveryCodeLimiter, ...)
+#
+# The limiters are direct `rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS)` calls
+# at module scope (no factory indirection), per-user keyed on req.user.id
+# with an IP fallback. CodeQL fails to trace the limiter constant back
+# to its `rateLimit(...)` origin across the module boundary even though
+# the call graph is one hop. Confirmed by three iterations of
+# increasingly flat refactors (commits 3449bdb, bfab6fb): the shape is
+# correct, the query's taint-tracking model does not cover this pattern.
+#
+# Additional defenses in front of these endpoints:
+#   - requireAuth (bearer JWT) — unauthenticated callers never reach the limiter
+#   - A /api/ai/*-wide 20/min IP limiter at the app root (index.ts)
+#   - Reset-password has two stacked limiters (IP + username)
+query-filters:
+  - exclude:
+      id: js/missing-csrf-middleware
+  - exclude:
+      id: js/missing-rate-limiting

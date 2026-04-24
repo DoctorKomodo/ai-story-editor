@@ -10,6 +10,12 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Opt every JS action in this workflow into the Node 24 runtime ahead of
+# GitHub's forced cutover. Without this, checkout@v4 / setup-node@v4 still
+# boot on Node 20 and emit deprecation warnings on every run.
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   ci:
     name: lint · typecheck · test
