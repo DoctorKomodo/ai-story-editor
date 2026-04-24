@@ -1,4 +1,7 @@
-// [V9][V28] Rate limit header forwarding tests.
+// [V9][V28] Rate limit header forwarding tests — chat surface.
+// Mirrors tests/ai/rate-limit-headers.test.ts but targets
+// POST /api/chats/:chatId/messages instead of POST /api/ai/complete.
+//
 // Asserts that Venice rate-limit headers are forwarded to the client with
 // the `x-venice-` prefix, and that each header is absent on the response
 // when Venice didn't send the corresponding upstream header.
@@ -27,16 +30,17 @@ import { getSession, _resetSessionStore } from '../../src/services/session-store
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createChatRepo } from '../../src/repos/chat.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
 import type { Request } from 'express';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NAME = 'Rate Limit Header User';
-const USERNAME = 'rate-limit-header-user';
-const PASSWORD = 'rate-limit-header-password';
-const VALID_KEY = 'sk-venice-rate-limit-test-key-XXXX';
+const NAME = 'Chat Rate Limit Header User';
+const USERNAME = 'chat-rate-limit-header-user';
+const PASSWORD = 'chat-rate-limit-header-password';
+const VALID_KEY = 'sk-venice-chat-rate-limit-test-key-XXXX';
 
 const BASE_MODEL_ID = 'llama-3.3-70b';
 const BASE_CONTEXT_LENGTH = 65536;
@@ -69,19 +73,28 @@ function jsonResponse(status: number, body: unknown): Response {
 
 /**
  * Build a fake SSE streaming response with optional rate-limit headers.
+ * Emits a single content chunk, a usage chunk, then [DONE] so the chat
+ * route's persistence path runs to completion.
  */
 function sseStreamResponse(
   headers: Record<string, string> = {},
 ): Response {
   const enc = new TextEncoder();
-  const chunk = JSON.stringify({
+  const contentChunk = JSON.stringify({
     id: 'chatcmpl-test',
     object: 'chat.completion.chunk',
-    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: 'stop' }],
+    choices: [{ index: 0, delta: { content: 'hi' }, finish_reason: null }],
+  });
+  const usageChunk = JSON.stringify({
+    id: 'chatcmpl-test',
+    object: 'chat.completion.chunk',
+    choices: [{ index: 0, delta: { content: null }, finish_reason: 'stop' }],
+    usage: { total_tokens: 7 },
   });
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
-      controller.enqueue(enc.encode(`data: ${chunk}\n\n`));
+      controller.enqueue(enc.encode(`data: ${contentChunk}\n\n`));
+      controller.enqueue(enc.encode(`data: ${usageChunk}\n\n`));
       controller.enqueue(enc.encode('data: [DONE]\n\n'));
       controller.close();
     },
@@ -127,9 +140,9 @@ function makeFakeReq(accessToken: string): Request {
   return req;
 }
 
-async function setupStoryAndChapter(
+async function setupChat(
   req: Request,
-): Promise<{ storyId: string; chapterId: string }> {
+): Promise<{ chatId: string }> {
   const story = await createStoryRepo(req).create({ title: 'Test Story' });
   const storyId = story.id as string;
   const chapter = await createChapterRepo(req).create({
@@ -142,16 +155,17 @@ async function setupStoryAndChapter(
     orderIndex: 0,
     wordCount: 1,
   });
-  return { storyId, chapterId: chapter.id as string };
+  const chapterId = chapter.id as string;
+  const chat = await createChatRepo(req).create({ chapterId, title: null });
+  return { chatId: chat.id as string };
 }
 
-async function doCompleteRequest(
+async function doChatMessageRequest(
   accessToken: string,
-  storyId: string,
-  chapterId: string,
+  chatId: string,
 ): Promise<request.Response> {
   return request(app)
-    .post('/api/ai/complete')
+    .post(`/api/chats/${chatId}/messages`)
     .set('Authorization', `Bearer ${accessToken}`)
     .buffer(true)
     .parse((response, callback) => {
@@ -159,18 +173,12 @@ async function doCompleteRequest(
       response.on('data', (chunk: Buffer) => { data += chunk.toString(); });
       response.on('end', () => callback(null, data));
     })
-    .send({
-      action: 'continue',
-      selectedText: '',
-      chapterId,
-      storyId,
-      modelId: BASE_MODEL_ID,
-    });
+    .send({ content: 'Tell me a story.', modelId: BASE_MODEL_ID });
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
-describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () => {
+describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9][V28]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -204,13 +212,12 @@ describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () 
     await prisma.user.deleteMany();
   });
 
-  it('forwards x-ratelimit-remaining-requests and x-ratelimit-remaining-tokens from Venice', async () => {
+  it('[V9] forwards x-ratelimit-remaining-requests and x-ratelimit-remaining-tokens from Venice', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
-    const { storyId, chapterId } = await setupStoryAndChapter(req);
+    const { chatId } = await setupChat(req);
 
-    // Mock: models list + Venice completion with rate-limit headers
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
       sseStreamResponse({
@@ -219,43 +226,41 @@ describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () 
       }),
     );
 
-    const res = await doCompleteRequest(accessToken, storyId, chapterId);
+    const res = await doChatMessageRequest(accessToken, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBe('42');
     expect(res.headers['x-venice-remaining-tokens']).toBe('9876');
   });
 
-  it('does not set x-venice-remaining-requests when Venice omitted x-ratelimit-remaining-requests', async () => {
+  it('[V9] does not set x-venice-remaining-requests when Venice omitted x-ratelimit-remaining-requests', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
-    const { storyId, chapterId } = await setupStoryAndChapter(req);
+    const { chatId } = await setupChat(req);
 
-    // Only tokens header present, requests absent
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
       sseStreamResponse({ 'x-ratelimit-remaining-tokens': '5000' }),
     );
 
-    const res = await doCompleteRequest(accessToken, storyId, chapterId);
+    const res = await doChatMessageRequest(accessToken, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBeUndefined();
     expect(res.headers['x-venice-remaining-tokens']).toBe('5000');
   });
 
-  it('does not set either header when Venice omitted both rate-limit headers', async () => {
+  it('[V9] does not set either remaining-* header when Venice omitted both', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
-    const { storyId, chapterId } = await setupStoryAndChapter(req);
+    const { chatId } = await setupChat(req);
 
-    // No rate-limit headers from Venice
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse({}));
 
-    const res = await doCompleteRequest(accessToken, storyId, chapterId);
+    const res = await doChatMessageRequest(accessToken, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBeUndefined();
@@ -268,7 +273,7 @@ describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () 
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
-    const { storyId, chapterId } = await setupStoryAndChapter(req);
+    const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
@@ -282,7 +287,7 @@ describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () 
       }),
     );
 
-    const res = await doCompleteRequest(accessToken, storyId, chapterId);
+    const res = await doChatMessageRequest(accessToken, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBe('42');
@@ -297,9 +302,8 @@ describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () 
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
-    const { storyId, chapterId } = await setupStoryAndChapter(req);
+    const { chatId } = await setupChat(req);
 
-    // Only remaining-* present; limit-* and reset-* omitted.
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
       sseStreamResponse({
@@ -308,7 +312,7 @@ describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () 
       }),
     );
 
-    const res = await doCompleteRequest(accessToken, storyId, chapterId);
+    const res = await doChatMessageRequest(accessToken, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBe('7');
@@ -323,23 +327,22 @@ describe('POST /api/ai/complete — rate limit header forwarding [V9][V28]', () 
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
-    const { storyId, chapterId } = await setupStoryAndChapter(req);
+    const { chatId } = await setupChat(req);
 
-    // Mixed: limit-requests + reset-tokens present; limit-tokens + reset-requests absent.
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
       sseStreamResponse({
-        'x-ratelimit-limit-requests': '50',
-        'x-ratelimit-reset-tokens': '10s',
+        'x-ratelimit-limit-tokens': '200000',
+        'x-ratelimit-reset-requests': '2m',
       }),
     );
 
-    const res = await doCompleteRequest(accessToken, storyId, chapterId);
+    const res = await doChatMessageRequest(accessToken, chatId);
 
     expect(res.status).toBe(200);
-    expect(res.headers['x-venice-limit-requests']).toBe('50');
-    expect(res.headers['x-venice-limit-tokens']).toBeUndefined();
-    expect(res.headers['x-venice-reset-requests']).toBeUndefined();
-    expect(res.headers['x-venice-reset-tokens']).toBe('10s');
+    expect(res.headers['x-venice-limit-requests']).toBeUndefined();
+    expect(res.headers['x-venice-limit-tokens']).toBe('200000');
+    expect(res.headers['x-venice-reset-requests']).toBe('2m');
+    expect(res.headers['x-venice-reset-tokens']).toBeUndefined();
   });
 });

@@ -362,14 +362,32 @@ export function createChatMessagesRouter() {
       res.setHeader('Cache-Control', 'no-cache, no-transform');
       res.setHeader('Connection', 'keep-alive');
 
-      // [V9] Forward Venice rate-limit headers.
+      // [V9][V28] Forward Venice rate-limit headers. Limit/reset alongside
+      // remaining lets the frontend compute "X / Y remaining until HH:MM"
+      // without a second round-trip.
       const remainingRequests = veniceResponse.headers.get('x-ratelimit-remaining-requests');
       const remainingTokens = veniceResponse.headers.get('x-ratelimit-remaining-tokens');
+      const limitRequests = veniceResponse.headers.get('x-ratelimit-limit-requests');
+      const limitTokens = veniceResponse.headers.get('x-ratelimit-limit-tokens');
+      const resetRequests = veniceResponse.headers.get('x-ratelimit-reset-requests');
+      const resetTokens = veniceResponse.headers.get('x-ratelimit-reset-tokens');
       if (remainingRequests !== null) {
         res.setHeader('x-venice-remaining-requests', remainingRequests);
       }
       if (remainingTokens !== null) {
         res.setHeader('x-venice-remaining-tokens', remainingTokens);
+      }
+      if (limitRequests !== null) {
+        res.setHeader('x-venice-limit-requests', limitRequests);
+      }
+      if (limitTokens !== null) {
+        res.setHeader('x-venice-limit-tokens', limitTokens);
+      }
+      if (resetRequests !== null) {
+        res.setHeader('x-venice-reset-requests', resetRequests);
+      }
+      if (resetTokens !== null) {
+        res.setHeader('x-venice-reset-tokens', resetTokens);
       }
 
       if (typeof res.flushHeaders === 'function') {
