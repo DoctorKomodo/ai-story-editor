@@ -78,7 +78,7 @@ app.use(
   }),
 );
 
-app.use('/api/auth', createAuthRouter());
+app.use('/api/auth', createAuthRouter(allowedOrigin));
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());

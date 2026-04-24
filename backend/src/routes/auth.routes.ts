@@ -4,6 +4,7 @@ import { ZodError, z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth.middleware';
+import { requireAllowedOrigin } from '../middleware/origin-check.middleware';
 import {
   authService,
   InvalidCredentialsError,
@@ -118,8 +119,13 @@ function resetPasswordUsernameLimiter() {
   });
 }
 
-export function createAuthRouter() {
+export function createAuthRouter(allowedOrigin: string) {
   const router = Router();
+
+  // CSRF defense for the two cookie-authenticated endpoints (/refresh and
+  // /logout). All other auth routes use Bearer JWT / no credentials and
+  // don't need the check. See origin-check.middleware.ts for design notes.
+  const csrfCheck = requireAllowedOrigin(allowedOrigin);
 
   router.post('/register', async (req, res, next) => {
     try {
@@ -167,7 +173,7 @@ export function createAuthRouter() {
     }
   });
 
-  router.post('/refresh', async (req: Request, res: Response, next) => {
+  router.post('/refresh', csrfCheck, async (req: Request, res: Response, next) => {
     try {
       const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
       if (!token) {
@@ -195,7 +201,7 @@ export function createAuthRouter() {
     }
   });
 
-  router.post('/logout', async (req: Request, res: Response, next) => {
+  router.post('/logout', csrfCheck, async (req: Request, res: Response, next) => {
     try {
       const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
       if (token) await authService.logout(token);
