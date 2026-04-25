@@ -319,3 +319,16 @@ html, body {
   color: var(--ai);
   background: color-mix(in srgb, var(--ai) 10%, transparent);
 }
+
+/* [F36] Character reference mark — TipTap `charRef` span linking a text run
+   to a character by id. 1px dotted underline in `--ink-5`, `cursor: help`,
+   slightly stronger underline on hover. The hover popover ([F37]) attaches
+   its own listener via `useCharRefHoverDispatcher` and is anchored below
+   the span. */
+.char-ref {
+  border-bottom: 1px dotted var(--ink-5);
+  cursor: help;
+}
+.char-ref:hover {
+  border-bottom-color: var(--ink-3);
+}
