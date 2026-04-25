@@ -1,0 +1,134 @@
+import type { Editor as TiptapEditor } from '@tiptap/core';
+import type { JSX } from 'react';
+import { useInlineAIResultStore } from '@/store/inlineAIResult';
+
+/**
+ * Inline AI result card (F34).
+ *
+ * Renders below the prose surface inside the paper area, wrapping the user's
+ * selection as a serif-italic blockquote with a left border, then either:
+ *   - three bouncing `.think-dot`s while `status === 'thinking'`,
+ *   - the streaming/done output as serif 16px text, or
+ *   - a friendly error message on `status === 'error'`.
+ *
+ * Action row (rendered when `status === 'done' | 'error'`):
+ *   - **Replace** — diff-replaces the current TipTap selection with the
+ *     output and clears the store.
+ *   - **Insert after** — inserts the output at `editor.state.selection.to`
+ *     and clears the store.
+ *   - **Retry** — calls the parent's `onRetry` (which re-runs the AI request).
+ *   - **Discard** — clears the store, dismissing the card.
+ *
+ * F34 owns the visual + the action wiring; the parent (later: F32 EditorPage)
+ * is responsible for routing the SelectionBubble's `onAction` callback to a
+ * handler that seeds the store and kicks off the F15 SSE stream. F34 itself
+ * never calls `/api/ai/complete` — it just renders whatever the store says.
+ *
+ * Replace/Insert after are disabled when:
+ *   - `editor` is null (no TipTap instance yet), OR
+ *   - `output.length === 0` (nothing to insert).
+ */
+
+export interface InlineAIResultProps {
+  editor: TiptapEditor | null;
+  onRetry?: () => void;
+}
+
+const THINK_DOT_DELAYS_MS: readonly number[] = [0, 150, 300];
+
+export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.Element | null {
+  const inlineAIResult = useInlineAIResultStore((s) => s.inlineAIResult);
+  const clear = useInlineAIResultStore((s) => s.clear);
+
+  if (!inlineAIResult) return null;
+
+  const { text, status, output } = inlineAIResult;
+  const showActions = status === 'done' || status === 'error';
+  const canMutate = editor !== null && output.length > 0;
+
+  const handleReplace = (): void => {
+    if (!editor || output.length === 0) return;
+    editor.chain().focus().deleteSelection().insertContent(output).run();
+    clear();
+  };
+
+  const handleInsertAfter = (): void => {
+    if (!editor || output.length === 0) return;
+    editor.chain().focus().insertContentAt(editor.state.selection.to, output).run();
+    clear();
+  };
+
+  const handleRetry = (): void => {
+    onRetry?.();
+  };
+
+  const handleDiscard = (): void => {
+    clear();
+  };
+
+  const buttonClass =
+    'px-2 py-1 rounded-[var(--radius)] hover:bg-[var(--surface-hover)] text-ink-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent transition-colors';
+  const discardClass =
+    'px-2 py-1 rounded-[var(--radius)] hover:bg-[var(--surface-hover)] text-danger transition-colors';
+
+  return (
+    <aside aria-label="AI result" className="mt-4 mx-auto max-w-[720px] px-20 inline-ai-result">
+      <blockquote className="border-l-4 border-line-2 pl-4 py-1 font-serif italic text-[15px] text-ink-3">
+        {text}
+      </blockquote>
+
+      {status === 'thinking' && (
+        <div role="status" aria-label="Thinking" className="mt-3 flex items-center">
+          {THINK_DOT_DELAYS_MS.map((delay) => (
+            <span
+              key={delay}
+              data-testid="think-dot"
+              className="think-dot inline-block w-2 h-2 mx-0.5 rounded-full bg-[var(--ink-4)]"
+              style={{ animationDelay: `${delay}ms` }}
+            />
+          ))}
+        </div>
+      )}
+
+      {(status === 'streaming' || status === 'done') && output.length > 0 && (
+        <div className="font-serif text-[16px] text-ink leading-[1.6] mt-3 whitespace-pre-wrap">
+          {output}
+        </div>
+      )}
+
+      {status === 'error' && (
+        <div role="alert" className="text-danger text-[13px] mt-3">
+          Couldn&apos;t generate. Try again?
+        </div>
+      )}
+
+      {showActions && (
+        <div className="flex items-center gap-2 mt-4 text-[12px]">
+          <button
+            type="button"
+            onClick={handleReplace}
+            disabled={!canMutate}
+            className={buttonClass}
+          >
+            Replace
+          </button>
+          <button
+            type="button"
+            onClick={handleInsertAfter}
+            disabled={!canMutate}
+            className={buttonClass}
+          >
+            Insert after
+          </button>
+          <button type="button" onClick={handleRetry} className={buttonClass}>
+            Retry
+          </button>
+          <span className="flex-1" aria-hidden="true" />
+          <button type="button" onClick={handleDiscard} className={discardClass}>
+            Discard
+          </button>
+        </div>
+      )}
+    </aside>
+  );
+}

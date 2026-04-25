@@ -1,16 +1,451 @@
 @import "tailwindcss";
 
-/* [F21] Class-based dark mode: add `.dark` to <html> to enable `dark:`
-   utilities on descendants. v4 replaces v3's `darkMode: 'class'` config
-   with a variant declaration in CSS. */
-@custom-variant dark (&:where(.dark, .dark *));
+/* [F23] Design tokens ported from mockups/frontend-prototype/design/styles.css.
+   Three themes — `paper` (default, no `data-theme` attribute required),
+   `sepia`, and `dark` — switch via the `data-theme` attribute on <html>.
+   F46 will replace the F21 binary toggle with a three-way picker; until then
+   the `dark` custom variant below keeps any leftover `dark:` utilities working
+   while the toggle writes `data-theme="dark"` instead of an `html.dark` class. */
 
-/* [F21] Global dark-mode body override. Tailwind's `dark:` utilities cover
-   most surfaces, but the un-classed <body> still inherits its default light
-   colours — this rule pulls it in line when `html.dark` is present so a
-   flash of near-white background doesn't leak around the page shells.
-   F46 replaces this with the full CSS-custom-properties theme system. */
-html.dark body {
-  color: rgb(245 245 245);
-  background-color: rgb(10 10 10);
+:root {
+  /* Paper theme (default) */
+  --bg: #faf8f3;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #f3efe6;
+  --surface-hover: #f0ebe0;
+
+  --ink: #1a1a1a;
+  --ink-2: #3a3a3a;
+  --ink-3: #6b6b6b;
+  --ink-4: #9a958a;
+  --ink-5: #c4bfb3;
+
+  --line: #e8e2d5;
+  --line-2: #d8d1c0;
+
+  --accent: #2a2a2a;
+  --accent-soft: #efeadd;
+  --mark: #ffe9a8;
+  --selection: #e6dfcf;
+
+  --danger: #8a3b2f;
+  --ai: #5a4a8a;
+  --ai-soft: #ece8f4;
+
+  --serif: "Iowan Old Style", "Palatino Linotype", "Palatino", "Book Antiqua", Georgia, serif;
+  --sans: "Söhne", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --mono: "JetBrains Mono", "SF Mono", "Menlo", "Consolas", ui-monospace, monospace;
+
+  /* [F46] Prose surface tokens — mutated at runtime by the Appearance tab.
+     Default to the existing F32 values so the editor's prose rules render
+     the same as before until the user changes them. */
+  --prose-font: var(--serif);
+  --prose-size: 18px;
+  --prose-line-height: 1.7;
+}
+
+/* Sepia theme */
+[data-theme="sepia"] {
+  --bg: #f4ecd8;
+  --bg-elevated: #fbf6e8;
+  --bg-sunken: #ede3c9;
+  --surface-hover: #e9dec3;
+  --ink: #2d230f;
+  --ink-2: #4a3820;
+  --ink-3: #6e5a3e;
+  --ink-4: #9c8a6a;
+  --ink-5: #c4b48e;
+  --line: #dfd1ad;
+  --line-2: #cdbc92;
+  --accent: #2d230f;
+  --accent-soft: #e7d9b3;
+  --mark: #f5d878;
+  --selection: #e0d09a;
+  --ai: #6b4a3a;
+  --ai-soft: #ead9c4;
+}
+
+/* Dark theme */
+[data-theme="dark"] {
+  --bg: #14130f;
+  --bg-elevated: #1c1b17;
+  --bg-sunken: #0f0e0b;
+  --surface-hover: #24221d;
+  --ink: #ebe7dc;
+  --ink-2: #cdc8ba;
+  --ink-3: #928d7f;
+  --ink-4: #6b6659;
+  --ink-5: #4a463d;
+  --line: #2a2821;
+  --line-2: #3a372e;
+  --accent: #ebe7dc;
+  --accent-soft: #2a2821;
+  --mark: #5a4a1a;
+  --selection: #3a3628;
+  --ai: #b8a8e0;
+  --ai-soft: #26233a;
+}
+
+/* [F23] Custom variant: `dark:` utilities now key off data-theme="dark"
+   instead of the old `html.dark` class. Kept for back-compat with F21
+   components until F46 rewrites them to consume tokens directly. */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+/* [F23] Tailwind v4 theme block: maps CSS custom properties into Tailwind's
+   design system so utilities like `bg-bg`, `text-ink`, `border-line`,
+   `rounded-lg`, `shadow-card`, `font-serif` resolve to our tokens. */
+@theme {
+  --color-bg: var(--bg);
+  --color-bg-elevated: var(--bg-elevated);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-surface-hover: var(--surface-hover);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-ink-4: var(--ink-4);
+  --color-ink-5: var(--ink-5);
+
+  --color-line: var(--line);
+  --color-line-2: var(--line-2);
+
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-mark: var(--mark);
+  --color-selection: var(--selection);
+
+  --color-danger: var(--danger);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+
+  /* Radius and shadow tokens declared with literal values directly in
+     `@theme` so Tailwind v4 (a) hoists them onto `:root` for hand-rolled
+     `var(--radius)` references and (b) auto-generates the matching
+     utilities (`rounded`, `rounded-lg`, `shadow-card`, `shadow-pop`).
+     Declaring them only here avoids the self-referential aliases the
+     previous `--radius: var(--radius)` form produced. */
+  --radius: 3px;
+  --radius-lg: 6px;
+
+  --shadow-card: 0 1px 0 rgba(0, 0, 0, 0.02), 0 0 0 1px var(--line);
+  --shadow-pop: 0 8px 32px rgba(30, 25, 15, 0.12), 0 0 0 1px var(--line-2);
+
+  --font-serif: var(--serif);
+  --font-sans: var(--sans);
+  --font-mono: var(--mono);
+}
+
+::selection {
+  background: var(--selection);
+}
+
+html,
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--sans);
+  font-size: 14px;
+}
+
+/* [F24] Auth screen — pieces that can't be expressed cleanly with Tailwind
+   utilities (radial-gradient ::before overlay, dashed top border, the actual
+   720px breakpoint, error/spinner cosmetics that depend on color-mix and
+   keyframes). Everything else is Tailwind in AuthForm.tsx. */
+.auth-screen {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100vh;
+  width: 100%;
+  background: var(--bg);
+}
+.auth-hero {
+  position: relative;
+  overflow: hidden;
+}
+.auth-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      circle at 20% 30%,
+      color-mix(in srgb, var(--ink) 4%, transparent),
+      transparent 40%
+    ),
+    radial-gradient(
+      circle at 80% 70%,
+      color-mix(in srgb, var(--ink) 3%, transparent),
+      transparent 45%
+    );
+  pointer-events: none;
+}
+.auth-hero > * {
+  position: relative;
+}
+.auth-error {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
+  font-family: var(--sans);
+}
+.auth-meta {
+  border-top: 1px dashed var(--line);
+}
+.auth-spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: auth-spin 0.8s linear infinite;
+  display: inline-block;
+}
+@keyframes auth-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 720px) {
+  .auth-screen {
+    grid-template-columns: 1fr;
+  }
+  .auth-hero {
+    display: none;
+  }
+}
+
+/* [F25] App shell — three-column grid with named areas, ported from
+   mockups/frontend-prototype/design/styles.css (`.app`, lines 117–139).
+   `data-layout` on the root element switches between `three-col` (default),
+   `nochat` (hides the chat pane), and `focus` (hides sidebar + chat).
+   Class names match the mockup so F26/F27/F38 can target them. */
+.app-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr 360px;
+  grid-template-rows: 44px 1fr;
+  grid-template-areas:
+    "topbar topbar topbar"
+    "sidebar editor chat";
+  height: 100vh;
+  width: 100vw;
+}
+.app-shell > .topbar {
+  grid-area: topbar;
+}
+.app-shell > .sidebar {
+  grid-area: sidebar;
+}
+.app-shell > .editor {
+  grid-area: editor;
+}
+.app-shell > .chat {
+  grid-area: chat;
+}
+
+.app-shell[data-layout="focus"] {
+  grid-template-columns: 0 1fr 0;
+}
+.app-shell[data-layout="focus"] > .sidebar,
+.app-shell[data-layout="focus"] > .chat {
+  display: none;
+}
+
+.app-shell[data-layout="nochat"] {
+  grid-template-columns: 260px 1fr 0;
+}
+.app-shell[data-layout="nochat"] > .chat {
+  display: none;
+}
+
+/* [F26] Shared icon button — 28×28, used by the top bar (and reused by
+   F27 sidebar header, F31 chat header, F38 chat composer). Ported from
+   `mockups/frontend-prototype/design/styles.css` lines 213–222. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    color 0.12s;
+}
+.icon-btn:hover {
+  background: var(--surface-hover);
+  color: var(--ink);
+}
+.icon-btn.active {
+  color: var(--ink);
+  background: var(--accent-soft);
+}
+.icon-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* [F29] Outline bullet — 6px circle anchored at (left:12, top:12) inside the
+   .outline-item row. Three styling buckets: `done` (green), `active` (black +
+   3px halo ring of --accent-soft), `queued` (default --ink-5). Mirrors
+   `mockups/frontend-prototype/design/styles.css` lines 405–415. */
+.outline-bullet {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-5);
+  pointer-events: none;
+}
+.outline-bullet-done {
+  background: #6aa84f;
+}
+.outline-bullet-active {
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.outline-bullet-queued {
+  background: var(--ink-5);
+}
+
+/* [F32] Paper editor prose surface — mirrors the `.editor-paper .prose`
+   block in mockups/frontend-prototype/design/styles.css. Scoped to
+   `.paper-prose .ProseMirror` so the rules apply to the TipTap mount
+   under the Paper component without leaking to other editor surfaces
+   (FormatBar harness, AI panel previews, etc.). */
+.paper-prose .ProseMirror {
+  /* [F46] Reads the live `--prose-*` tokens (defaults match the F32 values
+     above when the Appearance tab hasn't touched them). */
+  font-family: var(--prose-font);
+  font-size: var(--prose-size);
+  line-height: var(--prose-line-height);
+  text-wrap: pretty;
+  color: var(--ink);
+  outline: none;
+}
+.paper-prose .ProseMirror p {
+  margin: 0 0 1em;
+}
+.paper-prose .ProseMirror h1 {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 1.5em 0 0.6em;
+}
+.paper-prose .ProseMirror h2 {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 1.2em 0 0.5em;
+}
+.paper-prose .ProseMirror blockquote {
+  border-left: 3px solid var(--ink-5);
+  margin: 1em 0;
+  padding-left: 1em;
+  font-style: italic;
+  color: var(--ink-2);
+}
+
+/* [F34] Inline AI result card — bouncing-dots thinking indicator. Three
+   `.think-dot`s with staggered animation-delay produce the wave effect.
+   The card itself is composed via Tailwind utilities in
+   `src/components/InlineAIResult.tsx`. F49 promoted this to a shared
+   keyframe and added the `:nth-child` stagger fallback for callers that
+   don't set an inline `animationDelay`. Existing callers (InlineAIResult)
+   keep their inline `animationDelay` style which wins per CSS specificity. */
+@keyframes think {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  40% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+.think-dot {
+  animation: think 1s ease-in-out infinite;
+}
+.think-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.think-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* [F49] Shared transitions — backdrop fade-in, modal pop-in, popover/bubble
+   slide-in. Used via the `<Transition>` wrapper in `src/components/Transition.tsx`
+   or by adding the `t-*` class directly to an element that mounts in its
+   final position. Animations only fire on mount; components unmount cleanly
+   on close so no exit animation is needed. */
+@keyframes inkwell-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.t-backdrop-in {
+  animation: inkwell-backdrop-in 160ms ease-out;
+}
+
+@keyframes inkwell-modal-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 8px)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+.t-modal-in {
+  animation: inkwell-modal-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes inkwell-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.t-popover-in {
+  animation: inkwell-popover-in 140ms ease-out;
+}
+
+/* [F35] Continue-writing affordance — purple tint for streaming output and
+   any committed-but-not-yet-discarded continuation spans inside the editor
+   (TipTap mark `aiContinuation`). Drops back to inherited prose color when
+   the mark is unset (Keep). */
+.ai-continuation {
+  color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 10%, transparent);
+}
+
+/* [F36] Character reference mark — TipTap `charRef` span linking a text run
+   to a character by id. 1px dotted underline in `--ink-5`, `cursor: help`,
+   slightly stronger underline on hover. The hover popover ([F37]) attaches
+   its own listener via `useCharRefHoverDispatcher` and is anchored below
+   the span. */
+.char-ref {
+  border-bottom: 1px dotted var(--ink-5);
+  cursor: help;
+}
+.char-ref:hover {
+  border-bottom-color: var(--ink-3);
 }

@@ -199,6 +199,9 @@ export function useAICompletion(): UseAICompletion {
               usage: prev.usage,
             }));
             return;
+          } else if (event.type === 'citations') {
+            // [V26][F50] Inline-AI completions don't render citations
+            // today; ignore the frame here. The chat path handles them.
           } else {
             // done
             safeSetState((prev) => (prev.status === 'error' ? prev : { ...prev, status: 'done' }));

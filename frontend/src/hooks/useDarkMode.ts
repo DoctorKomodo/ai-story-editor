@@ -5,9 +5,10 @@
  * try/catch around every storage call so private-mode Safari / disabled
  * storage still produces a working in-memory value.
  *
- * Side effect: when `enabled` changes, toggles the `dark` class on
- * `document.documentElement` so Tailwind's `dark:` variants (darkMode:
- * 'class' in tailwind.config.js) activate application-wide.
+ * Side effect: when `enabled` changes, sets `data-theme="dark"` on
+ * `document.documentElement` (or removes the attribute when off) so the
+ * F23 token system swaps to the dark palette and Tailwind's `dark:` variant
+ * (now keyed on `[data-theme="dark"]`) activates application-wide.
  *
  * F46 later replaces this with a three-way Paper/Sepia/Dark theme picker
  * persisted via the server settings flow (B11). The localStorage key stays
@@ -34,9 +35,13 @@ function writeToStorage(enabled: boolean): void {
   }
 }
 
-function applyDarkClass(enabled: boolean): void {
+function applyDarkAttr(enabled: boolean): void {
   if (typeof document === 'undefined') return;
-  document.documentElement.classList.toggle('dark', enabled);
+  if (enabled) {
+    document.documentElement.dataset.theme = 'dark';
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
 }
 
 export interface UseDarkModeResult {
@@ -52,7 +57,7 @@ export function useDarkMode(): UseDarkModeResult {
   // the initial render, so hydration from localStorage "true" actually lights
   // up the UI without a click).
   useEffect(() => {
-    applyDarkClass(enabled);
+    applyDarkAttr(enabled);
   }, [enabled]);
 
   const setEnabled = useCallback((next: boolean): void => {

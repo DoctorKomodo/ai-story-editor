@@ -20,10 +20,10 @@ interface HarnessProps {
 
 function Harness({ save, initial = 'baseline' }: HarnessProps): JSX.Element {
   const [payload, setPayload] = useState<string | null>(initial);
-  const { status } = useAutosave({ payload, save, debounceMs: DEBOUNCE_MS });
+  const { status, savedAt, retryAt } = useAutosave({ payload, save, debounceMs: DEBOUNCE_MS });
   return (
     <>
-      <AutosaveIndicator status={status} />
+      <AutosaveIndicator status={status} savedAt={savedAt} retryAt={retryAt} />
       <button type="button" onClick={() => setPayload(`edit-${Math.random()}`)}>
         Edit
       </button>
@@ -91,7 +91,7 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
 
     // Drain pending microtasks/state updates from the resolved promise.
     await advance(0);
-    expect(screen.getByRole('status')).toHaveTextContent('Saved ✓');
+    expect(screen.getByRole('status')).toHaveTextContent(/^Saved · /);
   });
 
   it('resets the debounce timer on rapid successive changes', async () => {
@@ -132,7 +132,7 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
       resolveSave!();
     });
 
-    expect(screen.getByRole('status')).toHaveTextContent('Saved ✓');
+    expect(screen.getByRole('status')).toHaveTextContent(/^Saved · /);
   });
 
   it('enters error state on a failed save and retries after 2x debounceMs', async () => {
@@ -148,14 +148,14 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     // Let the rejection settle.
     await advance(0);
     expect(save).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('status')).toHaveTextContent('Save failed — retrying');
+    expect(screen.getByRole('status')).toHaveTextContent(/^Save failed — retrying/);
 
     // Retry fires after 2 * DEBOUNCE_MS.
     await advance(DEBOUNCE_MS * 2);
     expect(save).toHaveBeenCalledTimes(2);
 
     await advance(0);
-    expect(screen.getByRole('status')).toHaveTextContent('Saved ✓');
+    expect(screen.getByRole('status')).toHaveTextContent(/^Saved · /);
   });
 
   it('does not call save or touch state after unmount', async () => {
