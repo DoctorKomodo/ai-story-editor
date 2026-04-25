@@ -613,6 +613,41 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [ ] **[F58]** Refresh DashboardPage to the mockup: render the F30 `<StoryPicker>` content as the primary entry surface (open by default at `/`) instead of (or alongside) the F5 card grid. Selecting a story navigates to `/stories/:id`; New story still opens the F6 `<StoryModal>`. Apply the F49 `t-modal-in` keyframe to centred modal cards (Settings, StoryPicker, ModelPicker) — the F49 author flagged this as deferred because the keyframe's `translate(-50%, -50%)` conflicts with the existing `grid place-items-center` centring; refactor each modal's wrapper to centre via the keyframe-compatible transform so the entrance animation fires.
   - verify: `cd frontend && npm run test:frontend -- --run tests/pages/dashboard.test.tsx tests/components/StoryPicker.test.tsx`
 
+### F — Core completion (gaps blocking a usable app)
+
+> Surfaced by the 2026-04-25 prototype-vs-tasks audit. These are the items remaining before "core up and running" — auth-loop closure, editor-flow completeness, empty/edge states, and Settings cleanup. **Each task below requires a detailed implementation plan written before code starts** — dispatch `superpowers:writing-plans` (or run `/plan`) to produce one under `docs/superpowers/plans/<task-id>-<slug>.md`, get sign-off, then execute.
+>
+> Tasks tagged **[design-first]** also need a mockup committed to `mockups/frontend-prototype/design/` (or an addendum file) before the implementation plan is written, since the original prototype does not show the screen.
+>
+> X-series extras are deliberately deferred — these tasks restrict scope to what's needed for end-to-end usability.
+
+- [ ] **[F59]** **[design-first]** Recovery-code handoff at signup. `[AU9]` returns a one-time `recoveryCode` in the registration response; today the frontend discards it. Surface it as a dedicated full-screen interstitial (or modal) immediately after `useAuth().register()` resolves, with explicit "I have stored this — continue" gating. Copy-to-clipboard + download-as-`.txt` actions; warning that the code is shown ONCE; no nav until the user confirms. Persist nothing client-side — the code lives only in the user's possession from this point on. Required prerequisite for `[F60]`. Design must mock the interstitial first.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/pages/recovery-code-handoff.test.tsx`
+
+- [ ] **[F60]** **[design-first]** Forgot-password / reset-with-recovery-code flow. Backend `[AU16]` accepts `{ username, recoveryCode, newPassword }` and re-wraps the DEK. Add a "Forgot password?" link on the login screen that routes to `/reset-password`; the page collects username + recovery code + new password (with confirmation). On success, navigate to `/login` with a success toast. Surface clear failure copy for the recovery-code-mismatch case (DON'T leak whether the username exists). Mock the page first — no design exists in the prototype today.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/pages/reset-password.test.tsx`
+
+- [ ] **[F61]** **[design-first]** Account & privacy panel. The user-menu's "Account & privacy" entry currently opens nothing. Build a tabbed (or sectioned) view exposing: change password (`[AU15]`), rotate recovery code (`[AU17]` — show the new one with the same handoff UI as `[F59]`), sign out everywhere (revoke all refresh tokens — backend may need a `[B12]` follow-up if not yet shipped), and a placeholder for "delete account" (defer wiring to `[X3]`). Reuse the `[F43]` Settings modal shell pattern. Mock the layout before implementation.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/components/AccountPrivacy.test.tsx`
+
+- [ ] **[F62]** **[design-first]** charRef mark authoring path. `[F36]` ships the mark + popover but nothing applies it — no popovers ever fire because no marks exist. Spec the affordance (recommended starting point: `@`-trigger autocomplete from the active story's cast, with up/down keyboard nav + Enter to insert; alternative: "Mention character…" entry in the `[F33]` selection bubble alongside Rewrite/Describe/Expand/Ask AI). Decision must be in the design before implementation. Persists into `chapters.bodyJson` via `setCharRef({ characterId })` (already exists). Visual feedback while typing (filtering the list).
+  - verify: `cd frontend && npm run test:frontend -- --run tests/components/CharRefAuthoring.test.tsx`
+
+- [ ] **[F63]** **[design-first]** Chat history pane content. `[F38]` mounts a History tab whose body is the placeholder string `"History — coming in a future task"`. Render the list of chats for the active chapter via `useChatsQuery(chapterId)` — each row showing title (or first user-message preview), relative timestamp, and message count. Click selects-and-loads the chat into the Chat tab. Define archive/pin/delete semantics in the design (recommended minimum: just delete + select; archive/pin punted). Decide what "New chat" does to the previous one.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/components/ChatHistory.test.tsx`
+
+- [ ] **[F64]** **[design-first]** Empty dashboard + editor empty-state hint strip. (1) DashboardPage with zero stories renders a single bare line today — design a hero with brand mark, copy ("Your stories live here"), and a primary "New story" CTA (which opens `[F6]` StoryModal). (2) Editor with an empty chapter renders no affordances; the prototype's `editor.jsx:95-108` shows a three-row hint strip ("select text → bubble", "hover names → card", "⌥↵ → continue"). Mock both before implementation.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/pages/dashboard-empty.test.tsx tests/components/EditorEmptyHints.test.tsx`
+
+- [ ] **[F65]** Terminal-401 redirect to login. `[F3]`'s api client retries refresh once; when the refresh itself returns 401, the user is left on a broken page. Wire the existing `setUnauthorizedHandler(...)` (already in `frontend/src/lib/api.ts`) so a terminal failure clears `useSessionStore` and navigates to `/login`. Confirm `useInitAuth()` correctly handles a hard 401 on app boot. Add a small "Your session expired — please sign in again" toast/banner on the login page when redirected from a terminal 401. No design needed — uses existing toast/error patterns.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/lib/api-401-terminal.test.ts tests/pages/auth.test.tsx`
+
+- [ ] **[F66]** Resolve `[F45]` smart-quotes / em-dash drift. Decision: extend `[B11]` settings JSON with `writing.smartQuotes: boolean` and `writing.emDashExpansion: boolean`, drop the localStorage shim, and wire two TipTap input rules (curly quotes on `"`/`'`, em-dash on `--`) gated by the settings. OR delete the toggles outright. Plan must capture the decision + rationale. (Auto-save toggle stays in localStorage — that's a frontend behaviour with no backend semantics.)
+  - verify: `cd frontend && npm run test:frontend -- --run tests/components/Settings.writing.test.tsx tests/components/EditorInputRules.test.tsx`
+
+- [ ] **[F67]** Resolve `[F43]` feature toggles + privacy toggles dead UI. Six "Features" toggles (Chat completions / Text continuation / Inline rewrite / Image generation / Character extraction / Embeddings) and two "Privacy" toggles (request logging, send-story-context) are no-ops. Decision: simplest path is to delete them — the operator already controls feature access via deployment config, and per-user feature-flagging adds significant backend surface for marginal benefit. Alternative: extend `[B11]` with a `features` + `privacy` block and gate AI calls client-side. Plan must record the decision; default to deletion unless we can articulate a concrete user need.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/components/Settings.shell-venice.test.tsx`
+
 ---
 
 ## ☁️ I — DevOps & Infra
