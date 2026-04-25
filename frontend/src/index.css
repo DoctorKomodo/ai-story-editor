@@ -310,3 +310,12 @@ html, body {
 .think-dot {
   animation: think 1s ease-in-out infinite;
 }
+
+/* [F35] Continue-writing affordance — purple tint for streaming output and
+   any committed-but-not-yet-discarded continuation spans inside the editor
+   (TipTap mark `aiContinuation`). Drops back to inherited prose color when
+   the mark is unset (Keep). */
+.ai-continuation {
+  color: var(--ai);
+  background: color-mix(in srgb, var(--ai) 10%, transparent);
+}
