@@ -8,6 +8,7 @@
 // change; the footer's Cancel / Done both just close the modal.
 import type { JSX } from 'react';
 import { type MouseEvent, useEffect, useId, useRef, useState } from 'react';
+import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
@@ -206,7 +207,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
           ) : activeTab === 'writing' ? (
             <SettingsWritingTab />
           ) : (
-            <PlaceholderPanel taskId="F46" label="Appearance" />
+            <SettingsAppearanceTab />
           )}
         </div>
 
@@ -234,14 +235,6 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
           </div>
         </footer>
       </div>
-    </div>
-  );
-}
-
-function PlaceholderPanel({ taskId, label }: { taskId: string; label: string }): JSX.Element {
-  return (
-    <div className="py-8 text-center font-mono text-[12px] text-ink-4">
-      {label} — coming in [{taskId}]
     </div>
   );
 }
