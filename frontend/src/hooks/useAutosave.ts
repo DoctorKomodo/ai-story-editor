@@ -27,12 +27,18 @@ export interface UseAutosaveOptions<T> {
 
 export interface UseAutosaveResult {
   status: AutosaveStatus;
+  /** Wall-clock ms (Date.now()) of the last successful save, or null. */
+  savedAt: number | null;
+  /** Wall-clock ms (Date.now()) at which the next retry will fire, or null. */
+  retryAt: number | null;
 }
 
 export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
   const { payload, save, debounceMs = 4000, equals = Object.is } = opts;
 
   const [status, setStatus] = useState<AutosaveStatus>('idle');
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [retryAt, setRetryAt] = useState<number | null>(null);
 
   // Refs for stable access inside timers.
   const saveRef = useRef(save);
@@ -77,6 +83,7 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
       if (retryTimerRef.current !== null) {
         clearTimeout(retryTimerRef.current);
         retryTimerRef.current = null;
+        if (mountedRef.current) setRetryAt(null);
       }
     };
     const safeSetStatus = (next: AutosaveStatus): void => {
@@ -96,6 +103,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
         if (!mountedRef.current) return;
 
         savingRef.current = false;
+        if (mountedRef.current) {
+          setSavedAt(Date.now());
+          setRetryAt(null);
+        }
         safeSetStatus('saved');
 
         // If the payload changed while the save was in flight, schedule a
@@ -130,11 +141,16 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
 
         // One-shot retry after 2 * debounceMs.
         clearRetry();
+        const retryDelay = debounceMsRef.current * 2;
+        if (mountedRef.current) {
+          setRetryAt(Date.now() + retryDelay);
+        }
         retryTimerRef.current = setTimeout(() => {
           retryTimerRef.current = null;
           if (!mountedRef.current) return;
+          setRetryAt(null);
           void runSave();
-        }, debounceMsRef.current * 2);
+        }, retryDelay);
       }
     };
 
@@ -188,5 +204,5 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     };
   }, []);
 
-  return { status };
+  return { status, savedAt, retryAt };
 }
