@@ -1,12 +1,20 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ChatComposer, type SendArgs } from '@/components/ChatComposer';
 import { ASK_AI_DRAFT, triggerAskAI } from '@/lib/askAi';
+import { createQueryClient } from '@/lib/queryClient';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useComposerDraftStore } from '@/store/composerDraft';
 import { useSelectionStore } from '@/store/selection';
 import { useTweaksStore } from '@/store/tweaks';
+
+function renderWithQuery(ui: ReactNode): void {
+  const qc = createQueryClient();
+  render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
+}
 
 afterEach(() => {
   act(() => {
@@ -36,7 +44,7 @@ describe('triggerAskAI flow (F41)', () => {
       .mockReturnValue({ removeAllRanges } as unknown as Selection);
 
     const onSend = vi.fn();
-    render(<ChatComposer onSend={onSend} />);
+    renderWithQuery(<ChatComposer onSend={onSend} />);
     const textarea = screen.getByRole('textbox') as HTMLTextAreaElement;
 
     act(() => {
@@ -66,6 +74,7 @@ describe('triggerAskAI flow (F41)', () => {
         chapter: { id: 'ch-1', number: 3, title: 'Storm' },
       },
       mode: 'ask',
+      enableWebSearch: false,
     } satisfies SendArgs);
 
     getSelectionSpy.mockRestore();
@@ -77,7 +86,7 @@ describe('triggerAskAI flow (F41)', () => {
         tweaks: { theme: 'paper', layout: 'focus', proseFont: 'iowan' },
       });
     });
-    render(<ChatComposer onSend={vi.fn()} />);
+    renderWithQuery(<ChatComposer onSend={vi.fn()} />);
 
     act(() => {
       triggerAskAI({
@@ -91,7 +100,7 @@ describe('triggerAskAI flow (F41)', () => {
 
   it('keeps three-col layout if already three-col', () => {
     const setTweaksSpy = vi.spyOn(useTweaksStore.getState(), 'setTweaks');
-    render(<ChatComposer onSend={vi.fn()} />);
+    renderWithQuery(<ChatComposer onSend={vi.fn()} />);
 
     act(() => {
       triggerAskAI({

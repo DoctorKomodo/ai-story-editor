@@ -4,11 +4,14 @@ import {
   type KeyboardEvent,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
+import { useModelsQuery } from '@/hooks/useModels';
 import { type AttachedSelectionValue, useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useComposerDraftStore } from '@/store/composerDraft';
+import { useModelStore } from '@/store/model';
 
 /**
  * [F40] Chat composer.
@@ -37,6 +40,13 @@ export interface SendArgs {
   content: string;
   attachment: AttachedSelectionValue | null;
   mode: ChatComposerMode;
+  /**
+   * [F50] When true, the next `POST /chats/:chatId/messages` should set
+   * `enableWebSearch: true`. Per-turn, not session-wide — the composer
+   * resets the toggle to false after each successful send so credits are
+   * never silently burned across a long conversation.
+   */
+  enableWebSearch: boolean;
 }
 
 export interface ChatComposerProps {
@@ -112,11 +122,22 @@ function ArrowUpIcon(): JSX.Element {
 export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): JSX.Element {
   const [value, setValue] = useState<string>('');
   const [mode, setMode] = useState<ChatComposerMode>('ask');
+  // [F50] Per-turn web-search toggle. Resets to false after every send so
+  // a long conversation cannot silently burn search credits.
+  const [useWebSearch, setUseWebSearch] = useState<boolean>(false);
   const attachment = useAttachedSelectionStore((s) => s.attachedSelection);
   const clearAttachment = useAttachedSelectionStore((s) => s.clear);
   const pendingDraft = useComposerDraftStore((s) => s.draft);
   const clearDraft = useComposerDraftStore((s) => s.clearDraft);
   const focusToken = useComposerDraftStore((s) => s.focusToken);
+  const modelId = useModelStore((s) => s.modelId);
+  const modelsQuery = useModelsQuery();
+  const selectedModel = useMemo(() => {
+    const list = modelsQuery.data ?? [];
+    if (modelId === null) return null;
+    return list.find((m) => m.id === modelId) ?? null;
+  }, [modelsQuery.data, modelId]);
+  const showWebSearchToggle = selectedModel !== null && selectedModel.supportsWebSearch === true;
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -155,11 +176,15 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
       content: trimmed,
       attachment,
       mode,
+      enableWebSearch: useWebSearch,
     };
     void onSend(args);
     setValue('');
     clearAttachment();
     setMode('ask');
+    // [F50] Per-turn semantics: reset the toggle so the next message
+    // does not inadvertently re-trigger web search.
+    setUseWebSearch(false);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
@@ -252,6 +277,30 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
         </div>
         <span className="ml-auto font-mono text-[11px] text-ink-4">⌘↵ send</span>
       </div>
+
+      {showWebSearchToggle ? (
+        <div className="flex items-center gap-2" data-testid="composer-web-search-toggle">
+          <label
+            htmlFor="chat-web-search"
+            className="flex items-center gap-1.5 font-sans text-[11px] text-ink-3"
+          >
+            <input
+              id="chat-web-search"
+              type="checkbox"
+              checked={useWebSearch}
+              onChange={(e) => {
+                setUseWebSearch(e.target.checked);
+              }}
+              aria-describedby="chat-web-search-hint"
+              className="h-3.5 w-3.5"
+            />
+            <span>Web search</span>
+          </label>
+          <span id="chat-web-search-hint" className="font-sans text-[11px] text-ink-4">
+            Web search — may increase response time + cost.
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }

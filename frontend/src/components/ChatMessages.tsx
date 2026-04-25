@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { MessageCitations } from '@/components/MessageCitations';
 import {
   type ChatMessage,
   type ChatMessageAttachment,
@@ -21,10 +22,11 @@ import {
  *  - Dashed context chip at the end of the list (mono 11px) summarising the
  *    attached chapter / character / token count.
  *
- * F50 will mount `<MessageCitations />` into the `data-citations-slot`
- * placeholder under each assistant message — F39 itself does not render
- * citations, but it leaves a stable hook so the F50 wiring is a one-line
- * portal mount.
+ * [F50] mounts `<MessageCitations />` inside the `data-citations-slot`
+ * wrapper under each assistant message. The slot remains in the DOM
+ * for every assistant bubble so the per-message-id invariant is stable;
+ * the citations component itself returns null when there are no
+ * citations to render.
  *
  * `system` messages are skipped — they exist server-side for prompt
  * construction and are not part of the user-facing transcript.
@@ -313,11 +315,14 @@ function AssistantMessage({ message, onCopy, onRegenerate }: AssistantMessagePro
         ) : null}
       </div>
       {/*
-        F50 mount point — `<MessageCitations messageId={...} />` will be
-        rendered into this slot. F39 leaves the wrapper empty so the DOM
-        invariant (one slot per assistant message) is testable now.
+        [F50] Citations slot. The wrapper stays in the DOM for every
+        assistant bubble (so the F39 mount-point invariant remains
+        testable). When the message has citations, `<MessageCitations />`
+        renders the disclosure inline; otherwise the slot is empty.
       */}
-      <div data-citations-slot data-message-id={message.id} />
+      <div data-citations-slot data-message-id={message.id}>
+        <MessageCitations citations={message.citationsJson} />
+      </div>
     </li>
   );
 }
