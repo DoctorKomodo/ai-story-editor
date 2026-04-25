@@ -2,11 +2,13 @@ import {
   type ChangeEvent,
   type JSX,
   type KeyboardEvent,
+  useEffect,
   useLayoutEffect,
   useRef,
   useState,
 } from 'react';
 import { type AttachedSelectionValue, useAttachedSelectionStore } from '@/store/attachedSelection';
+import { useComposerDraftStore } from '@/store/composerDraft';
 
 /**
  * [F40] Chat composer.
@@ -112,6 +114,9 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
   const [mode, setMode] = useState<ChatComposerMode>('ask');
   const attachment = useAttachedSelectionStore((s) => s.attachedSelection);
   const clearAttachment = useAttachedSelectionStore((s) => s.clear);
+  const pendingDraft = useComposerDraftStore((s) => s.draft);
+  const clearDraft = useComposerDraftStore((s) => s.clearDraft);
+  const focusToken = useComposerDraftStore((s) => s.focusToken);
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -123,6 +128,23 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
     el.style.height = 'auto';
     el.style.height = `${String(Math.min(el.scrollHeight, MAX_TEXTAREA_HEIGHT_PX))}px`;
   }, [value]);
+
+  // [F41] When a pending draft is pushed via the composer-draft slice
+  // (e.g. from `triggerAskAI`), prepend it to the current value and clear
+  // the slice. If the textarea is empty, the draft becomes the value.
+  useEffect(() => {
+    if (pendingDraft === null) return;
+    setValue((prev) => (prev.length === 0 ? pendingDraft : pendingDraft + prev));
+    clearDraft();
+  }, [pendingDraft, clearDraft]);
+
+  // [F41] Focus the textarea whenever a focus request comes in. Skip the
+  // initial render (token === 0) so mounting the composer doesn't steal
+  // focus from elsewhere on the page.
+  useEffect(() => {
+    if (focusToken === 0) return;
+    textareaRef.current?.focus();
+  }, [focusToken]);
 
   const trimmed = value.trim();
   const isSendDisabled = disabled || (trimmed.length === 0 && attachment === null);

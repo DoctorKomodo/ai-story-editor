@@ -8,6 +8,8 @@ export type {
   AttachedSelectionValue,
 } from './attachedSelection';
 export { useAttachedSelectionStore } from './attachedSelection';
+export type { ComposerDraftState } from './composerDraft';
+export { useComposerDraftStore } from './composerDraft';
 export type {
   InlineAIAction,
   InlineAIResultState,
