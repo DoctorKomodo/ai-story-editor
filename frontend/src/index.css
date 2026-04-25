@@ -264,3 +264,37 @@ html, body {
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 .outline-bullet-queued { background: var(--ink-5); }
+
+/* [F32] Paper editor prose surface — mirrors the `.editor-paper .prose`
+   block in mockups/frontend-prototype/design/styles.css. Scoped to
+   `.paper-prose .ProseMirror` so the rules apply to the TipTap mount
+   under the Paper component without leaking to other editor surfaces
+   (FormatBar harness, AI panel previews, etc.). */
+.paper-prose .ProseMirror {
+  font-family: var(--serif);
+  font-size: 18px;
+  line-height: 1.7;
+  text-wrap: pretty;
+  color: var(--ink);
+  outline: none;
+}
+.paper-prose .ProseMirror p { margin: 0 0 1em; }
+.paper-prose .ProseMirror h1 {
+  font-family: var(--serif);
+  font-size: 24px;
+  font-weight: 600;
+  margin: 1.5em 0 0.6em;
+}
+.paper-prose .ProseMirror h2 {
+  font-family: var(--serif);
+  font-size: 20px;
+  font-weight: 600;
+  margin: 1.2em 0 0.5em;
+}
+.paper-prose .ProseMirror blockquote {
+  border-left: 3px solid var(--ink-5);
+  margin: 1em 0;
+  padding-left: 1em;
+  font-style: italic;
+  color: var(--ink-2);
+}
