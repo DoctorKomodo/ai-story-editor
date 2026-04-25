@@ -15,6 +15,17 @@ export default defineConfig({
     pool: 'forks',
     fileParallelism: false,
     sequence: { concurrent: false },
+    // Real Venice round-trips can spike past the default 5s, especially the
+    // streaming SSE test waiting for the first delta. Hook timeout matches so
+    // beforeAll's client construction (which is fast, but inherits this scope)
+    // doesn't impose its own tighter cap.
+    testTimeout: 30_000,
+    hookTimeout: 30_000,
+    // Venice's chat-completions endpoint occasionally returns 429
+    // "The model is currently overloaded" or stalls for >30s — both transient
+    // server-side conditions, not failures of the SDK wiring this suite is
+    // here to verify. Retry each test up to 2 times before reporting failure.
+    retry: 2,
   },
   resolve: {
     alias: { '@': path.resolve(__dirname, './src') },
