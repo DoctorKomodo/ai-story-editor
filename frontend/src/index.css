@@ -193,3 +193,34 @@ html, body {
   .auth-screen { grid-template-columns: 1fr; }
   .auth-hero { display: none; }
 }
+
+/* [F25] App shell — three-column grid with named areas, ported from
+   mockups/frontend-prototype/design/styles.css (`.app`, lines 117–139).
+   `data-layout` on the root element switches between `three-col` (default),
+   `nochat` (hides the chat pane), and `focus` (hides sidebar + chat).
+   Class names match the mockup so F26/F27/F38 can target them. */
+.app-shell {
+  display: grid;
+  grid-template-columns: 260px 1fr 360px;
+  grid-template-rows: 44px 1fr;
+  grid-template-areas:
+    "topbar topbar topbar"
+    "sidebar editor chat";
+  height: 100vh;
+  width: 100vw;
+}
+.app-shell > .topbar { grid-area: topbar; }
+.app-shell > .sidebar { grid-area: sidebar; }
+.app-shell > .editor { grid-area: editor; }
+.app-shell > .chat { grid-area: chat; }
+
+.app-shell[data-layout="focus"] {
+  grid-template-columns: 0 1fr 0;
+}
+.app-shell[data-layout="focus"] > .sidebar,
+.app-shell[data-layout="focus"] > .chat { display: none; }
+
+.app-shell[data-layout="nochat"] {
+  grid-template-columns: 260px 1fr 0;
+}
+.app-shell[data-layout="nochat"] > .chat { display: none; }
