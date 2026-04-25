@@ -138,3 +138,58 @@ html, body {
   font-family: var(--sans);
   font-size: 14px;
 }
+
+/* [F24] Auth screen — pieces that can't be expressed cleanly with Tailwind
+   utilities (radial-gradient ::before overlay, dashed top border, the actual
+   720px breakpoint, error/spinner cosmetics that depend on color-mix and
+   keyframes). Everything else is Tailwind in AuthForm.tsx. */
+.auth-screen {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  min-height: 100vh;
+  width: 100%;
+  background: var(--bg);
+}
+.auth-hero {
+  position: relative;
+  overflow: hidden;
+}
+.auth-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 20% 30%, color-mix(in srgb, var(--ink) 4%, transparent), transparent 40%),
+    radial-gradient(circle at 80% 70%, color-mix(in srgb, var(--ink) 3%, transparent), transparent 45%);
+  pointer-events: none;
+}
+.auth-hero > * {
+  position: relative;
+}
+.auth-error {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  border: 1px solid color-mix(in srgb, var(--danger) 20%, transparent);
+  font-family: var(--sans);
+}
+.auth-meta {
+  border-top: 1px dashed var(--line);
+}
+.auth-spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: auth-spin .8s linear infinite;
+  display: inline-block;
+}
+@keyframes auth-spin { to { transform: rotate(360deg); } }
+
+@media (max-width: 720px) {
+  .auth-screen { grid-template-columns: 1fr; }
+  .auth-hero { display: none; }
+}
