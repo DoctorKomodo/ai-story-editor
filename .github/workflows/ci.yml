@@ -76,6 +76,13 @@ jobs:
       - name: Biome (lint + format check)
         run: npx biome ci .
 
+      # Prisma 7 ships an empty client until `prisma generate` runs against
+      # the schema; without this the backend typecheck fails on every file
+      # that imports from @prisma/client.
+      - name: Prisma generate
+        working-directory: backend
+        run: npx prisma generate
+
       # ── Typecheck ──────────────────────────────────────────────────────────
       - name: Backend typecheck
         working-directory: backend
