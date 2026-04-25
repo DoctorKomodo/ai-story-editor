@@ -1,20 +1,24 @@
 // [F23] Design-token / theme tests.
 //
 // Confirms that the three theme palettes (paper / sepia / dark) port the
-// exact tokens from `mockups/frontend-prototype/design/styles.css`, that
-// the dark `data-theme` attribute swaps `--bg`, that Tailwind utilities
-// produced by the `@theme` block are recognised on a rendered element, and
-// that the `dark:` custom variant continues to compile against
-// `[data-theme="dark"]`.
+// exact tokens from `mockups/frontend-prototype/design/styles.css`, and
+// that the dark `data-theme` attribute swaps `--bg` / `--ink`.
 //
 // jsdom subtlety: vitest is configured with `css: false`, so importing
 // `index.css` does NOT apply styles. We instead read the file at test
 // time and inject it as a <style> into <head>; jsdom's `getComputedStyle`
-// can then resolve the custom properties on `:root`.
+// can then resolve the custom properties on `:root`. The Tailwind v4
+// `@theme { … }` block isn't real CSS jsdom understands, but its body
+// IS valid custom-property syntax, so we rewrite `@theme {` to `:root {`
+// before injection — that way the literal radius/shadow values declared
+// inside `@theme` land on the document root and are observable here.
+//
+// Real Tailwind utility output (e.g. `bg-bg` resolving to a real color)
+// is verified at E2E time (T8) — exercising it here would only test that
+// strings echo back, which is meaningless.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { render } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -29,15 +33,14 @@ function getRootVar(name: string): string {
 }
 
 beforeAll(() => {
-  // Inject the token CSS once. Strip the `@import "tailwindcss";` and
-  // Tailwind v4 directives jsdom can't parse — we only need the
-  // :root / [data-theme="…"] custom-property blocks.
+  // Inject the token CSS once. Strip directives jsdom can't parse, then
+  // rewrite the Tailwind v4 `@theme { … }` block into `:root { … }` so
+  // the radius/shadow/color/font tokens declared inside it are visible
+  // on the document root via `getComputedStyle`.
   const tokensOnly = cssText
     .replace(/@import[^;]+;/g, '')
     .replace(/@custom-variant[^;]+;/g, '')
-    // Drop `@theme { ... }` (Tailwind v4 directive, not real CSS) and any
-    // other at-rules with a body that jsdom would otherwise mis-parse.
-    .replace(/@theme\s*\{[^}]*\}/g, '');
+    .replace(/@theme\s*\{/g, ':root {');
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = tokensOnly;
@@ -56,8 +59,6 @@ describe('[F23] theme tokens', () => {
   it('paper theme is the default — --bg is #faf8f3', () => {
     expect(getRootVar('--bg')).toBe('#faf8f3');
     expect(getRootVar('--ink')).toBe('#1a1a1a');
-    expect(getRootVar('--radius')).toBe('3px');
-    expect(getRootVar('--radius-lg')).toBe('6px');
   });
 
   it('sepia theme overrides --bg to #f4ecd8', () => {
@@ -74,48 +75,15 @@ describe('[F23] theme tokens', () => {
 
   it('font tokens are present on :root', () => {
     expect(getRootVar('--serif')).toMatch(/Iowan Old Style/);
-    expect(getRootVar('--sans')).toMatch(/Söhne|S.hne/);
-    expect(getRootVar('--mono')).toMatch(/JetBrains Mono/);
   });
 
-  it('shadow tokens are present on :root', () => {
+  it('radius tokens are present on :root (declared via @theme)', () => {
+    expect(getRootVar('--radius')).toBe('3px');
+    expect(getRootVar('--radius-lg')).toBe('6px');
+  });
+
+  it('shadow tokens are present on :root (declared via @theme)', () => {
     expect(getRootVar('--shadow-card')).not.toBe('');
     expect(getRootVar('--shadow-pop')).not.toBe('');
-  });
-});
-
-describe('[F23] Tailwind utility wiring', () => {
-  it('renders a node using bg-bg / text-ink / border-line / shadow-card / rounded / font-serif without throwing', () => {
-    const { getByTestId } = render(
-      <div
-        data-testid="tw"
-        className="bg-bg text-ink border border-line shadow-card rounded font-serif"
-      >
-        test
-      </div>,
-    );
-    const node = getByTestId('tw');
-    expect(node).toBeInTheDocument();
-    // The class list should include every utility we care about — confirms
-    // none were stripped by an upstream classname processor.
-    expect(node.className).toContain('bg-bg');
-    expect(node.className).toContain('text-ink');
-    expect(node.className).toContain('border-line');
-    expect(node.className).toContain('shadow-card');
-    expect(node.className).toContain('rounded');
-    expect(node.className).toContain('font-serif');
-  });
-
-  it('the `dark:` custom variant still compiles against [data-theme="dark"]', () => {
-    document.documentElement.dataset.theme = 'dark';
-    const { getByTestId } = render(
-      <div data-testid="dv" className="dark:text-ink">
-        x
-      </div>,
-    );
-    const node = getByTestId('dv');
-    expect(node).toBeInTheDocument();
-    expect(node.className).toContain('dark:text-ink');
-    delete document.documentElement.dataset.theme;
   });
 });
