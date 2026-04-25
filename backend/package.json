@@ -11,11 +11,12 @@
     "test": "vitest run",
     "test:backend": "vitest",
     "db:test:reset": "bash ../scripts/db-test-reset.sh",
-    "test:live": "bash -c 'OUT=$(vitest --config vitest.live.config.ts \"$@\" 2>&1); CODE=$?; echo \"$OUT\"; exit $CODE' --",
+    "test:live": "bash -c 'OUT=$(vitest run --config vitest.live.config.ts \"$@\" 2>&1); CODE=$?; echo \"$OUT\"; exit $CODE' --",
     "venice:probe": "ts-node scripts/venice-probe.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
+    "@prisma/adapter-pg": "^7.8.0",
+    "@prisma/client": "^7.8.0",
     "argon2": "^0.44.0",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
@@ -24,8 +25,8 @@
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
     "morgan": "^1.10.0",
-    "openai": "^4.77.0",
-    "prisma": "^5.22.0",
+    "openai": "^6.34.0",
+    "prisma": "^7.8.0",
     "zod": "^3.23.8"
   },
   "devDependencies": {

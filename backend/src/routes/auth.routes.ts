@@ -1,5 +1,5 @@
 import { type Request, type Response, Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ZodError, z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
@@ -72,7 +72,7 @@ const SENSITIVE_AUTH_LIMIT_OPTIONS = {
   // Keying on user id (not ip) matches the task spec — a shared NAT
   // can't DOS a legitimate user's ability to change their own password,
   // and a compromised session can't burn someone else's quota.
-  keyGenerator: (req: Request) => req.user?.id ?? req.ip ?? 'unknown',
+  keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? 'unknown'),
   // Don't draw from the limit pool when bodies are malformed / unauthed;
   // the endpoint's protection target is the crypto-verify path, not the
   // schema / auth rejection path.
@@ -101,7 +101,7 @@ function resetPasswordIpLimiter() {
     limit: IS_TEST_ENV ? 10_000 : 20,
     standardHeaders: 'draft-7',
     legacyHeaders: false,
-    keyGenerator: (req) => req.ip ?? 'unknown-ip',
+    keyGenerator: (req) => ipKeyGenerator(req.ip ?? 'unknown-ip'),
   });
 }
 

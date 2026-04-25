@@ -219,7 +219,7 @@ describe('mapVeniceError — 402 INSUFFICIENT_BALANCE', () => {
         },
       },
       `Venice rejected call using key=${KEY_SENTINEL}`,
-      {},
+      new Headers(),
     );
   }
 

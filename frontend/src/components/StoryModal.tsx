@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { type FormEvent, type MouseEvent, useEffect, useId, useRef, useState } from 'react';
 import {
   type StoryInput,

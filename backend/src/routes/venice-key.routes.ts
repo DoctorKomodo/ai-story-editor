@@ -1,5 +1,5 @@
 import { type Request, type Response, Router } from 'express';
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ZodError } from 'zod';
 import { AuthenticationError, mapVeniceError } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -21,7 +21,7 @@ export function createVerifyRateLimiter(windowMs = 60_000) {
     // Key by authenticated user id. Falls back to IP when no user (e.g. if
     // the middleware order is somehow wrong — the auth middleware already
     // runs before this limiter, so req.user should always be present here).
-    keyGenerator: (req: Request) => req.user?.id ?? req.ip ?? 'anon',
+    keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? 'anon'),
     handler: (_req: Request, res: Response) => {
       res.status(429).json({
         error: {

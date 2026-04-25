@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -57,7 +57,12 @@ describe('auth pages (F4)', () => {
     vi.unstubAllGlobals();
     setUnauthorizedHandler(null);
     resetApiClientForTests();
-    useSessionStore.setState({ user: null, status: 'idle' });
+    // Wrap in act(): vitest runs afterEach hooks in reverse registration order,
+    // so this fires before setup.ts's cleanup() unmounts; otherwise the state
+    // change notifies still-mounted subscribers outside act.
+    act(() => {
+      useSessionStore.setState({ user: null, status: 'idle' });
+    });
   });
 
   it('login page renders username and password fields', async () => {

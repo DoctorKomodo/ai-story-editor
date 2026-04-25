@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { setAccessToken } from '@/lib/api';
@@ -32,7 +32,12 @@ describe('routing', () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     setAccessToken(null);
-    useSessionStore.setState({ user: null, status: 'idle' });
+    // Wrap in act(): vitest runs afterEach hooks in reverse registration order,
+    // so this fires before setup.ts's cleanup() unmounts; otherwise the state
+    // change notifies still-mounted subscribers outside act.
+    act(() => {
+      useSessionStore.setState({ user: null, status: 'idle' });
+    });
   });
 
   it('unauthenticated request to / redirects to /login', async () => {
@@ -158,11 +163,19 @@ describe('routing', () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
     renderAt('/login');
     expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+    // Wait for initAuth's async refresh to settle so the post-render
+    // clearSession() lands inside act (not as a trailing warning).
+    await waitFor(() => {
+      expect(useSessionStore.getState().status).toBe('unauthenticated');
+    });
   });
 
   it('/register is reachable without auth', async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 401 }));
     renderAt('/register');
     expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
+    await waitFor(() => {
+      expect(useSessionStore.getState().status).toBe('unauthenticated');
+    });
   });
 });

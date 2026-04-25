@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 import { Link } from 'react-router-dom';
 import type { StoryListItem } from '@/hooks/useStories';
 import { formatRelative } from '@/lib/time';

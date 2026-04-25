@@ -1,6 +1,7 @@
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
+import type { JSX } from 'react';
 import { useEffect, useMemo, useRef } from 'react';
 
 /**

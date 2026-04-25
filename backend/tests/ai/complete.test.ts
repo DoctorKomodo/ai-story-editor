@@ -384,9 +384,16 @@ describe('POST /api/ai/complete [V5]', () => {
     );
     expect(completionCall).toBeTruthy();
     const [, init] = completionCall!;
-    const auth =
-      (init?.headers as Record<string, string> | undefined)?.Authorization ??
-      (init?.headers as Record<string, string> | undefined)?.authorization;
+    // openai SDK v6 passes a WHATWG `Headers` instance; older versions used a
+    // plain object. Accept either shape.
+    const rawHeaders = init?.headers;
+    let auth: string | null | undefined;
+    if (rawHeaders instanceof Headers) {
+      auth = rawHeaders.get('authorization');
+    } else {
+      const obj = rawHeaders as Record<string, string> | undefined;
+      auth = obj?.Authorization ?? obj?.authorization;
+    }
     expect(auth).toBe(`Bearer ${VALID_KEY}`);
   });
 

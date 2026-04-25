@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * [F21] Header button that flips dark mode.
  *

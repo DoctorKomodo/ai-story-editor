@@ -1,4 +1,5 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import type { JSX } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useInitAuth } from '@/hooks/useAuth';
 import { queryClient } from '@/lib/queryClient';

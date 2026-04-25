@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 // [F20] Export button — client-side .txt download for the current chapter
 // or the full story.
 //

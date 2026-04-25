@@ -1,3 +1,4 @@
+import type { JSX } from 'react';
 /**
  * Venice usage indicator (F16).
  *

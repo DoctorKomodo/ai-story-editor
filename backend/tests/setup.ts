@@ -1,3 +1,4 @@
+import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '@prisma/client';
 import { afterAll } from 'vitest';
 
@@ -20,7 +21,7 @@ export const testDatabaseUrl = explicitTestDb;
 process.env.DATABASE_URL = testDatabaseUrl;
 
 export const prisma = new PrismaClient({
-  datasources: { db: { url: testDatabaseUrl } },
+  adapter: new PrismaPg({ connectionString: testDatabaseUrl }),
 });
 
 export async function teardown(): Promise<void> {
