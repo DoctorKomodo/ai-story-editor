@@ -17,7 +17,11 @@ afterEach(() => {
 describe('useTweaksStore', () => {
   it('exposes the documented defaults', () => {
     const { result } = renderHook(() => useTweaksStore());
-    expect(result.current.tweaks).toEqual(DEFAULTS);
+    expect(result.current.tweaks).toEqual({
+      theme: 'paper',
+      layout: 'three-col',
+      proseFont: 'iowan',
+    });
   });
 
   it('setTweaks patches a single key without clobbering others', () => {

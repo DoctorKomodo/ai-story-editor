@@ -9,27 +9,27 @@ afterEach(() => {
 });
 
 describe('useModelStore', () => {
-  it('defaults to { id: null }', () => {
+  it('defaults modelId to null', () => {
     const { result } = renderHook(() => useModelStore());
-    expect(result.current.model).toEqual({ id: null });
+    expect(result.current.modelId).toBeNull();
   });
 
   it('setModelId updates the model id', () => {
     const { result } = renderHook(() => useModelStore());
     act(() => {
-      result.current.setModelId('venice-llama-3.1-405b');
+      result.current.setModelId('venice-uncensored-1.5');
     });
-    expect(result.current.model).toEqual({ id: 'venice-llama-3.1-405b' });
+    expect(result.current.modelId).toBe('venice-uncensored-1.5');
   });
 
   it('can clear back to null', () => {
     const { result } = renderHook(() => useModelStore());
     act(() => {
-      result.current.setModelId('m');
+      result.current.setModelId('venice-uncensored-1.5');
     });
     act(() => {
       result.current.setModelId(null);
     });
-    expect(result.current.model.id).toBeNull();
+    expect(result.current.modelId).toBeNull();
   });
 });

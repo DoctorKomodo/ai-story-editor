@@ -18,7 +18,12 @@ afterEach(() => {
 describe('useParamsStore', () => {
   it('exposes the documented defaults', () => {
     const { result } = renderHook(() => useParamsStore());
-    expect(result.current.params).toEqual(DEFAULTS);
+    expect(result.current.params).toEqual({
+      temperature: 0.85,
+      topP: 0.95,
+      maxTokens: 800,
+      frequencyPenalty: 0,
+    });
   });
 
   it('setParams patches a single key without clobbering others', () => {
