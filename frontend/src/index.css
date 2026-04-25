@@ -224,3 +224,22 @@ html, body {
   grid-template-columns: 260px 1fr 0;
 }
 .app-shell[data-layout="nochat"] > .chat { display: none; }
+
+/* [F26] Shared icon button — 28×28, used by the top bar (and reused by
+   F27 sidebar header, F31 chat header, F38 chat composer). Ported from
+   `mockups/frontend-prototype/design/styles.css` lines 213–222. */
+.icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius);
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.icon-btn:hover { background: var(--surface-hover); color: var(--ink); }
+.icon-btn.active { color: var(--ink); background: var(--accent-soft); }
+.icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
