@@ -243,3 +243,24 @@ html, body {
 .icon-btn:hover { background: var(--surface-hover); color: var(--ink); }
 .icon-btn.active { color: var(--ink); background: var(--accent-soft); }
 .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* [F29] Outline bullet — 6px circle anchored at (left:12, top:12) inside the
+   .outline-item row. Three styling buckets: `done` (green), `active` (black +
+   3px halo ring of --accent-soft), `queued` (default --ink-5). Mirrors
+   `mockups/frontend-prototype/design/styles.css` lines 405–415. */
+.outline-bullet {
+  position: absolute;
+  left: 12px;
+  top: 12px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ink-5);
+  pointer-events: none;
+}
+.outline-bullet-done { background: #6aa84f; }
+.outline-bullet-active {
+  background: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.outline-bullet-queued { background: var(--ink-5); }
