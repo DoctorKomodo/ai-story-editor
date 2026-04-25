@@ -8,6 +8,7 @@
 // change; the footer's Cancel / Done both just close the modal.
 import type { JSX } from 'react';
 import { type MouseEvent, useEffect, useId, useRef, useState } from 'react';
+import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
 import {
   useDeleteVeniceKeyMutation,
@@ -200,7 +201,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
           {activeTab === 'venice' ? (
             <VeniceTab />
           ) : activeTab === 'models' ? (
-            <PlaceholderPanel taskId="F44" label="Models" />
+            <SettingsModelsTab />
           ) : activeTab === 'writing' ? (
             <PlaceholderPanel taskId="F45" label="Writing" />
           ) : (
