@@ -9,6 +9,7 @@
 import type { JSX } from 'react';
 import { type MouseEvent, useEffect, useId, useRef, useState } from 'react';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
+import { SettingsWritingTab } from '@/components/SettingsWritingTab';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
 import {
   useDeleteVeniceKeyMutation,
@@ -203,7 +204,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
           ) : activeTab === 'models' ? (
             <SettingsModelsTab />
           ) : activeTab === 'writing' ? (
-            <PlaceholderPanel taskId="F45" label="Writing" />
+            <SettingsWritingTab />
           ) : (
             <PlaceholderPanel taskId="F46" label="Appearance" />
           )}
