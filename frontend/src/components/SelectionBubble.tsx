@@ -186,7 +186,7 @@ export function SelectionBubble({
       role="menu"
       aria-label="Selection actions"
       onMouseDown={swallowMouseDown}
-      className="fixed z-50 inline-flex items-center gap-1 p-1 bg-ink text-bg rounded-[var(--radius)] shadow-[0_6px_18px_rgba(0,0,0,.22)]"
+      className="t-popover-in fixed z-50 inline-flex items-center gap-1 p-1 bg-ink text-bg rounded-[var(--radius)] shadow-[0_6px_18px_rgba(0,0,0,.22)]"
       style={
         pos
           ? {

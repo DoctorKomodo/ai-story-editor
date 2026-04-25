@@ -151,7 +151,7 @@ export function CharacterPopover({
       ref={popoverRef}
       role="dialog"
       aria-label={`Character: ${displayName}`}
-      className="character-popover absolute z-40 w-[280px] bg-bg-elevated border border-line rounded-[var(--radius-lg)] shadow-pop p-3"
+      className="t-popover-in character-popover absolute z-40 w-[280px] bg-bg-elevated border border-line rounded-[var(--radius-lg)] shadow-pop p-3"
       style={{
         top: pos ? `${pos.top}px` : 0,
         left: pos ? `${pos.left}px` : 0,

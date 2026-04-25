@@ -357,7 +357,10 @@ body {
 /* [F34] Inline AI result card — bouncing-dots thinking indicator. Three
    `.think-dot`s with staggered animation-delay produce the wave effect.
    The card itself is composed via Tailwind utilities in
-   `src/components/InlineAIResult.tsx`. */
+   `src/components/InlineAIResult.tsx`. F49 promoted this to a shared
+   keyframe and added the `:nth-child` stagger fallback for callers that
+   don't set an inline `animationDelay`. Existing callers (InlineAIResult)
+   keep their inline `animationDelay` style which wins per CSS specificity. */
 @keyframes think {
   0%,
   80%,
@@ -372,6 +375,57 @@ body {
 }
 .think-dot {
   animation: think 1s ease-in-out infinite;
+}
+.think-dot:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.think-dot:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+/* [F49] Shared transitions — backdrop fade-in, modal pop-in, popover/bubble
+   slide-in. Used via the `<Transition>` wrapper in `src/components/Transition.tsx`
+   or by adding the `t-*` class directly to an element that mounts in its
+   final position. Animations only fire on mount; components unmount cleanly
+   on close so no exit animation is needed. */
+@keyframes inkwell-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.t-backdrop-in {
+  animation: inkwell-backdrop-in 160ms ease-out;
+}
+
+@keyframes inkwell-modal-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 8px)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+.t-modal-in {
+  animation: inkwell-modal-in 180ms cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes inkwell-popover-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.t-popover-in {
+  animation: inkwell-popover-in 140ms ease-out;
 }
 
 /* [F35] Continue-writing affordance — purple tint for streaming output and
