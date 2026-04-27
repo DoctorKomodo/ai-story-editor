@@ -31,6 +31,10 @@ import { AIResult } from '@/components/AIResult';
 import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
 import { ChapterList } from '@/components/ChapterList';
+import {
+  CharacterPopoverHost,
+  type CharacterPopoverHostHandle,
+} from '@/components/CharacterPopoverHost';
 import { CharacterSheet } from '@/components/CharacterSheet';
 import { ContinueWriting } from '@/components/ContinueWriting';
 import { Export, type ExportStory } from '@/components/Export';
@@ -104,6 +108,16 @@ export function EditorPage(): JSX.Element {
   // edits — the create path uses the create mutation directly and then opens
   // the new id here.
   const [openCharacterId, setOpenCharacterId] = useState<string | null>(null);
+
+  // [F54] Character popover host — opened from charRef hover (F36 dispatcher,
+  // wired inside the host) and from Cast-tab clicks (imperative ref).
+  const characterPopoverRef = useRef<CharacterPopoverHostHandle | null>(null);
+  const handleOpenCharacterFromCast = useCallback((id: string, el: HTMLElement) => {
+    characterPopoverRef.current?.openFor(id, el);
+  }, []);
+  const handleEditCharacter = useCallback((id: string) => {
+    setOpenCharacterId(id);
+  }, []);
 
   // Page-root modal state (convention for the rest of the F-series). F55 / F61
   // mount the actual <Modal> elements; F51 only lifts the open flags so future
@@ -435,7 +449,7 @@ export function EditorPage(): JSX.Element {
             castBody={
               <CastTab
                 characters={charactersQuery.data ?? []}
-                onOpenCharacter={setOpenCharacterId}
+                onOpenCharacter={handleOpenCharacterFromCast}
                 isLoading={charactersQuery.isLoading}
                 isError={charactersQuery.isError}
               />
@@ -529,6 +543,14 @@ export function EditorPage(): JSX.Element {
         onClose={() => {
           setOpenCharacterId(null);
         }}
+      />
+
+      {/* [F54] Character popover — opened from charRef hover and Cast clicks.
+          Edit footer routes back into the F19 character sheet. */}
+      <CharacterPopoverHost
+        storyId={story.id}
+        hostRef={characterPopoverRef}
+        onEdit={handleEditCharacter}
       />
 
       {/* [F53] Selection bubble — listens for prose selections inside the

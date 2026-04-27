@@ -168,10 +168,10 @@ describe('CastTab', () => {
     const user = userEvent.setup();
 
     await user.click(screen.getByText('Alice'));
-    expect(onOpen).toHaveBeenCalledWith('c1');
+    expect(onOpen).toHaveBeenCalledWith('c1', expect.any(HTMLElement));
 
     await user.click(screen.getByText('Carol'));
-    expect(onOpen).toHaveBeenCalledWith('c3');
+    expect(onOpen).toHaveBeenCalledWith('c3', expect.any(HTMLElement));
 
     expect(onOpen).toHaveBeenCalledTimes(2);
   });
