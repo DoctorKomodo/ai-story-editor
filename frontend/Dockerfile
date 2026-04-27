@@ -14,12 +14,20 @@ COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
 
-# VITE_* vars are inlined into the bundle at build time. Defaults match the
-# stock docker-compose port layout (frontend :3000 talks to backend :4000 on
-# the same host). Operators on non-localhost domains override at build time:
-#   docker build --build-arg VITE_API_URL=https://api.example.com ./frontend
-ARG VITE_API_URL=http://localhost:4000
-ENV VITE_API_URL=${VITE_API_URL}
+# VITE_* vars are inlined into the bundle at build time.
+#
+# Default: unset, which means api.ts falls back to its origin-relative
+# `/api` base. The runner stage's nginx config then reverse-proxies
+# `/api/*` to the backend service inside the compose network — that's the
+# stock self-hosting topology and avoids CORS entirely.
+#
+# Operators who terminate on a different origin (e.g. a separate api.example.com)
+# override this at build time so the SPA bundle calls that host directly:
+#   docker build --build-arg VITE_API_BASE_URL=https://api.example.com/api ./frontend
+# In that case the operator must also configure CORS on the backend
+# (FRONTEND_URL) and accept the cross-origin cookie scoping consequences.
+ARG VITE_API_BASE_URL=
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
 RUN npm run build
 

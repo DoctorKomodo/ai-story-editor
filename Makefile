@@ -25,7 +25,7 @@ test:
 	cd frontend && npm run test
 
 test-e2e:
-	cd frontend && npx playwright test
+	npx playwright test
 
 logs:
 	docker compose logs -f --tail=100

@@ -6,6 +6,13 @@ services:
     build:
       context: ./backend
       target: dev
+    # Make the host reachable by name from inside the container so the [T8]
+    # E2E spec can stand up an in-process mock Venice server on the host and
+    # have the backend's per-user BYOK client (createVeniceClient → baseURL)
+    # reach it. Linux Docker doesn't synthesise host.docker.internal on its
+    # own — `host-gateway` is the documented opt-in.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       NODE_ENV: development
     volumes:
@@ -23,6 +30,10 @@ services:
       target: dev
     environment:
       NODE_ENV: development
+      # Vite's dev /api proxy target. Resolves to the backend service inside
+      # the compose network so same-origin /api calls from the browser are
+      # forwarded to backend:4000 without CORS.
+      VITE_DEV_PROXY_TARGET: http://backend:4000
     volumes:
       - ./frontend:/app
       - /app/node_modules

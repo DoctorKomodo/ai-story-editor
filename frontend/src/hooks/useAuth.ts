@@ -100,9 +100,12 @@ export function useAuth(): UseAuthResult {
 
   const register = useCallback(
     async ({ username, password }: Credentials): Promise<RegisterResult> => {
+      // Backend requires `name`; the auth form doesn't collect a separate
+      // display name yet, so default it to the username. Adding the field
+      // is [X18]; editing it after register is [X3].
       const res = await api<RegisterResponse>('/auth/register', {
         method: 'POST',
-        body: { username, password },
+        body: { name: username, username, password },
       });
       // Intentionally do NOT call setSession — the backend has not issued an
       // access token or refresh cookie yet. The page must show the recovery
