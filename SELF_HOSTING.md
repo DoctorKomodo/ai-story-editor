@@ -80,9 +80,51 @@ You'll need:
 
 Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. The operator's only Venice-related obligation is to back up `APP_ENCRYPTION_KEY`, which wraps those stored user keys (see "Key backup and user recovery" above).
 
-## First-run steps (`[I6]` stub)
+## First-run steps
 
-*To be detailed in `[I6]`.*
+```bash
+# 1. Clone the repo
+git clone https://github.com/<your-fork>/story-editor.git
+cd story-editor
+
+# 2. Create your .env from the template
+cp .env.example .env
+
+# 3. Generate the long-lived secrets the backend requires.
+#    JWT_SECRET and REFRESH_TOKEN_SECRET sign access and refresh tokens
+#    respectively; APP_ENCRYPTION_KEY is the AES-256 key that wraps stored
+#    Venice API keys.
+cat <<'KEYGEN' >> /tmp/inkwell-secrets.env
+JWT_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")
+REFRESH_TOKEN_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")
+APP_ENCRYPTION_KEY=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")
+KEYGEN
+# Paste those three lines (with the generated values) into .env, replacing the
+# placeholder defaults.
+#
+# Equivalent one-liner if you just want APP_ENCRYPTION_KEY:
+#   node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+
+# 4. Bring up the stack — backend runs `prisma migrate deploy` automatically
+#    on first boot, so the schema is created on its own.
+docker compose up -d
+
+# 5. Wait for /api/health to return 200 (~10s)
+curl -sf http://localhost:4000/api/health
+# {"status":"ok",...}
+
+# 6. Open the UI
+open http://localhost:3000
+```
+
+The first user you register is **just a user** — Inkwell has no admin role today. Sign up, then immediately save the recovery code shown on the post-signup screen (see "Key backup and user recovery" → "Content DEKs" above).
+
+If you run the stack on a host other than `localhost`, rebuild the frontend image with the API URL baked in:
+
+```bash
+VITE_API_URL=https://api.example.com docker compose build frontend
+docker compose up -d frontend
+```
 
 ## Updating (`[I6]` stub)
 
