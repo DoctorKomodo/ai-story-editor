@@ -84,10 +84,19 @@ DRILL_USERNAME="drill_user_${TS}"
 DRILL_PASSWORD="drill-pw-${TS}-correct-horse-battery-staple"
 SENTINEL="DRILL-SENTINEL-${TS}-do-not-occur-by-chance"
 
+# Per-run secrets for the transient backend. All exported (not just set) so
+# `docker run -e VAR` picks them up from this script's environment rather
+# than being passed on argv (where they'd be visible in `ps auxe` for the
+# lifetime of the docker CLI invocation).
+export DRILL_DATABASE_URL="postgresql://storyeditor:storyeditor@postgres:5432/${DRILL_DB}"
+export JWT_SECRET="drill-jwt-${TS}"
+export REFRESH_TOKEN_SECRET="drill-refresh-${TS}"
 # Encryption key for the transient backend. Random per run; the dump-and-
 # restore round trip preserves Venice-key ciphertext too, but this drill
 # doesn't seed any Venice key so it's just here to satisfy boot validation.
-APP_KEY="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
+export APP_ENCRYPTION_KEY
+APP_ENCRYPTION_KEY="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
+export FRONTEND_URL="http://localhost:${DRILL_PORT}"
 
 # Network name (compose-default is "<project>_default"). Resolve dynamically
 # from the running postgres container so we don't hard-code the project name.
@@ -108,15 +117,19 @@ docker compose exec -T postgres createdb -U storyeditor -O storyeditor "$DRILL_D
 # ---------- boot the transient backend ------------------------------------
 
 log "booting transient backend on host port $DRILL_PORT"
+# `-e VAR` (no `=value`) tells docker to read VAR from this script's env —
+# the value never reaches the docker CLI's argv. DATABASE_URL is renamed
+# to DRILL_DATABASE_URL in this script's env so it doesn't shadow any
+# DATABASE_URL the operator may have exported into their shell.
 BACKEND_CID="$(docker run --rm -d \
   --name "drill-backend-${TS}" \
   --network "$NETWORK" \
   -p "${DRILL_PORT}:4000" \
-  -e "DATABASE_URL=postgresql://storyeditor:storyeditor@postgres:5432/${DRILL_DB}" \
-  -e "JWT_SECRET=drill-jwt-${TS}" \
-  -e "REFRESH_TOKEN_SECRET=drill-refresh-${TS}" \
-  -e "APP_ENCRYPTION_KEY=${APP_KEY}" \
-  -e "FRONTEND_URL=http://localhost:${DRILL_PORT}" \
+  -e "DATABASE_URL=${DRILL_DATABASE_URL}" \
+  -e JWT_SECRET \
+  -e REFRESH_TOKEN_SECRET \
+  -e APP_ENCRYPTION_KEY \
+  -e FRONTEND_URL \
   story-editor-backend)"
 
 # Wait for /api/health to flip green. Migrations apply during this window.
@@ -215,11 +228,11 @@ BACKEND_CID="$(docker run --rm -d \
   --name "drill-backend-${TS}-post" \
   --network "$NETWORK" \
   -p "${DRILL_PORT}:4000" \
-  -e "DATABASE_URL=postgresql://storyeditor:storyeditor@postgres:5432/${DRILL_DB}" \
-  -e "JWT_SECRET=drill-jwt-${TS}" \
-  -e "REFRESH_TOKEN_SECRET=drill-refresh-${TS}" \
-  -e "APP_ENCRYPTION_KEY=${APP_KEY}" \
-  -e "FRONTEND_URL=http://localhost:${DRILL_PORT}" \
+  -e "DATABASE_URL=${DRILL_DATABASE_URL}" \
+  -e JWT_SECRET \
+  -e REFRESH_TOKEN_SECRET \
+  -e APP_ENCRYPTION_KEY \
+  -e FRONTEND_URL \
   story-editor-backend)"
 
 for i in $(seq 1 30); do

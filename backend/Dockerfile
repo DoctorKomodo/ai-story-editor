@@ -1,5 +1,12 @@
 # backend/Dockerfile
 
+# Dummy DATABASE_URL used only for `prisma generate` at build time. The real
+# value is provided as a runtime env var; `migrate deploy` (run from the
+# entrypoint) is the only path that actually connects. We keep one literal
+# here and let each stage redeclare the ARG so a future change touches one
+# line, not three.
+ARG PRISMA_GENERATE_DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma
+
 # ---- deps ----------------------------------------------------------------
 FROM node:22-alpine AS deps
 WORKDIR /app
@@ -8,12 +15,11 @@ RUN npm ci
 
 # ---- builder -------------------------------------------------------------
 FROM node:22-alpine AS builder
+ARG PRISMA_GENERATE_DATABASE_URL
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# DATABASE_URL is read by prisma.config.ts at generate time but not used until
-# `migrate deploy` runs at container start; a dummy value is fine here.
-ENV DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma
+ENV DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL}
 RUN npx prisma generate
 RUN npm run build
 
@@ -22,20 +28,19 @@ RUN npm run build
 # the runner stage. Compose's override selects this stage explicitly via
 # `target: dev`.
 FROM node:22-alpine AS dev
+ARG PRISMA_GENERATE_DATABASE_URL
 WORKDIR /app
 ENV NODE_ENV=development
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-# Same dummy DATABASE_URL trick as the builder stage — prisma.config.ts
-# requires it at config-load time even though `prisma generate` doesn't
-# touch the DB. The real value is provided as a runtime env var.
-RUN DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma npx prisma generate
+RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx prisma generate
 EXPOSE 4000
 CMD ["npm", "run", "dev"]
 
 # ---- runner --------------------------------------------------------------
 FROM node:22-alpine AS runner
+ARG PRISMA_GENERATE_DATABASE_URL
 WORKDIR /app
 
 # Non-root user for the app process.
@@ -56,10 +61,8 @@ COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/prisma ./prisma
 COPY prisma.config.ts ./prisma.config.ts
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-# Same dummy DATABASE_URL trick — only needed so `prisma generate` can load
-# the config; the real value is provided as a runtime env var.
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma npx prisma generate \
+    && DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx prisma generate \
     && chown -R app:app /app
 
 USER app

@@ -31,8 +31,10 @@ services:
       - .env
     environment:
       # Override the .env DB host so the backend container resolves postgres
-      # via the compose network rather than localhost.
-      DATABASE_URL: ${DATABASE_URL:-postgresql://storyeditor:storyeditor@postgres:5432/storyeditor}
+      # via the compose network rather than localhost. The default tracks
+      # POSTGRES_* so an operator who overrides only those still gets a
+      # consistent connection string here.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-storyeditor}:${POSTGRES_PASSWORD:-storyeditor}@postgres:5432/${POSTGRES_DB:-storyeditor}}
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "4000"
     depends_on:
