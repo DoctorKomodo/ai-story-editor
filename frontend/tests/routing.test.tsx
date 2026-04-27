@@ -141,12 +141,12 @@ describe('routing', () => {
 
     renderAt('/stories/story-123');
 
-    // F7 replaces the stub "Editor" heading with the story's title.
+    // [F51] AppShell mounts with the story title surfacing in the topbar
+    // breadcrumb / sidebar story-picker (no `<h1>` in the new shell).
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /dune/i })).toBeInTheDocument();
+      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
     });
-    // Three-pane shell is mounted.
-    expect(screen.getByRole('main', { name: /editor/i })).toBeInTheDocument();
+    expect(screen.getAllByText('Dune').length).toBeGreaterThan(0);
   });
 
   it('unauthenticated request to /stories/:id redirects to /login', async () => {
