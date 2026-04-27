@@ -45,6 +45,20 @@ Neither you nor Anthropic nor any operator can decrypt that user's data when bot
 
 ### 3. Recovery drill (operator guidance)
 
+A scripted version of the drill ships as `scripts/backup-restore-drill.sh`
+([I8]). It runs end-to-end against an isolated drill database on the live
+postgres (no impact on the primary DB), so you can wire it into a cron or
+CI step without touching production data:
+
+```bash
+bash scripts/backup-restore-drill.sh
+```
+
+Exit code 0 = encrypted user content was successfully recovered. The
+manual recipe below is still the recommended human cross-check — at least
+once per quarter, and after any Postgres major-version upgrade or schema
+migration.
+
 Run a recovery drill on a staging instance at least quarterly. The drill:
 
 1. Register a new demo user. Save the recovery code shown at signup.
