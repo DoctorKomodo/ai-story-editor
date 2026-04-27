@@ -14,7 +14,7 @@
 // No auto-save: each section has its own explicit submit. The footer's
 // "Done" just closes the modal; it does not save anything.
 import type { JSX, MouseEvent, ReactNode } from 'react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import {
   type ChangePasswordInput,
   useChangePasswordMutation,
@@ -236,12 +236,35 @@ function ChangePasswordSection(): JSX.Element {
 }
 
 // ---------- Section 2: Rotate recovery code ----------
-function RotateRecoverySection({ username }: { username: string }): JSX.Element {
+interface RotateRecoverySectionProps {
+  username: string;
+  /**
+   * Called whenever a new recovery code is being shown (or the user has
+   * acknowledged it). The modal shell uses this to disable Escape and
+   * backdrop dismissal while the code is on screen — Escape-dismissing the
+   * modal would silently destroy the new code.
+   */
+  onShowRecoveryCode: (showing: boolean) => void;
+}
+
+function RotateRecoverySection({
+  username,
+  onShowRecoveryCode,
+}: RotateRecoverySectionProps): JSX.Element {
   const passwordId = useId();
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
   const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const mutation = useRotateRecoveryCodeMutation();
+
+  useEffect(() => {
+    onShowRecoveryCode(issuedCode !== null);
+    return () => {
+      // If this section unmounts while a code is still on screen, the modal
+      // is being torn down; release the close gate so the user isn't stuck.
+      onShowRecoveryCode(false);
+    };
+  }, [issuedCode, onShowRecoveryCode]);
 
   const submitDisabled = password.length === 0 || mutation.isPending;
 
@@ -399,6 +422,14 @@ export function AccountPrivacyModal({
   username,
 }: AccountPrivacyModalProps): JSX.Element | null {
   const titleId = useId();
+  // True while RotateRecoverySection is showing a freshly-issued recovery
+  // code via <RecoveryCodeHandoff>. The new code replaces the old one on
+  // the backend the moment AU17 returns, so dismissing the modal before the
+  // user has copied / acknowledged it would silently destroy the only copy.
+  // We disable Escape, backdrop click, and the X / Done buttons in that
+  // window; the user's only exit is RecoveryCodeHandoff's own checkbox-
+  // gated Continue button.
+  const [closeBlocked, setCloseBlocked] = useState(false);
 
   // Escape handling uses the F47/F57 priority-aware dispatcher. Priority 100
   // matches the other modals (Settings, StoryPicker, ModelPicker) so an open
@@ -410,12 +441,13 @@ export function AccountPrivacyModal({
       onClose();
       return true;
     },
-    { enabled: open, priority: 100 },
+    { enabled: open && !closeBlocked, priority: 100 },
   );
 
   if (!open) return null;
 
   const handleBackdrop = (e: MouseEvent<HTMLDivElement>): void => {
+    if (closeBlocked) return;
     if (e.target === e.currentTarget) onClose();
   };
 
@@ -450,6 +482,7 @@ export function AccountPrivacyModal({
             type="button"
             className="icon-btn"
             onClick={onClose}
+            disabled={closeBlocked}
             aria-label="Close"
             data-testid="account-privacy-close"
           >
@@ -468,7 +501,7 @@ export function AccountPrivacyModal({
             title="Rotate recovery code"
             hint="Generate a new recovery code. The old code becomes invalid the moment you confirm."
           >
-            <RotateRecoverySection username={username} />
+            <RotateRecoverySection username={username} onShowRecoveryCode={setCloseBlocked} />
           </Section>
           <Section
             title="Sign out everywhere"
@@ -490,6 +523,7 @@ export function AccountPrivacyModal({
             type="button"
             data-testid="account-privacy-done"
             onClick={onClose}
+            disabled={closeBlocked}
             className={BTN_SECONDARY}
           >
             Done

@@ -176,6 +176,45 @@ describe('<AccountPrivacyModal>', () => {
     expect(screen.queryByText(/new-recovery-code-12345/)).not.toBeInTheDocument();
   });
 
+  it('rotate-recovery: while the new code is on screen, Escape / backdrop / Close / Done are all disabled', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { recoveryCode: 'new-recovery-code-12345' }));
+    const user = userEvent.setup();
+    const { onClose } = renderModal();
+
+    const rotateSection = screen.getByRole('region', { name: /rotate recovery code/i });
+    await user.type(within(rotateSection).getByLabelText(/^password$/i), 'hunter2hunter2');
+    await user.click(within(rotateSection).getByRole('button', { name: /generate new code/i }));
+
+    // New code is on screen.
+    expect(
+      await screen.findByRole('heading', { name: /save your recovery code/i }),
+    ).toBeInTheDocument();
+
+    // Escape — must NOT dismiss.
+    await user.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('heading', { name: /save your recovery code/i })).toBeInTheDocument();
+
+    // Close button — disabled.
+    expect(screen.getByTestId('account-privacy-close')).toBeDisabled();
+
+    // Done button — disabled.
+    expect(screen.getByTestId('account-privacy-done')).toBeDisabled();
+
+    // Backdrop click — must NOT dismiss.
+    const backdrop = screen.getByTestId('ap-backdrop');
+    await user.pointer({ keys: '[MouseLeft>]', target: backdrop });
+    await user.pointer({ keys: '[/MouseLeft]' });
+    expect(onClose).not.toHaveBeenCalled();
+
+    // Acknowledging the code releases the gate.
+    await user.click(screen.getByRole('checkbox', { name: /i have stored/i }));
+    await user.click(screen.getByRole('button', { name: /continue to inkwell/i }));
+    await waitFor(() => {
+      expect(screen.getByTestId('account-privacy-close')).not.toBeDisabled();
+    });
+  });
+
   it('rotate-recovery: 401 → generic invalid-credentials message; password input retained for retry', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(401, { error: { message: 'Invalid credentials', code: 'invalid_credentials' } }),
