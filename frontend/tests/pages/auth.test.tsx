@@ -248,7 +248,12 @@ describe('auth pages (F4)', () => {
     expect(registerCall).toBeDefined();
     const [, init] = registerCall as [string, RequestInit];
     expect(init.method).toBe('POST');
-    expect(init.body).toBe(JSON.stringify({ username: 'bob', password: 'hunter2hunter2' }));
+    // [X18] follow-up: until the register form collects a separate display
+    // name, useAuth.register() sends `name: username` so the backend's
+    // nameSchema(min 1) is satisfied with the same handle.
+    expect(init.body).toBe(
+      JSON.stringify({ name: 'bob', username: 'bob', password: 'hunter2hunter2' }),
+    );
   });
 
   it('register: 409 shows the friendly "Username is already taken" message (not server message)', async () => {
