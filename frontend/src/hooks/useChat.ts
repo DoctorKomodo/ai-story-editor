@@ -1,5 +1,12 @@
-import { type UseQueryResult, useQuery } from '@tanstack/react-query';
-import { api } from '@/lib/api';
+import {
+  type UseMutationResult,
+  type UseQueryResult,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { api, apiStream } from '@/lib/api';
+import { parseAiSseStream } from '@/lib/sse';
 
 /**
  * [F39] Chat-related query hooks.
@@ -121,5 +128,70 @@ export function useChatsQuery(chapterId: string | null): UseQueryResult<ChatSumm
       return res.chats;
     },
     enabled: chapterId !== null,
+  });
+}
+
+// ---- chat mutations (F55) ----
+
+export interface CreateChatArgs {
+  chapterId: string;
+  title?: string;
+}
+
+export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, CreateChatArgs> {
+  const qc = useQueryClient();
+  return useMutation<ChatSummary, Error, CreateChatArgs>({
+    mutationFn: async ({ chapterId, title }) => {
+      const res = await api<{ chat: ChatSummary }>(
+        `/chapters/${encodeURIComponent(chapterId)}/chats`,
+        { method: 'POST', body: title !== undefined ? { title } : {} },
+      );
+      return res.chat;
+    },
+    onSuccess: (chat) => {
+      void qc.invalidateQueries({ queryKey: chatsQueryKey(chat.chapterId) });
+    },
+  });
+}
+
+export interface SendChatMessageArgs {
+  chatId: string;
+  content: string;
+  modelId: string;
+  attachment?: { selectionText: string; chapterId: string };
+  enableWebSearch?: boolean;
+}
+
+/**
+ * [F55] POST a chat message and consume the SSE assistant reply, then
+ * invalidate the messages query so the UI refetches both rows. Streaming
+ * tokens-into-cache is deferred — the simpler refetch path keeps the wiring
+ * obvious and lets the existing GET path drive the final render.
+ */
+export function useSendChatMessageMutation(): UseMutationResult<void, Error, SendChatMessageArgs> {
+  const qc = useQueryClient();
+  return useMutation<void, Error, SendChatMessageArgs>({
+    mutationFn: async ({ chatId, content, modelId, attachment, enableWebSearch }) => {
+      const body: Record<string, unknown> = { content, modelId };
+      if (attachment) body.attachment = attachment;
+      if (enableWebSearch === true) body.enableWebSearch = true;
+      const res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
+        method: 'POST',
+        body,
+      });
+      if (!res.body) return;
+      // Drain the SSE stream so the backend completes its writes before we
+      // refetch. We don't surface the live tokens — the GET refetch is the
+      // source of truth for the final message rows.
+      for await (const event of parseAiSseStream(res.body)) {
+        if (event.type === 'error') {
+          throw new Error(event.error.error || 'Chat send failed');
+        }
+        if (event.type === 'done') break;
+      }
+    },
+    onSuccess: (_void, vars) => {
+      void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
+    },
   });
 }

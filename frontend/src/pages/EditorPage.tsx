@@ -26,8 +26,6 @@ import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { type AIAction, AIPanel } from '@/components/AIPanel';
-import { AIResult } from '@/components/AIResult';
 import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
 import { ChapterList } from '@/components/ChapterList';
@@ -36,18 +34,21 @@ import {
   type CharacterPopoverHostHandle,
 } from '@/components/CharacterPopoverHost';
 import { CharacterSheet } from '@/components/CharacterSheet';
+import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
+import { ChatMessages } from '@/components/ChatMessages';
+import { ChatPanel } from '@/components/ChatPanel';
 import { ContinueWriting } from '@/components/ContinueWriting';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
 import { InlineAIResult } from '@/components/InlineAIResult';
-import { ModelSelector } from '@/components/ModelSelector';
+import { ModelPicker } from '@/components/ModelPicker';
 import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
 import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
+import { SettingsModal } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
+import { StoryPicker } from '@/components/StoryPicker';
 import { type SaveState, TopBar } from '@/components/TopBar';
-import { UsageIndicator } from '@/components/UsageIndicator';
-import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
@@ -59,12 +60,18 @@ import {
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
 import { useCharactersQuery, useCreateCharacterMutation } from '@/hooks/useCharacters';
-import { useModelsQuery } from '@/hooks/useModels';
+import {
+  useChatMessagesQuery,
+  useChatsQuery,
+  useCreateChatMutation,
+  useSendChatMessageMutation,
+} from '@/hooks/useChat';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useStoryQuery } from '@/hooks/useStories';
 import { ApiError } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
 import { useActiveChapterStore } from '@/store/activeChapter';
+import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSessionStore } from '@/store/session';
 import { useSidebarTabStore } from '@/store/sidebarTab';
@@ -119,37 +126,76 @@ export function EditorPage(): JSX.Element {
     setOpenCharacterId(id);
   }, []);
 
-  // Page-root modal state (convention for the rest of the F-series). F55 / F61
-  // mount the actual <Modal> elements; F51 only lifts the open flags so future
-  // tasks just add the elements without restructuring state.
-  const [, setStoryPickerOpen] = useState(false);
-  const [, setSettingsOpen] = useState(false);
+  // [F55] Page-root modal state. The page renders each modal at the bottom
+  // of its JSX; TopBar / Sidebar / ChatPanel callbacks flip these flags.
+  const [storyPickerOpen, setStoryPickerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
 
-  // Editor selection plumbing — feeds the AI panel until F53 takes over.
-  const [selectedText, setSelectedText] = useState('');
-  useEffect(() => {
-    if (!editor) return;
-    const handler = (): void => {
-      setSelectedText(extractSelection(editor));
-    };
-    editor.on('selectionUpdate', handler);
-    return () => {
-      editor.off('selectionUpdate', handler);
-    };
-  }, [editor]);
-
-  // Model + web-search state stays local until F53 / F55 redesign the AI flow.
-  const { selectedModelId, setSelectedModelId } = useSelectedModel();
-  const [webSearch, setWebSearch] = useState(false);
-  const { data: models } = useModelsQuery();
-  const selectedModel = models?.find((m) => m.id === selectedModelId) ?? null;
-
+  const { selectedModelId } = useSelectedModel();
   const completion = useAICompletion();
-  const [actionError, setActionError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setWebSearch(false);
-  }, []);
+  // [F55] Chat surface wiring. Active chat = first chat for the active chapter
+  // (until a per-chapter "remembered chat" slice is added). Sending a message
+  // creates a chat on the fly when none exists.
+  const chatsQuery = useChatsQuery(activeChapterId ?? null);
+  const activeChatId = chatsQuery.data?.[0]?.id ?? null;
+  const chatMessages = useChatMessagesQuery(activeChatId);
+  void chatMessages; // ChatMessages reads from the cache directly via chatId
+  const createChat = useCreateChatMutation();
+  const sendChatMessage = useSendChatMessageMutation();
+  const attachedSelection = useAttachedSelectionStore((s) => s.attachedSelection);
+  const clearAttachedSelection = useAttachedSelectionStore((s) => s.clear);
+
+  const handleNewChat = useCallback(async (): Promise<void> => {
+    if (!activeChapterId) return;
+    await createChat.mutateAsync({ chapterId: activeChapterId });
+  }, [activeChapterId, createChat]);
+
+  const handleChatSend = useCallback(
+    async (args: ChatSendArgs): Promise<void> => {
+      if (!activeChapterId) return;
+      let chatId = activeChatId;
+      if (!chatId) {
+        const created = await createChat.mutateAsync({ chapterId: activeChapterId });
+        chatId = created.id;
+      }
+      if (selectedModelId === null) return;
+      const attachment = args.attachment
+        ? {
+            selectionText: args.attachment.text,
+            chapterId: args.attachment.chapter.id,
+          }
+        : undefined;
+      const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
+        chatId,
+        content: args.content,
+        modelId: selectedModelId,
+        enableWebSearch: args.enableWebSearch,
+      };
+      if (attachment) sendArgs.attachment = attachment;
+      await sendChatMessage.mutateAsync(sendArgs);
+      // Composer keeps its own state; clear the attached selection chip after
+      // a successful send so the next turn starts fresh.
+      clearAttachedSelection();
+    },
+    [
+      activeChapterId,
+      activeChatId,
+      createChat,
+      selectedModelId,
+      sendChatMessage,
+      clearAttachedSelection,
+    ],
+  );
+
+  const handleStoryPickerSelect = useCallback(
+    (id: string): void => {
+      setStoryPickerOpen(false);
+      navigate(`/stories/${id}`);
+    },
+    [navigate],
+  );
 
   const createChapter = useCreateChapterMutation(story?.id ?? '');
   const createCharacter = useCreateCharacterMutation(story?.id ?? '');
@@ -215,39 +261,6 @@ export function EditorPage(): JSX.Element {
     // Outline: OutlineTab owns its own add affordance via onAddItem; the
     // sidebar + button is a documented no-op for this tab.
   }, [activeTab, story?.id, createChapter, createCharacter]);
-
-  const handleAIAction = useCallback(
-    (action: AIAction, freeformInstruction?: string): void => {
-      if (!story) return;
-      if (selectedModelId === null) {
-        setActionError('Select a model before running an AI action.');
-        return;
-      }
-      if (activeChapterId === null) {
-        setActionError('Select a chapter before running an AI action.');
-        return;
-      }
-      setActionError(null);
-      void completion.run({
-        action,
-        selectedText,
-        chapterId: activeChapterId,
-        storyId: story.id,
-        modelId: selectedModelId,
-        freeformInstruction,
-        enableWebSearch: webSearch,
-      });
-    },
-    [activeChapterId, completion, selectedModelId, selectedText, story, webSearch],
-  );
-
-  const handleInsertAtCursor = useCallback(
-    (text: string): void => {
-      if (!editor) return;
-      editor.chain().focus().insertContent(text).run();
-    },
-    [editor],
-  );
 
   // [F53] inline-result store wiring; full handler defined after activeChapter
   // is derived (the handler reads activeChapter.orderIndex / title for the
@@ -514,25 +527,23 @@ export function EditorPage(): JSX.Element {
           </div>
         }
         chat={
-          <AIPanel
-            selectedText={selectedText}
-            onAction={handleAIAction}
-            pending={completion.status === 'streaming'}
-            actionError={actionError}
-            modelSelector={<ModelSelector value={selectedModelId} onChange={setSelectedModelId} />}
-            webSearchToggle={
-              <WebSearchToggle model={selectedModel} checked={webSearch} onChange={setWebSearch} />
-            }
-            result={
-              <AIResult
-                status={completion.status}
-                text={completion.text}
-                error={completion.error}
-                onInsertAtCursor={handleInsertAtCursor}
-                onDismiss={completion.reset}
+          <ChatPanel
+            messagesBody={
+              <ChatMessages
+                chatId={activeChatId}
+                chapterTitle={activeChapter?.title ?? null}
+                attachedCharacterCount={attachedSelection?.text.length ?? 0}
+                attachedTokenCount={Math.ceil((attachedSelection?.text.length ?? 0) / 4)}
               />
             }
-            usage={<UsageIndicator usage={completion.usage} />}
+            composer={<ChatComposer onSend={handleChatSend} disabled={sendChatMessage.isPending} />}
+            onOpenModelPicker={() => {
+              setModelPickerOpen(true);
+            }}
+            onNewChat={handleNewChat}
+            onOpenSettings={() => {
+              setSettingsOpen(true);
+            }}
           />
         }
       />
@@ -558,9 +569,27 @@ export function EditorPage(): JSX.Element {
           selection. Page-root mount keeps it free of editor-slot overflow. */}
       <SelectionBubble proseSelector=".paper-prose" onAction={handleSelectionAction} />
 
-      {/* Page-root modals: F55 mounts <SettingsModal>, <StoryPicker>,
-          <ModelPicker> here using the storyPickerOpen / settingsOpen flags
-          already lifted above. F61 mounts <AccountPrivacyModal>. */}
+      {/* [F55] Page-root modals. */}
+      <StoryPicker
+        open={storyPickerOpen}
+        onClose={() => {
+          setStoryPickerOpen(false);
+        }}
+        activeStoryId={story.id}
+        onSelectStory={handleStoryPickerSelect}
+      />
+      <ModelPicker
+        open={modelPickerOpen}
+        onClose={() => {
+          setModelPickerOpen(false);
+        }}
+      />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+        }}
+      />
     </>
   );
 }

@@ -71,7 +71,22 @@ function mockImpl(
       return Promise.resolve(jsonResponse(200, { models: [] }));
     }
     if (url.endsWith('/users/me/settings')) {
-      return Promise.resolve(jsonResponse(200, { settings: {} }));
+      return Promise.resolve(
+        jsonResponse(200, {
+          settings: {
+            theme: 'paper',
+            prose: { font: 'serif', size: 18, lineHeight: 1.7 },
+            writing: {
+              spellcheck: true,
+              typewriterMode: false,
+              focusMode: false,
+              dailyWordGoal: 500,
+            },
+            chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
+            ai: { includeVeniceSystemPrompt: true },
+          },
+        }),
+      );
     }
     return Promise.reject(new Error(`Unexpected fetch: ${url}`));
   };
