@@ -108,16 +108,14 @@ cp .env.example .env
 #    JWT_SECRET and REFRESH_TOKEN_SECRET sign access and refresh tokens
 #    respectively; APP_ENCRYPTION_KEY is the AES-256 key that wraps stored
 #    Venice API keys.
-cat <<'KEYGEN' >> /tmp/inkwell-secrets.env
-JWT_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")
-REFRESH_TOKEN_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")
-APP_ENCRYPTION_KEY=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")
-KEYGEN
-# Paste those three lines (with the generated values) into .env, replacing the
-# placeholder defaults.
-#
-# Equivalent one-liner if you just want APP_ENCRYPTION_KEY:
-#   node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))"
+{
+  echo "JWT_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
+  echo "REFRESH_TOKEN_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
+  echo "APP_ENCRYPTION_KEY=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
+} >> /tmp/inkwell-secrets.env
+# /tmp/inkwell-secrets.env now contains three KEY=VALUE lines with real
+# generated secrets — paste them into .env, replacing the placeholder
+# defaults, then delete the temp file.
 
 # 4. Bring up the stack — backend runs `prisma migrate deploy` automatically
 #    on first boot, so the schema is created on its own.

@@ -23,6 +23,25 @@ ENV VITE_API_URL=${VITE_API_URL}
 
 RUN npm run build
 
+# ---- dev (used by docker-compose.override.yml) ---------------------------
+# Placed before `runner` so a default `docker build` (no --target) lands on
+# the runner stage. Compose's override selects this stage explicitly via
+# `target: dev`.
+FROM node:22-alpine AS dev
+WORKDIR /app
+ENV NODE_ENV=development
+# Same corepack-based npm 11 upgrade as the builder stage — node:22-alpine
+# ships npm 10.9.7 which can't resolve this lockfile (see builder stage
+# comment for the full rationale).
+RUN COREPACK_ENABLE_NPM=1 corepack enable npm \
+ && corepack prepare npm@11.13.0 --activate
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+EXPOSE 3000
+# Vite needs --host so it binds 0.0.0.0 inside the container.
+CMD ["npx", "vite", "--host", "--port", "3000"]
+
 # ---- runner --------------------------------------------------------------
 FROM nginx:alpine AS runner
 WORKDIR /usr/share/nginx/html
@@ -39,19 +58,3 @@ EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
   CMD wget -qO- http://localhost:3000/ | grep -q '<html' || exit 1
-
-# ---- dev (used by docker-compose.override.yml) ---------------------------
-FROM node:22-alpine AS dev
-WORKDIR /app
-ENV NODE_ENV=development
-# Same corepack-based npm 11 upgrade as the builder stage — node:22-alpine
-# ships npm 10.9.7 which can't resolve this lockfile (see builder stage
-# comment for the full rationale).
-RUN COREPACK_ENABLE_NPM=1 corepack enable npm \
- && corepack prepare npm@11.13.0 --activate
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-EXPOSE 3000
-# Vite needs --host so it binds 0.0.0.0 inside the container.
-CMD ["npx", "vite", "--host", "--port", "3000"]

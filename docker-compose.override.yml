@@ -1,5 +1,8 @@
 services:
   backend:
+    # Distinct tag so the dev image and the prod runner don't share a name
+    # — see docker-compose.yml's `inkwell-backend:prod` for the prod tag.
+    image: inkwell-backend:dev
     build:
       context: ./backend
       target: dev
@@ -14,6 +17,7 @@ services:
     command: ["npm", "run", "dev"]
 
   frontend:
+    image: inkwell-frontend:dev
     build:
       context: ./frontend
       target: dev

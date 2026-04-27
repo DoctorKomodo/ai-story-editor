@@ -146,7 +146,7 @@ REG_RESPONSE="$(curl -sf -X POST "$API/auth/register" \
 
 RECOVERY_CODE="$(echo "$REG_RESPONSE" | jq -r '.recoveryCode')"
 [[ "$RECOVERY_CODE" != "null" && -n "$RECOVERY_CODE" ]] || {
-  log "register did not return recoveryCode: $REG_RESPONSE"; exit 1; }
+  log "register response missing 'recoveryCode' field (schema drift?)"; exit 1; }
 
 # Register doesn't return an accessToken — log in to get one.
 log "logging in (post-register) to get access token"
@@ -156,7 +156,7 @@ LOGIN_RESPONSE="$(curl -sf -X POST "$API/auth/login" \
         '{username:$u, password:$p}')")"
 ACCESS_TOKEN="$(echo "$LOGIN_RESPONSE" | jq -r '.accessToken')"
 [[ -n "$ACCESS_TOKEN" && "$ACCESS_TOKEN" != "null" ]] || {
-  log "post-register login failed: $LOGIN_RESPONSE"; exit 1; }
+  log "post-register login response missing 'accessToken' field (schema drift?)"; exit 1; }
 
 auth_h() { echo "Authorization: Bearer $ACCESS_TOKEN"; }
 
@@ -243,7 +243,7 @@ LOGIN_RESPONSE="$(curl -sf -X POST "$API/auth/login" \
         '{username:$u, password:$p}')")"
 ACCESS_TOKEN="$(echo "$LOGIN_RESPONSE" | jq -r '.accessToken')"
 [[ -n "$ACCESS_TOKEN" && "$ACCESS_TOKEN" != "null" ]] || {
-  log "post-restore login failed: $LOGIN_RESPONSE"; exit 1; }
+  log "post-restore login response missing 'accessToken' field (schema drift?)"; exit 1; }
 log "login OK — DEK was unwrappable with the original password after restore"
 
 log "fetching chapter $CHAPTER_ID"

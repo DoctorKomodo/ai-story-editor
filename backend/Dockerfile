@@ -17,6 +17,23 @@ ENV DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma
 RUN npx prisma generate
 RUN npm run build
 
+# ---- dev (used by docker-compose.override.yml) ---------------------------
+# Placed before `runner` so a default `docker build` (no --target) lands on
+# the runner stage. Compose's override selects this stage explicitly via
+# `target: dev`.
+FROM node:22-alpine AS dev
+WORKDIR /app
+ENV NODE_ENV=development
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+# Same dummy DATABASE_URL trick as the builder stage — prisma.config.ts
+# requires it at config-load time even though `prisma generate` doesn't
+# touch the DB. The real value is provided as a runtime env var.
+RUN DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma npx prisma generate
+EXPOSE 4000
+CMD ["npm", "run", "dev"]
+
 # ---- runner --------------------------------------------------------------
 FROM node:22-alpine AS runner
 WORKDIR /app
@@ -55,17 +72,3 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
   CMD wget -qO- http://localhost:4000/api/health | grep -q '"status":"ok"' || exit 1
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-
-# ---- dev (used by docker-compose.override.yml) ---------------------------
-FROM node:22-alpine AS dev
-WORKDIR /app
-ENV NODE_ENV=development
-COPY package.json package-lock.json ./
-RUN npm ci
-COPY . .
-# Same dummy DATABASE_URL trick as the builder stage — prisma.config.ts
-# requires it at config-load time even though `prisma generate` doesn't
-# touch the DB. The real value is provided as a runtime env var.
-RUN DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma npx prisma generate
-EXPOSE 4000
-CMD ["npm", "run", "dev"]

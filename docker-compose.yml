@@ -17,6 +17,11 @@ services:
       retries: 10
 
   backend:
+    # Explicit image tag so the override (target: dev) and the prod runner
+    # don't collide on a single auto-generated `<project>-backend` tag — and
+    # so neither overwrites the standalone `story-editor-backend` tag built
+    # by [I1]'s verify and consumed by [I8]'s backup-restore drill.
+    image: inkwell-backend:prod
     build:
       context: ./backend
     restart: unless-stopped
@@ -40,6 +45,7 @@ services:
       retries: 6
 
   frontend:
+    image: inkwell-frontend:prod
     build:
       context: ./frontend
       args:
