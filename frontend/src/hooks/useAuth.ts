@@ -26,12 +26,19 @@ interface MeResponse {
   user: SessionUser;
 }
 
+export interface ResetPasswordInput {
+  username: string;
+  recoveryCode: string;
+  newPassword: string;
+}
+
 export interface UseAuthResult {
   user: SessionUser | null;
   status: ReturnType<typeof useSessionStore.getState>['status'];
   login: (creds: Credentials) => Promise<SessionUser>;
   register: (creds: Credentials) => Promise<RegisterResult>;
   logout: () => Promise<void>;
+  resetPassword: (input: ResetPasswordInput) => Promise<void>;
 }
 
 /**
@@ -115,7 +122,19 @@ export function useAuth(): UseAuthResult {
     }
   }, [clearSession]);
 
-  return { user, status, login, register, logout };
+  const resetPassword = useCallback(
+    async ({ username, recoveryCode, newPassword }: ResetPasswordInput): Promise<void> => {
+      // Backend returns 204 with no body — do NOT call setSession. The user
+      // must re-authenticate on /login after this resolves.
+      await api<void>('/auth/reset-password', {
+        method: 'POST',
+        body: { username, recoveryCode, newPassword },
+      });
+    },
+    [],
+  );
+
+  return { user, status, login, register, logout, resetPassword };
 }
 
 /**

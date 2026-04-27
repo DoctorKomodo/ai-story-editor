@@ -310,15 +310,25 @@ export function AuthForm({ mode, onSubmit }: AuthFormProps): JSX.Element {
           </button>
 
           {mode === 'login' ? (
-            <p className="text-[12.5px] text-center text-[var(--ink-3)] font-sans m-0">
-              No account?{' '}
-              <Link
-                to="/register"
-                className="text-[var(--ink)] underline underline-offset-2 font-medium"
-              >
-                Create one
-              </Link>
-            </p>
+            <>
+              <p className="text-[12.5px] text-center text-[var(--ink-3)] font-sans m-0">
+                <Link
+                  to="/reset-password"
+                  className="text-[var(--ink-3)] underline underline-offset-2"
+                >
+                  Forgot password?
+                </Link>
+              </p>
+              <p className="text-[12.5px] text-center text-[var(--ink-3)] font-sans m-0">
+                No account?{' '}
+                <Link
+                  to="/register"
+                  className="text-[var(--ink)] underline underline-offset-2 font-medium"
+                >
+                  Create one
+                </Link>
+              </p>
+            </>
           ) : (
             <p className="text-[12.5px] text-center text-[var(--ink-3)] font-sans m-0">
               Already have one?{' '}
