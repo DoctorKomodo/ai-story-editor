@@ -67,9 +67,18 @@ If any step fails on staging, resolve it before the next prod backup cycle. A dr
 
 ---
 
-## Prerequisites (`[I6]` stub)
+## Prerequisites
 
-*To be detailed in `[I6]`.* Target: Docker-capable host, Postgres reachable, `APP_ENCRYPTION_KEY` + JWT/refresh secrets provisioned.
+You'll need:
+
+- A Linux host (or macOS / Windows with WSL2). Tested on Ubuntu 22.04+ and Debian 12.
+- **Docker Engine 24+** and **Docker Compose v2+** (`docker compose version`).
+- **`git`** to clone the repo.
+- **`node` 22+** *only* if you want to run the test suite or `make migrate` from the host. The bundled stack does not require Node on the host.
+- A reverse proxy (nginx, Caddy, Traefik, Cloudflare Tunnel) if you intend to expose the instance to the internet — Inkwell does not ship one.
+- A small amount of memory: the default stack peaks around ~600 MB RAM under typical load (postgres + node backend + nginx-fronted SPA).
+
+Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. The operator's only Venice-related obligation is to back up `APP_ENCRYPTION_KEY`, which wraps those stored user keys (see "Key backup and user recovery" above).
 
 ## First-run steps (`[I6]` stub)
 
