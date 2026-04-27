@@ -63,6 +63,9 @@ ENV NODE_ENV=development
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npx prisma generate
+# Same dummy DATABASE_URL trick as the builder stage — prisma.config.ts
+# requires it at config-load time even though `prisma generate` doesn't
+# touch the DB. The real value is provided as a runtime env var.
+RUN DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma npx prisma generate
 EXPOSE 4000
 CMD ["npm", "run", "dev"]

@@ -44,6 +44,11 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
 FROM node:22-alpine AS dev
 WORKDIR /app
 ENV NODE_ENV=development
+# Same corepack-based npm 11 upgrade as the builder stage — node:22-alpine
+# ships npm 10.9.7 which can't resolve this lockfile (see builder stage
+# comment for the full rationale).
+RUN COREPACK_ENABLE_NPM=1 corepack enable npm \
+ && corepack prepare npm@11.13.0 --activate
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
