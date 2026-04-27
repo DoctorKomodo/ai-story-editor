@@ -652,7 +652,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 
 ## ☁️ I — DevOps & Infra
 
-- [ ] **[I1]** Multi-stage Dockerfile for backend: `builder` compiles TypeScript, `runner` runs as non-root user.
+- [x] **[I1]** Multi-stage Dockerfile for backend: `builder` compiles TypeScript, `runner` runs as non-root user.
   - verify: `docker build -t story-editor-backend ./backend && docker inspect story-editor-backend | grep -q "User"`
 
 - [ ] **[I2]** Multi-stage Dockerfile for frontend: `builder` runs `npm run build`, `runner` serves dist on port 3000.
