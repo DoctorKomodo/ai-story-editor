@@ -39,3 +39,14 @@ EXPOSE 3000
 
 HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
   CMD wget -qO- http://localhost:3000/ | grep -q '<html' || exit 1
+
+# ---- dev (used by docker-compose.override.yml) ---------------------------
+FROM node:22-alpine AS dev
+WORKDIR /app
+ENV NODE_ENV=development
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+EXPOSE 3000
+# Vite needs --host so it binds 0.0.0.0 inside the container.
+CMD ["npx", "vite", "--host", "--port", "3000"]

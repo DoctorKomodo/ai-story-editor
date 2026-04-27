@@ -55,3 +55,14 @@ HEALTHCHECK --interval=10s --timeout=5s --retries=6 \
   CMD wget -qO- http://localhost:4000/api/health | grep -q '"status":"ok"' || exit 1
 
 ENTRYPOINT ["docker-entrypoint.sh"]
+
+# ---- dev (used by docker-compose.override.yml) ---------------------------
+FROM node:22-alpine AS dev
+WORKDIR /app
+ENV NODE_ENV=development
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npx prisma generate
+EXPOSE 4000
+CMD ["npm", "run", "dev"]
