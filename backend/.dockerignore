@@ -8,3 +8,4 @@ coverage
 *.log
 .git
 .DS_Store
+tsconfig.tsbuildinfo
