@@ -44,7 +44,6 @@ jobs:
       DATABASE_URL: postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test
       JWT_SECRET: ci-jwt-secret-do-not-use-in-production
       REFRESH_TOKEN_SECRET: ci-refresh-secret-do-not-use-in-production
-      VENICE_API_KEY: ci-venice-key-mocked
       FRONTEND_URL: http://localhost:3000
       PORT: 4001
       NODE_ENV: test

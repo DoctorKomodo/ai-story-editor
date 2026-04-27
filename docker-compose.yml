@@ -1,51 +1,70 @@
 services:
-  frontend:
-    image: nginx:alpine
-    ports:
-      - "3000:80"
-    restart: unless-stopped
-    volumes:
-      - frontend_cache:/var/cache/nginx
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
-  backend:
-    image: nginx:alpine
-    ports:
-      - "4000:80"
-    restart: unless-stopped
-    volumes:
-      - backend_cache:/var/cache/nginx
-    depends_on:
-      postgres:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   postgres:
     image: postgres:16-alpine
     restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
-      POSTGRES_USER: storyeditor
-      POSTGRES_PASSWORD: storyeditor
-      POSTGRES_DB: storyeditor
+      POSTGRES_USER: ${POSTGRES_USER:-storyeditor}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-storyeditor}
+      POSTGRES_DB: ${POSTGRES_DB:-storyeditor}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U storyeditor -d storyeditor"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-storyeditor} -d ${POSTGRES_DB:-storyeditor}"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  backend:
+    # Explicit image tag so the override (target: dev) and the prod runner
+    # don't collide on a single auto-generated `<project>-backend` tag — and
+    # so neither overwrites the standalone `story-editor-backend` tag built
+    # by [I1]'s verify and consumed by [I8]'s backup-restore drill.
+    image: inkwell-backend:prod
+    build:
+      context: ./backend
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      # Override the .env DB host so the backend container resolves postgres
+      # via the compose network rather than localhost. The default tracks
+      # POSTGRES_* so an operator who overrides only those still gets a
+      # consistent connection string here.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-storyeditor}:${POSTGRES_PASSWORD:-storyeditor}@postgres:5432/${POSTGRES_DB:-storyeditor}}
+      NODE_ENV: ${NODE_ENV:-production}
+      PORT: "4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:4000/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  frontend:
+    image: inkwell-frontend:prod
+    build:
+      context: ./frontend
+      args:
+        # Operators self-hosting on a non-localhost host should set this in
+        # their shell or `.env` before `docker compose build`.
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
 volumes:
   pgdata:
-  frontend_cache:
-  backend_cache:

@@ -29,7 +29,7 @@ test-results/
 vitest-result.json
 
 # Database backups
-backups/
+backups/*.sql.gz
 
 # Git worktrees
 .worktrees/

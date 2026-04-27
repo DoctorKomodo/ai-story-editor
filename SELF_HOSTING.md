@@ -45,6 +45,20 @@ Neither you nor Anthropic nor any operator can decrypt that user's data when bot
 
 ### 3. Recovery drill (operator guidance)
 
+A scripted version of the drill ships as `scripts/backup-restore-drill.sh`
+([I8]). It runs end-to-end against an isolated drill database on the live
+postgres (no impact on the primary DB), so you can wire it into a cron or
+CI step without touching production data:
+
+```bash
+bash scripts/backup-restore-drill.sh
+```
+
+Exit code 0 = encrypted user content was successfully recovered. The
+manual recipe below is still the recommended human cross-check — at least
+once per quarter, and after any Postgres major-version upgrade or schema
+migration.
+
 Run a recovery drill on a staging instance at least quarterly. The drill:
 
 1. Register a new demo user. Save the recovery code shown at signup.
@@ -67,21 +81,115 @@ If any step fails on staging, resolve it before the next prod backup cycle. A dr
 
 ---
 
-## Prerequisites (`[I6]` stub)
+## Prerequisites
 
-*To be detailed in `[I6]`.* Target: Docker-capable host, Postgres reachable, `APP_ENCRYPTION_KEY` + JWT/refresh secrets provisioned.
+You'll need:
 
-## First-run steps (`[I6]` stub)
+- A Linux host (or macOS / Windows with WSL2). Tested on Ubuntu 22.04+ and Debian 12.
+- **Docker Engine 24+** and **Docker Compose v2+** (`docker compose version`).
+- **`git`** to clone the repo.
+- **`node` 22+** *only* if you want to run the test suite or `make migrate` from the host. The bundled stack does not require Node on the host.
+- A reverse proxy (nginx, Caddy, Traefik, Cloudflare Tunnel) if you intend to expose the instance to the internet — Inkwell does not ship one.
+- A small amount of memory: the default stack peaks around ~600 MB RAM under typical load (postgres + node backend + nginx-fronted SPA).
 
-*To be detailed in `[I6]`.*
+Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. The operator's only Venice-related obligation is to back up `APP_ENCRYPTION_KEY`, which wraps those stored user keys (see "Key backup and user recovery" above).
 
-## Updating (`[I6]` stub)
+## First-run steps
 
-*To be detailed in `[I6]`.*
+```bash
+# 1. Clone the repo
+git clone https://github.com/<your-fork>/story-editor.git
+cd story-editor
 
-## Backup and restore (`[I6]` stub)
+# 2. Create your .env from the template
+cp .env.example .env
 
-*To be detailed in `[I6]`.* See "Key backup and user recovery" above — `APP_ENCRYPTION_KEY` must be part of the backup plan.
+# 3. Generate the long-lived secrets the backend requires.
+#    JWT_SECRET and REFRESH_TOKEN_SECRET sign access and refresh tokens
+#    respectively; APP_ENCRYPTION_KEY is the AES-256 key that wraps stored
+#    Venice API keys.
+{
+  echo "JWT_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
+  echo "REFRESH_TOKEN_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
+  echo "APP_ENCRYPTION_KEY=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
+} >> /tmp/inkwell-secrets.env
+# /tmp/inkwell-secrets.env now contains three KEY=VALUE lines with real
+# generated secrets — paste them into .env, replacing the placeholder
+# defaults, then delete the temp file.
+
+# 4. Bring up the stack — backend runs `prisma migrate deploy` automatically
+#    on first boot, so the schema is created on its own.
+docker compose up -d
+
+# 5. Wait for /api/health to return 200 (~10s)
+curl -sf http://localhost:4000/api/health
+# {"status":"ok",...}
+
+# 6. Open the UI
+open http://localhost:3000
+```
+
+The first user you register is **just a user** — Inkwell has no admin role today. Sign up, then immediately save the recovery code shown on the post-signup screen (see "Key backup and user recovery" → "Content DEKs" above).
+
+If you run the stack on a host other than `localhost`, rebuild the frontend image with the API URL baked in:
+
+```bash
+VITE_API_URL=https://api.example.com docker compose build frontend
+docker compose up -d frontend
+```
+
+## Updating
+
+```bash
+git pull
+docker compose build       # rebuilds backend + frontend with the new code
+docker compose up -d       # rolling-restart; postgres data persists in pgdata
+```
+
+The backend's container entrypoint runs `prisma migrate deploy` on every boot, so a new release that adds migrations applies them automatically. Migrations are designed to be additive (the project uses Prisma's standard "expand-then-contract" pattern); a backup before a major version bump is still recommended — see "Backup and restore" below.
+
+If the release notes say a migration is destructive (e.g. dropping a plaintext column after an encryption rollout), take a `scripts/backup-db.sh` snapshot first and keep it until you've verified the new release end-to-end.
+
+## Backup and restore
+
+Run a regular backup of two things — they are **not** interchangeable:
+
+1. The Postgres database (`pgdata` volume).
+2. `APP_ENCRYPTION_KEY` from your `.env` — see "Key backup and user recovery" above for *why* this is separate.
+
+### Take a snapshot
+
+```bash
+bash scripts/backup-db.sh
+# -> backups/inkwell-YYYYMMDD-HHMMSS.sql.gz
+```
+
+The script dumps the live database via `pg_dump` inside the postgres container, gzips it on the host, and timestamps the filename.
+
+### Restore from a snapshot
+
+```bash
+docker compose down            # stop the stack so writes don't race
+docker compose up -d postgres  # start postgres alone
+sleep 5
+
+gunzip -c backups/inkwell-YYYYMMDD-HHMMSS.sql.gz \
+  | docker compose exec -T postgres psql -U storyeditor -d storyeditor
+
+docker compose up -d           # bring the rest of the stack back
+```
+
+After restore, every user's narrative content is decryptable as before *only if* their password and recovery code are unchanged from when the snapshot was taken. (The DEK wraps live in the `User` row inside the dump, so the wrap and the ciphertext travel together.)
+
+### Off-site copies
+
+`./backups/` is in `.gitignore`. Sync it elsewhere with whatever you already use (`rclone`, `restic`, `borg`). A small cron is fine:
+
+```cron
+# Daily 03:00 backup, prune anything older than 30 days
+0 3 * * *  cd /opt/inkwell && bash scripts/backup-db.sh
+30 3 * * * find /opt/inkwell/backups -name '*.sql.gz' -mtime +30 -delete
+```
 
 ## Port layout (`[I6]` stub)
 
