@@ -29,7 +29,7 @@
     "openai": "^6.34.0",
     "pg": "^8.20.0",
     "prisma": "^7.8.0",
-    "zod": "^3.23.8"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/cookie-parser": "^1.4.10",
