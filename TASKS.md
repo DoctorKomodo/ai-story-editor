@@ -661,7 +661,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[I3]** `docker-compose.yml` final: backend `depends_on` postgres with `condition: service_healthy`. `restart: unless-stopped` on all services. Postgres in named volume `pgdata`.
   - verify: `docker compose down -v && docker compose up -d && sleep 10 && curl -sf http://localhost:4000/api/health | grep '"status":"ok"'`
 
-- [ ] **[I4]** `docker-compose.override.yml` for local dev: hot reload mounts, all ports exposed, `NODE_ENV=development`.
+- [x] **[I4]** `docker-compose.override.yml` for local dev: hot reload mounts, all ports exposed, `NODE_ENV=development`.
   - verify: `docker compose -f docker-compose.yml -f docker-compose.override.yml config --quiet && echo "OVERRIDE OK"`
 
 - [x] **[I5]** `scripts/backup-db.sh`: runs `pg_dump` inside the postgres container, saves timestamped `.sql.gz` to `./backups/`.
