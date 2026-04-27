@@ -48,7 +48,7 @@ import { type SelectionAction, SelectionBubble } from '@/components/SelectionBub
 import { SettingsModal } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
 import { StoryPicker } from '@/components/StoryPicker';
-import { type SaveState, TopBar } from '@/components/TopBar';
+import { TopBar } from '@/components/TopBar';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
@@ -414,10 +414,6 @@ export function EditorPage(): JSX.Element {
     );
   }
 
-  // [F52] Map the autosave hook's status enum to TopBar's SaveState until
-  // F56 swaps the inline indicator for the F48 <AutosaveIndicator>.
-  const saveState: SaveState = autosave.status === 'error' ? 'failed' : autosave.status;
-
   return (
     <>
       <AppShell
@@ -426,7 +422,13 @@ export function EditorPage(): JSX.Element {
             storyTitle={story.title}
             chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
             chapterTitle={activeChapter?.title ?? null}
-            saveState={saveState}
+            // [F56] Pass the F9/F48 autosave triple through; TopBar renders
+            // <AutosaveIndicator> from this directly.
+            autosave={{
+              status: autosave.status,
+              savedAt: autosave.savedAt,
+              retryAt: autosave.retryAt,
+            }}
             wordCount={activeChapter?.wordCount ?? null}
             onOpenSettings={() => {
               setSettingsOpen(true);
