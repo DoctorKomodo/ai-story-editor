@@ -138,9 +138,46 @@ The backend's container entrypoint runs `prisma migrate deploy` on every boot, s
 
 If the release notes say a migration is destructive (e.g. dropping a plaintext column after an encryption rollout), take a `scripts/backup-db.sh` snapshot first and keep it until you've verified the new release end-to-end.
 
-## Backup and restore (`[I6]` stub)
+## Backup and restore
 
-*To be detailed in `[I6]`.* See "Key backup and user recovery" above — `APP_ENCRYPTION_KEY` must be part of the backup plan.
+Run a regular backup of two things — they are **not** interchangeable:
+
+1. The Postgres database (`pgdata` volume).
+2. `APP_ENCRYPTION_KEY` from your `.env` — see "Key backup and user recovery" above for *why* this is separate.
+
+### Take a snapshot
+
+```bash
+bash scripts/backup-db.sh
+# -> backups/inkwell-YYYYMMDD-HHMMSS.sql.gz
+```
+
+The script dumps the live database via `pg_dump` inside the postgres container, gzips it on the host, and timestamps the filename.
+
+### Restore from a snapshot
+
+```bash
+docker compose down            # stop the stack so writes don't race
+docker compose up -d postgres  # start postgres alone
+sleep 5
+
+gunzip -c backups/inkwell-YYYYMMDD-HHMMSS.sql.gz \
+  | docker compose exec -T postgres psql -U storyeditor -d storyeditor
+
+docker compose up -d           # bring the rest of the stack back
+```
+
+After restore, every user's narrative content is decryptable as before *only if* their password and recovery code are unchanged from when the snapshot was taken. (The DEK wraps live in the `User` row inside the dump, so the wrap and the ciphertext travel together.)
+
+### Off-site copies
+
+`./backups/` is in `.gitignore`. Sync it elsewhere with whatever you already use (`rclone`, `restic`, `borg`). A small cron is fine:
+
+```cron
+# Daily 03:00 backup, prune anything older than 30 days
+0 3 * * *  cd /opt/inkwell && bash scripts/backup-db.sh
+30 3 * * * find /opt/inkwell/backups -name '*.sql.gz' -mtime +30 -delete
+```
 
 ## Port layout (`[I6]` stub)
 
