@@ -668,7 +668,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
   - verify: `bash scripts/backup-db.sh && ls backups/*.sql.gz | head -1`
 
 - [ ] **[I6]** `SELF_HOSTING.md`: prerequisites, first-run steps, updating, backup/restore, port layout (frontend :3000, backend :4000), note that reverse proxy is expected upstream but not included.
-  - verify: `test -f SELF_HOSTING.md && grep -q "docker compose up" SELF_HOSTING.md && grep -q "VENICE_API_KEY" SELF_HOSTING.md`
+  - verify: `test -f SELF_HOSTING.md && grep -q "docker compose up" SELF_HOSTING.md && grep -q "APP_ENCRYPTION_KEY" SELF_HOSTING.md`
 
 - [x] **[I7]** BYOK env swap: remove `VENICE_API_KEY` from `.env.example` and supporting docs; add `APP_ENCRYPTION_KEY` (32-byte base64, documented with a generation one-liner in [I6]'s SELF_HOSTING.md). Backend startup fails fast with a clear message if `APP_ENCRYPTION_KEY` is missing or wrong length. Update [I6]'s `SELF_HOSTING.md` to reflect the BYOK model (each user enters their own key in Settings — operator does not need a Venice account).
   - verify: `grep -q "APP_ENCRYPTION_KEY" .env.example && ! grep -q "VENICE_API_KEY" .env.example && cd backend && npm run test:backend -- --run tests/boot/encryption-keys.test.ts`
