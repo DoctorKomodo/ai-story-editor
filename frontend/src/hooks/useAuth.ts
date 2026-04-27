@@ -7,9 +7,19 @@ export interface Credentials {
   password: string;
 }
 
-interface AuthResponse {
+interface LoginResponse {
   user: SessionUser;
   accessToken: string;
+}
+
+interface RegisterResponse {
+  user: SessionUser;
+  recoveryCode: string;
+}
+
+export interface RegisterResult {
+  user: SessionUser;
+  recoveryCode: string;
 }
 
 interface MeResponse {
@@ -20,7 +30,7 @@ export interface UseAuthResult {
   user: SessionUser | null;
   status: ReturnType<typeof useSessionStore.getState>['status'];
   login: (creds: Credentials) => Promise<SessionUser>;
-  register: (creds: Credentials) => Promise<SessionUser>;
+  register: (creds: Credentials) => Promise<RegisterResult>;
   logout: () => Promise<void>;
 }
 
@@ -71,7 +81,7 @@ export function useAuth(): UseAuthResult {
 
   const login = useCallback(
     async ({ username, password }: Credentials): Promise<SessionUser> => {
-      const res = await api<AuthResponse>('/auth/login', {
+      const res = await api<LoginResponse>('/auth/login', {
         method: 'POST',
         body: { username, password },
       });
@@ -82,15 +92,17 @@ export function useAuth(): UseAuthResult {
   );
 
   const register = useCallback(
-    async ({ username, password }: Credentials): Promise<SessionUser> => {
-      const res = await api<AuthResponse>('/auth/register', {
+    async ({ username, password }: Credentials): Promise<RegisterResult> => {
+      const res = await api<RegisterResponse>('/auth/register', {
         method: 'POST',
         body: { username, password },
       });
-      setSession(res.user, res.accessToken);
-      return res.user;
+      // Intentionally do NOT call setSession — the backend has not issued an
+      // access token or refresh cookie yet. The page must show the recovery
+      // code, get acknowledgement, then call login() with the same creds.
+      return { user: res.user, recoveryCode: res.recoveryCode };
     },
-    [setSession],
+    [],
   );
 
   const logout = useCallback(async (): Promise<void> => {
