@@ -185,3 +185,80 @@ export function computeReorderedChapters(
 export function getChaptersFromCache(qc: QueryClient, storyId: string): Chapter[] | undefined {
   return qc.getQueryData<Chapter[]>(chaptersQueryKey(storyId));
 }
+
+// ---- single-chapter query (F52) ----
+
+export const chapterQueryKey = (chapterId: string): readonly [string, string] =>
+  ['chapter', chapterId] as const;
+
+/**
+ * Read a single chapter. When `storyId` is supplied and the chapter is already
+ * present in the chapters-list cache for that story, returns it from cache
+ * with no fetch. Otherwise issues `GET /api/stories/:storyId/chapters/:id`.
+ *
+ * Disabled when `chapterId` is null/undefined.
+ */
+export function useChapterQuery(
+  chapterId: string | null | undefined,
+  storyId?: string,
+): UseQueryResult<Chapter, Error> {
+  const qc = useQueryClient();
+  return useQuery({
+    queryKey: chapterQueryKey(chapterId ?? ''),
+    enabled: typeof chapterId === 'string' && chapterId.length > 0,
+    queryFn: async (): Promise<Chapter> => {
+      if (typeof chapterId !== 'string' || chapterId.length === 0) {
+        throw new Error('chapterId required');
+      }
+      // Cache short-circuit: if the chapters list for the story is in cache,
+      // return the matching entry without a round-trip.
+      if (typeof storyId === 'string' && storyId.length > 0) {
+        const list = qc.getQueryData<Chapter[]>(chaptersQueryKey(storyId));
+        const hit = list?.find((c) => c.id === chapterId);
+        if (hit) return hit;
+      }
+      if (typeof storyId !== 'string' || storyId.length === 0) {
+        throw new Error('useChapterQuery: storyId required when chapter is not in cache');
+      }
+      const res = await api<ChapterResponse>(
+        `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}`,
+      );
+      return res.chapter;
+    },
+    staleTime: 30_000,
+  });
+}
+
+// ---- update chapter (F52) ----
+
+export interface UpdateChapterInput {
+  bodyJson?: unknown;
+  title?: string;
+  wordCount?: number;
+}
+
+export interface UpdateChapterArgs {
+  storyId: string;
+  chapterId: string;
+  input: UpdateChapterInput;
+}
+
+export function useUpdateChapterMutation(): UseMutationResult<Chapter, Error, UpdateChapterArgs> {
+  const qc = useQueryClient();
+  return useMutation<Chapter, Error, UpdateChapterArgs>({
+    mutationFn: async ({ storyId, chapterId, input }) => {
+      const res = await api<ChapterResponse>(
+        `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}`,
+        { method: 'PATCH', body: input as Record<string, unknown> },
+      );
+      return res.chapter;
+    },
+    onSuccess: (chapter) => {
+      qc.setQueryData<Chapter[] | undefined>(chaptersQueryKey(chapter.storyId), (prev) => {
+        if (!prev) return prev;
+        return prev.map((c) => (c.id === chapter.id ? chapter : c));
+      });
+      qc.setQueryData<Chapter>(chapterQueryKey(chapter.id), chapter);
+    },
+  });
+}

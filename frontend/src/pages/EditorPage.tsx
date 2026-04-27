@@ -1,20 +1,22 @@
-// [F51] EditorPage — AppShell-based three-column shell.
+// [F51 + F52] EditorPage — AppShell shell with FormatBar + Paper editor.
 //
-// F7 → F51 survivor list:
+// Survivor list (F7 → F51 → F52):
 //   - useStoryQuery(activeStoryId)        → breadcrumbs (TopBar)
 //   - useChaptersQuery(storyId)           → ChapterList + Export + word-count footer
+//   - useChapterQuery(activeChapterId)    → Paper bodyJson source (F52)
+//   - useUpdateChapterMutation            → autosave PATCH (F52)
 //   - useCharactersQuery(storyId)         → CastTab body
 //   - useBalanceQuery()                   → UserMenu balance
 //   - useSessionStore(user)               → UserMenu username
 //   - useAuth().logout + navigate         → sign out
-//   - useActiveChapterStore               → ChapterList selection (was local state)
-//   - useSidebarTabStore                  → active tab (was local state)
-//   - <CharacterSheet> modal              → still page-root, still id-driven
-//   - <Editor onReady={...}>              → still mounted (until F52)
-//   - <AIPanel> + ModelSelector + …       → still mounted (until F55)
-//   - <Export>                            → rendered below Editor (until F52)
+//   - useActiveChapterStore               → ChapterList selection
+//   - useSidebarTabStore                  → active tab
+//   - <CharacterSheet> modal              → page-root, id-driven
+//   - <FormatBar> + <Paper>               → editor slot (F52 — replaces F8)
+//   - <AIPanel> + ModelSelector + …       → chat slot (until F55)
+//   - <Export>                            → rendered below Paper (until F52 promote)
 //
-// Modal-mount convention (locked here for the rest of the F-series):
+// Modal-mount convention (locked in F51 for the rest of the F-series):
 //   page-level useState per modal; callback prop down via TopBar / Sidebar /
 //   ChatPanel; <Modal /> rendered at the bottom of the component, NOT inside
 //   AppShell. F55 mounts <SettingsModal>, <StoryPicker>, <ModelPicker> here;
@@ -22,7 +24,7 @@
 
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { type AIAction, AIPanel } from '@/components/AIPanel';
 import { AIResult } from '@/components/AIResult';
@@ -30,18 +32,25 @@ import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
 import { ChapterList } from '@/components/ChapterList';
 import { CharacterSheet } from '@/components/CharacterSheet';
-import { Editor } from '@/components/Editor';
 import { Export, type ExportStory } from '@/components/Export';
+import { FormatBar } from '@/components/FormatBar';
 import { ModelSelector } from '@/components/ModelSelector';
 import { OutlineTab } from '@/components/OutlineTab';
+import { Paper } from '@/components/Paper';
 import { Sidebar } from '@/components/Sidebar';
 import { type SaveState, TopBar } from '@/components/TopBar';
 import { UsageIndicator } from '@/components/UsageIndicator';
 import { WebSearchToggle } from '@/components/WebSearchToggle';
 import { useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
+import { useAutosave } from '@/hooks/useAutosave';
 import { useBalanceQuery } from '@/hooks/useBalance';
-import { useChaptersQuery, useCreateChapterMutation } from '@/hooks/useChapters';
+import {
+  useChapterQuery,
+  useChaptersQuery,
+  useCreateChapterMutation,
+  useUpdateChapterMutation,
+} from '@/hooks/useChapters';
 import { useCharactersQuery, useCreateCharacterMutation } from '@/hooks/useCharacters';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
@@ -125,6 +134,47 @@ export function EditorPage(): JSX.Element {
 
   const createChapter = useCreateChapterMutation(story?.id ?? '');
   const createCharacter = useCreateCharacterMutation(story?.id ?? '');
+
+  // [F52] Active chapter content is read via the cache-first single-chapter
+  // query, then mirrored into local state so Paper's onUpdate can mutate it
+  // without re-rendering through TanStack Query on every keystroke. Autosave
+  // observes the local state.
+  const chapterQuery = useChapterQuery(activeChapterId ?? null, story?.id);
+  const updateChapter = useUpdateChapterMutation();
+  const [draftBodyJson, setDraftBodyJson] = useState<JSONContent | null>(null);
+  const lastWordCountRef = useRef<number>(0);
+
+  // Reset the local draft whenever the active chapter changes.
+  useEffect(() => {
+    const fresh = (chapterQuery.data?.bodyJson as JSONContent | null) ?? null;
+    setDraftBodyJson(fresh);
+    lastWordCountRef.current = chapterQuery.data?.wordCount ?? 0;
+  }, [activeChapterId, chapterQuery.data]);
+
+  const handleSave = useCallback(
+    async (value: JSONContent): Promise<void> => {
+      if (!story?.id || !activeChapterId) return;
+      await updateChapter.mutateAsync({
+        storyId: story.id,
+        chapterId: activeChapterId,
+        input: { bodyJson: value, wordCount: lastWordCountRef.current },
+      });
+    },
+    [story?.id, activeChapterId, updateChapter],
+  );
+
+  const autosave = useAutosave<JSONContent>({
+    payload: draftBodyJson,
+    save: handleSave,
+  });
+
+  const handlePaperUpdate = useCallback(
+    ({ bodyJson, wordCount }: { bodyJson: JSONContent; wordCount: number }): void => {
+      lastWordCountRef.current = wordCount;
+      setDraftBodyJson(bodyJson);
+    },
+    [],
+  );
 
   const handleSidebarAdd = useCallback((): void => {
     if (!story?.id) return;
@@ -224,8 +274,9 @@ export function EditorPage(): JSX.Element {
     );
   }
 
-  // SaveState placeholder — F56 swaps in the F48 AutosaveIndicator.
-  const saveState: SaveState = 'idle';
+  // [F52] Map the autosave hook's status enum to TopBar's SaveState until
+  // F56 swaps the inline indicator for the F48 <AutosaveIndicator>.
+  const saveState: SaveState = autosave.status === 'error' ? 'failed' : autosave.status;
 
   return (
     <>
@@ -286,11 +337,30 @@ export function EditorPage(): JSX.Element {
           />
         }
         editor={
-          <div className="flex h-full flex-col gap-4 overflow-y-auto p-6">
-            <div className="mx-auto w-full max-w-3xl">
-              <Editor onReady={handleEditorReady} />
+          <div className="flex h-full flex-col">
+            <FormatBar editor={editor} />
+            <div className="flex-1 overflow-y-auto">
+              {activeChapterId ? (
+                <Paper
+                  storyTitle={story.title}
+                  storyGenre={story.genre}
+                  storyWordCount={totalWordCount}
+                  chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
+                  chapterTitle={activeChapter?.title ?? null}
+                  initialBodyJson={(chapterQuery.data?.bodyJson as JSONContent | null) ?? null}
+                  onUpdate={handlePaperUpdate}
+                  onReady={handleEditorReady}
+                />
+              ) : (
+                <div
+                  data-testid="editor-empty-state"
+                  className="grid h-full place-items-center px-6 text-center text-[13px] text-ink-4"
+                >
+                  Select a chapter from the sidebar to start writing.
+                </div>
+              )}
               {exportStory ? (
-                <div className="mt-4 flex justify-end">
+                <div className="mx-auto mt-4 flex w-full max-w-[720px] justify-end px-6 pb-6">
                   <Export story={exportStory} activeChapterId={activeChapterId} />
                 </div>
               ) : null}
