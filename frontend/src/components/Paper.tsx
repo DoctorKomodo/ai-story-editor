@@ -2,10 +2,14 @@ import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { JSX, ReactNode } from 'react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { CharRefMenu } from '@/components/CharRefMenu';
 import { EditorEmptyHints } from '@/components/EditorEmptyHints';
+import { useCharactersQuery } from '@/hooks/useCharacters';
+import { useCharRefSuggestionProvider } from '@/hooks/useCharRefSuggestionProvider';
 import { useUserSettingsQuery } from '@/hooks/useUserSettings';
 import { formatBarExtensions } from '@/lib/tiptap-extensions';
 import { getTypographyExtensions } from '@/lib/tiptap-typography';
+import { useActiveStoryStore } from '@/store/activeStory';
 
 /**
  * Paper editor layout (F32).
@@ -139,6 +143,17 @@ export function Paper({
     onReadyRef.current = onReady;
   }, [onReady]);
 
+  // [F62] Provide the active story's characters to the @-trigger suggestion.
+  const activeStoryId = useActiveStoryStore((s) => s.activeStoryId);
+  const charactersQuery = useCharactersQuery(activeStoryId ?? undefined);
+  useCharRefSuggestionProvider(() =>
+    (charactersQuery.data ?? []).map((c) => ({
+      id: c.id,
+      name: c.name,
+      role: c.role,
+    })),
+  );
+
   // [F66] Read writing.smartQuotes / writing.emDashExpansion from B11 and
   // append the matching TipTap input rules. The editor remounts when either
   // flips because `extensions` is keyed off the booleans.
@@ -238,6 +253,7 @@ export function Paper({
         <EditorContent editor={editor} />
       </div>
       {isEmpty ? <EditorEmptyHints /> : null}
+      <CharRefMenu />
     </article>
   );
 }

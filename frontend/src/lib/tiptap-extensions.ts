@@ -28,6 +28,7 @@ import Link from '@tiptap/extension-link';
 import Underline from '@tiptap/extension-underline';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect } from 'react';
+import { CharRefSuggestion } from '@/lib/charRefSuggestion';
 
 declare module '@tiptap/core' {
   interface Commands<ReturnType> {
@@ -157,4 +158,5 @@ export const formatBarExtensions = [
   Highlight,
   AIContinuation,
   CharRef,
+  CharRefSuggestion,
 ];
