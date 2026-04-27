@@ -90,7 +90,7 @@ describe('routing', () => {
     renderAt('/');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /your stories/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /^your stories$/i })).toBeInTheDocument();
     });
   });
 

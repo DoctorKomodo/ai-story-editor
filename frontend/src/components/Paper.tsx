@@ -1,7 +1,8 @@
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { JSX, ReactNode } from 'react';
-import { Fragment, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { EditorEmptyHints } from '@/components/EditorEmptyHints';
 import { formatBarExtensions } from '@/lib/tiptap-extensions';
 
 /**
@@ -138,6 +139,11 @@ export function Paper({
 
   const extensions = useMemo(() => formatBarExtensions, []);
 
+  // [F64] Mirror editor.isEmpty into local state so the hint strip toggles
+  // reactively. TipTap doesn't push isEmpty changes through React props
+  // otherwise.
+  const [isEmpty, setIsEmpty] = useState(true);
+
   const editor = useEditor({
     extensions,
     content: initialBodyJson ?? DEFAULT_EMPTY_DOC,
@@ -150,7 +156,11 @@ export function Paper({
         'aria-label': 'Chapter body',
       },
     },
+    onCreate({ editor: ed }) {
+      setIsEmpty(ed.isEmpty);
+    },
     onUpdate({ editor: ed }) {
+      setIsEmpty(ed.isEmpty);
       const cb = onUpdateRef.current;
       if (!cb) return;
       const json = ed.getJSON();
@@ -216,6 +226,7 @@ export function Paper({
       <div className="paper-prose mt-6">
         <EditorContent editor={editor} />
       </div>
+      {isEmpty ? <EditorEmptyHints /> : null}
     </article>
   );
 }

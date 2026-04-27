@@ -151,7 +151,7 @@ describe('DashboardPage (F58 — embedded StoryPicker)', () => {
     renderDashboard();
 
     await waitFor(() => {
-      expect(screen.getByText(/no stories yet/i)).toBeInTheDocument();
+      expect(screen.getByTestId('story-picker-empty')).toBeInTheDocument();
     });
   });
 
@@ -160,7 +160,7 @@ describe('DashboardPage (F58 — embedded StoryPicker)', () => {
     renderDashboard();
 
     await waitFor(() => {
-      expect(screen.getByText(/no stories yet/i)).toBeInTheDocument();
+      expect(screen.getByTestId('story-picker-empty')).toBeInTheDocument();
     });
 
     await userEvent.setup().click(screen.getByTestId('story-picker-new'));

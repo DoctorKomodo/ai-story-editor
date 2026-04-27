@@ -8,6 +8,7 @@
 // chrome from `mockups/frontend-prototype/design/styles.css` lines 876–937.
 import type { JSX } from 'react';
 import { type MouseEvent, useEffect, useId, useRef } from 'react';
+import { StoryPickerEmpty } from '@/components/StoryPickerEmpty';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useStoriesQuery } from '@/hooks/useStories';
 
@@ -154,7 +155,7 @@ export function StoryPicker({
             {error instanceof Error ? error.message : 'Failed to load stories.'}
           </div>
         ) : count === 0 ? (
-          <div className="py-8 text-center font-mono text-[12px] text-ink-4">No stories yet</div>
+          <StoryPickerEmpty />
         ) : (
           <div className="grid gap-1">
             {stories?.map((s) => {
