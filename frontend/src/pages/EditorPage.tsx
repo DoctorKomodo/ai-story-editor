@@ -32,16 +32,19 @@ import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
 import { ChapterList } from '@/components/ChapterList';
 import { CharacterSheet } from '@/components/CharacterSheet';
+import { ContinueWriting } from '@/components/ContinueWriting';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
+import { InlineAIResult } from '@/components/InlineAIResult';
 import { ModelSelector } from '@/components/ModelSelector';
 import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
+import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
 import { Sidebar } from '@/components/Sidebar';
 import { type SaveState, TopBar } from '@/components/TopBar';
 import { UsageIndicator } from '@/components/UsageIndicator';
 import { WebSearchToggle } from '@/components/WebSearchToggle';
-import { useAICompletion } from '@/hooks/useAICompletion';
+import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
 import { useBalanceQuery } from '@/hooks/useBalance';
@@ -56,7 +59,9 @@ import { useModelsQuery } from '@/hooks/useModels';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useStoryQuery } from '@/hooks/useStories';
 import { ApiError } from '@/lib/api';
+import { triggerAskAI } from '@/lib/askAi';
 import { useActiveChapterStore } from '@/store/activeChapter';
+import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSessionStore } from '@/store/session';
 import { useSidebarTabStore } from '@/store/sidebarTab';
 
@@ -230,6 +235,21 @@ export function EditorPage(): JSX.Element {
     [editor],
   );
 
+  // [F53] inline-result store wiring; full handler defined after activeChapter
+  // is derived (the handler reads activeChapter.orderIndex / title for the
+  // ask-AI delegation).
+  const setInlineAIResult = useInlineAIResultStore((s) => s.setInlineAIResult);
+  const clearInlineAIResult = useInlineAIResultStore((s) => s.clear);
+  const lastRunArgsRef = useRef<RunArgs | null>(null);
+  const ACTION_MAP: Record<Exclude<SelectionAction, 'ask'>, RunArgs['action']> = useMemo(
+    () => ({
+      rewrite: 'rephrase',
+      describe: 'summarise',
+      expand: 'expand',
+    }),
+    [],
+  );
+
   const exportStory: ExportStory | null = useMemo(() => {
     if (!story) return null;
     const chapters = chaptersQuery.data ?? [];
@@ -250,6 +270,99 @@ export function EditorPage(): JSX.Element {
   }, [chaptersQuery.data]);
 
   const activeChapter = chaptersQuery.data?.find((c) => c.id === activeChapterId) ?? null;
+
+  const handleSelectionAction = useCallback(
+    (action: SelectionAction): void => {
+      if (!editor || !story?.id || activeChapterId === null) return;
+      const text = extractSelection(editor);
+      if (text.trim().length === 0) return;
+
+      if (action === 'ask') {
+        if (!activeChapter) return;
+        triggerAskAI({
+          selectionText: text,
+          chapter: {
+            id: activeChapter.id,
+            number: activeChapter.orderIndex + 1,
+            title: activeChapter.title,
+          },
+        });
+        return;
+      }
+
+      if (selectedModelId === null) {
+        setInlineAIResult({
+          action,
+          text,
+          status: 'error',
+          output: 'No model selected. Open the model picker to choose one.',
+        });
+        return;
+      }
+
+      const args: RunArgs = {
+        action: ACTION_MAP[action],
+        selectedText: text,
+        chapterId: activeChapterId,
+        storyId: story.id,
+        modelId: selectedModelId,
+      };
+      lastRunArgsRef.current = args;
+      setInlineAIResult({ action, text, status: 'thinking', output: '' });
+      void completion.run(args);
+    },
+    [
+      editor,
+      story?.id,
+      activeChapterId,
+      activeChapter,
+      selectedModelId,
+      completion,
+      setInlineAIResult,
+      ACTION_MAP,
+    ],
+  );
+
+  const handleInlineRetry = useCallback((): void => {
+    const args = lastRunArgsRef.current;
+    if (!args) return;
+    const bubbleAction = (Object.entries(ACTION_MAP).find(([, v]) => v === args.action)?.[0] ??
+      'rewrite') as Exclude<SelectionAction, 'ask'>;
+    setInlineAIResult({
+      action: bubbleAction,
+      text: args.selectedText,
+      status: 'thinking',
+      output: '',
+    });
+    void completion.run(args);
+  }, [completion, setInlineAIResult, ACTION_MAP]);
+
+  // Mirror the streaming completion into the inline-result store so
+  // <InlineAIResult> renders progressive output and final state. Guarded by
+  // `if (!prev) return;` so AIPanel-driven runs (F12) don't seed the card.
+  useEffect(() => {
+    if (completion.status === 'idle') return;
+    const prev = useInlineAIResultStore.getState().inlineAIResult;
+    if (!prev) return;
+    if (completion.status === 'streaming') {
+      setInlineAIResult({ ...prev, status: 'streaming', output: completion.text });
+    } else if (completion.status === 'done') {
+      setInlineAIResult({ ...prev, status: 'done', output: completion.text });
+    } else if (completion.status === 'error') {
+      setInlineAIResult({
+        ...prev,
+        status: 'error',
+        output: completion.error?.message ?? 'AI request failed.',
+      });
+    }
+  }, [completion.status, completion.text, completion.error, setInlineAIResult]);
+
+  // Cancel + clear the inline card on chapter / story switch so a half-streamed
+  // rewrite doesn't bleed into the next chapter.
+  useEffect(() => {
+    clearInlineAIResult();
+    lastRunArgsRef.current = null;
+  }, [activeChapterId, story?.id, clearInlineAIResult]);
 
   if (storyQuery.isLoading) {
     return (
@@ -359,6 +472,25 @@ export function EditorPage(): JSX.Element {
                   Select a chapter from the sidebar to start writing.
                 </div>
               )}
+              {/* [F53] Inline AI result card — driven by <SelectionBubble>
+                  via useInlineAIResultStore. Renders nothing when the store
+                  is empty. */}
+              <div className="mx-auto w-full max-w-[720px] px-6">
+                <InlineAIResult editor={editor} onRetry={handleInlineRetry} />
+              </div>
+              {/* [F53] Continue-writing pill — ⌥+Enter or click to extend
+                  the prose at the cursor. Only mounts when we have the
+                  required context. */}
+              {activeChapterId !== null && story.id && selectedModelId !== null ? (
+                <div className="mx-auto w-full max-w-[720px] px-6">
+                  <ContinueWriting
+                    editor={editor}
+                    storyId={story.id}
+                    chapterId={activeChapterId}
+                    modelId={selectedModelId}
+                  />
+                </div>
+              ) : null}
               {exportStory ? (
                 <div className="mx-auto mt-4 flex w-full max-w-[720px] justify-end px-6 pb-6">
                   <Export story={exportStory} activeChapterId={activeChapterId} />
@@ -398,6 +530,11 @@ export function EditorPage(): JSX.Element {
           setOpenCharacterId(null);
         }}
       />
+
+      {/* [F53] Selection bubble — listens for prose selections inside the
+          .paper-prose region and absolute-positions itself over the
+          selection. Page-root mount keeps it free of editor-slot overflow. */}
+      <SelectionBubble proseSelector=".paper-prose" onAction={handleSelectionAction} />
 
       {/* Page-root modals: F55 mounts <SettingsModal>, <StoryPicker>,
           <ModelPicker> here using the storyPickerOpen / settingsOpen flags
