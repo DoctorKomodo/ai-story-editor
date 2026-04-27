@@ -123,14 +123,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
       role="presentation"
       data-testid="settings-backdrop"
       onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 grid place-items-center bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
+      className="t-backdrop-in fixed inset-0 z-50 bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         data-testid="settings-modal"
-        className="w-[720px] max-w-[94vw] max-h-[80vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
+        className="t-modal-in fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[720px] max-w-[94vw] max-h-[80vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
       >
         <header className="px-[18px] py-[14px] border-b border-line flex items-start justify-between gap-3">
           <div>
