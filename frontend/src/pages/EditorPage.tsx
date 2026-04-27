@@ -26,6 +26,7 @@ import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
 import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
 import { ChapterList } from '@/components/ChapterList';
@@ -131,6 +132,8 @@ export function EditorPage(): JSX.Element {
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  // [F61] Account & privacy modal state — same page-root convention.
+  const [accountPrivacyOpen, setAccountPrivacyOpen] = useState(false);
 
   const { selectedModelId } = useSelectedModel();
   const completion = useAICompletion();
@@ -436,7 +439,9 @@ export function EditorPage(): JSX.Element {
             onOpenStoriesList={() => {
               setStoryPickerOpen(true);
             }}
-            // onOpenAccount intentionally undefined — F61 wires it.
+            onOpenAccount={() => {
+              setAccountPrivacyOpen(true);
+            }}
             username={username}
             balance={balanceQuery.data ?? null}
             isBalanceLoading={balanceQuery.isLoading}
@@ -591,6 +596,13 @@ export function EditorPage(): JSX.Element {
         onClose={() => {
           setSettingsOpen(false);
         }}
+      />
+      <AccountPrivacyModal
+        open={accountPrivacyOpen}
+        onClose={() => {
+          setAccountPrivacyOpen(false);
+        }}
+        username={username}
       />
     </>
   );
