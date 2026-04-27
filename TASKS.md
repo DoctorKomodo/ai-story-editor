@@ -658,7 +658,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [x] **[I2]** Multi-stage Dockerfile for frontend: `builder` runs `npm run build`, `runner` serves dist on port 3000.
   - verify: `docker build -t story-editor-frontend ./frontend && docker run --rm -d -p 3001:3000 story-editor-frontend && sleep 3 && curl -sf http://localhost:3001 | grep -q "html" && docker stop $(docker ps -q --filter ancestor=story-editor-frontend)`
 
-- [ ] **[I3]** `docker-compose.yml` final: backend `depends_on` postgres with `condition: service_healthy`. `restart: unless-stopped` on all services. Postgres in named volume `pgdata`.
+- [x] **[I3]** `docker-compose.yml` final: backend `depends_on` postgres with `condition: service_healthy`. `restart: unless-stopped` on all services. Postgres in named volume `pgdata`.
   - verify: `docker compose down -v && docker compose up -d && sleep 10 && curl -sf http://localhost:4000/api/health | grep '"status":"ok"'`
 
 - [ ] **[I4]** `docker-compose.override.yml` for local dev: hot reload mounts, all ports exposed, `NODE_ENV=development`.
