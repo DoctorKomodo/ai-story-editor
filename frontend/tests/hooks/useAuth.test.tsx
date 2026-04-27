@@ -68,23 +68,39 @@ describe('useAuth', () => {
     expect(getAccessToken()).toBe('tok-1');
   });
 
-  it('register() calls POST /api/auth/register and populates the session', async () => {
+  it('register() calls POST /api/auth/register and returns { user, recoveryCode } WITHOUT populating the session', async () => {
+    // The backend does not issue an access token or refresh cookie on
+    // register; the page is responsible for the post-ack login. See [F59].
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { user: { id: 'u2', username: 'bob' }, accessToken: 'tok-2' }),
+      jsonResponse(201, {
+        user: { id: 'u2', username: 'bob' },
+        recoveryCode: 'horse-battery-staple-correct',
+      }),
     );
 
     const { result } = renderHook(() => useAuth());
+    let registerResult: { user: { id: string; username: string }; recoveryCode: string } | null =
+      null;
     await act(async () => {
-      await result.current.register({ username: 'bob', password: 'hunter2hunter2' });
+      registerResult = await result.current.register({
+        username: 'bob',
+        password: 'hunter2hunter2',
+      });
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/auth/register');
-    await waitFor(() => {
-      expect(result.current.user).toEqual({ id: 'u2', username: 'bob' });
+
+    expect(registerResult).toEqual({
+      user: { id: 'u2', username: 'bob' },
+      recoveryCode: 'horse-battery-staple-correct',
     });
-    expect(getAccessToken()).toBe('tok-2');
+
+    // Crucially: the session is NOT populated by register(). The recovery-code
+    // interstitial gates the post-ack login.
+    expect(result.current.user).toBeNull();
+    expect(getAccessToken()).toBeNull();
   });
 
   it('logout() calls POST /api/auth/logout and clears the session', async () => {

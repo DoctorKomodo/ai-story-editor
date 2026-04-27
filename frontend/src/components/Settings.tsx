@@ -11,6 +11,7 @@ import { type MouseEvent, useEffect, useId, useRef, useState } from 'react';
 import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
 import {
   useDeleteVeniceKeyMutation,
@@ -97,20 +98,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
   const titleId = useId();
   const [activeTab, setActiveTab] = useState<SettingsTab>('venice');
 
-  // Escape closes.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => {
-      window.removeEventListener('keydown', handler);
-    };
-  }, [open, onClose]);
+  // [F57] Escape closes — priority 100 via the F47 registry.
+  useEscape(
+    () => {
+      onClose();
+    },
+    { priority: 100, enabled: open },
+  );
 
   // Reset to Venice tab whenever the modal re-opens — avoids stale tab
   // state bleeding across opens.
@@ -129,14 +123,14 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
       role="presentation"
       data-testid="settings-backdrop"
       onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 grid place-items-center bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
+      className="t-backdrop-in fixed inset-0 z-50 bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
         data-testid="settings-modal"
-        className="w-[720px] max-w-[94vw] max-h-[80vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
+        className="t-modal-in fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[720px] max-w-[94vw] max-h-[80vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
       >
         <header className="px-[18px] py-[14px] border-b border-line flex items-start justify-between gap-3">
           <div>
@@ -483,41 +477,15 @@ function VeniceTab(): JSX.Element {
         </div>
       </section>
 
-      <section className="flex flex-col gap-3" data-testid="venice-section-features">
+      {/* [F67] The Features + Privacy sections were removed — every toggle was
+          stateful but no-op. The Include-Venice-system-prompt toggle (the one
+          actually wired through settings.ai.includeVeniceSystemPrompt) lives
+          in its own Behaviour section. */}
+      <section className="flex flex-col gap-3" data-testid="venice-section-behaviour">
         <header>
-          <h3 className="m-0 font-serif text-[14px] font-medium text-ink">Features</h3>
-          <p className="mt-[2px] text-[12px] text-ink-4 font-sans">
-            Toggle which Venice capabilities Inkwell is allowed to use.
-          </p>
+          <h3 className="m-0 font-serif text-[14px] font-medium text-ink">Behaviour</h3>
         </header>
 
-        {/* TODO: feature toggles below are stateful but no-op — backend has
-            no per-feature on/off storage today. Wire to user settings once a
-            schema lands (tracked outside F43 scope). */}
-        <FeatureToggleNoop label="Chat completions" hint="Ask panel, inline Q&A" defaultOn />
-        <FeatureToggleNoop
-          label="Text continuation"
-          hint="Continue-writing from cursor"
-          defaultOn
-        />
-        <FeatureToggleNoop label="Inline rewrite" hint="Selection-based rewrites" defaultOn />
-        <FeatureToggleNoop
-          label="Image generation"
-          hint="Character portraits, scene imagery"
-          defaultOn={false}
-        />
-        <FeatureToggleNoop
-          label="Character extraction"
-          hint="Auto-detect characters from prose"
-          defaultOn
-        />
-        <FeatureToggleNoop
-          label="Embeddings"
-          hint="Semantic search across chapters"
-          defaultOn={false}
-        />
-
-        {/* Bound to settings.ai.includeVeniceSystemPrompt via [B11]. */}
         <label className="flex items-start gap-2 text-[12px] py-1">
           <input
             type="checkbox"
@@ -538,55 +506,6 @@ function VeniceTab(): JSX.Element {
           </span>
         </label>
       </section>
-
-      <section className="flex flex-col gap-3" data-testid="venice-section-privacy">
-        <header>
-          <h3 className="m-0 font-serif text-[14px] font-medium text-ink">Privacy</h3>
-        </header>
-
-        {/* TODO: no backend storage yet — kept stateful for parity with
-            mockup, will wire when a privacy-settings field lands. */}
-        <FeatureToggleNoop
-          label="Request logging"
-          hint="Store prompts/responses for review"
-          defaultOn={false}
-        />
-        <FeatureToggleNoop
-          label="Send story context"
-          hint="Include chapter + characters in every request"
-          defaultOn
-        />
-      </section>
     </div>
-  );
-}
-
-/** Local-state-only toggle. Renders correctly + is interactive but doesn't
- * persist anywhere — see TODO comments above each cluster of usages. */
-function FeatureToggleNoop({
-  label,
-  hint,
-  defaultOn,
-}: {
-  label: string;
-  hint: string;
-  defaultOn: boolean;
-}): JSX.Element {
-  const [on, setOn] = useState(defaultOn);
-  return (
-    <label className="flex items-start gap-2 text-[12px] py-1">
-      <input
-        type="checkbox"
-        checked={on}
-        onChange={(e) => {
-          setOn(e.target.checked);
-        }}
-        className="mt-1"
-      />
-      <span className="flex flex-col gap-[2px]">
-        <span className="font-medium text-ink-2">{label}</span>
-        <span className="text-ink-4 font-sans">{hint}</span>
-      </span>
-    </label>
   );
 }

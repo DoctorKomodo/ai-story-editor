@@ -209,6 +209,58 @@ body {
   }
 }
 
+/* [F59] Recovery-code handoff — extends the .auth-screen layout from [F24].
+   Pure styling of the right-pane card; the .auth-screen / .auth-hero rules
+   already cover the page chrome, so don't redefine them. */
+.recovery-code-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 420px;
+}
+.recovery-code-warning {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--danger) 22%, transparent);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.recovery-code-warning strong {
+  color: var(--danger);
+  font-weight: 600;
+}
+.recovery-code-box {
+  padding: 14px 16px;
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  border: 1px solid var(--line-2);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.6;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  word-break: break-all;
+  user-select: all;
+}
+.recovery-code-actions {
+  display: flex;
+  gap: 8px;
+}
+.recovery-code-confirm {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  line-height: 1.5;
+}
+.recovery-code-confirm input[type="checkbox"] {
+  margin-top: 2px;
+}
+
 @media (max-width: 720px) {
   .auth-screen {
     grid-template-columns: 1fr;

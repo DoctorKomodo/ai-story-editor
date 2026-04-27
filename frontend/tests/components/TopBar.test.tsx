@@ -52,9 +52,14 @@ describe('F26 · TopBar component', () => {
     expect(crumbs).toBeEmptyDOMElement();
   });
 
-  it('renders the saved-state indicator with the relative timestamp', () => {
-    render(<TopBar {...baseProps} saveState="saved" savedAtRelative="12s ago" />);
-    expect(screen.getByText(/Saved · 12s ago/)).toBeInTheDocument();
+  it('renders the saved-state indicator from the F56 autosave triple', () => {
+    render(
+      <TopBar
+        {...baseProps}
+        autosave={{ status: 'saved', savedAt: Date.now() - 12_000, retryAt: null }}
+      />,
+    );
+    expect(screen.getByText(/Saved/)).toBeInTheDocument();
   });
 
   it('renders the word count formatted with a thousands separator', () => {
@@ -155,13 +160,18 @@ describe('F26 · TopBar component', () => {
     expect(screen.queryByRole('menu', { name: /user menu/i })).not.toBeInTheDocument();
   });
 
-  it('renders the failed save indicator when saveState is failed', () => {
-    render(<TopBar {...baseProps} saveState="failed" />);
+  it('renders the failed save indicator when autosave.status is error', () => {
+    render(
+      <TopBar
+        {...baseProps}
+        autosave={{ status: 'error', savedAt: null, retryAt: Date.now() + 5_000 }}
+      />,
+    );
     expect(screen.getByText(/save failed/i)).toBeInTheDocument();
   });
 
-  it('renders the saving indicator when saveState is saving', () => {
-    render(<TopBar {...baseProps} saveState="saving" />);
-    expect(screen.getByText('Saving…')).toBeInTheDocument();
+  it('renders the saving indicator when autosave.status is saving', () => {
+    render(<TopBar {...baseProps} autosave={{ status: 'saving', savedAt: null, retryAt: null }} />);
+    expect(screen.getByText(/saving/i)).toBeInTheDocument();
   });
 });

@@ -375,4 +375,21 @@ describe('F31 · FormatBar', () => {
     expect(screen.getByRole('button', { name: /^undo$/i })).toBeDisabled();
     expect(screen.getByRole('button', { name: /^redo$/i })).toBeDisabled();
   });
+
+  // [F52] Find button is wired but the actual feature is deferred to [X17].
+  // Until X17 ships, the button is disabled and surfaces the deferred status
+  // via a `title` tooltip.
+  it('Find button is disabled and surfaces the [X17] title when onToggleFind is undefined', () => {
+    render(<FormatBar editor={null} />);
+    const findBtn = screen.getByRole('button', { name: /^find$/i });
+    expect(findBtn).toBeDisabled();
+    expect(findBtn.getAttribute('title') ?? '').toMatch(/x17/i);
+  });
+
+  it('Find button is enabled when onToggleFind is provided', () => {
+    const onToggleFind = vi.fn();
+    render(<FormatBar editor={null} onToggleFind={onToggleFind} />);
+    const findBtn = screen.getByRole('button', { name: /^find$/i });
+    expect(findBtn).not.toBeDisabled();
+  });
 });

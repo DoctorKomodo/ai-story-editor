@@ -5,7 +5,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
+import { useActiveChapterStore } from '@/store/activeChapter';
 import { useSessionStore } from '@/store/session';
+import { useSidebarTabStore } from '@/store/sidebarTab';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -40,16 +42,6 @@ function renderEditor(): ReturnType<typeof render> {
   );
 }
 
-/**
- * Build a fetch router shared across tests.
- *
- * `useInitAuth()` fires on mount and hits POST /auth/refresh + GET /auth/me
- * regardless of the pre-populated session — during that bootstrap it flips
- * status to 'loading', which would send RequireAuth into its own loading
- * state and drop our page. We therefore mock the bootstrap as a valid
- * round-trip so the session stays authenticated. The caller supplies the
- * `/stories/abc123` response. Any other URL errors loudly.
- */
 function mockImpl(
   storyHandler: (url: string) => Promise<Response>,
 ): (url: string) => Promise<Response> {
@@ -63,26 +55,49 @@ function mockImpl(
     if (url.endsWith('/stories/abc123')) {
       return storyHandler(url);
     }
-    // Sidebar panels fetch chapters + characters as soon as the story resolves.
-    // Tests that don't care about these endpoints get empty responses by default.
     if (url.endsWith('/stories/abc123/chapters')) {
       return Promise.resolve(jsonResponse(200, { chapters: [] }));
     }
     if (url.endsWith('/stories/abc123/characters')) {
       return Promise.resolve(jsonResponse(200, { characters: [] }));
     }
+    if (url.endsWith('/stories/abc123/outline')) {
+      return Promise.resolve(jsonResponse(200, { items: [] }));
+    }
+    if (url.endsWith('/ai/balance')) {
+      return Promise.resolve(jsonResponse(200, { balance: { dollars: 1.23, vcu: 100 } }));
+    }
+    if (url.endsWith('/ai/models')) {
+      return Promise.resolve(jsonResponse(200, { models: [] }));
+    }
+    if (url.endsWith('/users/me/settings')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          settings: {
+            theme: 'paper',
+            prose: { font: 'serif', size: 18, lineHeight: 1.7 },
+            writing: {
+              spellcheck: true,
+              typewriterMode: false,
+              focusMode: false,
+              dailyWordGoal: 500,
+            },
+            chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
+            ai: { includeVeniceSystemPrompt: true },
+          },
+        }),
+      );
+    }
     return Promise.reject(new Error(`Unexpected fetch: ${url}`));
   };
 }
 
-describe('EditorPage (F7)', () => {
+describe('EditorPage (F51 — AppShell shell)', () => {
   let fetchMock: FetchMock;
 
   beforeEach(() => {
     resetApiClientForTests();
     setAccessToken('tok-1');
-    // resetApiClientForTests cleared the unauthorized handler session.ts
-    // wired at module load; re-install it.
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });
@@ -90,6 +105,9 @@ describe('EditorPage (F7)', () => {
       user: { id: 'u1', username: 'alice' },
       status: 'authenticated',
     });
+    // Stores are module-level singletons; reset between tests.
+    useActiveChapterStore.setState({ activeChapterId: null });
+    useSidebarTabStore.setState({ sidebarTab: 'chapters' });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -98,11 +116,10 @@ describe('EditorPage (F7)', () => {
     vi.unstubAllGlobals();
     setUnauthorizedHandler(null);
     resetApiClientForTests();
-    // Wrap in act(): vitest runs afterEach hooks in reverse registration order,
-    // so this fires before setup.ts's cleanup() unmounts; otherwise the state
-    // change notifies still-mounted subscribers outside act.
     act(() => {
       useSessionStore.setState({ user: null, status: 'idle' });
+      useActiveChapterStore.setState({ activeChapterId: null });
+      useSidebarTabStore.setState({ sidebarTab: 'chapters' });
     });
   });
 
@@ -121,14 +138,29 @@ describe('EditorPage (F7)', () => {
     expect(screen.getByRole('status').textContent ?? '').toMatch(/loading story/i);
 
     // Shell isn't mounted while loading.
-    expect(screen.queryByRole('main', { name: /editor/i })).toBeNull();
-    expect(screen.queryByRole('complementary', { name: /ai assistant/i })).toBeNull();
+    expect(screen.queryByTestId('app-shell')).toBeNull();
 
-    // Resolve the pending promise so React Query cleans up between tests.
     resolveStory?.(jsonResponse(200, { story: makeStory() }));
   });
 
-  it('renders the story title and three landmark regions (banner + main + 2 asides)', async () => {
+  it('mounts the AppShell with topbar / sidebar / editor / chat slots once the story loads', async () => {
+    fetchMock.mockImplementation(
+      mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() }))),
+    );
+
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    });
+
+    expect(screen.getByTestId('app-shell-topbar')).toBeInTheDocument();
+    expect(screen.getByTestId('app-shell-sidebar')).toBeInTheDocument();
+    expect(screen.getByTestId('app-shell-editor')).toBeInTheDocument();
+    expect(screen.getByTestId('app-shell-chat')).toBeInTheDocument();
+  });
+
+  it('renders the story title in the breadcrumb', async () => {
     fetchMock.mockImplementation(
       mockImpl(() =>
         Promise.resolve(jsonResponse(200, { story: makeStory({ title: 'The Long Dark' }) })),
@@ -138,16 +170,13 @@ describe('EditorPage (F7)', () => {
     renderEditor();
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /the long dark/i })).toBeInTheDocument();
+      expect(screen.getByTestId('topbar')).toBeInTheDocument();
     });
-
-    expect(screen.getByRole('banner')).toBeInTheDocument();
-    expect(screen.getByRole('main', { name: /editor/i })).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: /chapters/i })).toBeInTheDocument();
-    expect(screen.getByRole('complementary', { name: /ai assistant/i })).toBeInTheDocument();
+    // Story title appears both in the topbar breadcrumb and the sidebar story-picker.
+    expect(screen.getAllByText('The Long Dark').length).toBeGreaterThan(0);
   });
 
-  it('back-to-dashboard link points to "/"', async () => {
+  it('switches the sidebar tab via the Cast / Outline tab buttons', async () => {
     fetchMock.mockImplementation(
       mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() }))),
     );
@@ -155,85 +184,128 @@ describe('EditorPage (F7)', () => {
     renderEditor();
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /back to dashboard/i })).toBeInTheDocument();
-    });
-    expect(screen.getByRole('link', { name: /back to dashboard/i })).toHaveAttribute('href', '/');
-  });
-
-  it('toggle button hides and re-shows the AI panel and flips aria-expanded', async () => {
-    fetchMock.mockImplementation(
-      mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() }))),
-    );
-
-    renderEditor();
-
-    await waitFor(() => {
-      expect(screen.getByRole('complementary', { name: /ai assistant/i })).toBeInTheDocument();
+      expect(screen.getByTestId('app-shell-sidebar')).toBeInTheDocument();
     });
 
-    const toggle = screen.getByRole('button', { name: /hide ai/i });
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-    const user = userEvent.setup();
-    await user.click(toggle);
-
-    // Collapsed: AI panel is unmounted; the toggle flips label + aria-expanded.
-    expect(screen.queryByRole('complementary', { name: /ai assistant/i })).toBeNull();
-    const showBtn = screen.getByRole('button', { name: /show ai/i });
-    expect(showBtn).toHaveAttribute('aria-expanded', 'false');
-
-    // Left sidebar and editor remain regardless.
-    expect(screen.getByRole('complementary', { name: /chapters/i })).toBeInTheDocument();
-    expect(screen.getByRole('main', { name: /editor/i })).toBeInTheDocument();
-
-    await user.click(showBtn);
-    expect(screen.getByRole('complementary', { name: /ai assistant/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /hide ai/i })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
-  });
-
-  it('[F18] clicking the "Cast" tab reveals the character panel and hides the chapter panel', async () => {
-    fetchMock.mockImplementation(
-      mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() }))),
-    );
-
-    renderEditor();
-
-    // Wait for the shell to mount.
-    await waitFor(() => {
-      expect(screen.getByRole('complementary', { name: /chapters/i })).toBeInTheDocument();
-    });
-
-    // Default: Chapters panel is visible, Cast panel is hidden.
-    const chaptersTab = screen.getByRole('tab', { name: /chapters/i });
-    const castTab = screen.getByRole('tab', { name: /cast/i });
-    expect(chaptersTab).toHaveAttribute('aria-selected', 'true');
-    expect(castTab).toHaveAttribute('aria-selected', 'false');
-
-    const chaptersPanel = document.getElementById('sidebar-panel-chapters');
-    const charactersPanel = document.getElementById('sidebar-panel-characters');
-    expect(chaptersPanel).not.toBeNull();
-    expect(charactersPanel).not.toBeNull();
-    expect(chaptersPanel?.hasAttribute('hidden')).toBe(false);
-    expect(charactersPanel?.hasAttribute('hidden')).toBe(true);
-
-    // Click Cast: chapters panel hides, characters panel shows.
+    const castTab = screen.getByTestId('sidebar-tab-cast');
     await userEvent.setup().click(castTab);
+    expect(useSidebarTabStore.getState().sidebarTab).toBe('cast');
 
-    expect(castTab).toHaveAttribute('aria-selected', 'true');
-    expect(chaptersTab).toHaveAttribute('aria-selected', 'false');
-    expect(chaptersPanel?.hasAttribute('hidden')).toBe(true);
-    expect(charactersPanel?.hasAttribute('hidden')).toBe(false);
+    const outlineTab = screen.getByTestId('sidebar-tab-outline');
+    await userEvent.setup().click(outlineTab);
+    expect(useSidebarTabStore.getState().sidebarTab).toBe('outline');
+  });
 
-    // "Add character" button is now visible.
-    expect(screen.getByRole('button', { name: /add character/i })).toBeInTheDocument();
+  it('sidebar + button on Chapters tab POSTs to /stories/:id/chapters', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (
+        url.endsWith('/stories/abc123/chapters') &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST'
+      ) {
+        return Promise.resolve(
+          jsonResponse(201, {
+            chapter: {
+              id: 'new-ch',
+              storyId: 'abc123',
+              title: '',
+              orderIndex: 0,
+              wordCount: 0,
+              bodyJson: null,
+              createdAt: '2026-04-27T00:00:00.000Z',
+              updatedAt: '2026-04-27T00:00:00.000Z',
+            },
+          }),
+        );
+      }
+      return mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() })))(url);
+    });
+
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('sidebar-add-button')).toBeInTheDocument();
+    });
+
+    await userEvent.setup().click(screen.getByTestId('sidebar-add-button'));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          typeof url === 'string' &&
+          url.endsWith('/stories/abc123/chapters') &&
+          (init as RequestInit | undefined)?.method?.toUpperCase() === 'POST',
+      );
+      expect(call).toBeDefined();
+    });
+  });
+
+  it('sidebar + button on Cast tab POSTs to /stories/:id/characters', async () => {
+    useSidebarTabStore.setState({ sidebarTab: 'cast' });
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (
+        url.endsWith('/stories/abc123/characters') &&
+        (init?.method ?? 'GET').toUpperCase() === 'POST'
+      ) {
+        return Promise.resolve(
+          jsonResponse(201, {
+            character: {
+              id: 'new-char',
+              storyId: 'abc123',
+              name: 'Untitled',
+              role: null,
+              age: null,
+              appearance: null,
+              voice: null,
+              arc: null,
+              personality: null,
+              createdAt: '2026-04-27T00:00:00.000Z',
+              updatedAt: '2026-04-27T00:00:00.000Z',
+            },
+          }),
+        );
+      }
+      if (url.endsWith('/stories/abc123/characters/new-char')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            character: {
+              id: 'new-char',
+              storyId: 'abc123',
+              name: 'Untitled',
+              role: null,
+              age: null,
+              appearance: null,
+              voice: null,
+              arc: null,
+              personality: null,
+              createdAt: '2026-04-27T00:00:00.000Z',
+              updatedAt: '2026-04-27T00:00:00.000Z',
+            },
+          }),
+        );
+      }
+      return mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() })))(url);
+    });
+
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('sidebar-add-button')).toBeInTheDocument();
+    });
+
+    await userEvent.setup().click(screen.getByTestId('sidebar-add-button'));
+
+    await waitFor(() => {
+      const call = fetchMock.mock.calls.find(
+        ([url, init]) =>
+          typeof url === 'string' &&
+          url.endsWith('/stories/abc123/characters') &&
+          (init as RequestInit | undefined)?.method?.toUpperCase() === 'POST',
+      );
+      expect(call).toBeDefined();
+    });
   });
 
   it('renders a neutral error state when the story fetch 403s', async () => {
-    // Query client retries once on non-401 errors — each call must return a
-    // fresh Response since bodies are single-read.
     fetchMock.mockImplementation(
       mockImpl(() =>
         Promise.resolve(jsonResponse(403, { error: { message: 'Forbidden', code: 'FORBIDDEN' } })),
@@ -243,13 +315,10 @@ describe('EditorPage (F7)', () => {
     renderEditor();
 
     const alert = await screen.findByRole('alert', {}, { timeout: 3000 });
-    expect(alert.textContent ?? '').toMatch(/could not load story/i);
-    // Neutral copy — don't leak "Forbidden" straight to the user.
+    expect(alert.textContent ?? '').toMatch(/(could not load story|story not found)/i);
     expect(alert.textContent ?? '').not.toMatch(/forbidden/i);
 
-    // Dashboard link present as a fallback.
-    expect(screen.getByRole('link', { name: /back to dashboard/i })).toHaveAttribute('href', '/');
     // Shell is NOT mounted when the story can't load.
-    expect(screen.queryByRole('main', { name: /editor/i })).toBeNull();
+    expect(screen.queryByTestId('app-shell')).toBeNull();
   });
 });

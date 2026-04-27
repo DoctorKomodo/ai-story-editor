@@ -179,9 +179,11 @@ describe('StoryPicker (F30)', () => {
       <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
     );
 
+    // [F64] Empty branch now renders <StoryPickerEmpty>.
     await waitFor(() => {
-      expect(screen.getByText(/no stories yet/i)).toBeInTheDocument();
+      expect(screen.getByTestId('story-picker-empty')).toBeInTheDocument();
     });
+    expect(screen.getByRole('heading', { name: /your stories live here/i })).toBeInTheDocument();
   });
 
   it('footer "N stories in vault" matches the story count', async () => {

@@ -29,8 +29,9 @@
  */
 
 import type { Editor as TiptapEditor } from '@tiptap/core';
-import { type JSX, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type JSX, useCallback, useMemo, useRef, useState } from 'react';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
+import { useAltEnter } from '@/hooks/useKeyboardShortcuts';
 
 export interface ContinueWritingProps {
   editor: TiptapEditor | null;
@@ -86,32 +87,21 @@ export function ContinueWriting({
     void run(args);
   }, [editor, status, chapterId, storyId, modelId, run]);
 
-  // Local ⌥+Enter listener. Only bound while the pill is visible (idle) so
-  // we don't shadow other shortcuts during streaming. F47 will replace this
-  // with a global, scoped handler.
-  // TODO(F47): hoist into the global keyboard-shortcut router.
-  useEffect(() => {
-    if (!visible || !isIdle) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key !== 'Enter' || !e.altKey) return;
-      // Don't fire when the user is typing in a non-editor input/textarea.
+  // [F57] ⌥+Enter via the F47 priority registry. Only enabled while the
+  // pill is visible + idle so we don't compete with streaming. The handler
+  // still suppresses input/textarea targets so a user typing in the chat
+  // composer doesn't accidentally trigger continue-writing.
+  useAltEnter(
+    (e) => {
       const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === 'INPUT' ||
-          target.tagName === 'TEXTAREA' ||
-          target.isContentEditable === false)
-      ) {
-        // Only suppress for non-editor non-contenteditable controls; the
-        // TipTap surface is contenteditable so it falls through.
-        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA')) {
+        return false; // not handled — let other registrations / defaults run
       }
       e.preventDefault();
       trigger();
-    };
-    document.addEventListener('keydown', handler);
-    return () => document.removeEventListener('keydown', handler);
-  }, [visible, isIdle, trigger]);
+    },
+    { enabled: visible && isIdle, priority: 0 },
+  );
 
   const handleKeep = useCallback((): void => {
     if (!editor || text.length === 0) return;

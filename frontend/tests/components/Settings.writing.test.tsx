@@ -29,6 +29,8 @@ interface WritingOverrides {
   focusMode?: boolean;
   dailyWordGoal?: number;
   spellcheck?: boolean;
+  smartQuotes?: boolean;
+  emDashExpansion?: boolean;
 }
 
 function settingsBody(writing: WritingOverrides = {}): unknown {
@@ -41,6 +43,8 @@ function settingsBody(writing: WritingOverrides = {}): unknown {
         typewriterMode: writing.typewriterMode ?? false,
         focusMode: writing.focusMode ?? false,
         dailyWordGoal: writing.dailyWordGoal ?? 500,
+        smartQuotes: writing.smartQuotes ?? false,
+        emDashExpansion: writing.emDashExpansion ?? false,
       },
       chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
       ai: { includeVeniceSystemPrompt: true },
@@ -218,8 +222,10 @@ describe('SettingsModal Writing tab (F45)', () => {
     expect(patches.length).toBe(0);
   });
 
-  it('smart-quotes toggle defaults to false and persists to localStorage', async () => {
-    vi.stubGlobal('fetch', buildFetch());
+  // [F66] Smart-quotes + em-dash now persist via B11.
+  it('smart-quotes toggle defaults to false and PATCHes via B11', async () => {
+    const fetchMock = buildFetch();
+    vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
     renderModal(<SettingsModal open onClose={onClose} />);
@@ -229,12 +235,18 @@ describe('SettingsModal Writing tab (F45)', () => {
     expect(sq.checked).toBe(false);
 
     await user.click(sq);
-    expect(sq.checked).toBe(true);
-    expect(window.localStorage.getItem('inkwell.writing.smartQuotes')).toBe('true');
+
+    await waitFor(() => {
+      const patch = findSettingsPatch(fetchMock);
+      expect(patch).toBeDefined();
+      const body = JSON.parse(patch?.body as string);
+      expect(body).toEqual({ writing: { smartQuotes: true } });
+    });
   });
 
-  it('em-dash toggle defaults to false and persists to localStorage', async () => {
-    vi.stubGlobal('fetch', buildFetch());
+  it('em-dash toggle defaults to false and PATCHes via B11', async () => {
+    const fetchMock = buildFetch();
+    vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
     renderModal(<SettingsModal open onClose={onClose} />);
@@ -244,25 +256,33 @@ describe('SettingsModal Writing tab (F45)', () => {
     expect(em.checked).toBe(false);
 
     await user.click(em);
-    expect(em.checked).toBe(true);
-    expect(window.localStorage.getItem('inkwell.writing.emDashExpansion')).toBe('true');
+
+    await waitFor(() => {
+      const patch = findSettingsPatch(fetchMock);
+      expect(patch).toBeDefined();
+      const body = JSON.parse(patch?.body as string);
+      expect(body).toEqual({ writing: { emDashExpansion: true } });
+    });
   });
 
-  it('reads localStorage on mount for the local toggles', async () => {
+  it('seeds smart-quotes / em-dash from server settings (not localStorage)', async () => {
     window.localStorage.setItem('inkwell.writing.autoSave', 'false');
-    window.localStorage.setItem('inkwell.writing.smartQuotes', 'true');
-    window.localStorage.setItem('inkwell.writing.emDashExpansion', 'true');
-    vi.stubGlobal('fetch', buildFetch());
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({ initialWriting: { smartQuotes: true, emDashExpansion: true } }),
+    );
 
     renderModal(<SettingsModal open onClose={onClose} />);
     await openWritingTab();
 
     const autoSave = (await screen.findByTestId('writing-autosave-toggle')) as HTMLInputElement;
-    const sq = screen.getByTestId('writing-smart-quotes-toggle') as HTMLInputElement;
-    const em = screen.getByTestId('writing-em-dash-toggle') as HTMLInputElement;
+    const sq = (await screen.findByTestId('writing-smart-quotes-toggle')) as HTMLInputElement;
+    const em = (await screen.findByTestId('writing-em-dash-toggle')) as HTMLInputElement;
     expect(autoSave.checked).toBe(false);
-    expect(sq.checked).toBe(true);
-    expect(em.checked).toBe(true);
+    await waitFor(() => {
+      expect(sq.checked).toBe(true);
+      expect(em.checked).toBe(true);
+    });
   });
 
   it('daily goal input shows the current value and (debounced) PATCHes', async () => {

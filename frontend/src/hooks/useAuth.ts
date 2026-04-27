@@ -7,21 +7,38 @@ export interface Credentials {
   password: string;
 }
 
-interface AuthResponse {
+interface LoginResponse {
   user: SessionUser;
   accessToken: string;
+}
+
+interface RegisterResponse {
+  user: SessionUser;
+  recoveryCode: string;
+}
+
+export interface RegisterResult {
+  user: SessionUser;
+  recoveryCode: string;
 }
 
 interface MeResponse {
   user: SessionUser;
 }
 
+export interface ResetPasswordInput {
+  username: string;
+  recoveryCode: string;
+  newPassword: string;
+}
+
 export interface UseAuthResult {
   user: SessionUser | null;
   status: ReturnType<typeof useSessionStore.getState>['status'];
   login: (creds: Credentials) => Promise<SessionUser>;
-  register: (creds: Credentials) => Promise<SessionUser>;
+  register: (creds: Credentials) => Promise<RegisterResult>;
   logout: () => Promise<void>;
+  resetPassword: (input: ResetPasswordInput) => Promise<void>;
 }
 
 /**
@@ -71,7 +88,7 @@ export function useAuth(): UseAuthResult {
 
   const login = useCallback(
     async ({ username, password }: Credentials): Promise<SessionUser> => {
-      const res = await api<AuthResponse>('/auth/login', {
+      const res = await api<LoginResponse>('/auth/login', {
         method: 'POST',
         body: { username, password },
       });
@@ -82,15 +99,20 @@ export function useAuth(): UseAuthResult {
   );
 
   const register = useCallback(
-    async ({ username, password }: Credentials): Promise<SessionUser> => {
-      const res = await api<AuthResponse>('/auth/register', {
+    async ({ username, password }: Credentials): Promise<RegisterResult> => {
+      // Backend requires `name`; the auth form doesn't collect a separate
+      // display name yet, so default it to the username. Adding the field
+      // is [X18]; editing it after register is [X3].
+      const res = await api<RegisterResponse>('/auth/register', {
         method: 'POST',
-        body: { username, password },
+        body: { name: username, username, password },
       });
-      setSession(res.user, res.accessToken);
-      return res.user;
+      // Intentionally do NOT call setSession — the backend has not issued an
+      // access token or refresh cookie yet. The page must show the recovery
+      // code, get acknowledgement, then call login() with the same creds.
+      return { user: res.user, recoveryCode: res.recoveryCode };
     },
-    [setSession],
+    [],
   );
 
   const logout = useCallback(async (): Promise<void> => {
@@ -103,7 +125,19 @@ export function useAuth(): UseAuthResult {
     }
   }, [clearSession]);
 
-  return { user, status, login, register, logout };
+  const resetPassword = useCallback(
+    async ({ username, recoveryCode, newPassword }: ResetPasswordInput): Promise<void> => {
+      // Backend returns 204 with no body — do NOT call setSession. The user
+      // must re-authenticate on /login after this resolves.
+      await api<void>('/auth/reset-password', {
+        method: 'POST',
+        body: { username, recoveryCode, newPassword },
+      });
+    },
+    [],
+  );
+
+  return { user, status, login, register, logout, resetPassword };
 }
 
 /**

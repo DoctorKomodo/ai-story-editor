@@ -202,10 +202,15 @@ describe('auth pages (F4)', () => {
     expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
   });
 
-  it('register page validates + submits POST /api/auth/register and redirects to /', async () => {
+  it('register page validates + submits POST /api/auth/register and lands on the recovery-code interstitial', async () => {
     primeUnauthenticatedInit(fetchMock);
+    // Backend returns 201 with { user, recoveryCode } only — no accessToken,
+    // no refresh cookie. The page is responsible for the post-ack login.
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { user: { id: 'u2', username: 'bob' }, accessToken: 'tok-2' }),
+      jsonResponse(201, {
+        user: { id: 'u2', username: 'bob' },
+        recoveryCode: 'horse-battery-staple-correct-glow-mint-velvet-pearl-orbit-quiet-amber-crisp',
+      }),
     );
 
     const user = userEvent.setup();
@@ -231,9 +236,11 @@ describe('auth pages (F4)', () => {
 
     await user.click(submit);
 
+    // The user lands on the recovery-code interstitial, NOT the dashboard.
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: /your stories/i })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /save your recovery code/i })).toBeInTheDocument();
     });
+    expect(screen.getByText(/horse-battery-staple/)).toBeInTheDocument();
 
     const registerCall = fetchMock.mock.calls.find(
       ([url]: [string]) => url === '/api/auth/register',
@@ -241,7 +248,12 @@ describe('auth pages (F4)', () => {
     expect(registerCall).toBeDefined();
     const [, init] = registerCall as [string, RequestInit];
     expect(init.method).toBe('POST');
-    expect(init.body).toBe(JSON.stringify({ username: 'bob', password: 'hunter2hunter2' }));
+    // [X18] follow-up: until the register form collects a separate display
+    // name, useAuth.register() sends `name: username` so the backend's
+    // nameSchema(min 1) is satisfied with the same handle.
+    expect(init.body).toBe(
+      JSON.stringify({ name: 'bob', username: 'bob', password: 'hunter2hunter2' }),
+    );
   });
 
   it('register: 409 shows the friendly "Username is already taken" message (not server message)', async () => {

@@ -19,7 +19,11 @@ import type { Character } from '@/hooks/useCharacters';
  */
 export interface CastTabProps {
   characters: Character[];
-  onOpenCharacter: (id: string) => void;
+  /**
+   * [F54] Forwards the avatar/card button element so the F37 popover can
+   * anchor below it.
+   */
+  onOpenCharacter: (id: string, anchorEl: HTMLElement) => void;
   isLoading?: boolean;
   isError?: boolean;
 }
@@ -79,7 +83,7 @@ function avatarBg(seed: string): string {
 
 interface CharCardProps {
   character: Character;
-  onOpenCharacter: (id: string) => void;
+  onOpenCharacter: (id: string, anchorEl: HTMLElement) => void;
 }
 
 function CharCard({ character, onOpenCharacter }: CharCardProps): JSX.Element {
@@ -87,8 +91,8 @@ function CharCard({ character, onOpenCharacter }: CharCardProps): JSX.Element {
   return (
     <button
       type="button"
-      onClick={() => {
-        onOpenCharacter(character.id);
+      onClick={(e) => {
+        onOpenCharacter(character.id, e.currentTarget);
       }}
       className="char-card flex gap-2.5 items-start px-3 py-2.5 mx-1 mb-1 rounded-[var(--radius)] cursor-pointer hover:bg-[var(--surface-hover)] w-[calc(100%-8px)] text-left transition-colors"
     >

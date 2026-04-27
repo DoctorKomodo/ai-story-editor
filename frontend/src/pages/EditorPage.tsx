@@ -1,28 +1,81 @@
+// [F51 + F52] EditorPage — AppShell shell with FormatBar + Paper editor.
+//
+// Survivor list (F7 → F51 → F52):
+//   - useStoryQuery(activeStoryId)        → breadcrumbs (TopBar)
+//   - useChaptersQuery(storyId)           → ChapterList + Export + word-count footer
+//   - useChapterQuery(activeChapterId)    → Paper bodyJson source (F52)
+//   - useUpdateChapterMutation            → autosave PATCH (F52)
+//   - useCharactersQuery(storyId)         → CastTab body
+//   - useBalanceQuery()                   → UserMenu balance
+//   - useSessionStore(user)               → UserMenu username
+//   - useAuth().logout + navigate         → sign out
+//   - useActiveChapterStore               → ChapterList selection
+//   - useSidebarTabStore                  → active tab
+//   - <CharacterSheet> modal              → page-root, id-driven
+//   - <FormatBar> + <Paper>               → editor slot (F52 — replaces F8)
+//   - <AIPanel> + ModelSelector + …       → chat slot (until F55)
+//   - <Export>                            → rendered below Paper (until F52 promote)
+//
+// Modal-mount convention (locked in F51 for the rest of the F-series):
+//   page-level useState per modal; callback prop down via TopBar / Sidebar /
+//   ChatPanel; <Modal /> rendered at the bottom of the component, NOT inside
+//   AppShell. F55 mounts <SettingsModal>, <StoryPicker>, <ModelPicker> here;
+//   F61 mounts <AccountPrivacyModal>.
+
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
-import { type AIAction, AIPanel } from '@/components/AIPanel';
-import { AIResult } from '@/components/AIResult';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
+import { AppShell } from '@/components/AppShell';
+import { CastTab } from '@/components/CastTab';
 import { ChapterList } from '@/components/ChapterList';
-import { CharacterList } from '@/components/CharacterList';
+import {
+  CharacterPopoverHost,
+  type CharacterPopoverHostHandle,
+} from '@/components/CharacterPopoverHost';
 import { CharacterSheet } from '@/components/CharacterSheet';
-import { DarkModeToggle } from '@/components/DarkModeToggle';
-import { Editor } from '@/components/Editor';
+import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
+import { ChatMessages } from '@/components/ChatMessages';
+import { ChatPanel } from '@/components/ChatPanel';
+import { ContinueWriting } from '@/components/ContinueWriting';
 import { Export, type ExportStory } from '@/components/Export';
-import { ModelSelector } from '@/components/ModelSelector';
-import { UsageIndicator } from '@/components/UsageIndicator';
-import { UserMenu } from '@/components/UserMenu';
-import { WebSearchToggle } from '@/components/WebSearchToggle';
-import { useAICompletion } from '@/hooks/useAICompletion';
+import { FormatBar } from '@/components/FormatBar';
+import { InlineAIResult } from '@/components/InlineAIResult';
+import { ModelPicker } from '@/components/ModelPicker';
+import { OutlineTab } from '@/components/OutlineTab';
+import { Paper } from '@/components/Paper';
+import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
+import { SettingsModal } from '@/components/Settings';
+import { Sidebar } from '@/components/Sidebar';
+import { StoryPicker } from '@/components/StoryPicker';
+import { TopBar } from '@/components/TopBar';
+import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
+import { useAutosave } from '@/hooks/useAutosave';
 import { useBalanceQuery } from '@/hooks/useBalance';
-import { useChaptersQuery } from '@/hooks/useChapters';
-import { useModelsQuery } from '@/hooks/useModels';
+import {
+  useChapterQuery,
+  useChaptersQuery,
+  useCreateChapterMutation,
+  useUpdateChapterMutation,
+} from '@/hooks/useChapters';
+import { useCharactersQuery, useCreateCharacterMutation } from '@/hooks/useCharacters';
+import {
+  useChatMessagesQuery,
+  useChatsQuery,
+  useCreateChatMutation,
+  useSendChatMessageMutation,
+} from '@/hooks/useChat';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useStoryQuery } from '@/hooks/useStories';
 import { ApiError } from '@/lib/api';
+import { triggerAskAI } from '@/lib/askAi';
+import { useActiveChapterStore } from '@/store/activeChapter';
+import { useAttachedSelectionStore } from '@/store/attachedSelection';
+import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSessionStore } from '@/store/session';
+import { useSidebarTabStore } from '@/store/sidebarTab';
 
 function extractSelection(editor: TiptapEditor): string {
   const { from, to } = editor.state.selection;
@@ -30,39 +83,18 @@ function extractSelection(editor: TiptapEditor): string {
   return editor.state.doc.textBetween(from, to, ' ');
 }
 
-/**
- * Three-pane editor shell (F7).
- *
- * Owns the layout, the story-title fetch, and the editor-selection plumbing
- * that feeds the AI panel (F12). Panes:
- * - Left:   chapter list (F10, dnd-kit).
- * - Centre: TipTap editor (F8).
- * - Right:  AI assistant panel (F12) — `handleAIAction` is a stub that F15
- *           will replace with the streaming call to `/api/ai/complete`.
- *
- * F25 later redesigns the shell to mockup spec (CSS grid, data-layout
- * variants, Inkwell brand lockup, focus mode).
- *
- * The right AI panel is collapsible; state is local to this page (no Zustand
- * or localStorage yet — F22 folds it into the layout slice).
- */
 export function EditorPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: story, isLoading, isError } = useStoryQuery(id);
-  // [F20] Export needs the full chapter list + bodyJson. Chapters come from
-  // their own query (loaded already by ChapterList); we reuse the cache here
-  // and build the Export payload lazily. When chapters are still loading,
-  // the Export component still renders — "Export full story" with an empty
-  // chapters array would produce just the title, so we only bind once the
-  // list resolves.
+
+  const storyQuery = useStoryQuery(id);
+  const story = storyQuery.data;
   const chaptersQuery = useChaptersQuery(story?.id);
-  // [F17] Venice account balance — fetched on editor load and rendered in the
-  // user menu. Errors surface via dedicated copy (`venice_key_required` vs
-  // generic) inside `<BalanceDisplay />`.
+  const charactersQuery = useCharactersQuery(story?.id);
   const balanceQuery = useBalanceQuery();
-  const balanceError = balanceQuery.error;
-  const balanceErrorCode = balanceError instanceof ApiError ? (balanceError.code ?? null) : null;
+  const balanceErrorCode =
+    balanceQuery.error instanceof ApiError ? (balanceQuery.error.code ?? null) : null;
+
   const username = useSessionStore((s) => s.user?.username) ?? '';
   const { logout } = useAuth();
   const handleSignOut = useCallback((): void => {
@@ -70,81 +102,182 @@ export function EditorPage(): JSX.Element {
       navigate('/login');
     });
   }, [logout, navigate]);
-  const [aiOpen, setAiOpen] = useState(true);
-  // [F10] Selected chapter is local state for now — F22 moves it into the
-  // Zustand layout slice once cross-route persistence is required.
-  const [activeChapterId, setActiveChapterId] = useState<string | null>(null);
-  // [F18] Sidebar tab: Chapters vs Cast. Local state — F22 folds into slice;
-  // F27 redesigns to the mockup Cast/Outline tabs.
-  const [sidebarTab, setSidebarTab] = useState<'chapters' | 'characters'>('chapters');
-  // [F19] Character-sheet modal is driven by a single id — null means closed.
-  // F37 later adds a mention-popover as an alternate entry point; the sheet
-  // stays as the full "edit all fields" surface.
-  const [openCharacterId, setOpenCharacterId] = useState<string | null>(null);
-  // [F12] Editor selection plumbed to the AI panel. F22 may fold this into
-  // the Zustand `selection` slice once cross-component reads appear.
-  const [selectedText, setSelectedText] = useState('');
+
+  const activeChapterId = useActiveChapterStore((s) => s.activeChapterId);
+  const setActiveChapterId = useActiveChapterStore((s) => s.setActiveChapterId);
+  const activeTab = useSidebarTabStore((s) => s.sidebarTab);
+
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
-  // [F13] Selected Venice model — persisted to localStorage so reopening the
-  // editor keeps the user's last pick. [F15] will read this when calling
-  // /api/ai/complete.
-  const { selectedModelId, setSelectedModelId } = useSelectedModel();
-  // [F14] Web-search opt-in. Only surfaces in the UI when the selected model's
-  // `supportsWebSearch` is true; resets to false when the user switches models
-  // so a stranded `true` from a capable model doesn't silently persist onto a
-  // non-capable one. [F15] forwards this as `enableWebSearch` in the body.
-  const [webSearch, setWebSearch] = useState(false);
-  const { data: models } = useModelsQuery();
-  const selectedModel = models?.find((m) => m.id === selectedModelId) ?? null;
-  // [F15] Streaming AI completion hook — owns status/text/error for the
-  // in-flight call. `actionError` is the pre-call validation message (no
-  // model / no chapter); the hook's own error state is for transport-level
-  // failures (no Venice key, rate-limit, mid-stream error).
-  const completion = useAICompletion();
-  const [actionError, setActionError] = useState<string | null>(null);
-
-  useEffect(() => {
-    setWebSearch(false);
-  }, []);
-
   const handleEditorReady = useCallback((ed: TiptapEditor) => {
     setEditor(ed);
   }, []);
 
-  useEffect(() => {
-    if (!editor) return;
-    const handler = (): void => {
-      setSelectedText(extractSelection(editor));
-    };
-    editor.on('selectionUpdate', handler);
-    return () => {
-      editor.off('selectionUpdate', handler);
-    };
-  }, [editor]);
+  // [F19] Character sheet modal is id-driven; null = closed. The sheet only
+  // edits — the create path uses the create mutation directly and then opens
+  // the new id here.
+  const [openCharacterId, setOpenCharacterId] = useState<string | null>(null);
 
-  const handleAIAction = useCallback(
-    (action: AIAction, freeformInstruction?: string): void => {
-      if (!story) return;
-      if (selectedModelId === null) {
-        setActionError('Select a model before running an AI action.');
-        return;
+  // [F54] Character popover host — opened from charRef hover (F36 dispatcher,
+  // wired inside the host) and from Cast-tab clicks (imperative ref).
+  const characterPopoverRef = useRef<CharacterPopoverHostHandle | null>(null);
+  const handleOpenCharacterFromCast = useCallback((id: string, el: HTMLElement) => {
+    characterPopoverRef.current?.openFor(id, el);
+  }, []);
+  const handleEditCharacter = useCallback((id: string) => {
+    setOpenCharacterId(id);
+  }, []);
+
+  // [F55] Page-root modal state. The page renders each modal at the bottom
+  // of its JSX; TopBar / Sidebar / ChatPanel callbacks flip these flags.
+  const [storyPickerOpen, setStoryPickerOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  // [F61] Account & privacy modal state — same page-root convention.
+  const [accountPrivacyOpen, setAccountPrivacyOpen] = useState(false);
+
+  const { selectedModelId } = useSelectedModel();
+  const completion = useAICompletion();
+
+  // [F55] Chat surface wiring. Active chat = first chat for the active chapter
+  // (until a per-chapter "remembered chat" slice is added). Sending a message
+  // creates a chat on the fly when none exists.
+  const chatsQuery = useChatsQuery(activeChapterId ?? null);
+  const activeChatId = chatsQuery.data?.[0]?.id ?? null;
+  const chatMessages = useChatMessagesQuery(activeChatId);
+  void chatMessages; // ChatMessages reads from the cache directly via chatId
+  const createChat = useCreateChatMutation();
+  const sendChatMessage = useSendChatMessageMutation();
+  const attachedSelection = useAttachedSelectionStore((s) => s.attachedSelection);
+  const clearAttachedSelection = useAttachedSelectionStore((s) => s.clear);
+
+  const handleNewChat = useCallback(async (): Promise<void> => {
+    if (!activeChapterId) return;
+    await createChat.mutateAsync({ chapterId: activeChapterId });
+  }, [activeChapterId, createChat]);
+
+  const handleChatSend = useCallback(
+    async (args: ChatSendArgs): Promise<void> => {
+      if (!activeChapterId) return;
+      let chatId = activeChatId;
+      if (!chatId) {
+        const created = await createChat.mutateAsync({ chapterId: activeChapterId });
+        chatId = created.id;
       }
-      if (activeChapterId === null) {
-        setActionError('Select a chapter before running an AI action.');
-        return;
-      }
-      setActionError(null);
-      void completion.run({
-        action,
-        selectedText,
-        chapterId: activeChapterId,
-        storyId: story.id,
+      if (selectedModelId === null) return;
+      const attachment = args.attachment
+        ? {
+            selectionText: args.attachment.text,
+            chapterId: args.attachment.chapter.id,
+          }
+        : undefined;
+      const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
+        chatId,
+        content: args.content,
         modelId: selectedModelId,
-        freeformInstruction,
-        enableWebSearch: webSearch,
+        enableWebSearch: args.enableWebSearch,
+      };
+      if (attachment) sendArgs.attachment = attachment;
+      await sendChatMessage.mutateAsync(sendArgs);
+      // Composer keeps its own state; clear the attached selection chip after
+      // a successful send so the next turn starts fresh.
+      clearAttachedSelection();
+    },
+    [
+      activeChapterId,
+      activeChatId,
+      createChat,
+      selectedModelId,
+      sendChatMessage,
+      clearAttachedSelection,
+    ],
+  );
+
+  const handleStoryPickerSelect = useCallback(
+    (id: string): void => {
+      setStoryPickerOpen(false);
+      navigate(`/stories/${id}`);
+    },
+    [navigate],
+  );
+
+  const createChapter = useCreateChapterMutation(story?.id ?? '');
+  const createCharacter = useCreateCharacterMutation(story?.id ?? '');
+
+  // [F52] Active chapter content is read via the cache-first single-chapter
+  // query, then mirrored into local state so Paper's onUpdate can mutate it
+  // without re-rendering through TanStack Query on every keystroke. Autosave
+  // observes the local state.
+  const chapterQuery = useChapterQuery(activeChapterId ?? null, story?.id);
+  const updateChapter = useUpdateChapterMutation();
+  const [draftBodyJson, setDraftBodyJson] = useState<JSONContent | null>(null);
+  const lastWordCountRef = useRef<number>(0);
+
+  // Reset the local draft whenever the active chapter changes.
+  useEffect(() => {
+    const fresh = (chapterQuery.data?.bodyJson as JSONContent | null) ?? null;
+    setDraftBodyJson(fresh);
+    lastWordCountRef.current = chapterQuery.data?.wordCount ?? 0;
+  }, [activeChapterId, chapterQuery.data]);
+
+  const handleSave = useCallback(
+    async (value: JSONContent): Promise<void> => {
+      if (!story?.id || !activeChapterId) return;
+      await updateChapter.mutateAsync({
+        storyId: story.id,
+        chapterId: activeChapterId,
+        input: { bodyJson: value, wordCount: lastWordCountRef.current },
       });
     },
-    [activeChapterId, completion, selectedModelId, selectedText, story, webSearch],
+    [story?.id, activeChapterId, updateChapter],
+  );
+
+  const autosave = useAutosave<JSONContent>({
+    payload: draftBodyJson,
+    save: handleSave,
+  });
+
+  const handlePaperUpdate = useCallback(
+    ({ bodyJson, wordCount }: { bodyJson: JSONContent; wordCount: number }): void => {
+      lastWordCountRef.current = wordCount;
+      setDraftBodyJson(bodyJson);
+    },
+    [],
+  );
+
+  const handleSidebarAdd = useCallback((): void => {
+    if (!story?.id) return;
+    if (activeTab === 'chapters') {
+      createChapter.mutate({ title: '' });
+      return;
+    }
+    if (activeTab === 'cast') {
+      createCharacter.mutate(
+        { name: 'Untitled' },
+        {
+          onSuccess: (created) => {
+            setOpenCharacterId(created.id);
+          },
+        },
+      );
+      return;
+    }
+    // Outline: OutlineTab owns its own add affordance via onAddItem; the
+    // sidebar + button is a documented no-op for this tab.
+  }, [activeTab, story?.id, createChapter, createCharacter]);
+
+  // [F53] inline-result store wiring; full handler defined after activeChapter
+  // is derived (the handler reads activeChapter.orderIndex / title for the
+  // ask-AI delegation).
+  const setInlineAIResult = useInlineAIResultStore((s) => s.setInlineAIResult);
+  const clearInlineAIResult = useInlineAIResultStore((s) => s.clear);
+  const lastRunArgsRef = useRef<RunArgs | null>(null);
+  const ACTION_MAP: Record<Exclude<SelectionAction, 'ask'>, RunArgs['action']> = useMemo(
+    () => ({
+      rewrite: 'rephrase',
+      describe: 'summarise',
+      expand: 'expand',
+    }),
+    [],
   );
 
   const exportStory: ExportStory | null = useMemo(() => {
@@ -162,15 +295,106 @@ export function EditorPage(): JSX.Element {
     };
   }, [story, chaptersQuery.data]);
 
-  const handleInsertAtCursor = useCallback(
-    (text: string): void => {
-      if (!editor) return;
-      editor.chain().focus().insertContent(text).run();
+  const totalWordCount = useMemo(() => {
+    return (chaptersQuery.data ?? []).reduce((sum, c) => sum + (c.wordCount ?? 0), 0);
+  }, [chaptersQuery.data]);
+
+  const activeChapter = chaptersQuery.data?.find((c) => c.id === activeChapterId) ?? null;
+
+  const handleSelectionAction = useCallback(
+    (action: SelectionAction): void => {
+      if (!editor || !story?.id || activeChapterId === null) return;
+      const text = extractSelection(editor);
+      if (text.trim().length === 0) return;
+
+      if (action === 'ask') {
+        if (!activeChapter) return;
+        triggerAskAI({
+          selectionText: text,
+          chapter: {
+            id: activeChapter.id,
+            number: activeChapter.orderIndex + 1,
+            title: activeChapter.title,
+          },
+        });
+        return;
+      }
+
+      if (selectedModelId === null) {
+        setInlineAIResult({
+          action,
+          text,
+          status: 'error',
+          output: 'No model selected. Open the model picker to choose one.',
+        });
+        return;
+      }
+
+      const args: RunArgs = {
+        action: ACTION_MAP[action],
+        selectedText: text,
+        chapterId: activeChapterId,
+        storyId: story.id,
+        modelId: selectedModelId,
+      };
+      lastRunArgsRef.current = args;
+      setInlineAIResult({ action, text, status: 'thinking', output: '' });
+      void completion.run(args);
     },
-    [editor],
+    [
+      editor,
+      story?.id,
+      activeChapterId,
+      activeChapter,
+      selectedModelId,
+      completion,
+      setInlineAIResult,
+      ACTION_MAP,
+    ],
   );
 
-  if (isLoading) {
+  const handleInlineRetry = useCallback((): void => {
+    const args = lastRunArgsRef.current;
+    if (!args) return;
+    const bubbleAction = (Object.entries(ACTION_MAP).find(([, v]) => v === args.action)?.[0] ??
+      'rewrite') as Exclude<SelectionAction, 'ask'>;
+    setInlineAIResult({
+      action: bubbleAction,
+      text: args.selectedText,
+      status: 'thinking',
+      output: '',
+    });
+    void completion.run(args);
+  }, [completion, setInlineAIResult, ACTION_MAP]);
+
+  // Mirror the streaming completion into the inline-result store so
+  // <InlineAIResult> renders progressive output and final state. Guarded by
+  // `if (!prev) return;` so AIPanel-driven runs (F12) don't seed the card.
+  useEffect(() => {
+    if (completion.status === 'idle') return;
+    const prev = useInlineAIResultStore.getState().inlineAIResult;
+    if (!prev) return;
+    if (completion.status === 'streaming') {
+      setInlineAIResult({ ...prev, status: 'streaming', output: completion.text });
+    } else if (completion.status === 'done') {
+      setInlineAIResult({ ...prev, status: 'done', output: completion.text });
+    } else if (completion.status === 'error') {
+      setInlineAIResult({
+        ...prev,
+        status: 'error',
+        output: completion.error?.message ?? 'AI request failed.',
+      });
+    }
+  }, [completion.status, completion.text, completion.error, setInlineAIResult]);
+
+  // Cancel + clear the inline card on chapter / story switch so a half-streamed
+  // rewrite doesn't bleed into the next chapter.
+  useEffect(() => {
+    clearInlineAIResult();
+    lastRunArgsRef.current = null;
+  }, [activeChapterId, story?.id, clearInlineAIResult]);
+
+  if (storyQuery.isLoading) {
     return (
       <div
         role="status"
@@ -182,171 +406,154 @@ export function EditorPage(): JSX.Element {
     );
   }
 
-  if (isError || !story) {
-    // Backend returns 403 for both "unknown id" and "not owned" to avoid
-    // id-enumeration oracles; surface a neutral message rather than the raw
-    // status text.
+  if (storyQuery.isError || !story) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-3 p-6">
-        <p role="alert" className="text-red-600">
-          Could not load story
-        </p>
-        <Link to="/" className="text-blue-600 hover:underline">
-          Back to dashboard
-        </Link>
+      <div
+        role="alert"
+        className="min-h-screen flex items-center justify-center px-6 text-center text-neutral-600"
+      >
+        Could not load story
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-neutral-50 dark:bg-neutral-950 dark:text-neutral-100">
-      <header className="flex items-center justify-between gap-4 border-b border-neutral-200 bg-white px-6 py-3 dark:border-neutral-700 dark:bg-neutral-900">
-        <div className="flex items-center gap-4 min-w-0">
-          <Link
-            to="/"
-            aria-label="Back to dashboard"
-            className="text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100"
-          >
-            &larr;
-          </Link>
-          <h1 className="text-lg font-semibold truncate">{story.title}</h1>
-        </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => {
-              setAiOpen((v) => !v);
+    <>
+      <AppShell
+        topbar={
+          <TopBar
+            storyTitle={story.title}
+            chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
+            chapterTitle={activeChapter?.title ?? null}
+            // [F56] Pass the F9/F48 autosave triple through; TopBar renders
+            // <AutosaveIndicator> from this directly.
+            autosave={{
+              status: autosave.status,
+              savedAt: autosave.savedAt,
+              retryAt: autosave.retryAt,
             }}
-            aria-expanded={aiOpen}
-            aria-controls="ai-panel"
-            className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors dark:border-neutral-600 dark:bg-neutral-800 dark:text-neutral-100 dark:hover:bg-neutral-700"
-          >
-            {aiOpen ? 'Hide AI' : 'Show AI'}
-          </button>
-          {exportStory ? <Export story={exportStory} activeChapterId={activeChapterId} /> : null}
-          <DarkModeToggle />
-          <UserMenu
+            wordCount={activeChapter?.wordCount ?? null}
+            onOpenSettings={() => {
+              setSettingsOpen(true);
+            }}
+            onOpenStoriesList={() => {
+              setStoryPickerOpen(true);
+            }}
+            onOpenAccount={() => {
+              setAccountPrivacyOpen(true);
+            }}
             username={username}
-            onSignOut={handleSignOut}
             balance={balanceQuery.data ?? null}
-            isLoading={balanceQuery.isLoading}
-            isError={balanceQuery.isError}
-            errorCode={balanceErrorCode}
+            isBalanceLoading={balanceQuery.isLoading}
+            isBalanceError={balanceQuery.isError}
+            balanceErrorCode={balanceErrorCode}
+            onSignOut={handleSignOut}
           />
-        </div>
-      </header>
-
-      <div className="flex flex-1 min-h-0">
-        <aside
-          aria-label="Chapters"
-          className="w-64 shrink-0 border-r border-neutral-200 bg-white p-4 overflow-y-auto dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          {/* [F18] Tab switcher — Chapters / Cast. Both panels stay mounted
-              (via `hidden`) so query cache + scroll position survive toggling.
-              Keyboard arrow-key navigation between tabs is F27's concern. */}
-          <div
-            role="tablist"
-            aria-label="Sidebar sections"
-            className="flex gap-1 mb-3 border-b border-neutral-200"
-          >
-            <button
-              type="button"
-              role="tab"
-              id="sidebar-tab-chapters"
-              aria-selected={sidebarTab === 'chapters'}
-              aria-controls="sidebar-panel-chapters"
-              onClick={() => {
-                setSidebarTab('chapters');
-              }}
-              className={[
-                'px-2 py-1 text-xs font-semibold uppercase tracking-wide transition-colors',
-                sidebarTab === 'chapters'
-                  ? 'text-neutral-900 border-b-2 border-neutral-900 -mb-px'
-                  : 'text-neutral-500 hover:text-neutral-700',
-              ].join(' ')}
-            >
-              Chapters
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="sidebar-tab-characters"
-              aria-selected={sidebarTab === 'characters'}
-              aria-controls="sidebar-panel-characters"
-              onClick={() => {
-                setSidebarTab('characters');
-              }}
-              className={[
-                'px-2 py-1 text-xs font-semibold uppercase tracking-wide transition-colors',
-                sidebarTab === 'characters'
-                  ? 'text-neutral-900 border-b-2 border-neutral-900 -mb-px'
-                  : 'text-neutral-500 hover:text-neutral-700',
-              ].join(' ')}
-            >
-              Cast
-            </button>
-          </div>
-
-          <div
-            role="tabpanel"
-            id="sidebar-panel-chapters"
-            aria-labelledby="sidebar-tab-chapters"
-            hidden={sidebarTab !== 'chapters'}
-          >
-            <ChapterList
-              storyId={story.id}
-              activeChapterId={activeChapterId}
-              onSelectChapter={setActiveChapterId}
-            />
-          </div>
-
-          <div
-            role="tabpanel"
-            id="sidebar-panel-characters"
-            aria-labelledby="sidebar-tab-characters"
-            hidden={sidebarTab !== 'characters'}
-          >
-            <CharacterList storyId={story.id} onOpenCharacter={setOpenCharacterId} />
-          </div>
-        </aside>
-
-        <main
-          aria-label="Editor"
-          className="flex-1 min-w-0 overflow-y-auto p-6 dark:bg-neutral-950"
-        >
-          <div className="mx-auto max-w-3xl">
-            <Editor onReady={handleEditorReady} />
-          </div>
-        </main>
-
-        <aside
-          id="ai-panel"
-          aria-label="AI assistant"
-          hidden={!aiOpen}
-          className="w-80 shrink-0 border-l border-neutral-200 bg-white p-4 overflow-y-auto dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          <AIPanel
-            selectedText={selectedText}
-            onAction={handleAIAction}
-            pending={completion.status === 'streaming'}
-            actionError={actionError}
-            modelSelector={<ModelSelector value={selectedModelId} onChange={setSelectedModelId} />}
-            webSearchToggle={
-              <WebSearchToggle model={selectedModel} checked={webSearch} onChange={setWebSearch} />
-            }
-            result={
-              <AIResult
-                status={completion.status}
-                text={completion.text}
-                error={completion.error}
-                onInsertAtCursor={handleInsertAtCursor}
-                onDismiss={completion.reset}
+        }
+        sidebar={
+          <Sidebar
+            storyTitle={story.title}
+            totalWordCount={totalWordCount}
+            goalWordCount={story.targetWords ?? undefined}
+            onOpenStoryPicker={() => {
+              setStoryPickerOpen(true);
+            }}
+            onAdd={handleSidebarAdd}
+            chaptersBody={
+              <ChapterList
+                storyId={story.id}
+                activeChapterId={activeChapterId}
+                onSelectChapter={setActiveChapterId}
               />
             }
-            usage={<UsageIndicator usage={completion.usage} />}
+            castBody={
+              <CastTab
+                characters={charactersQuery.data ?? []}
+                onOpenCharacter={handleOpenCharacterFromCast}
+                isLoading={charactersQuery.isLoading}
+                isError={charactersQuery.isError}
+              />
+            }
+            outlineBody={
+              <OutlineTab
+                storyId={story.id}
+                onAddItem={() => undefined}
+                onEditItem={() => undefined}
+              />
+            }
           />
-        </aside>
-      </div>
+        }
+        editor={
+          <div className="flex h-full flex-col">
+            <FormatBar editor={editor} />
+            <div className="flex-1 overflow-y-auto">
+              {activeChapterId ? (
+                <Paper
+                  storyTitle={story.title}
+                  storyGenre={story.genre}
+                  storyWordCount={totalWordCount}
+                  chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
+                  chapterTitle={activeChapter?.title ?? null}
+                  initialBodyJson={(chapterQuery.data?.bodyJson as JSONContent | null) ?? null}
+                  onUpdate={handlePaperUpdate}
+                  onReady={handleEditorReady}
+                />
+              ) : (
+                <div
+                  data-testid="editor-empty-state"
+                  className="grid h-full place-items-center px-6 text-center text-[13px] text-ink-4"
+                >
+                  Select a chapter from the sidebar to start writing.
+                </div>
+              )}
+              {/* [F53] Inline AI result card — driven by <SelectionBubble>
+                  via useInlineAIResultStore. Renders nothing when the store
+                  is empty. */}
+              <div className="mx-auto w-full max-w-[720px] px-6">
+                <InlineAIResult editor={editor} onRetry={handleInlineRetry} />
+              </div>
+              {/* [F53] Continue-writing pill — ⌥+Enter or click to extend
+                  the prose at the cursor. Only mounts when we have the
+                  required context. */}
+              {activeChapterId !== null && story.id && selectedModelId !== null ? (
+                <div className="mx-auto w-full max-w-[720px] px-6">
+                  <ContinueWriting
+                    editor={editor}
+                    storyId={story.id}
+                    chapterId={activeChapterId}
+                    modelId={selectedModelId}
+                  />
+                </div>
+              ) : null}
+              {exportStory ? (
+                <div className="mx-auto mt-4 flex w-full max-w-[720px] justify-end px-6 pb-6">
+                  <Export story={exportStory} activeChapterId={activeChapterId} />
+                </div>
+              ) : null}
+            </div>
+          </div>
+        }
+        chat={
+          <ChatPanel
+            messagesBody={
+              <ChatMessages
+                chatId={activeChatId}
+                chapterTitle={activeChapter?.title ?? null}
+                attachedCharacterCount={attachedSelection?.text.length ?? 0}
+                attachedTokenCount={Math.ceil((attachedSelection?.text.length ?? 0) / 4)}
+              />
+            }
+            composer={<ChatComposer onSend={handleChatSend} disabled={sendChatMessage.isPending} />}
+            onOpenModelPicker={() => {
+              setModelPickerOpen(true);
+            }}
+            onNewChat={handleNewChat}
+            onOpenSettings={() => {
+              setSettingsOpen(true);
+            }}
+          />
+        }
+      />
 
       <CharacterSheet
         storyId={story.id}
@@ -355,6 +562,48 @@ export function EditorPage(): JSX.Element {
           setOpenCharacterId(null);
         }}
       />
-    </div>
+
+      {/* [F54] Character popover — opened from charRef hover and Cast clicks.
+          Edit footer routes back into the F19 character sheet. */}
+      <CharacterPopoverHost
+        storyId={story.id}
+        hostRef={characterPopoverRef}
+        onEdit={handleEditCharacter}
+      />
+
+      {/* [F53] Selection bubble — listens for prose selections inside the
+          .paper-prose region and absolute-positions itself over the
+          selection. Page-root mount keeps it free of editor-slot overflow. */}
+      <SelectionBubble proseSelector=".paper-prose" onAction={handleSelectionAction} />
+
+      {/* [F55] Page-root modals. */}
+      <StoryPicker
+        open={storyPickerOpen}
+        onClose={() => {
+          setStoryPickerOpen(false);
+        }}
+        activeStoryId={story.id}
+        onSelectStory={handleStoryPickerSelect}
+      />
+      <ModelPicker
+        open={modelPickerOpen}
+        onClose={() => {
+          setModelPickerOpen(false);
+        }}
+      />
+      <SettingsModal
+        open={settingsOpen}
+        onClose={() => {
+          setSettingsOpen(false);
+        }}
+      />
+      <AccountPrivacyModal
+        open={accountPrivacyOpen}
+        onClose={() => {
+          setAccountPrivacyOpen(false);
+        }}
+        username={username}
+      />
+    </>
   );
 }

@@ -8,12 +8,11 @@
 //
 // F26 is component-level only — wiring this into `EditorPage` happens after
 // the sidebar and chat panes land (F27/F38).
-import type { JSX, ReactNode } from 'react';
+import type { JSX } from 'react';
+import { AutosaveIndicator, type AutosaveIndicatorProps } from '@/components/AutosaveIndicator';
 import type { Balance } from '@/hooks/useBalance';
 import { useFocusToggle } from '@/hooks/useFocusToggle';
 import { UserMenu } from './UserMenu';
-
-export type SaveState = 'saved' | 'saving' | 'failed' | 'idle';
 
 export interface TopBarProps {
   // Breadcrumbs (centre)
@@ -21,10 +20,15 @@ export interface TopBarProps {
   chapterNumber?: number | null;
   chapterTitle?: string | null;
 
-  // Save indicator + word count
-  saveState?: SaveState;
-  /** Caller computes (e.g. "12s ago"); rendered after "Saved · ". */
-  savedAtRelative?: string | null;
+  /**
+   * [F56] Autosave triple — passed straight through to <AutosaveIndicator>.
+   * Comes directly from useAutosave's return value.
+   */
+  autosave?: {
+    status: AutosaveIndicatorProps['status'];
+    savedAt: AutosaveIndicatorProps['savedAt'];
+    retryAt: AutosaveIndicatorProps['retryAt'];
+  };
   wordCount?: number | null;
 
   // Icon-button callbacks
@@ -126,43 +130,11 @@ function SettingsIcon(): JSX.Element {
   );
 }
 
-interface SaveIndicatorProps {
-  state: SaveState;
-  relative: string | null;
-}
-
-function SaveIndicator({ state, relative }: SaveIndicatorProps): JSX.Element | null {
-  if (state === 'idle') return null;
-
-  let dotClass = 'bg-[#6aa84f]'; // green
-  let label: ReactNode = null;
-
-  if (state === 'saved') {
-    label = relative ? `Saved · ${relative}` : 'Saved';
-  } else if (state === 'saving') {
-    label = 'Saving…';
-  } else if (state === 'failed') {
-    dotClass = 'bg-danger';
-    label = 'Save failed';
-  }
-
-  return (
-    <span className="saved flex items-center gap-1.5 text-ink-4" data-save-state={state}>
-      <span
-        className={['dot inline-block h-1.5 w-1.5 rounded-full', dotClass].join(' ')}
-        aria-hidden="true"
-      />
-      {label}
-    </span>
-  );
-}
-
 export function TopBar({
   storyTitle = null,
   chapterNumber = null,
   chapterTitle = null,
-  saveState = 'idle',
-  savedAtRelative = null,
+  autosave,
   wordCount = null,
   onToggleHistory,
   onOpenSettings,
@@ -235,7 +207,13 @@ export function TopBar({
 
       {/* Right meta group. */}
       <div className="meta flex items-center gap-4 text-[12px] text-ink-3 [font-variant-numeric:tabular-nums]">
-        <SaveIndicator state={saveState} relative={savedAtRelative} />
+        {autosave ? (
+          <AutosaveIndicator
+            status={autosave.status}
+            savedAt={autosave.savedAt}
+            retryAt={autosave.retryAt}
+          />
+        ) : null}
 
         {wordCount != null ? (
           <span className="font-mono text-[12px]">{wordCount.toLocaleString()} words</span>

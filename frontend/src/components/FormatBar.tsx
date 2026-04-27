@@ -72,16 +72,25 @@ interface FbButtonProps {
   onClick: () => void;
   isActive?: boolean;
   disabled?: boolean;
+  title?: string;
   children: ReactNode;
 }
 
-function FbButton({ label, onClick, isActive, disabled, children }: FbButtonProps): JSX.Element {
+function FbButton({
+  label,
+  onClick,
+  isActive,
+  disabled,
+  title,
+  children,
+}: FbButtonProps): JSX.Element {
   return (
     <button
       type="button"
       aria-label={label}
       aria-pressed={isActive ?? false}
       disabled={disabled ?? false}
+      title={title}
       onClick={onClick}
       // Keep clicks from collapsing the editor selection — the standard
       // TipTap toolbar pattern. Same trick as the selection bubble in F34.
@@ -612,7 +621,12 @@ export function FormatBar({ editor, onToggleFind }: FormatBarProps): JSX.Element
       <div className="flex-1" />
 
       {/* Find / Focus */}
-      <FbButton label="Find" onClick={() => onToggleFind?.()}>
+      <FbButton
+        label="Find"
+        onClick={() => onToggleFind?.()}
+        disabled={onToggleFind === undefined}
+        title={onToggleFind === undefined ? 'Find — coming in [X17]' : undefined}
+      >
         <IconSearch />
       </FbButton>
       <FbButton label="Focus mode" isActive={isFocus} onClick={toggleFocus}>

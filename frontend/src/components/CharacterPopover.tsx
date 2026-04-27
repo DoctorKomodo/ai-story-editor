@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Character } from '@/hooks/useCharacters';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 
 /**
  * F37 — Character popover.
@@ -108,17 +109,19 @@ export function CharacterPopover({
     setPos(computePosition(anchorEl));
   }, [anchorEl]);
 
-  // Escape + outside-click dismissal. Bound only while the popover is
-  // visible so we don't churn listeners every render.
+  // [F57] Escape dismissal — priority 50 (under modals, over the
+  // selection bubble) via the F47 priority registry.
+  useEscape(
+    () => {
+      onClose();
+    },
+    { priority: 50, enabled: character !== null && anchorEl !== null },
+  );
+
+  // Outside-click dismissal — kept as a hand-rolled listener since it's a
+  // mouse event, not a keyboard one.
   useEffect(() => {
     if (!character || !anchorEl) return;
-
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        onClose();
-      }
-    };
-
     const onMouseDown = (e: MouseEvent): void => {
       const target = e.target as Node | null;
       if (!target) return;
@@ -126,11 +129,8 @@ export function CharacterPopover({
       if (anchorEl.contains(target)) return;
       onClose();
     };
-
-    document.addEventListener('keydown', onKeyDown);
     document.addEventListener('mousedown', onMouseDown);
     return () => {
-      document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('mousedown', onMouseDown);
     };
   }, [character, anchorEl, onClose]);

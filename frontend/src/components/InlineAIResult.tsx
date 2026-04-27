@@ -1,5 +1,6 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 
 /**
@@ -39,6 +40,14 @@ const THINK_DOT_DELAYS_MS: readonly number[] = [0, 150, 300];
 export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.Element | null {
   const inlineAIResult = useInlineAIResultStore((s) => s.inlineAIResult);
   const clear = useInlineAIResultStore((s) => s.clear);
+
+  // [F57] Escape dismisses the card — priority 20 (between popovers / bubble).
+  useEscape(
+    () => {
+      clear();
+    },
+    { priority: 20, enabled: inlineAIResult !== null },
+  );
 
   if (!inlineAIResult) return null;
 

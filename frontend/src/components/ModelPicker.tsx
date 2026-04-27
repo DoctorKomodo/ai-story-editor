@@ -12,6 +12,7 @@ import type { JSX } from 'react';
  */
 import { type MouseEvent, useEffect, useId, useRef } from 'react';
 import { ModelCard } from '@/components/ModelCard';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useModelStore } from '@/store/model';
 
@@ -59,20 +60,13 @@ export function ModelPicker({ open, onClose }: ModelPickerProps): JSX.Element | 
     };
   }, [open]);
 
-  // Escape closes the modal.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => {
-      window.removeEventListener('keydown', handler);
-    };
-  }, [open, onClose]);
+  // [F57] Escape closes the modal — priority 100 via F47 registry.
+  useEscape(
+    () => {
+      onClose();
+    },
+    { priority: 100, enabled: open },
+  );
 
   if (!open) return null;
 
@@ -90,14 +84,14 @@ export function ModelPicker({ open, onClose }: ModelPickerProps): JSX.Element | 
       role="presentation"
       data-testid="model-picker-backdrop"
       onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 grid place-items-center bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
+      className="t-backdrop-in fixed inset-0 z-50 bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
         data-testid="model-picker"
-        className="w-[480px] max-w-[94vw] max-h-[80vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
+        className="t-modal-in fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[480px] max-w-[94vw] max-h-[80vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
       >
         <header className="px-[18px] py-[14px] border-b border-line flex items-center justify-between">
           <h2

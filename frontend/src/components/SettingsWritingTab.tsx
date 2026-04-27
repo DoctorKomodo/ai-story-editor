@@ -26,8 +26,6 @@ import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/use
 
 const LS_KEYS = {
   autoSave: 'inkwell.writing.autoSave',
-  smartQuotes: 'inkwell.writing.smartQuotes',
-  emDashExpansion: 'inkwell.writing.emDashExpansion',
 } as const;
 
 function readBoolFromStorage(key: string, fallback: boolean): boolean {
@@ -142,10 +140,9 @@ export function SettingsWritingTab(): JSX.Element {
   const settingsQuery = useUserSettingsQuery();
   const updateSettings = useUpdateUserSettingsMutation();
 
-  // localStorage-backed flags.
+  // localStorage-backed flag (auto-save is purely a frontend behaviour and
+  // doesn't need server storage).
   const [autoSave, setAutoSave] = useLocalBool(LS_KEYS.autoSave, true);
-  const [smartQuotes, setSmartQuotes] = useLocalBool(LS_KEYS.smartQuotes, false);
-  const [emDashExpansion, setEmDashExpansion] = useLocalBool(LS_KEYS.emDashExpansion, false);
 
   // Backend-bound toggles read directly from the query — single source of
   // truth, no local mirror. The PATCH mutation's onSuccess updates the cache
@@ -153,6 +150,9 @@ export function SettingsWritingTab(): JSX.Element {
   const writing = settingsQuery.data?.writing;
   const typewriter = writing?.typewriterMode ?? false;
   const focusMode = writing?.focusMode ?? false;
+  // [F66] Smart quotes + em-dash expansion are now persisted via B11.
+  const smartQuotes = writing?.smartQuotes ?? false;
+  const emDashExpansion = writing?.emDashExpansion ?? false;
 
   const handleTypewriter = (next: boolean): void => {
     if (writing == null) return;
@@ -162,6 +162,16 @@ export function SettingsWritingTab(): JSX.Element {
   const handleFocusMode = (next: boolean): void => {
     if (writing == null) return;
     updateSettings.mutate({ writing: { focusMode: next } });
+  };
+
+  const handleSmartQuotes = (next: boolean): void => {
+    if (writing == null) return;
+    updateSettings.mutate({ writing: { smartQuotes: next } });
+  };
+
+  const handleEmDashExpansion = (next: boolean): void => {
+    if (writing == null) return;
+    updateSettings.mutate({ writing: { emDashExpansion: next } });
   };
 
   // --- Daily goal -----------------------------------------------------------
@@ -225,21 +235,20 @@ export function SettingsWritingTab(): JSX.Element {
       <ToggleRow
         id={smartQuotesId}
         label="Smart quotes"
-        // TODO: wire to TipTap input rules once the rule lands. For now this
-        // toggle just records the user's preference.
         hint="Convert straight quotes into curly quotes as you type"
         testId="writing-smart-quotes-toggle"
         checked={smartQuotes}
-        onChange={setSmartQuotes}
+        disabled={settingsLoading || updateSettings.isPending}
+        onChange={handleSmartQuotes}
       />
       <ToggleRow
         id={emDashId}
         label="Em-dash expansion"
-        // TODO: wire to TipTap input rules once the rule lands.
         hint="Expand `--` into an em dash automatically"
         testId="writing-em-dash-toggle"
         checked={emDashExpansion}
-        onChange={setEmDashExpansion}
+        disabled={settingsLoading || updateSettings.isPending}
+        onChange={handleEmDashExpansion}
       />
 
       <div className="flex flex-col gap-1" data-testid="writing-daily-goal-row">
