@@ -3,7 +3,9 @@ import { EditorContent, useEditor } from '@tiptap/react';
 import type { JSX, ReactNode } from 'react';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { EditorEmptyHints } from '@/components/EditorEmptyHints';
+import { useUserSettingsQuery } from '@/hooks/useUserSettings';
 import { formatBarExtensions } from '@/lib/tiptap-extensions';
+import { getTypographyExtensions } from '@/lib/tiptap-typography';
 
 /**
  * Paper editor layout (F32).
@@ -137,7 +139,16 @@ export function Paper({
     onReadyRef.current = onReady;
   }, [onReady]);
 
-  const extensions = useMemo(() => formatBarExtensions, []);
+  // [F66] Read writing.smartQuotes / writing.emDashExpansion from B11 and
+  // append the matching TipTap input rules. The editor remounts when either
+  // flips because `extensions` is keyed off the booleans.
+  const settingsQuery = useUserSettingsQuery();
+  const smartQuotes = settingsQuery.data?.writing?.smartQuotes ?? false;
+  const emDashExpansion = settingsQuery.data?.writing?.emDashExpansion ?? false;
+  const extensions = useMemo(
+    () => [...formatBarExtensions, ...getTypographyExtensions({ smartQuotes, emDashExpansion })],
+    [smartQuotes, emDashExpansion],
+  );
 
   // [F64] Mirror editor.isEmpty into local state so the hint strip toggles
   // reactively. TipTap doesn't push isEmpty changes through React props

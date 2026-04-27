@@ -29,6 +29,10 @@ export interface UserWritingSettings {
   typewriterMode: boolean;
   focusMode: boolean;
   dailyWordGoal: number;
+  /** [F66] Replace `'` and `"` with curly equivalents in prose. */
+  smartQuotes: boolean;
+  /** [F66] Replace `--` with `—` (em-dash) on the second hyphen. */
+  emDashExpansion: boolean;
 }
 
 export interface UserChatSettings {

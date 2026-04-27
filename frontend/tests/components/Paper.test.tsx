@@ -1,7 +1,9 @@
+import { QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { describe, expect, it, vi } from 'vitest';
 import { Paper, type PaperProps } from '@/components/Paper';
+import { createQueryClient } from '@/lib/queryClient';
 
 /**
  * F32 tests.
@@ -16,15 +18,18 @@ async function renderAndGrab(
   props: Partial<PaperProps> = {},
 ): Promise<{ editor: TiptapEditor; unmount: () => void }> {
   let captured: TiptapEditor | null = null;
+  const client = createQueryClient();
   const { unmount } = render(
-    <Paper
-      storyTitle={props.storyTitle ?? 'Untitled'}
-      {...props}
-      onReady={(ed) => {
-        captured = ed;
-        props.onReady?.(ed);
-      }}
-    />,
+    <QueryClientProvider client={client}>
+      <Paper
+        storyTitle={props.storyTitle ?? 'Untitled'}
+        {...props}
+        onReady={(ed) => {
+          captured = ed;
+          props.onReady?.(ed);
+        }}
+      />
+    </QueryClientProvider>,
   );
   await waitFor(() => {
     expect(captured).not.toBeNull();

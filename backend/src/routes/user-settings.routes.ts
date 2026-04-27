@@ -44,6 +44,10 @@ const SettingsSchema = z
         typewriterMode: z.boolean().optional(),
         focusMode: z.boolean().optional(),
         dailyWordGoal: z.number().int().min(0).max(100_000).optional(),
+        // [F66] Typography preferences — read by Paper to gate the
+        // matching TipTap input rules.
+        smartQuotes: z.boolean().optional(),
+        emDashExpansion: z.boolean().optional(),
       })
       .strict()
       .optional(),
@@ -70,7 +74,14 @@ const SettingsSchema = z
 const DEFAULT_SETTINGS = {
   theme: 'paper' as const,
   prose: { font: 'Lora', size: 18, lineHeight: 1.6 },
-  writing: { spellcheck: true, typewriterMode: false, focusMode: false, dailyWordGoal: 0 },
+  writing: {
+    spellcheck: true,
+    typewriterMode: false,
+    focusMode: false,
+    dailyWordGoal: 0,
+    smartQuotes: false,
+    emDashExpansion: false,
+  },
   chat: { model: null as string | null, temperature: 0.8, topP: 1, maxTokens: 2048 },
   ai: { includeVeniceSystemPrompt: true },
 } satisfies Record<string, unknown>;

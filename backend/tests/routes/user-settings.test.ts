@@ -71,7 +71,14 @@ describe('User settings routes [B11]', () => {
       settings: {
         theme: 'paper',
         prose: { font: 'Lora', size: 18, lineHeight: 1.6 },
-        writing: { spellcheck: true, typewriterMode: false, focusMode: false, dailyWordGoal: 0 },
+        writing: {
+          spellcheck: true,
+          typewriterMode: false,
+          focusMode: false,
+          dailyWordGoal: 0,
+          smartQuotes: false,
+          emDashExpansion: false,
+        },
         chat: { model: null, temperature: 0.8, topP: 1, maxTokens: 2048 },
         ai: { includeVeniceSystemPrompt: true },
       },
@@ -175,6 +182,24 @@ describe('User settings routes [B11]', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
+  });
+
+  it('[F66] PATCH writing.smartQuotes / emDashExpansion persists', async () => {
+    const token = await registerAndLogin('typo-user');
+
+    await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ writing: { smartQuotes: true, emDashExpansion: true } })
+      .expect(200);
+
+    const res = await request(app)
+      .get('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.settings.writing.smartQuotes).toBe(true);
+    expect(res.body.settings.writing.emDashExpansion).toBe(true);
   });
 
   it('PATCH returns 400 on negative writing.dailyWordGoal', async () => {
