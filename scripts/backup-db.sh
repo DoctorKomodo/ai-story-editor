@@ -26,13 +26,31 @@ OUT_DIR="./backups"
 mkdir -p "$OUT_DIR"
 
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-OUT_FILE="$OUT_DIR/inkwell-$TIMESTAMP.sql.gz"
 
-# Resolve the postgres user/db from the running container's env, falling back
-# to the documented defaults so the script works on a default install.
 SERVICE="postgres"
 PG_USER="${POSTGRES_USER:-storyeditor}"
 PG_DB="${POSTGRES_DB:-storyeditor}"
+OUT_FILE="$OUT_DIR/inkwell-$TIMESTAMP.sql.gz"
+
+usage() {
+  cat <<USAGE >&2
+Usage: $0 [--db <name>] [--out <path>]
+
+Options:
+  --db <name>   Database to dump (default: \$POSTGRES_DB or 'storyeditor').
+  --out <path>  Output .sql.gz path (default: ./backups/inkwell-<timestamp>.sql.gz).
+  -h, --help    Show this message.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --db)  PG_DB="$2"; shift 2 ;;
+    --out) OUT_FILE="$2"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) usage; exit 2 ;;
+  esac
+done
 
 # Confirm the postgres service is up before we write any output file.
 if ! docker compose ps --services --filter "status=running" | grep -qx "$SERVICE"; then
