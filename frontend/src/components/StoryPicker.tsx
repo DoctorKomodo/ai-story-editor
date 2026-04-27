@@ -8,6 +8,7 @@
 // chrome from `mockups/frontend-prototype/design/styles.css` lines 876–937.
 import type { JSX } from 'react';
 import { type MouseEvent, useEffect, useId, useRef } from 'react';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useStoriesQuery } from '@/hooks/useStories';
 
 export interface StoryPickerProps {
@@ -72,20 +73,14 @@ export function StoryPicker({
     };
   }, [open]);
 
-  // Escape closes the modal.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => {
-      window.removeEventListener('keydown', handler);
-    };
-  }, [open, onClose]);
+  // [F57] Escape closes the modal — registered through F47's priority
+  // registry at priority 100 so it always wins over popovers / inline cards.
+  useEscape(
+    () => {
+      onClose();
+    },
+    { priority: 100, enabled: open },
+  );
 
   if (!open) return null;
 

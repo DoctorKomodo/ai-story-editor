@@ -1,5 +1,6 @@
 import type { JSX, MouseEvent } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useSelectionStore } from '@/store/selection';
 
 /**
@@ -86,26 +87,27 @@ function useSelectionListener({ proseSelector }: { proseSelector: string }): voi
       clear();
     };
 
-    const onKeyDown = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        clear();
-      }
-    };
-
     document.addEventListener('mouseup', recompute);
     document.addEventListener('keyup', recompute);
     // Capture phase so scroll on any nested element dismisses too.
     document.addEventListener('scroll', onScroll, true);
-    document.addEventListener('keydown', onKeyDown);
 
     return () => {
       document.removeEventListener('mouseup', recompute);
       document.removeEventListener('keyup', recompute);
       document.removeEventListener('scroll', onScroll, true);
-      document.removeEventListener('keydown', onKeyDown);
       clear();
     };
   }, [proseSelector, setSelection, clear]);
+
+  // [F57] Escape clears the selection — priority 10 (under modals at 100,
+  // popovers at 50, inline-AI card at 20).
+  useEscape(
+    () => {
+      clear();
+    },
+    { priority: 10 },
+  );
 }
 
 interface BubblePosition {

@@ -12,6 +12,7 @@ import type { JSX } from 'react';
  */
 import { type MouseEvent, useEffect, useId, useRef } from 'react';
 import { ModelCard } from '@/components/ModelCard';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useModelStore } from '@/store/model';
 
@@ -59,20 +60,13 @@ export function ModelPicker({ open, onClose }: ModelPickerProps): JSX.Element | 
     };
   }, [open]);
 
-  // Escape closes the modal.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => {
-      window.removeEventListener('keydown', handler);
-    };
-  }, [open, onClose]);
+  // [F57] Escape closes the modal — priority 100 via F47 registry.
+  useEscape(
+    () => {
+      onClose();
+    },
+    { priority: 100, enabled: open },
+  );
 
   if (!open) return null;
 

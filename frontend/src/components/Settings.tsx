@@ -11,6 +11,7 @@ import { type MouseEvent, useEffect, useId, useRef, useState } from 'react';
 import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
+import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
 import {
   useDeleteVeniceKeyMutation,
@@ -97,20 +98,13 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
   const titleId = useId();
   const [activeTab, setActiveTab] = useState<SettingsTab>('venice');
 
-  // Escape closes.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => {
-      window.removeEventListener('keydown', handler);
-    };
-  }, [open, onClose]);
+  // [F57] Escape closes — priority 100 via the F47 registry.
+  useEscape(
+    () => {
+      onClose();
+    },
+    { priority: 100, enabled: open },
+  );
 
   // Reset to Venice tab whenever the modal re-opens — avoids stale tab
   // state bleeding across opens.
