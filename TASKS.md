@@ -390,6 +390,9 @@ Optional live-API path for validating V-series work against a real Venice endpoi
 - [x] **[B11]** User settings passthrough: `GET /api/users/me/settings` and `PATCH /api/users/me/settings` read/write `User.settingsJson`. Zod schema enforces allowed keys (theme, proseFont, proseSize, lineHeight, writing toggles, daily goal, chat model + params, `ai.includeVeniceSystemPrompt` boolean defaulting to `true`).
   - verify: `cd backend && npm run test:backend -- --run tests/routes/user-settings.test.ts`
 
+- [x] **[B12]** `POST /api/auth/sign-out-everywhere` — authenticated endpoint that deletes every refresh token belonging to the caller, closes their in-memory sessions, and clears the caller's refresh cookie. 204 on success. Idempotent at the DB level. Rate-limited via the same `SENSITIVE_AUTH_LIMIT_OPTIONS` bucket as change-password / rotate-recovery-code. Used by `[F61]` Account & Privacy panel.
+  - verify: `cd backend && npm run test:backend -- --run tests/auth/sign-out-everywhere.test.ts`
+
 ### B — Post-B-series follow-ups (work next, before F)
 
 Surfaced by the final cross-cutting review of the B-series branch + the V22 Venice-API audit. V-series contract gaps, Venice-API drift fixes, and one deferred schema fix. Work these before starting F so the frontend codes against a settled contract.

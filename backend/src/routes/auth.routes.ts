@@ -81,6 +81,7 @@ const SENSITIVE_AUTH_LIMIT_OPTIONS = {
 
 const changePasswordLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 const rotateRecoveryCodeLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
+const signOutEverywhereLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 
 // Aggressive stacked rate limits for the unauthenticated reset-password
 // endpoint. Spec: "per-IP + per-username". Two limiters stack, so a single
@@ -273,6 +274,29 @@ export function createAuthRouter() {
       next(err);
     }
   });
+
+  // [B12] Sign out everywhere — revokes every refresh token belonging to the
+  // caller and clears the caller's refresh cookie. Used by F61 Account &
+  // Privacy → "Sign out everywhere".
+  router.post(
+    '/sign-out-everywhere',
+    requireAuth,
+    signOutEverywhereLimiter,
+    async (req, res, next) => {
+      try {
+        const authed = req.user;
+        if (!authed) {
+          res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
+          return;
+        }
+        await authService.signOutEverywhere({ userId: authed.id });
+        res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
+        res.status(204).send();
+      } catch (err) {
+        next(err);
+      }
+    },
+  );
 
   router.post(
     '/rotate-recovery-code',

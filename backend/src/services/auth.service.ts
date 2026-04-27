@@ -601,6 +601,19 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     closeSessionsForUser(user.id);
   }
 
+  // [B12] Sign out everywhere — wipes every refresh token, every Session row,
+  // and every in-memory session entry for the caller. Mirrors the cleanup
+  // pattern used by logoutAllSessionsForUser / changePassword / resetPassword
+  // so the Session table doesn't accumulate ghost rows. Idempotent on empty
+  // sets.
+  async function signOutEverywhere(input: { userId: string }): Promise<void> {
+    await client.$transaction([
+      client.refreshToken.deleteMany({ where: { userId: input.userId } }),
+      client.session.deleteMany({ where: { userId: input.userId } }),
+    ]);
+    closeSessionsForUser(input.userId);
+  }
+
   return {
     register,
     login,
@@ -610,6 +623,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     changePassword,
     resetPassword,
     rotateRecoveryCode,
+    signOutEverywhere,
   };
 }
 
