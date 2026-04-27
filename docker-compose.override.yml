@@ -1,0 +1,26 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      target: dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      # Bind-mount the source for hot reload. node_modules is kept inside the
+      # container so the host's (potentially different-arch) node_modules
+      # doesn't shadow what was installed at build time.
+      - ./backend:/app
+      - /app/node_modules
+    command: ["npm", "run", "dev"]
+
+  frontend:
+    build:
+      context: ./frontend
+      target: dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    command: ["npx", "vite", "--host", "--port", "3000"]
+    # Vite's HMR talks back over the exposed port; nothing else changes.
