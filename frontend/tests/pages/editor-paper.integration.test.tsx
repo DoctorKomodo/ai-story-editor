@@ -170,7 +170,7 @@ describe('EditorPage paper integration (F52)', () => {
       expect(screen.getByRole('textbox', { name: /chapter body/i })).toBeInTheDocument();
     });
 
-    const heading = screen.getByTestId('chapter-heading');
+    const heading = await screen.findByTestId('chapter-heading');
     expect(heading.textContent ?? '').toMatch(/opening/i);
     expect(screen.queryByTestId('editor-empty-state')).toBeNull();
   });

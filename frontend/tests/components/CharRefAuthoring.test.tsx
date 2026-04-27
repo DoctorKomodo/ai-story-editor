@@ -19,6 +19,7 @@ function Harness({ onReady }: { onReady?: (e: Editor) => void }): JSX.Element {
   const editor = useEditor({
     extensions: formatBarExtensions,
     content: '<p></p>',
+    shouldRerenderOnTransaction: true,
   });
   useEffect(() => {
     if (editor && onReady) onReady(editor);

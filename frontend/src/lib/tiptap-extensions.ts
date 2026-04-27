@@ -1,9 +1,9 @@
 // [F31] Shared TipTap extension list used by the FormatBar harness, tests,
 // and (after F32 refactors `Editor.tsx`) the production editor mount.
 //
-// StarterKit at @tiptap/* v2.27 bundles Bold / Italic / Strike / Heading /
-// BulletList / OrderedList / Blockquote / History but NOT Underline / Link /
-// Highlight, so those are added explicitly below.
+// StarterKit at @tiptap/* v3 bundles Bold / Italic / Strike / Heading /
+// BulletList / OrderedList / Blockquote / UndoRedo / Link / Underline.
+// Highlight is still a separate package and is added explicitly below.
 //
 // `openOnClick: false` keeps clicks inside the editor from navigating away
 // while editing; the link is reachable via `target="_blank"` from preview /
@@ -23,9 +23,7 @@
 // editor is mounted.
 
 import { Mark, mergeAttributes } from '@tiptap/core';
-import Highlight from '@tiptap/extension-highlight';
-import Link from '@tiptap/extension-link';
-import Underline from '@tiptap/extension-underline';
+import { Highlight } from '@tiptap/extension-highlight';
 import StarterKit from '@tiptap/starter-kit';
 import { useEffect } from 'react';
 import { CharRefSuggestion } from '@/lib/charRefSuggestion';
@@ -146,13 +144,13 @@ export function useCharRefHoverDispatcher(
 }
 
 export const formatBarExtensions = [
-  StarterKit,
-  Underline,
-  Link.configure({
-    openOnClick: false,
-    HTMLAttributes: {
-      rel: 'noopener noreferrer',
-      target: '_blank',
+  StarterKit.configure({
+    link: {
+      openOnClick: false,
+      HTMLAttributes: {
+        rel: 'noopener noreferrer',
+        target: '_blank',
+      },
     },
   }),
   Highlight,

@@ -173,6 +173,7 @@ export function Paper({
   const editor = useEditor({
     extensions,
     content: initialBodyJson ?? DEFAULT_EMPTY_DOC,
+    shouldRerenderOnTransaction: true,
     editorProps: {
       attributes: {
         // Typography rules live in `.paper-prose .ProseMirror` in
@@ -212,7 +213,7 @@ export function Paper({
     if (!editor || !initialBodyJson) return;
     const current = editor.getJSON();
     if (JSON.stringify(current) !== JSON.stringify(initialBodyJson)) {
-      editor.commands.setContent(initialBodyJson, false);
+      editor.commands.setContent(initialBodyJson, { emitUpdate: false });
     }
   }, [editor, initialBodyJson]);
 
