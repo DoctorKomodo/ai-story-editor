@@ -126,9 +126,17 @@ VITE_API_URL=https://api.example.com docker compose build frontend
 docker compose up -d frontend
 ```
 
-## Updating (`[I6]` stub)
+## Updating
 
-*To be detailed in `[I6]`.*
+```bash
+git pull
+docker compose build       # rebuilds backend + frontend with the new code
+docker compose up -d       # rolling-restart; postgres data persists in pgdata
+```
+
+The backend's container entrypoint runs `prisma migrate deploy` on every boot, so a new release that adds migrations applies them automatically. Migrations are designed to be additive (the project uses Prisma's standard "expand-then-contract" pattern); a backup before a major version bump is still recommended — see "Backup and restore" below.
+
+If the release notes say a migration is destructive (e.g. dropping a plaintext column after an encryption rollout), take a `scripts/backup-db.sh` snapshot first and keep it until you've verified the new release end-to-end.
 
 ## Backup and restore (`[I6]` stub)
 
