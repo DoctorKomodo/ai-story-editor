@@ -17,109 +17,30 @@
 
 ---
 
-## ⚙️ S — Tech Stack & Project Setup
+## Current focus
 
-- [x] **[S1]** Scaffold monorepo with `/frontend`, `/backend`, `/db` folders and root-level `docker-compose.yml`, `.env.example`, `.gitignore`, and `README.md`
-  - verify: `test -f docker-compose.yml && test -d frontend && test -d backend && test -d db`
-
-- [x] **[S2]** Create `docker-compose.yml` with services: `frontend` (port 3000), `backend` (port 4000), `postgres` (port 5432). All services use named volumes. Postgres uses a health check. No reverse proxy service.
-  - verify: `docker compose config --quiet && docker compose up -d && sleep 8 && docker compose ps | grep -E "(healthy|running)" | wc -l | grep -E "^[3-9]"`
-
-- [x] **[S3]** Configure environment variable strategy — `.env.example` documents all required vars for backend (`DATABASE_URL`, `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, `VENICE_API_KEY`, `FRONTEND_URL`, `PORT`) and frontend (`VITE_API_URL`). Add `.env` to `.gitignore`.
-  - verify: `test -f .env.example && grep -q VENICE_API_KEY .env.example && grep -q JWT_SECRET .env.example && grep "\.env" .gitignore`
-
-- [x] **[S4]** Set up Vite + React + TypeScript frontend with TailwindCSS, path aliases (`@/` -> `src/`), and a working dev server.
-  - verify: `cd frontend && npm install && npm run build 2>&1 | grep -iv "error" && echo "BUILD OK"`
-
-- [x] **[S5]** Set up Express + TypeScript backend with folder structure: `src/routes`, `src/controllers`, `src/services`, `src/middleware`, `src/lib`. Install: `openai`, `prisma`, `@prisma/client`, `zod`, `bcryptjs`, `jsonwebtoken`, `morgan`, `helmet`, `cors`, `express-rate-limit`.
-  - verify: `cd backend && npm install && npm run build 2>&1 | grep -iv "error" && echo "BUILD OK"`
-
-- [x] **[S6]** Add `Makefile` at project root with targets: `dev`, `stop`, `migrate`, `seed`, `reset-db`, `test`, `test-e2e`, `logs`
-  - verify: `make --dry-run dev && make --dry-run migrate && make --dry-run test`
-
-- [x] **[S7]** Install and configure Vitest + Supertest for backend. Create `backend/tests/setup.ts` connecting to test DB, running migrations, exporting teardown.
-  - verify: `cd backend && npm run test:backend -- --run tests/setup.test.ts`
-
-- [x] **[S8]** Create `.env.test` with a separate test `DATABASE_URL`. Add `npm run db:test:reset` script that drops, recreates, and migrates the test DB.
-  - verify: `cd backend && npm run db:test:reset && echo "TEST DB OK"`
-
-- [x] **[S9]** Install and configure Vitest + React Testing Library + jsdom for frontend. Add `frontend/tests/setup.ts` with jest-dom matchers.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/setup.test.tsx`
-
-- [x] **[S10]** Install Playwright at root level. Configure against `http://localhost:3000`. Write a placeholder smoke test that visits the home page and asserts a heading is visible.
-  - verify: `npx playwright install chromium && docker compose up -d && npx playwright test --reporter=line tests/smoke.spec.ts`
+- **In flight:** F-series follow-ups (F51–F67 share branch + PR per memory note); T8.1 done on its own branch awaiting merge.
+- **Deferred:** [X19] Express 5 migration (path-to-regexp@8 syntax churn — not mechanical).
+- **Cold sections (archived in `docs/done/`):** S, A, D, E, V, L.
+- **Hot sections (live work, see below):** AU, B, F, I, T, X.
 
 ---
 
-## 🏗️ A — Architecture
+## S — archived
 
-- [x] **[A1]** Write `docs/data-model.md` with a mermaid ER diagram: User -> Stories -> Chapters, User -> Stories -> Characters. All fields listed per entity.
-  - verify: `test -f docs/data-model.md && grep -q "Character" docs/data-model.md && grep -q "Chapter" docs/data-model.md`
-
-- [x] **[A2]** Write `docs/api-contract.md` documenting every REST endpoint: method, path, auth required, request body, response schema, error codes.
-  - verify: `test -f docs/api-contract.md && grep -q "/api/stories" docs/api-contract.md && grep -q "/api/ai/complete" docs/api-contract.md`
-
-- [x] **[A3]** Write `docs/venice-integration.md` covering: OpenAI-compatible client setup, venice_parameters used and why, prompt construction strategy, dynamic context window budgeting, streaming implementation, reasoning model handling, prompt caching strategy, rate limit and balance header usage.
-  - verify: `test -f docs/venice-integration.md && grep -q "venice_parameters" docs/venice-integration.md && grep -q "context_length" docs/venice-integration.md`
-
-- [x] **[A4]** Create `backend/src/lib/venice.ts` — single place that initialises the OpenAI client with Venice base URL and API key. Export the client instance. No other file imports `openai` directly.
-  - verify: `cd backend && npm run test:backend -- --run tests/lib/venice.test.ts`
+All [S]-series tasks complete — archived in [`docs/done/done-S.md`](docs/done/done-S.md).
 
 ---
 
-## 🗄️ D — Database
+## A — archived
 
-- [x] **[D1]** Write full Prisma schema in `backend/prisma/schema.prisma`: `User`, `Story`, `Chapter`, `Character`, `RefreshToken`. Correct relations, FK indexes, cascading deletes.
-  - verify: `cd backend && npx prisma validate && echo "SCHEMA VALID"`
+All [A]-series tasks complete — archived in [`docs/done/done-A.md`](docs/done/done-A.md).
 
-- [x] **[D2]** `User`: `id` (cuid), `email` (unique), `passwordHash`, `createdAt`, `updatedAt`
-  - verify: `cd backend && npx prisma validate && npx prisma db push --force-reset --accept-data-loss 2>&1 | grep -iv error && npm run test:backend -- --run tests/models/user.test.ts`
+---
 
-- [x] **[D3]** `Story`: `id`, `title`, `synopsis`, `genre`, `worldNotes`, `createdAt`, `updatedAt`, `userId` FK. Cascade delete chapters and characters.
-  - verify: `cd backend && npm run test:backend -- --run tests/models/story.test.ts`
+## D — archived
 
-- [x] **[D4]** `Chapter`: `id`, `title`, `content`, `orderIndex`, `wordCount`, `createdAt`, `updatedAt`, `storyId` FK.
-  - verify: `cd backend && npm run test:backend -- --run tests/models/chapter.test.ts`
-
-- [x] **[D5]** `Character`: `id`, `name`, `role`, `physicalDescription`, `personality`, `backstory`, `notes`, `createdAt`, `updatedAt`, `storyId` FK.
-  - verify: `cd backend && npm run test:backend -- --run tests/models/character.test.ts`
-
-- [x] **[D6]** `RefreshToken`: `id`, `token` (unique), `userId` FK, `expiresAt`, `createdAt`. Cascade delete when user deleted.
-  - verify: `cd backend && npm run test:backend -- --run tests/models/refresh-token.test.ts`
-
-- [x] **[D7]** Run and commit initial migration: `npx prisma migrate dev --name init`.
-  - verify: `test -d backend/prisma/migrations && ls backend/prisma/migrations | grep init`
-
-- [x] **[D8]** Write seed script: demo user (`demo@example.com` / `password`), one story, two chapters, two characters.
-  - verify: `cd backend && npx ts-node prisma/seed.ts && echo "SEED OK"`
-
-### D — Mockup-driven schema extensions
-
-> Additive to D1–D8 (completed). No column renames or drops — new fields only. Source: `mockups/frontend-prototype/README.md` §Data Model + §Screens.
-
-- [x] **[D9]** Extend `Story` schema with `targetWords Int?` (story progress target, e.g. 90000 — displayed in sidebar footer) and `systemPrompt String?` (per-story creative-writing system prompt; null → prompt builder falls back to default).
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/story-settings.test.ts`
-
-- [x] **[D10]** Extend `Chapter` schema with `bodyJson Json?` (TipTap JSON — canonical going forward) and `status String @default("draft")` (`draft` / `revised` / `final` — drives chapter status chip). Keep existing `content String` as a plain-text mirror derived from `bodyJson` on save so text search and text export keep working.
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/chapter-body-json.test.ts`
-
-- [x] **[D11]** Extend `Character` with mockup-card fields: `age String?`, `appearance String?`, `voice String?`, `arc String?`, `initial String?` (1-char sidebar avatar letter), `color String?` (avatar background hex). Existing `physicalDescription`/`personality`/`backstory`/`notes` are retained; UI may migrate values into the new fields over time.
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/character-mockup.test.ts`
-
-- [x] **[D12]** New model `OutlineItem`: `id`, `storyId` FK (cascade), `order Int`, `title String`, `sub String?`, `status String` (`done` / `current` / `pending`), timestamps. Index on `(storyId, order)`.
-  - verify: `cd backend && npm run test:backend -- --run tests/models/outline-item.test.ts`
-
-- [x] **[D13]** New models `Chat` + `Message`. `Chat`: `id`, `chapterId` FK (cascade), `title String?`, timestamps. `Message`: `id`, `chatId` FK (cascade), `role` (`user` / `assistant` / `system`), `contentJson Json`, `attachmentJson Json?` (Ask-AI selection payload: `{ selectionText, chapterId }`), `model String?`, `tokens Int?`, `latencyMs Int?`, `createdAt`. Index on `(chatId, createdAt)`.
-  - verify: `cd backend && npm run test:backend -- --run tests/models/chat.test.ts tests/models/message.test.ts`
-
-- [x] **[D14]** Extend `User` with `name String?` (display name shown in top-bar user menu) and `settingsJson Json?` (stores non-sensitive client preferences — theme, prose font, prose size, line height, writing toggles, daily goal, chat model + params).
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/user-profile.test.ts`
-
-- [x] **[D15]** Username-based identity (supersedes email as the primary credential — [D2] completed task remains unchanged; this task adds a new field and relaxes `email`): add `User.username String @unique` (stored lowercase, 3–32 chars, `/^[a-z0-9_-]+$/`). Make `User.email String?` nullable — email becomes optional metadata, not the login identifier. Migration backfills `username` from the local-part of each existing user's email, appending a numeric suffix on collision.
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/user-username.test.ts`
-
-- [x] **[D16]** BYOK Venice-key storage on `User`: add `veniceApiKeyEnc String?` (AES-256-GCM ciphertext, base64), `veniceApiKeyIv String?` (12-byte IV, base64), `veniceApiKeyAuthTag String?` (GCM auth tag, base64), `veniceEndpoint String?` (optional endpoint override, default `https://api.venice.ai/api/v1`). All nullable — users without a stored key cannot invoke AI.
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/user-venice-key.test.ts`
+All [D]-series tasks complete — archived in [`docs/done/done-D.md`](docs/done/done-D.md).
 
 ---
 
@@ -191,165 +112,21 @@
 
 ---
 
-## 🔒 E — Encryption at Rest (Story Content)
+## E — archived
 
-> Envelope encryption: per-user DEK (32-byte random) wrapped **twice** — once by an argon2id-derived key from the user's password, once by an argon2id-derived key from a printable one-time recovery code shown at signup. No server-held KEK wraps content. All narrative content (titles, bodies, notes, character bios, outline items, chat messages) is encrypted client-of-Postgres with AES-256-GCM. Structural metadata (orderIndex, wordCount, status, FK ids, timestamps) stays plaintext so queries, ordering, and progress calcs keep working. Reuses the AES-256-GCM primitive from [AU11] and the argon2id parameters chosen for password hashing ([AU14]). **Invoke `security-reviewer` after [E3] (key model), [E9] (repo layer), and [E12] (leak test) are implemented.** **Also invoke `repo-boundary-reviewer` after [E4]–[E9] (per-entity encryption + repo layer) and [E11] (plaintext drop) — it owns the narrative-entity boundary and encrypt/decrypt symmetry.** ([E10] was cancelled — no legacy plaintext rows existed to backfill.)
->
-> **Three operations, clearly separated:**
-> - **Password change** (user knows old password): unwrap DEK with old-password-derived key, rewrap with new-password-derived key. Recovery-code wrap untouched. Narrative ciphertext is **not** rewritten — only the ~60-byte password wrap on `User` changes. See [AU15].
-> - **Password reset** (user forgot old password): unwrap DEK with recovery-code-derived key, rewrap password wrap with new-password-derived key. Narrative ciphertext is not rewritten. Requires the recovery code — losing both password and recovery code = irrecoverable data loss for that user's content. See [AU16].
-> - **Offline / background decrypt** (admin tooling, scheduled jobs, server-initiated features): **not supported.** The server only holds the DEK while the user is mid-request (in a request-scoped `WeakMap`). If a future feature needs this, it requires a schema migration to add a server-held wrap — not a rotation.
->
-> **Threat model:** DB dump alone reveals structural metadata only (`orderIndex`, `wordCount`, `status`, `genre`, `targetWords`, FK ids, timestamps). DB + env leak reveals the same — no `CONTENT_ENCRYPTION_KEY` exists under this scheme. Narrative content is disclosed only if an attacker additionally compromises a user's password (via phishing, keylogger, credential reuse, etc.) or recovery code. **Revisit** in `docs/encryption.md` if offline decrypt becomes a requirement.
-
-- [x] **[E1]** Write `docs/encryption.md`: DEK / wrap model, exact field list (what's encrypted vs plaintext), threat model (DB dump alone vs DB + env leak vs password/recovery-code compromise), trade-offs accepted (no DB-side FTS / title sort; no offline/background decrypt). **Must include:**
-  - **"DEK provenance" section** — the DEK is random per user; its **wraps** are password-derived and recovery-code-derived (argon2id). No server-held KEK wraps content.
-  - **"argon2id parameters" section** — document `m`, `t`, `p`, salt length, output length, and where those parameters are sourced from ([AU14]). Note that the same parameters are reused for password hashing and DEK-wrap key derivation.
-  - **"Recovery code" section** — 128-bit entropy minimum, printable format (suggest BIP-39-style word list or base32 with checksum), shown exactly once at signup, never stored plaintext server-side, user-guided to store out-of-band. Document the rotate-recovery-code flow ([AU17]).
-  - **"Three operations"** — password change ([AU15]), password reset ([AU16]), rotate recovery code ([AU17]). For each, state which columns on `User` change and confirm narrative ciphertext is untouched.
-  - **"Threat model" section** — tabulate what each of {DB dump, DB + app host, password compromise, recovery-code compromise, password + recovery-code compromise} reveals.
-  - **"Revisit" section** — explicitly name the offline-decrypt trade-off and describe the migration path if the requirement appears (add a third wrap; no way to avoid re-wrapping every user's DEK during that migration).
-  - This is the design-of-record; subsequent E-tasks reference it.
-  - verify: `test -f docs/encryption.md && grep -q "argon2id" docs/encryption.md && grep -q "recovery code" docs/encryption.md && grep -q "DEK" docs/encryption.md && grep -q "threat model" docs/encryption.md && grep -q "password-derived" docs/encryption.md && grep -q "Revisit" docs/encryption.md`
-
-- [x] **[E2]** Env + boot validation: content DEKs are **not** wrapped by a server-held KEK under this scheme, so there is no `CONTENT_ENCRYPTION_KEY` env var. `APP_ENCRYPTION_KEY` remains (wraps BYOK Venice keys only — see [AU11] / [AU13]) and must still be validated at boot. Backend startup asserts `APP_ENCRYPTION_KEY` is set and correctly sized; fails fast with a clear, actionable message otherwise. Include a generation one-liner (`node -e "console.log(crypto.randomBytes(32).toString('base64'))"`) in `.env.example` comments. A boot test confirms there is **no** `CONTENT_ENCRYPTION_KEY` requirement (guards against the env accidentally being reintroduced).
-  - verify: `! grep -q "CONTENT_ENCRYPTION_KEY" .env.example && grep -q "APP_ENCRYPTION_KEY" .env.example && cd backend && npm run test:backend -- --run tests/boot/encryption-keys.test.ts`
-
-- [x] **[E3]** Per-user DEK + content-crypto service:
-  - Schema (on `User`, all non-null after backfill):
-    - `contentDekPasswordEnc String`, `contentDekPasswordIv String`, `contentDekPasswordAuthTag String`, `contentDekPasswordSalt String` — AES-256-GCM ciphertext of the DEK wrapped by `argon2id(password, contentDekPasswordSalt, params)`.
-    - `contentDekRecoveryEnc String`, `contentDekRecoveryIv String`, `contentDekRecoveryAuthTag String`, `contentDekRecoverySalt String` — ciphertext of the same DEK wrapped by `argon2id(recoveryCode, contentDekRecoverySalt, params)`. Two independent salts (not shared) so compromise of one does not accelerate attack on the other.
-    - No `contentDekEnc` / server-KEK wrap column. (Pre-existing users from before [E3] do not exist yet; if the app is ever deployed against pre-[E3] users in the future, the migration would generate a fresh DEK on first login after deploy, when the password is available. Deferred under [X10]; [E10] backfill was cancelled — no legacy rows to backfill pre-deployment.)
-  - `backend/src/services/content-crypto.service.ts`:
-    - `generateDekAndWraps(password)` — returns `{ dek: Buffer, recoveryCode: string, passwordWrap, recoveryWrap }`. Called at signup ([AU9]).
-    - `unwrapDekWithPassword(userId, password)` — returns the DEK Buffer. Called at login ([AU3]) and password change ([AU15]).
-    - `unwrapDekWithRecoveryCode(userId, recoveryCode)` — returns the DEK Buffer. Called at password reset ([AU16]).
-    - `rewrapPasswordWrap(userId, dek, newPassword)` — writes new `contentDekPasswordEnc/Iv/AuthTag/Salt` for that user in a transaction. Called by [AU15] and [AU16].
-    - `rewrapRecoveryWrap(userId, dek)` — returns the new `recoveryCode` (shown once), writes new `contentDekRecoveryEnc/Iv/AuthTag/Salt`. Called by [AU17].
-    - `encryptForUser(userId, plaintext)` → `{ ciphertext, iv, authTag }` and `decryptForUser(userId, { ciphertext, iv, authTag })` → `plaintext`. Both require the unwrapped DEK to already be in the request-scoped `WeakMap` (populated by the auth middleware at login); throw `DekNotAvailableError` otherwise — never re-derive lazily.
-    - Unwrapped DEKs live **only** in a request-scoped `WeakMap` — never a module-level cache, never written to disk, never serialised.
-    - argon2id parameters imported from a single config module shared with [AU14]'s password-hash parameters.
-  - verify: `cd backend && npm run test:backend -- --run tests/services/content-crypto.service.test.ts`
-
-- [x] **[E4]** Encrypt `Story` narrative fields. Schema: add `titleCiphertext/Iv/AuthTag`, `synopsisCiphertext/Iv/AuthTag`, `worldNotesCiphertext/Iv/AuthTag`, `systemPromptCiphertext/Iv/AuthTag`. Keep plaintext `title`, `synopsis`, `worldNotes`, `systemPrompt` temporarily for dual-write during rollout (dropped in [E11]). `genre`, `targetWords`, timestamps, `userId` remain plaintext.
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/story-encrypted.test.ts`
-
-- [x] **[E5]** Encrypt `Chapter` narrative fields + **drop the plaintext `content` mirror** from [D4]/[D10]. Schema: add `titleCiphertext/Iv/AuthTag` and `bodyCiphertext/Iv/AuthTag` (ciphertext of the serialised TipTap JSON tree). Keep `bodyJson` and `content` plaintext during dual-write; both dropped in [E11]. `wordCount` stays plaintext (derived from the tree at save time, before encryption). `orderIndex`, `status`, `storyId`, timestamps remain plaintext. **Search/export features that rely on `content` must be reworked to decrypt on demand** ([B10] updated accordingly).
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/chapter-encrypted.test.ts`
-
-- [x] **[E6]** Encrypt `Character` narrative fields. Schema: add `_Ciphertext/_Iv/_AuthTag` triples for `name`, `role`, `appearance`, `voice`, `arc`, `age`, `personality`, `backstory`, `notes`, `physicalDescription`. `color`, `initial`, `storyId`, timestamps remain plaintext (UI-only hints + structural fields).
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/character-encrypted.test.ts`
-
-- [x] **[E7]** Encrypt `OutlineItem` narrative fields. Schema: add `titleCiphertext/Iv/AuthTag` and `subCiphertext/Iv/AuthTag`. `order`, `status`, `storyId`, timestamps remain plaintext.
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/outline-encrypted.test.ts`
-
-- [x] **[E8]** Encrypt `Chat` + `Message`. `Chat.title` → ciphertext triple. `Message.contentJson` + `Message.attachmentJson` → ciphertext triples (serialised JSON encrypted as a single blob per column). `role`, `model`, `tokens`, `latencyMs`, timestamps remain plaintext — needed for the chat header meta row + regeneration flows.
-  - verify: `cd backend && npx prisma validate && npm run test:backend -- --run tests/models/chat-message-encrypted.test.ts`
-
-- [x] **[E9]** Repository layer — transparent encrypt-on-write / decrypt-on-read. `src/repos/story.repo.ts`, `chapter.repo.ts`, `character.repo.ts`, `outline.repo.ts`, `chat.repo.ts`, `message.repo.ts` wrap Prisma. Controllers and services call repos, never Prisma directly for these entities. Repos resolve `userId` from the request context and use [E3]'s service. No controller touches ciphertext. Prompt builder ([V3]) reads via these repos.
-  - verify: `cd backend && npm run test:backend -- --run tests/repos/`
-
-- [~] **[E10]** ~~Backfill migration~~ — **CANCELLED** (pre-deployment, no users / no plaintext rows to backfill; [E11] already dropped the plaintext columns, leaving no source to read from). If this ever becomes relevant (production data predating an encryption rollout), re-open via [X10], which owns post-deployment migration-handling decisions.
-
-- [x] **[E11]** Drop plaintext columns (post-rollout): migration removes `Story.title|synopsis|worldNotes|systemPrompt`, `Chapter.title|bodyJson|content`, `Character.*(narrative)`, `OutlineItem.title|sub`, `Chat.title`, `Message.contentJson|attachmentJson`. One migration file named `drop-plaintext-narrative`. Tests run after migration and confirm all repo reads still work end-to-end. (Originally sequenced after [E10] backfill; [E10] was cancelled pre-deployment and [E11] shipped directly.)
-  - verify: `cd backend && ls prisma/migrations | grep drop-plaintext-narrative && npm run test:backend -- --run tests/repos/`
-
-- [x] **[E12]** Encryption leak test: a test that inserts a story with a known sentinel string (`"SENTINEL_E12_DO_NOT_LEAK"`), then opens a raw `pg` connection (bypassing Prisma + repos) and reads every row of `stories`, `chapters`, `characters`, `outline_items`, `chats`, `messages`. Assertion: the sentinel appears in zero rows. Ensures no plaintext narrative content landed in the DB.
-  - verify: `cd backend && npm run test:backend -- --run tests/security/encryption-leak.test.ts`
-
-- [x] **[E13]** Update [D8]'s seed to write via the repo layer. New script `backend/prisma/seed.ts` (replaces D8's behavior, doesn't edit the [D8] task entry): creates demo user via [AU9], generates DEK via [E3], then seeds via repos so demo data lands encrypted.
-  - verify: `cd backend && npx ts-node prisma/seed.ts && npm run test:backend -- --run tests/security/encryption-leak.test.ts -- --grep seed`
-
-- [x] **[E14]** DEK-wrap rotation: there is no `CONTENT_ENCRYPTION_KEY` to rotate. Per-user rotation of the recovery-code wrap is the useful primitive. Covered by [AU17]'s `POST /api/auth/rotate-recovery-code` endpoint plus a matching admin-triggerable script `backend/prisma/scripts/force-recovery-rotation.ts` that invalidates the current recovery wrap for a named user (e.g. user reports the code leaked and is locked out of the UI). **Does not touch narrative ciphertext** — only the ~60-byte recovery wrap on `User` changes. Logs only counts + usernames acted on. Documented in [E1]'s `docs/encryption.md`.
-  - verify: `cd backend && npm run test:backend -- --run tests/services/dek-wrap-rotation.test.ts`
-
-- [x] **[E15]** SELF_HOSTING.md key-backup and user-recovery section (amends [I6]): documents that **`APP_ENCRYPTION_KEY`** must be backed up with the same rigour as Postgres (loss = all stored BYOK Venice keys become unrecoverable, but content remains decryptable on next login). Content DEKs are **not** recoverable from server state alone — they are unwrappable only with the user's password or recovery code. Per-user guidance: users must store their signup-time recovery code out-of-band (printed, password manager, offline). **Losing both password and recovery code = irrecoverable data loss for that user's narrative content.** Operator guidance: run a recovery drill on a staging instance quarterly — register a demo user, save the recovery code, "forget" the password, reset via recovery code, confirm content decrypts.
-  - verify: `grep -q "APP_ENCRYPTION_KEY" SELF_HOSTING.md && grep -q "recovery code" SELF_HOSTING.md && grep -q "backup" SELF_HOSTING.md && grep -q "data loss" SELF_HOSTING.md`
+All [E]-series tasks complete — archived in [`docs/done/done-E.md`](docs/done/done-E.md).
 
 ---
 
-## 🤖 V — Venice.ai Integration
+## V — archived
 
-> Venice is OpenAI API-compatible. Use the `openai` npm package with Venice's base URL. Venice-specific features are passed via the `venice_parameters` object.
-
-- [x] **[V1]** `GET /api/ai/models` — calls Venice `GET /v1/models`, filters to text models only, returns each model's `id`, `name`, `context_length`, and capability flags (`supportsReasoning`, `supportsVision`). Cache result in memory for 10 minutes.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/models.test.ts`
-
-- [x] **[V2]** `backend/src/services/venice.models.service.ts` — fetches and caches model list. Exposes `getModelContextLength(modelId): number`. Used by the prompt builder to set dynamic context budgets. No token counts are hardcoded anywhere in the codebase.
-  - verify: `cd backend && npm run test:backend -- --run tests/services/venice.models.service.test.ts`
-
-- [x] **[V3]** `backend/src/services/prompt.service.ts` — builds prompts given: `action`, `selectedText`, `chapterContent`, `characters[]`, `worldNotes`, `modelContextLength`. Budget: reserve 20% of `modelContextLength` for the response. Use the remainder for prompt content. If budget exceeded, truncate `chapterContent` from the top (oldest content first). Never truncate character context or worldNotes.
-  - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.service.test.ts`
-
-- [x] **[V4]** Prompt builder sets `venice_parameters.include_venice_system_prompt` from a caller-supplied `includeVeniceSystemPrompt` boolean. When the flag is `true`, Venice's own creative-writing prompt is prepended; when `false`, only Inkwell's system message (default or per-story `Story.systemPrompt`) is in effect. Default when omitted is `true`. Unit test covers all three branches: explicit `true` → flag is `true`; explicit `false` → flag is `false`; omitted → flag is `true`. The flag value is never hardcoded inside the prompt builder.
-  - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.venice-params.test.ts`
-
-- [x] **[V5]** `POST /api/ai/complete` — accepts `{ action, selectedText, chapterId, storyId, modelId }` (plus optional `freeformInstruction`). Loads the chapter body + story characters + `worldNotes` server-side via the repo layer (decrypted on read) — the client never sends plaintext chapter content. Reads `req.user.settingsJson.ai.includeVeniceSystemPrompt` (default `true` if the key is missing) and passes it to the prompt builder. Calls prompt builder with model context length from cache. Calls Venice with `stream: true`. Pipes SSE stream back to client. 404 when chapter or story isn't owned by the caller; 409 `venice_key_required` when no BYOK key is stored.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/complete.test.ts`
-
-- [x] **[V6]** Reasoning model support: if selected model has `supportsReasoning: true`, set `venice_parameters.strip_thinking_response = true` in the Venice request. Test confirms this is applied to reasoning models and not others.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/reasoning.test.ts`
-
-- [x] **[V7]** Web search: add optional `enableWebSearch` boolean to `POST /api/ai/complete`. When true, set `venice_parameters.enable_web_search = "auto"` and `venice_parameters.enable_web_citations = true`. Useful for users researching facts for their story world.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/web-search.test.ts`
-
-- [x] **[V8]** Prompt caching: set `venice_parameters.prompt_cache_key` to a deterministic hash of `storyId + modelId` on all `/api/ai/complete` requests. This improves cache hit rates by routing requests with the same story context to the same Venice backend infrastructure. Document in `docs/venice-integration.md`.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/prompt-cache.test.ts`
-
-- [x] **[V9]** Rate limit header forwarding: after each Venice call, read `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` from Venice response headers. Attach as `x-venice-remaining-requests` and `x-venice-remaining-tokens` on the backend response so the frontend can display usage.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/rate-limit-headers.test.ts`
-
-- [x] **[V10]** `GET /api/ai/balance` (auth required) — reads `x-venice-balance-usd` and `x-venice-balance-diem` from a lightweight Venice API call and returns them. Frontend shows this in the user menu.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/balance.test.ts`
-
-- [x] **[V11]** Venice error handling: map error codes to user-friendly messages. Handle `401` (invalid API key — log server-side, show generic error to user), `429` (rate limited — include reset time in response), `503` (Venice unavailable). Never expose raw Venice errors or stack traces to the frontend.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/error-handling.test.ts`
-
-- [x] **[V12]** AI action system prompts — write and test the system prompt and user prompt template for each action. Each instructs the model to act as a creative writing assistant and return only the content with no preamble:
-  - **Continue** — continues from where the selection ends, matching the established style
-  - **Rephrase** — rewrites the selected text with different phrasing, preserving meaning
-  - **Expand** — adds more detail, description, and depth to the selected passage
-  - **Summarise** — condenses the selected text to its essential points
-  - **Freeform** — passes the user's custom instruction as the direct prompt
-  - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.actions.test.ts`
-
-### V — Mockup-driven additions
-
-- [x] **[V13]** Per-story system prompt in prompt builder: when `Story.systemPrompt` is non-null, use it as the primary system message; otherwise fall back to the default creative-writing system prompt. Unit tests cover both paths and confirm the Venice `include_venice_system_prompt` flag is driven entirely by the user setting — unaffected by whether `Story.systemPrompt` is set or null.
-  - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.system-prompt.test.ts`
-
-- [x] **[V14]** Extend AI action set to cover mockup selection-bubble + chat actions: `rewrite`, `describe`, `expand` (inline result card), `continue` (cursor-context ~80-word continuation for ⌥↵), `ask` (routes selection into chat as attachment). Each has a dedicated prompt template. Complements [V12] — do not remove existing actions.
-  - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.mockup-actions.test.ts`
-
-- [x] **[V15]** Chat persistence: `POST /api/chapters/:chapterId/chats` creates a chat; `GET /api/chapters/:chapterId/chats` lists; `POST /api/chats/:chatId/messages` appends a user message, streams an assistant reply via Venice (SSE passthrough), persists both messages with `tokens` + `latencyMs` captured from the Venice response.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/chat-persistence.test.ts`
-
-- [x] **[V16]** Ask-AI attachment payload: `POST /api/chats/:chatId/messages` accepts optional `{ attachment: { selectionText, chapterId } }`. Stored as `attachmentJson` on the user message. Prompt builder prepends attachment text as additional user-role context when present.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/ask-ai-attachment.test.ts`
-
-- [x] **[V17]** Per-user Venice client (supersedes the singleton in [A4]): `getVeniceClient(userId)` reads the user's encrypted key + endpoint, decrypts via [AU11], constructs a per-call `OpenAI` instance bound to that key + endpoint. Never cached across users. If the user has no stored key, throws `NoVeniceKeyError` (mapped to 409 `{ error: "venice_key_required" }` with a hint pointing at `/settings#venice`). Replaces all call sites across [V1]–[V12], [V15].
-  - verify: `cd backend && npm run test:backend -- --run tests/lib/venice-per-user.test.ts`
-
-- [x] **[V18]** `POST /api/users/me/venice-key/verify` — re-validates the stored key by calling Venice (`GET /v1/models` + balance headers). Returns `{ verified: boolean, credits: number | null, diem: number | null, endpoint: string | null, lastFour: string | null }`. Frontend's Settings → Venice "Verified · 2.2k credits" pill reads this. Rate-limited per user (6 req/min) to avoid Venice abuse.
-  - verify: `cd backend && npm run test:backend -- --run tests/routes/venice-key-verify.test.ts`
+All [V]-series tasks complete — archived in [`docs/done/done-V.md`](docs/done/done-V.md).
 
 ---
 
-## 🔌 L — Live Venice testing (opt-in, dev-only)
+## L — archived
 
-Optional live-API path for validating V-series work against a real Venice endpoint without exercising the frontend. **Never part of the default test suite.** A spending-capped API key is supplied out-of-band via `backend/.env.live`, which is gitignored. Live tests and the probe CLI are the only consumers — production code paths remain BYOK-only.
-
-- [x] **[L1]** `backend/.env.live.example` (committed) documents `LIVE_VENICE_API_KEY`, `LIVE_VENICE_ENDPOINT`, `LIVE_VENICE_MODEL` with comments about spending caps and scope. `backend/.env.live` added to `.gitignore`. No production code path reads these variables — grep proves it.
-  - verify: `bash -c 'grep -q "^backend/.env.live$" .gitignore && test -f backend/.env.live.example && ! grep -rn "LIVE_VENICE_" backend/src'`
-
-- [x] **[L2]** Vitest config split: `backend/tests/live/**` excluded from the default run (`vitest.config.ts` `test.exclude`); a second config `vitest.live.config.ts` includes **only** that folder. `package.json` adds `"test:live": "vitest --run --config vitest.live.config.ts"`. Default `npm run test:backend` continues to exclude live tests.
-  - verify: `cd backend && { npm run test:backend -- --run 2>&1 || true; } | grep -v 'tests/live/' | grep 'Test Files' > /dev/null && test -f vitest.live.config.ts`
-
-- [x] **[L3]** `backend/scripts/venice-probe.ts` — `ts-node` CLI that loads `backend/.env.live`, exposes `--models`, `--prompt <text>`, `--stream`, `--model <id>`. Uses the same OpenAI-compatible client construction as [V17]. Prints response body (and SSE chunks when `--stream`). Exits 1 on Venice error, 2 on missing `.env.live`. `package.json` adds `"venice:probe": "ts-node scripts/venice-probe.ts"`.
-  - verify: `cd backend && npm run venice:probe -- --help | grep -q 'venice-probe'`
-
-- [x] **[L4]** Live integration tests in `backend/tests/live/venice.live.test.ts`: (1) `GET /v1/models` returns a non-empty text-model list; (2) non-streaming completion returns a non-empty string; (3) streaming completion yields ≥1 SSE delta then a `[DONE]`. Each uses `it.skipIf(!process.env.LIVE_VENICE_API_KEY)` so the file is safe with no key present. **Not** added to CI.
-  - verify: `cd backend && test -f tests/live/venice.live.test.ts && npm run test:live -- --run 2>&1 | grep -qE '(skipped|passed)'`
+All [L]-series tasks complete — archived in [`docs/done/done-L.md`](docs/done/done-L.md).
 
 ---
 
