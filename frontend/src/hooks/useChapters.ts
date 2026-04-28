@@ -234,7 +234,6 @@ export function useChapterQuery(
 export interface UpdateChapterInput {
   bodyJson?: unknown;
   title?: string;
-  wordCount?: number;
 }
 
 export interface UpdateChapterArgs {
