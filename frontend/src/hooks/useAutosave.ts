@@ -195,8 +195,13 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     scheduleDebouncedSave();
   }, [payload]);
 
-  // Unmount cleanup.
+  // Unmount cleanup. The setup intentionally re-asserts mountedRef.current
+  // = true: under React.StrictMode dev, useEffect runs setup → cleanup →
+  // setup, and without this re-assertion the cleanup's `mountedRef.current
+  // = false` would persist into the live mount and silently suppress every
+  // scheduled save (`if (!mountedRef.current) return;` in runSave).
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       if (debounceTimerRef.current !== null) clearTimeout(debounceTimerRef.current);

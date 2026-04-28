@@ -28,6 +28,11 @@ import type { AddressInfo } from 'node:net';
 const STREAMED_DELTAS = ['The ', 'rain ', 'fell.'];
 const PROMPT_TOKENS = 12;
 const COMPLETION_TOKENS = 7;
+// Venice surfaces rate-limit budgets via `x-ratelimit-remaining-*` headers;
+// the backend forwards them onto `x-venice-remaining-*` for the frontend's
+// UsageIndicator. Fixed values let the spec assert exact UI text.
+const REMAINING_REQUESTS = 4242;
+const REMAINING_TOKENS = 987654;
 
 export interface MockVeniceServer {
   baseURL: string;
@@ -77,6 +82,8 @@ export async function startMockVenice(): Promise<MockVeniceServer> {
           'Cache-Control': 'no-cache, no-transform',
           Connection: 'keep-alive',
           'X-Accel-Buffering': 'no',
+          'x-ratelimit-remaining-requests': String(REMAINING_REQUESTS),
+          'x-ratelimit-remaining-tokens': String(REMAINING_TOKENS),
         });
         res.flushHeaders();
 

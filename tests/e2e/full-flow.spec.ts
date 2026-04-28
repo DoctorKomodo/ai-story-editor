@@ -1,4 +1,4 @@
-// [T8] Full-flow Playwright spec — tier-2 PR-blocking E2E.
+// [T8 + T8.1] Full-flow Playwright spec — tier-2 PR-blocking E2E.
 //
 // Drives the live `make dev` stack through the user journey that only an
 // end-to-end run can claim works:
@@ -9,25 +9,19 @@
 //   → BYOK Venice key save (Settings → Venice tab)
 //   → create chapter (ChapterList "Add chapter")
 //   → type into TipTap
+//   → wait for autosave "Saved · …" indicator (T8.1 part 1)
 //   → AI Continue (pill click)
 //   → assert streamed response from the mock arrives in the UI
+//   → assert UsageIndicator surfaces the mock's rate-limit headers
+//     (T8.1 part 2 — UsageIndicator now mounts inside ContinueWriting,
+//     restoring the F16 surface that was orphaned when AIPanel was
+//     unmounted at F55)
 //   → assert the mock saw a chat-completion request
 //
 // Venice is mocked in-process (tests/e2e/fixtures/mock-venice.ts). The
 // backend container reaches it via host.docker.internal — opted in by
 // extra_hosts in docker-compose.override.yml. The user's stored BYOK
 // `endpoint` field steers the per-user OpenAI client at the mock.
-//
-// Two assertions from the original T8 verify-blurb are intentionally NOT
-// covered here: "Saved ✓" autosave indicator and UsageIndicator update.
-// In-spec runs against the live stack do not see the chapter PATCH fire
-// even after the 4s debounce + 20s wait — and the Continue-Writing path
-// renders streamed deltas into a sibling region, not into the editor body,
-// so the usage indicator (which only mounts inside <AIPanel>) doesn't
-// surface from this code path. Both belong to a follow-up [T8.1] that
-// drills into autosave (likely a TanStack Query refetch racing the local
-// draft useState in EditorPage:215) and switches the AI driver to one
-// that mounts UsageIndicator end-to-end.
 import { expect, test } from '@playwright/test';
 import {
   configureVeniceBYOK,
@@ -51,7 +45,7 @@ test.beforeEach(() => {
   mockVenice.reset();
 });
 
-test('register → BYOK → story → chapter → type → AI Continue → Saved ✓ + usage delta', async ({
+test('register → BYOK → story → chapter → type → Saved ✓ → AI Continue → usage indicator', async ({
   page,
 }) => {
   const username = uniqueUsername('t8');
@@ -100,11 +94,20 @@ test('register → BYOK → story → chapter → type → AI Continue → Saved
   await page.keyboard.type('The night was quiet.', { delay: 30 });
   await expect(editorBody).toContainText('The night was quiet.');
 
-  // 6) Trigger AI Continue. The dashed "Continue writing" pill below the
+  // 6) [T8.1] Autosave round-trip. The autosave hook debounces 4s; once it
+  //    fires and the PATCH succeeds, the TopBar's AutosaveIndicator flips
+  //    to "Saved · …". This proves typed content actually round-trips
+  //    through the encrypted chapter repo to the DB — the assertion that
+  //    was dropped from T8 because the page-level useEffect on
+  //    [activeChapterId, chapterQuery.data] was wiping `draftBodyJson`
+  //    on a late-arriving query resolve, before the debounce fired.
+  await expect(page.getByText(/saved\s*·/i)).toBeVisible({ timeout: 20_000 });
+
+  // 7) Trigger AI Continue. The dashed "Continue writing" pill below the
   //    editor invokes the same code path as the ⌥+Enter shortcut.
   await page.getByRole('button', { name: /continue writing/i }).click();
 
-  // 7) Assert the streamed text from the mock arrives in the
+  // 8) Assert the streamed text from the mock arrives in the
   //    Continue-Writing region. Mock streams "The ", "rain ", "fell."
   //    — full concat is "The rain fell.". This is the stack-level
   //    guarantee unit tests cannot make: BYOK key → per-user Venice
@@ -114,7 +117,19 @@ test('register → BYOK → story → chapter → type → AI Continue → Saved
     timeout: 15_000,
   });
 
-  // 8) Mock saw a chat-completion call (and exactly one — `/v1/chat/completions`
-  //    fires once per Continue Writing click).
+  // 9) [T8.1] UsageIndicator surfaces the mock's rate-limit headers. The
+  //    backend forwards `x-ratelimit-remaining-*` from the upstream
+  //    response onto its own `x-venice-remaining-*` headers; the frontend
+  //    parses them in useAICompletion and renders them via
+  //    <UsageIndicator>. Format: "<requests> requests / <tokens> tokens
+  //    remaining" — `formatRequests`/`formatTokens` produce "4.2K" and
+  //    "988K" for the mock's fixed 4242 / 987654 values.
+  await expect(page.getByLabel(/venice usage/i)).toContainText(/4\.2K\s*requests/i, {
+    timeout: 5_000,
+  });
+  await expect(page.getByLabel(/venice usage/i)).toContainText(/988K\s*tokens/i);
+
+  // 10) Mock saw a chat-completion call (at least one — Continue Writing
+  //     fires `/v1/chat/completions` once per click).
   expect(mockVenice.callCount()).toBeGreaterThanOrEqual(1);
 });

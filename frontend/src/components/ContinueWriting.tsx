@@ -30,6 +30,7 @@
 
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useMemo, useRef, useState } from 'react';
+import { UsageIndicator } from '@/components/UsageIndicator';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAltEnter } from '@/hooks/useKeyboardShortcuts';
 
@@ -61,7 +62,7 @@ export function ContinueWriting({
   modelId,
   visible = true,
 }: ContinueWritingProps): JSX.Element | null {
-  const { run, reset, status, text, error } = useAICompletion();
+  const { run, reset, status, text, error, usage } = useAICompletion();
   const [lastArgs, setLastArgs] = useState<RunArgs | null>(null);
   // Captures the last invocation so Retry can replay the same args (notably
   // the cursor context that was live when the user originally clicked).
@@ -206,6 +207,13 @@ export function ContinueWriting({
         >
           Discard
         </button>
+      </div>
+
+      {/* [F16, restored T8.1] UsageIndicator was orphaned when AIPanel was
+          unmounted at F55. ContinueWriting is the active AI-completion
+          surface, so the rate-limit snapshot lives here. */}
+      <div className="mt-2">
+        <UsageIndicator usage={usage} />
       </div>
     </aside>
   );
