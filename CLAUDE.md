@@ -70,6 +70,14 @@ For every task:
 
 If a task has no verify command, add one to `TASKS.md` before starting.
 
+### Archived sections
+
+`TASKS.md` only lists **live** sections (open tasks or hot code surfaces). Sections that are fully closed AND have not been touched in the last 2 PRs are rotated into `docs/done/done-<section>.md` — one file per section letter. Each archive file is immutable; if a closed section is reopened, add a *new* task to `TASKS.md` rather than editing the archive.
+
+To find a historical task ID, grep across both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. The `/task-verify` skill assumes `TASKS.md`; for an archived task, run `scripts/extract-verify.sh <ID> docs/done/done-<X>.md` directly (you almost never need to — archived tasks already passed their verify before they were ticked).
+
+Currently archived: **S, A, D, E, V, L**. Currently live in `TASKS.md`: **AU, B, F, I, T, X**.
+
 ### Local tooling
 - **`/task-verify <TASK_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that runs the `verify:` command exactly as written and reports the true exit code. Use this before manually ticking a task; it's stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
 - **`.claude/hooks/pre-tasks-edit.sh`** — a pre-edit hook that automatically ticks a task `[x]` in `TASKS.md` when its verify command passes. Treat an auto-tick as authoritative for the verify gate; you still need the `security-reviewer` clearance (where applicable) before the task group is considered closed.
