@@ -212,20 +212,51 @@ export function EditorPage(): JSX.Element {
   const [draftBodyJson, setDraftBodyJson] = useState<JSONContent | null>(null);
   const lastWordCountRef = useRef<number>(0);
 
-  // Reset the local draft whenever the active chapter changes.
+  // [T8.1] Seed the local draft exactly once per active-chapter switch — not
+  // on every chapterQuery.data reference change. The earlier shape (deps:
+  // [activeChapterId, chapterQuery.data]) was racy: typing into a freshly-
+  // created chapter would race a late-arriving chapterQuery.data resolve,
+  // and the second run of this effect wiped `draftBodyJson` back to the
+  // server's empty body before the 4s autosave debounce fired. Tracking the
+  // last-seeded chapter id makes the seed strictly idempotent per chapter
+  // while still re-seeding on chapter switch.
+  //
+  // For chapters that load with `bodyJson === null` (freshly created), seed
+  // with the canonical empty TipTap doc instead of null — `useAutosave`
+  // treats the first *non-null* payload as a baseline (no save fires) and
+  // ignores null entirely, so seeding with null leaves the user's first
+  // keystroke being mistaken for the baseline. The empty-doc seed gives
+  // autosave a real baseline to diff against, and the user's first typed
+  // character correctly schedules a PATCH.
+  const seededForChapterIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const fresh = (chapterQuery.data?.bodyJson as JSONContent | null) ?? null;
-    setDraftBodyJson(fresh);
-    lastWordCountRef.current = chapterQuery.data?.wordCount ?? 0;
+    if (activeChapterId === null) {
+      seededForChapterIdRef.current = null;
+      setDraftBodyJson(null);
+      lastWordCountRef.current = 0;
+      return;
+    }
+    if (seededForChapterIdRef.current === activeChapterId) return;
+    if (chapterQuery.data === undefined) return;
+    seededForChapterIdRef.current = activeChapterId;
+    const serverBody = chapterQuery.data.bodyJson as JSONContent | null;
+    const seed: JSONContent = serverBody ?? { type: 'doc', content: [{ type: 'paragraph' }] };
+    setDraftBodyJson(seed);
+    lastWordCountRef.current = chapterQuery.data.wordCount ?? 0;
   }, [activeChapterId, chapterQuery.data]);
 
   const handleSave = useCallback(
     async (value: JSONContent): Promise<void> => {
       if (!story?.id || !activeChapterId) return;
+      // [T8.1] Don't send `wordCount` — the backend's `UpdateChapterBody`
+      // schema is `.strict()` and rejects the extra key with 400, and the
+      // chapter route already recomputes wordCount server-side from
+      // `bodyJson` (see `chapters.routes.ts:242`). The local
+      // `lastWordCountRef` still feeds the topbar word-count display.
       await updateChapter.mutateAsync({
         storyId: story.id,
         chapterId: activeChapterId,
-        input: { bodyJson: value, wordCount: lastWordCountRef.current },
+        input: { bodyJson: value },
       });
     },
     [story?.id, activeChapterId, updateChapter],
