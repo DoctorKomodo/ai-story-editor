@@ -27,6 +27,7 @@ function Harness({ onReady, onToggleFind, initialContent }: HarnessProps): JSX.E
   const editor = useEditor({
     extensions: formatBarExtensions,
     content: initialContent ?? '<p>Hello world</p>',
+    shouldRerenderOnTransaction: true,
   });
 
   useEffect(() => {

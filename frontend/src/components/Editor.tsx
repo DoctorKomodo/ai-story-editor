@@ -86,6 +86,7 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
   const editor = useEditor({
     extensions,
     content: initialBodyJson ?? DEFAULT_EMPTY_DOC,
+    shouldRerenderOnTransaction: true,
     editorProps: {
       attributes: {
         // Tailwind `prose` would be nice here but F32 handles typography.
@@ -128,7 +129,7 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
     if (!editor || !initialBodyJson) return;
     const current = editor.getJSON();
     if (JSON.stringify(current) !== JSON.stringify(initialBodyJson)) {
-      editor.commands.setContent(initialBodyJson, false);
+      editor.commands.setContent(initialBodyJson, { emitUpdate: false });
     }
   }, [editor, initialBodyJson]);
 

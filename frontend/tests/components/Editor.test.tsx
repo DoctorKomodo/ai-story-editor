@@ -169,6 +169,12 @@ describe('Editor (F8)', () => {
 
     const user = userEvent.setup();
     await user.click(screen.getByRole('button', { name: /heading 2/i }));
+    // StarterKit v3's TrailingNode appends an empty paragraph after the
+    // converted heading, so re-anchor the cursor inside the heading before
+    // asserting toolbar state.
+    act(() => {
+      editor.commands.setTextSelection(2);
+    });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /heading 2/i })).toHaveAttribute(
@@ -186,7 +192,13 @@ describe('Editor (F8)', () => {
     );
 
     // Flip back to paragraph.
+    act(() => {
+      editor.commands.selectAll();
+    });
     await user.click(screen.getByRole('button', { name: /paragraph/i }));
+    act(() => {
+      editor.commands.setTextSelection(2);
+    });
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /paragraph/i })).toHaveAttribute(
         'aria-pressed',
