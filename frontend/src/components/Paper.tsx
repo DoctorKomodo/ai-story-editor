@@ -1,7 +1,7 @@
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { JSX, ReactNode } from 'react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef } from 'react';
 import { CharRefMenu } from '@/components/CharRefMenu';
 import { EditorEmptyHints } from '@/components/EditorEmptyHints';
 import { useCharactersQuery } from '@/hooks/useCharacters';
@@ -165,11 +165,6 @@ export function Paper({
     [smartQuotes, emDashExpansion],
   );
 
-  // [F64] Mirror editor.isEmpty into local state so the hint strip toggles
-  // reactively. TipTap doesn't push isEmpty changes through React props
-  // otherwise.
-  const [isEmpty, setIsEmpty] = useState(true);
-
   const editor = useEditor({
     extensions,
     content: initialBodyJson ?? DEFAULT_EMPTY_DOC,
@@ -183,11 +178,7 @@ export function Paper({
         'aria-label': 'Chapter body',
       },
     },
-    onCreate({ editor: ed }) {
-      setIsEmpty(ed.isEmpty);
-    },
     onUpdate({ editor: ed }) {
-      setIsEmpty(ed.isEmpty);
       const cb = onUpdateRef.current;
       if (!cb) return;
       const json = ed.getJSON();
@@ -195,6 +186,10 @@ export function Paper({
       cb({ bodyJson: json, wordCount });
     },
   });
+
+  // [F64] Hint strip toggles off as soon as the editor has any content.
+  // shouldRerenderOnTransaction ensures this re-evaluates on every keystroke.
+  const isEmpty = editor?.isEmpty ?? true;
 
   // Fire onReady once per editor instance — guards against React
   // StrictMode double-invoke and parent-callback identity churn.
