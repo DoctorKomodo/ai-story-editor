@@ -166,6 +166,7 @@ describe('SettingsModal (F43)', () => {
       routeFetch({
         '/api/users/me/settings': () => jsonResponse(200, defaultSettings()),
         '/api/users/me/venice-key': () => jsonResponse(200, keyStatus()),
+        '/api/ai/models': () => jsonResponse(200, { models: [] }),
       }),
     );
     const user = userEvent.setup();
