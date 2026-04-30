@@ -443,7 +443,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
   - plan: [docs/superpowers/plans/F70-storybook-modal-story.md](docs/superpowers/plans/F70-storybook-modal-story.md)
   - verify: `cd frontend && npm run build-storybook -- --quiet && npm run lint:design && npx biome ci src/design/Modal.stories.tsx`
 
-- [ ] **[F71]** Author `Tokens.stories.tsx` — colour / type / radius / shadow swatches with a runtime `useLayoutEffect` hex/font readout that auto-refreshes on theme flip. Replaces [docs/Design System Handoff.html](docs/Design%20System%20Handoff.html) § Tokens. Token audit step + full code in the plan.
+- [x] **[F71]** Author `Tokens.stories.tsx` — colour / type / radius / shadow swatches with a runtime `useLayoutEffect` hex/font readout that auto-refreshes on theme flip. Replaces [docs/Design System Handoff.html](docs/Design%20System%20Handoff.html) § Tokens. Token audit step + full code in the plan.
   - plan: [docs/superpowers/plans/F71-storybook-tokens-story.md](docs/superpowers/plans/F71-storybook-tokens-story.md)
   - verify: `cd frontend && npm run build-storybook -- --quiet && npm run lint:design`
 
