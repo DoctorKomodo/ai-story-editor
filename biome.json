@@ -18,6 +18,7 @@
       "!frontend/dist",
       "!backend/dist",
       "!mockups/frontend-prototype/design",
+      "!docs/**/*.html",
       "!**/*.min.js",
       "!**/package-lock.json"
     ]

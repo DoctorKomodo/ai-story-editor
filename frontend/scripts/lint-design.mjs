@@ -16,8 +16,8 @@
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 // =============================================================================
 // Patterns — six categories of drift, all token violations.
@@ -50,7 +50,14 @@ const PATTERNS = [
 // =============================================================================
 
 const EXCLUDE_FILES = new Set(['index.css']);
-const EXCLUDE_SUFFIXES = ['.stories.tsx', '.stories.ts', '.test.tsx', '.test.ts', '.spec.tsx', '.spec.ts'];
+const EXCLUDE_SUFFIXES = [
+  '.stories.tsx',
+  '.stories.ts',
+  '.test.tsx',
+  '.test.ts',
+  '.spec.tsx',
+  '.spec.ts',
+];
 const INCLUDE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
 // =============================================================================
@@ -126,7 +133,7 @@ if (hits.length === 0) {
 console.error(
   `\n❌ Design-token drift detected (${hits.length} violation${hits.length === 1 ? '' : 's'}):\n`,
 );
-for (const h of hits) console.error('  ' + h);
+for (const h of hits) console.error(`  ${h}`);
 console.error('\nSee MIGRATION.md § "Substitution table" for token replacements.');
 console.error(`To allowlist a single line, append:  // ${ALLOW_MARKER} — <reason>\n`);
 process.exit(1);
