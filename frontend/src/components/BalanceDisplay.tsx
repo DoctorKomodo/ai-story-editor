@@ -41,7 +41,7 @@ export function BalanceDisplay({
 }: BalanceDisplayProps): JSX.Element {
   if (isLoading) {
     return (
-      <p role="status" className="text-xs text-neutral-500">
+      <p role="status" data-testid="balance-loading" className="font-mono text-[11px] text-ink-3">
         Loading balance…
       </p>
     );
@@ -50,27 +50,31 @@ export function BalanceDisplay({
   if (isError) {
     if (errorCode === 'venice_key_required') {
       return (
-        <p role="alert" className="text-xs text-neutral-600">
+        <p role="alert" data-testid="balance-error" className="font-mono text-[11px] text-ink-3">
           Add a Venice API key in Settings.
         </p>
       );
     }
     return (
-      <p role="alert" className="text-xs text-neutral-600">
+      <p role="alert" data-testid="balance-error" className="font-mono text-[11px] text-ink-3">
         Balance unavailable
       </p>
     );
   }
 
   if (balance === null) {
-    return <p className="text-xs text-neutral-600">Balance unavailable</p>;
+    return (
+      <p data-testid="balance-empty" className="font-mono text-[11px] text-ink-3">
+        Balance unavailable
+      </p>
+    );
   }
 
   const usd = balance.credits == null ? 'USD: —' : `USD: ${formatUsd(balance.credits)}`;
   const diem = balance.diem == null ? 'Diem: —' : `Diem: ${formatDiem(balance.diem)}`;
 
   return (
-    <div className="text-xs text-neutral-700 space-y-0.5">
+    <div data-testid="balance-display" className="font-mono text-[11px] text-ink-2 space-y-0.5">
       <p>{usd}</p>
       <p>{diem}</p>
     </div>

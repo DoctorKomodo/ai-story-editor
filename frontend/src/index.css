@@ -118,6 +118,11 @@
   --color-ai: var(--ai);
   --color-ai-soft: var(--ai-soft);
 
+  /* Modal backdrop tint — alpha-blended dark overlay used by every modal.
+     Defined here so consumers can write `bg-backdrop` instead of arbitrary
+     `bg-[rgba(20,18,12,.4)]` literals (which the design lint forbids). */
+  --color-backdrop: rgba(20, 18, 12, 0.4);
+
   /* Radius and shadow tokens declared with literal values directly in
      `@theme` so Tailwind v4 (a) hoists them onto `:root` for hand-rolled
      `var(--radius)` references and (b) auto-generates the matching

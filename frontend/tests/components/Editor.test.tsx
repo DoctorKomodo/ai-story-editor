@@ -222,4 +222,23 @@ describe('Editor (F8)', () => {
 
     unmount();
   });
+
+  it('renders with design-system token classes (no raw Tailwind colors)', async () => {
+    const { unmount } = await renderAndGrab();
+
+    const wordCount = screen.getByTestId('editor-word-count');
+    expect(wordCount).toHaveClass('text-ink-3');
+    expect(wordCount).toHaveClass('font-mono');
+    expect(wordCount.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+
+    const surface = screen.getByRole('textbox', { name: /chapter body/i });
+    expect(surface.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+    expect(surface.className).toMatch(/\bborder-line\b/);
+    expect(surface.className).toMatch(/\bbg-bg-elevated\b/);
+
+    const boldButton = screen.getByRole('button', { name: /^bold$/i });
+    expect(boldButton.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+
+    unmount();
+  });
 });

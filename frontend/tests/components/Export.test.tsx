@@ -250,4 +250,17 @@ describe('F20 · <Export> component', () => {
       'My Story\n\nFirst Chapter\n\nOpening line.\n\n---\n\nThe Ocean: A Journey/Part\n\nInto the sea.',
     );
   });
+
+  it('renders with design-system token classes (no raw Tailwind colors)', async () => {
+    render(<Export story={sampleStory} activeChapterId={null} />);
+    const trigger = screen.getByTestId('export-toggle');
+    expect(trigger.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+
+    await userEvent.click(trigger);
+    const menu = screen.getByTestId('export-menu');
+    expect(menu.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+    expect(menu).toHaveClass('bg-bg-elevated');
+    expect(menu).toHaveClass('shadow-pop');
+    expect(menu).toHaveClass('border-line');
+  });
 });

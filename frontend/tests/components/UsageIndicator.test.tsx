@@ -42,6 +42,16 @@ describe('F16 · UsageIndicator component', () => {
   });
 });
 
+describe('F16 · UsageIndicator design tokens', () => {
+  it('renders with the design-system token classes (no raw Tailwind colors)', () => {
+    render(<UsageIndicator usage={{ remainingRequests: 482, remainingTokens: 1_200_000 }} />);
+    const status = screen.getByTestId('usage-indicator');
+    expect(status).toHaveClass('text-ink-3');
+    expect(status).toHaveClass('font-mono');
+    expect(status.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
+});
+
 describe('F16 · formatters', () => {
   it('formatRequests renders sub-1000 as plain integers', () => {
     expect(formatRequests(482)).toBe('482');

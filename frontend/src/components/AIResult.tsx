@@ -10,6 +10,7 @@ import type { JSX } from 'react';
  * same response headers but lives outside this component.
  */
 import { useEffect, useRef, useState } from 'react';
+import { Button } from '@/design/primitives';
 import type { AICompletionStatus } from '@/hooks/useAICompletion';
 import type { ApiError } from '@/lib/api';
 
@@ -84,52 +85,45 @@ export function AIResult({
   return (
     <section
       aria-label="AI result"
-      className="mt-4 rounded border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-800"
+      data-testid="ai-result"
+      className="mt-4 rounded border border-line bg-bg-sunken p-3 font-serif text-[13.5px] leading-[1.55] text-ink-2"
     >
       {status === 'error' ? (
-        <p role="alert" className="text-red-600">
+        <p role="alert" className="font-sans text-[12.5px] text-danger">
           {friendlyError(error)}
         </p>
       ) : (
         <>
           <div className="whitespace-pre-wrap break-words">{text}</div>
           {status === 'streaming' && (
-            <p role="status" className="mt-2 text-xs italic text-neutral-500">
+            <p role="status" className="mt-2 font-mono text-[11px] italic text-ink-3">
               Generating…
             </p>
           )}
           {status === 'done' && (
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={handleInsert}
-                className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors"
-              >
+              <Button variant="ghost" size="md" onClick={handleInsert}>
                 Insert at cursor
-              </button>
-              <button
-                type="button"
+              </Button>
+              <Button
+                variant="ghost"
+                size="md"
                 onClick={() => {
                   void handleCopy();
                 }}
-                className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors"
               >
                 Copy
-              </button>
-              <button
-                type="button"
-                onClick={onDismiss}
-                className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors"
-              >
+              </Button>
+              <Button variant="ghost" size="md" onClick={onDismiss}>
                 Dismiss
-              </button>
+              </Button>
               {copyFeedback === 'copied' && (
-                <span role="status" className="text-xs text-green-700">
+                <span role="status" className="font-mono text-[11px] text-accent">
                   Copied ✓
                 </span>
               )}
               {copyFeedback === 'failed' && (
-                <span role="alert" className="text-xs text-red-600">
+                <span role="alert" className="font-mono text-[11px] text-danger">
                   Copy failed
                 </span>
               )}

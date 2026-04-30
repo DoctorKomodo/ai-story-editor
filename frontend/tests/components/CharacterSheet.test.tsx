@@ -442,4 +442,27 @@ describe('CharacterSheet (F19)', () => {
       expect(document.activeElement).toBe(screen.getByLabelText(/name/i));
     });
   });
+
+  it('renders with design-system primitives (Modal/Field/Button — no raw Tailwind colors)', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/characters/c1')) {
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1' }) }));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    renderSheet({ characterId: 'c1' });
+
+    const card = await screen.findByTestId('character-sheet');
+    expect(card.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+    expect(card).toHaveClass('bg-bg-elevated');
+    expect(card).toHaveClass('shadow-pop');
+
+    const save = await screen.findByTestId('character-sheet-save');
+    expect(save.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+    expect(save).toHaveClass('bg-ink');
+
+    const del = screen.getByTestId('character-sheet-delete');
+    expect(del.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
 });

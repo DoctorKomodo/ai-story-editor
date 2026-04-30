@@ -35,6 +35,14 @@ describe('AutosaveIndicator (F48)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Saving…');
   });
 
+  it('renders with the design-system token classes (no raw Tailwind colors)', () => {
+    render(<AutosaveIndicator status="saving" savedAt={null} retryAt={null} />);
+    const node = screen.getByTestId('autosave-indicator');
+    expect(node).toHaveClass('text-ink-3');
+    expect(node).toHaveClass('font-sans');
+    expect(node.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
+
   it('renders "Saved · Just now" within the first 5s', () => {
     const now = Date.now();
     vi.setSystemTime(now);

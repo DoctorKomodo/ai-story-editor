@@ -91,6 +91,14 @@ jobs:
         working-directory: frontend
         run: npx tsc -b
 
+      # ── Design-token drift check ───────────────────────────────────────────
+      # See MIGRATION.md and frontend/scripts/lint-design.mjs. Catches raw
+      # Tailwind palette colors, hex literals, mid-tier shadows, and
+      # focus-rings that bypass the design-token system.
+      - name: Frontend design-token lint
+        working-directory: frontend
+        run: npm run lint:design
+
       # ── Production build ───────────────────────────────────────────────────
       # The typechecks above are --noEmit; a real build catches a different
       # class of errors — emit-time issues in the backend, and PostCSS /

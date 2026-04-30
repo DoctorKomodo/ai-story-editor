@@ -139,9 +139,9 @@ function ChevronDownIcon(): JSX.Element {
  *   128_000 → "128k"
  *   500 → "500"
  *
- * Note: this differs from `formatContextLength` in `<ModelSelector />`, which
- * uses 1024-based "K". The mockup model bar uses 1000-based "k", so we keep
- * the F38 helper local rather than reuse the F13 one.
+ * Note: this differs from `formatContextLength` used by `<ModelPicker />`,
+ * which uses 1024-based "K". The mockup model bar uses 1000-based "k", so we
+ * keep the F38 helper local rather than reuse the F13 one.
  */
 export function formatCtxLabel(contextLength: number): string {
   if (contextLength <= 0) return '—';

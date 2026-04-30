@@ -1,0 +1,1282 @@
+<!doctype html>
+<html lang="en" data-theme="paper">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Inkwell — Design System Handoff</title>
+
+    <!-- Tokens (real file we just wrote) -->
+    <link rel="stylesheet" href="design/tokens.css" />
+
+    <style>
+      /* =========================================================================
+       * Page chrome
+       * ========================================================================= */
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; }
+      body {
+        background: var(--bg);
+        color: var(--ink);
+        font-family: var(--sans);
+        font-size: 13px;
+        line-height: 1.5;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .page {
+        max-width: 1080px;
+        margin: 0 auto;
+        padding: 56px 40px 96px;
+      }
+
+      .nav {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        display: flex;
+        align-items: center;
+        gap: 18px;
+        padding: 10px 40px;
+        background: color-mix(in srgb, var(--bg) 92%, transparent);
+        backdrop-filter: blur(8px);
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .nav .brand {
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 16px;
+        letter-spacing: 0;
+        text-transform: none;
+        color: var(--ink);
+      }
+      .nav a {
+        color: var(--ink-3);
+        text-decoration: none;
+        transition: color 0.12s;
+      }
+      .nav a:hover { color: var(--ink); }
+      .nav .spacer { flex: 1; }
+      .theme-toggle {
+        display: inline-flex;
+        gap: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .theme-toggle button {
+        background: transparent;
+        border: 0;
+        padding: 4px 10px;
+        font: inherit;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-3);
+        cursor: pointer;
+        transition: background 0.12s, color 0.12s;
+      }
+      .theme-toggle button.active {
+        background: var(--accent-soft);
+        color: var(--ink);
+      }
+      .theme-toggle button + button { border-left: 1px solid var(--line); }
+
+      /* ---------- Hero ---------- */
+      .hero { padding-bottom: 24px; border-bottom: 1px solid var(--line); margin-bottom: 56px; }
+      .hero .kicker {
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+        color: var(--ink-4);
+        margin-bottom: 14px;
+      }
+      .hero h1 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 44px;
+        line-height: 1.1;
+        letter-spacing: -0.015em;
+        color: var(--ink);
+        margin: 0 0 14px;
+        max-width: 720px;
+      }
+      .hero h1 em { font-style: italic; color: var(--ink-2); }
+      .hero p {
+        font-family: var(--serif);
+        font-size: 17px;
+        line-height: 1.55;
+        color: var(--ink-2);
+        margin: 0;
+        max-width: 640px;
+      }
+
+      .files {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-top: 28px;
+      }
+      .file {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        padding: 14px 16px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg-elevated);
+      }
+      .file .path {
+        font-family: var(--mono);
+        font-size: 11.5px;
+        color: var(--ink);
+      }
+      .file .desc {
+        font-family: var(--sans);
+        font-size: 11.5px;
+        color: var(--ink-3);
+      }
+
+      /* ---------- Sections ---------- */
+      section { margin-bottom: 64px; scroll-margin-top: 80px; }
+      .section-head {
+        display: flex;
+        align-items: baseline;
+        gap: 14px;
+        margin-bottom: 24px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--line);
+      }
+      .section-num {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--ink-4);
+        letter-spacing: 0.05em;
+      }
+      .section-head h2 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 26px;
+        letter-spacing: -0.01em;
+        color: var(--ink);
+        margin: 0;
+      }
+      .section-head .lede {
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 14px;
+        color: var(--ink-3);
+        margin-left: auto;
+      }
+
+      h3 {
+        font-family: var(--serif);
+        font-weight: 500;
+        font-size: 16px;
+        color: var(--ink);
+        margin: 28px 0 12px;
+      }
+      h3 .h-meta {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        font-weight: normal;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-4);
+        margin-left: 10px;
+      }
+
+      /* =========================================================================
+       * Tokens — color swatches
+       * ========================================================================= */
+      .swatch-grid {
+        display: grid;
+        grid-template-columns: repeat(5, 1fr);
+        gap: 8px;
+      }
+      .swatch {
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+        background: var(--bg-elevated);
+      }
+      .swatch .chip {
+        height: 56px;
+        border-bottom: 1px solid var(--line);
+      }
+      .swatch .meta { padding: 8px 10px; }
+      .swatch .name {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--ink);
+        display: block;
+      }
+      .swatch .hex {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        color: var(--ink-4);
+        display: block;
+        margin-top: 2px;
+      }
+
+      .type-grid {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 8px 24px;
+        align-items: baseline;
+      }
+      .type-grid dt {
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--ink-4);
+      }
+      .type-grid dd { margin: 0; color: var(--ink); }
+
+      .scale-grid {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 8px;
+      }
+      .scale {
+        padding: 12px 14px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg-elevated);
+      }
+      .scale .label {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-4);
+        margin-bottom: 6px;
+      }
+      .scale .val {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--ink);
+      }
+      .scale .demo { margin-top: 10px; }
+      .scale .demo .box {
+        background: var(--bg);
+        border: 1px solid var(--line-2);
+      }
+
+      /* =========================================================================
+       * Primitives — live preview clones (mirroring primitives.tsx)
+       * ========================================================================= */
+      .primitive {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg-elevated);
+        margin-bottom: 16px;
+      }
+      .primitive-head {
+        display: flex;
+        align-items: baseline;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--line);
+      }
+      .primitive-head .name {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--ink);
+      }
+      .primitive-head .desc {
+        font-family: var(--sans);
+        font-size: 11.5px;
+        color: var(--ink-3);
+      }
+      .primitive-body {
+        padding: 18px 14px;
+        background: var(--bg);
+      }
+      .primitive-row {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 32px;
+        padding: 0 12px;
+        font-family: var(--sans);
+        font-size: 12.5px;
+        font-weight: 500;
+        border-radius: var(--radius);
+        border: 1px solid transparent;
+        cursor: pointer;
+        transition: background 0.12s, color 0.12s, border-color 0.12s;
+      }
+      .btn-primary { background: var(--ink); color: var(--bg); }
+      .btn-primary:hover { background: var(--ink-2); }
+      .btn-ghost {
+        background: transparent;
+        color: var(--ink-2);
+        border-color: var(--line);
+      }
+      .btn-ghost:hover {
+        background: var(--surface-hover);
+        color: var(--ink);
+      }
+      .btn-danger { background: var(--danger); color: var(--bg); }
+      .btn-danger:hover { opacity: 0.9; }
+      .btn-link {
+        background: transparent;
+        color: var(--ink-3);
+        text-decoration: underline;
+        text-underline-offset: 2px;
+        height: auto;
+        padding: 0;
+      }
+      .btn-link:hover { color: var(--ink); }
+      .btn-sm { height: 28px; padding: 0 10px; font-size: 12px; }
+
+      /* IconButton */
+      .icon-btn {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: var(--radius);
+        background: transparent;
+        border: 0;
+        color: var(--ink-3);
+        cursor: pointer;
+        transition: background 0.12s, color 0.12s;
+      }
+      .icon-btn:hover {
+        background: var(--surface-hover);
+        color: var(--ink);
+      }
+      .icon-btn.active {
+        background: var(--accent-soft);
+        color: var(--ink);
+      }
+
+      /* Field + Input */
+      .field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        max-width: 320px;
+      }
+      .field-label {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 8px;
+        font-family: var(--sans);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--ink-2);
+      }
+      .field-hint {
+        font-size: 11px;
+        font-weight: normal;
+        color: var(--ink-4);
+      }
+      .input {
+        width: 100%;
+        padding: 8px 10px;
+        font-family: var(--mono);
+        font-size: 13.5px;
+        background: var(--bg-elevated);
+        border: 1px solid var(--line-2);
+        border-radius: var(--radius);
+        color: var(--ink);
+        transition: border-color 0.12s;
+      }
+      .input::placeholder { color: var(--ink-4); }
+      .input:focus {
+        outline: none;
+        border-color: var(--ink-3);
+      }
+      .input-serif { font-family: var(--serif); }
+      .textarea {
+        width: 100%;
+        padding: 8px 10px;
+        font-family: var(--serif);
+        font-size: 13.5px;
+        line-height: 1.55;
+        background: var(--bg-elevated);
+        border: 1px solid var(--line-2);
+        border-radius: var(--radius);
+        color: var(--ink);
+        resize: vertical;
+        min-height: 84px;
+      }
+      .textarea:focus {
+        outline: none;
+        border-color: var(--ink-3);
+      }
+
+      /* Pill */
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 1px 8px;
+        border-radius: 999px;
+        font-family: var(--sans);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      .pill-accent { background: var(--accent-soft); color: var(--ink); }
+      .pill-ai { background: var(--ai-soft); color: var(--ai); }
+      .pill-neutral { background: var(--bg-sunken); color: var(--ink-3); }
+      .pill-danger { background: var(--danger); color: var(--bg); }
+
+      /* =========================================================================
+       * Modal — clone of <Modal> for in-page demo
+       * ========================================================================= */
+      .modal-stage {
+        position: relative;
+        height: 420px;
+        background: var(--bg-sunken);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .modal-card {
+        position: absolute;
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        width: 480px;
+        max-width: 92%;
+        max-height: 90%;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-elevated);
+        border: 1px solid var(--line-2);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-pop);
+        overflow: hidden;
+      }
+      .modal-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+      .modal-head h4 {
+        margin: 0;
+        font-family: var(--serif);
+        font-size: 18px;
+        font-weight: 500;
+        letter-spacing: -0.005em;
+        color: var(--ink);
+      }
+      .modal-head .sub {
+        margin-top: 2px;
+        font-family: var(--sans);
+        font-size: 12px;
+        color: var(--ink-4);
+      }
+      .modal-body {
+        padding: 12px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .modal-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 18px;
+        border-top: 1px solid var(--line);
+      }
+      .modal-foot .meta {
+        font-family: var(--mono);
+        font-size: 12px;
+        color: var(--ink-4);
+      }
+      .modal-foot .actions { display: flex; gap: 8px; }
+
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        background: var(--bg);
+        border-radius: var(--radius);
+      }
+      .row + .row { margin-top: 4px; }
+      .row.active {
+        background: var(--bg-elevated);
+        border-color: var(--ink);
+      }
+      .row .initial {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 44px;
+        background: var(--accent-soft);
+        border-radius: var(--radius);
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 18px;
+        color: var(--ink-2);
+        flex-shrink: 0;
+      }
+      .row .info { flex: 1; min-width: 0; }
+      .row .title {
+        display: block;
+        font-family: var(--serif);
+        font-size: 15px;
+        color: var(--ink);
+      }
+      .row .meta {
+        display: block;
+        margin-top: 2px;
+        font-family: var(--mono);
+        font-size: 11px;
+        color: var(--ink-4);
+      }
+
+      /* =========================================================================
+       * Burn-down table
+       * ========================================================================= */
+      .burn-summary {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 12px;
+        margin-bottom: 24px;
+      }
+      .burn-card {
+        padding: 18px 18px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--bg-elevated);
+      }
+      .burn-card .num {
+        display: block;
+        font-family: var(--serif);
+        font-size: 36px;
+        font-weight: 500;
+        line-height: 1;
+        color: var(--ink);
+      }
+      .burn-card .lbl {
+        font-family: var(--mono);
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-4);
+        margin-top: 8px;
+        display: block;
+      }
+      .burn-card .desc {
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 13px;
+        color: var(--ink-3);
+        margin-top: 6px;
+      }
+
+      .burn-bar {
+        display: flex;
+        height: 8px;
+        border-radius: var(--radius);
+        overflow: hidden;
+        border: 1px solid var(--line);
+        margin-bottom: 28px;
+      }
+      .burn-bar .seg-done { background: #6aa84f; }
+      .burn-bar .seg-partial { background: var(--mark); }
+      .burn-bar .seg-todo { background: var(--danger); }
+      .burn-bar .seg-dead { background: var(--ink-4); }
+
+      .burn-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-family: var(--sans);
+        font-size: 12.5px;
+      }
+      .burn-table th {
+        text-align: left;
+        padding: 8px 12px;
+        font-family: var(--mono);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-4);
+        font-weight: normal;
+        border-bottom: 1px solid var(--line);
+      }
+      .burn-table td {
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+        color: var(--ink-2);
+        vertical-align: top;
+      }
+      .burn-table tr:hover td { background: var(--surface-hover); }
+      .burn-table .name {
+        font-family: var(--mono);
+        color: var(--ink);
+      }
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+      .status .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+      .status-done .dot { background: #6aa84f; }
+      .status-partial .dot { background: var(--mark); border: 1px solid color-mix(in srgb, var(--mark) 60%, var(--ink-3)); }
+      .status-todo .dot { background: var(--danger); }
+      .status-dead .dot { background: var(--ink-4); }
+      .status-dead { opacity: 0.55; }
+      .status-dead .name { text-decoration: line-through; text-decoration-color: var(--ink-4); }
+      .notes {
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 12.5px;
+        color: var(--ink-3);
+      }
+      .notes code {
+        font-family: var(--mono);
+        font-size: 11px;
+        font-style: normal;
+        color: var(--ink-2);
+        background: var(--bg-sunken);
+        padding: 1px 5px;
+        border-radius: 2px;
+      }
+
+      /* =========================================================================
+       * Substitution table
+       * ========================================================================= */
+      .sub-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12.5px;
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        overflow: hidden;
+      }
+      .sub-table th, .sub-table td {
+        padding: 8px 12px;
+        border-bottom: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: 11.5px;
+        vertical-align: middle;
+      }
+      .sub-table th {
+        background: var(--bg-sunken);
+        text-align: left;
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-4);
+        font-weight: normal;
+      }
+      .sub-table tr:last-child td { border-bottom: 0; }
+      .sub-table .b { color: var(--danger); }
+      .sub-table .a { color: var(--ink); }
+      .sub-table .arrow { color: var(--ink-4); width: 24px; text-align: center; }
+
+      /* =========================================================================
+       * Code blocks
+       * ========================================================================= */
+      pre.code {
+        margin: 0;
+        padding: 16px 18px;
+        background: var(--bg-sunken);
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        font-family: var(--mono);
+        font-size: 12px;
+        line-height: 1.55;
+        color: var(--ink-2);
+        overflow-x: auto;
+        white-space: pre;
+      }
+      pre.code .k { color: var(--ai); }     /* keyword */
+      pre.code .s { color: #6aa84f; }       /* string */
+      pre.code .c { color: var(--ink-4); font-style: italic; }
+      pre.code .t { color: var(--ink); font-weight: 500; }   /* tag/component */
+      pre.code .a { color: var(--danger); } /* attribute name */
+
+      .compare {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+      }
+      .compare .label {
+        font-family: var(--mono);
+        font-size: 10.5px;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--ink-4);
+        margin-bottom: 6px;
+      }
+
+      /* Footer marginalia */
+      .marginalia {
+        margin-top: 64px;
+        padding-top: 24px;
+        border-top: 1px solid var(--line);
+        font-family: var(--serif);
+        font-style: italic;
+        font-size: 14px;
+        color: var(--ink-3);
+        line-height: 1.6;
+      }
+
+      @media (max-width: 800px) {
+        .swatch-grid { grid-template-columns: repeat(3, 1fr); }
+        .scale-grid { grid-template-columns: repeat(2, 1fr); }
+        .files { grid-template-columns: 1fr; }
+        .burn-summary { grid-template-columns: 1fr; }
+        .compare { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav">
+      <span class="brand">Inkwell</span>
+      <a href="#tokens">Tokens</a>
+      <a href="#primitives">Primitives</a>
+      <a href="#migration">Migration</a>
+      <a href="#porting">Porting guide</a>
+      <span class="spacer"></span>
+      <span style="color: var(--ink-4)">theme</span>
+      <div class="theme-toggle" role="group" aria-label="Theme">
+        <button data-theme-set="paper" class="active">Paper</button>
+        <button data-theme-set="sepia">Sepia</button>
+        <button data-theme-set="dark">Dark</button>
+      </div>
+    </nav>
+
+    <div class="page">
+      <header class="hero">
+        <div class="kicker">Design system handoff · v1 · 2026-04</div>
+        <h1>Stop maintaining a parallel HTML universe — make the codebase <em>be</em> the design system.</h1>
+        <p>
+          The live app is half-migrated: 18 components on tokens, 7 still on raw Tailwind, 4 dead orphans, 18
+          unverified. This package makes the 4 deletions trivial, the next 7 ports mechanical, the 18 unknowns auditable,
+          and every future feature a copy-paste from <span style="font-family: var(--mono); font-size: 13px; color: var(--ink);">@/design/primitives</span> instead of a port from HTML.
+        </p>
+        <div class="files">
+          <div class="file">
+            <span class="path">design/tokens.css <em style="font-style: italic; color: var(--ink-3); font-weight: 400;">(reference only)</em></span>
+            <span class="desc">Standalone copy of every CSS variable, used by the prototype and this handoff. The <strong>live</strong> definitions already exist in <code style="font-family: var(--mono); font-size: 11px; color: var(--ink);">frontend/src/index.css</code> (Tailwind v4 <code style="font-family: var(--mono); font-size: 11px; color: var(--ink);">@theme</code> block) — don't add a duplicate file.</span>
+          </div>
+          <div class="file">
+            <span class="path">design/primitives.tsx</span>
+            <span class="desc">Modal · Button · Field · Input · Textarea · Pill · IconButton · Spinner. Drop-in replacements for the chrome <code style="font-family: var(--mono); font-size: 11px; color: var(--ink);">StoryPicker</code> hand-rolls inline. <strong>This is the only file Phase 1 actually adds to the repo.</strong></span>
+          </div>
+          <div class="file">
+            <span class="path">MIGRATION.md</span>
+            <span class="desc">All 47 components classified, with a worked example, a substitution cheatsheet, and a PR checklist.</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- ========================================================== -->
+      <!-- TOKENS                                                     -->
+      <!-- ========================================================== -->
+      <section id="tokens">
+        <div class="section-head">
+          <span class="section-num">01</span>
+          <h2>Tokens</h2>
+          <span class="lede">Toggle the theme above — every swatch, button, and modal updates live.</span>
+        </div>
+
+        <h3>Surfaces <span class="h-meta">backgrounds and hover states</span></h3>
+        <div class="swatch-grid">
+          <div class="swatch"><div class="chip" style="background: var(--bg)"></div><div class="meta"><span class="name">--bg</span><span class="hex" id="hex-bg">#faf8f3</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--bg-elevated)"></div><div class="meta"><span class="name">--bg-elevated</span><span class="hex" id="hex-bg-elevated">#ffffff</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--bg-sunken)"></div><div class="meta"><span class="name">--bg-sunken</span><span class="hex" id="hex-bg-sunken">#f3efe6</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--surface-hover)"></div><div class="meta"><span class="name">--surface-hover</span><span class="hex" id="hex-surface-hover">#f0ebe0</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--accent-soft)"></div><div class="meta"><span class="name">--accent-soft</span><span class="hex" id="hex-accent-soft">#efeadd</span></div></div>
+        </div>
+
+        <h3>Ink <span class="h-meta">text, with built-in contrast hierarchy</span></h3>
+        <div class="swatch-grid">
+          <div class="swatch"><div class="chip" style="background: var(--ink)"></div><div class="meta"><span class="name">--ink</span><span class="hex">primary</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--ink-2)"></div><div class="meta"><span class="name">--ink-2</span><span class="hex">secondary</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--ink-3)"></div><div class="meta"><span class="name">--ink-3</span><span class="hex">tertiary</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--ink-4)"></div><div class="meta"><span class="name">--ink-4</span><span class="hex">metadata</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--ink-5)"></div><div class="meta"><span class="name">--ink-5</span><span class="hex">disabled</span></div></div>
+        </div>
+
+        <h3>Lines & semantic <span class="h-meta">borders, danger, AI</span></h3>
+        <div class="swatch-grid">
+          <div class="swatch"><div class="chip" style="background: var(--line)"></div><div class="meta"><span class="name">--line</span><span class="hex">default border</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--line-2)"></div><div class="meta"><span class="name">--line-2</span><span class="hex">elevated border</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--danger)"></div><div class="meta"><span class="name">--danger</span><span class="hex">errors, destructive</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--ai)"></div><div class="meta"><span class="name">--ai</span><span class="hex">AI surfaces</span></div></div>
+          <div class="swatch"><div class="chip" style="background: var(--mark)"></div><div class="meta"><span class="name">--mark</span><span class="hex">in-text highlight</span></div></div>
+        </div>
+
+        <h3>Type <span class="h-meta">three families, density-aware sizes</span></h3>
+        <dl class="type-grid">
+          <dt>--serif</dt>
+          <dd style="font-family: var(--serif); font-size: 18px;">A story is a letter the writer writes to themself.</dd>
+          <dt>--sans</dt>
+          <dd style="font-family: var(--sans); font-size: 14px;">Chrome, labels, button text, settings.</dd>
+          <dt>--mono</dt>
+          <dd style="font-family: var(--mono); font-size: 13px;">12,847 / 80,000 · ch.04 · saved 2m ago</dd>
+        </dl>
+
+        <h3>Radius & shadow</h3>
+        <div class="scale-grid">
+          <div class="scale">
+            <div class="label">--radius</div>
+            <div class="val">3px</div>
+            <div class="demo"><div class="box" style="height: 32px; border-radius: var(--radius);"></div></div>
+          </div>
+          <div class="scale">
+            <div class="label">--radius-lg</div>
+            <div class="val">6px</div>
+            <div class="demo"><div class="box" style="height: 32px; border-radius: var(--radius-lg);"></div></div>
+          </div>
+          <div class="scale">
+            <div class="label">--shadow-card</div>
+            <div class="val">subtle</div>
+            <div class="demo"><div class="box" style="height: 32px; box-shadow: var(--shadow-card); border: 0;"></div></div>
+          </div>
+          <div class="scale">
+            <div class="label">--shadow-pop</div>
+            <div class="val">elevated</div>
+            <div class="demo"><div class="box" style="height: 32px; box-shadow: var(--shadow-pop); border: 0;"></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================== -->
+      <!-- PRIMITIVES                                                 -->
+      <!-- ========================================================== -->
+      <section id="primitives">
+        <div class="section-head">
+          <span class="section-num">02</span>
+          <h2>Primitives</h2>
+          <span class="lede">Eight components; replaces ~600 lines of hand-rolled chrome.</span>
+        </div>
+
+        <div class="primitive">
+          <div class="primitive-head">
+            <span class="name">&lt;Button&gt;</span>
+            <span class="desc">primary · ghost · danger · link · &nbsp; sizes: sm · md</span>
+          </div>
+          <div class="primitive-body">
+            <div class="primitive-row">
+              <button class="btn btn-primary">Save</button>
+              <button class="btn btn-ghost">Cancel</button>
+              <button class="btn btn-danger">Delete</button>
+              <button class="btn btn-link">Forgot password?</button>
+              <span style="margin-left: 16px; color: var(--ink-4); font-family: var(--mono); font-size: 11px;">sm</span>
+              <button class="btn btn-primary btn-sm">Save</button>
+              <button class="btn btn-ghost btn-sm">Cancel</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="primitive">
+          <div class="primitive-head">
+            <span class="name">&lt;IconButton&gt;</span>
+            <span class="desc">28×28 hover surface for SVG glyphs</span>
+          </div>
+          <div class="primitive-body">
+            <div class="primitive-row">
+              <button class="icon-btn" aria-label="Bold"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4h7a4 4 0 0 1 0 8H6z"/><path d="M6 12h8a4 4 0 0 1 0 8H6z"/></svg></button>
+              <button class="icon-btn" aria-label="Italic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="4" x2="10" y2="4"/><line x1="14" y1="20" x2="5" y2="20"/><line x1="15" y1="4" x2="9" y2="20"/></svg></button>
+              <button class="icon-btn active" aria-label="Underline"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3v7a6 6 0 0 0 12 0V3"/><line x1="4" y1="21" x2="20" y2="21"/></svg></button>
+              <span style="margin-left: 8px; color: var(--ink-4); font-family: var(--mono); font-size: 11px;">↑ active state</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="primitive">
+          <div class="primitive-head">
+            <span class="name">&lt;Field&gt; + &lt;Input&gt; + &lt;Textarea&gt;</span>
+            <span class="desc">label + hint + control + error · mono / serif / sans</span>
+          </div>
+          <div class="primitive-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+            <div class="field">
+              <label class="field-label" for="ex-name">
+                <span>Name</span>
+                <span class="field-hint">Required</span>
+              </label>
+              <input id="ex-name" class="input input-serif" placeholder="Eira" value="Eira" />
+            </div>
+            <div class="field">
+              <label class="field-label" for="ex-pw">
+                <span>Password</span>
+              </label>
+              <input id="ex-pw" class="input" type="password" value="hunter2" />
+            </div>
+            <div class="field" style="grid-column: 1 / -1; max-width: 100%;">
+              <label class="field-label" for="ex-syn">
+                <span>Synopsis</span>
+                <span class="field-hint">Optional</span>
+              </label>
+              <textarea id="ex-syn" class="textarea" rows="3" placeholder="A cartographer who maps the unmade.">A cartographer who maps the unmade — a kingdom that exists only in places no one is looking.</textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="primitive">
+          <div class="primitive-head">
+            <span class="name">&lt;Pill&gt;</span>
+            <span class="desc">tone: accent · ai · neutral · danger</span>
+          </div>
+          <div class="primitive-body">
+            <div class="primitive-row">
+              <span class="pill pill-accent">open</span>
+              <span class="pill pill-ai">AI · venice</span>
+              <span class="pill pill-neutral">draft</span>
+              <span class="pill pill-danger">unsaved</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="primitive">
+          <div class="primitive-head">
+            <span class="name">&lt;Modal&gt;</span>
+            <span class="desc">backdrop · centered card · header / body / footer · sizes sm / md / lg / xl</span>
+          </div>
+          <div class="primitive-body" style="padding: 0;">
+            <div class="modal-stage">
+              <div class="modal-card">
+                <div class="modal-head">
+                  <div>
+                    <h4>Your Stories</h4>
+                    <div class="sub">Switch projects or start a new one</div>
+                  </div>
+                  <button class="icon-btn" aria-label="Close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg></button>
+                </div>
+                <div class="modal-body">
+                  <div class="row active">
+                    <span class="initial">T</span>
+                    <span class="info">
+                      <span class="title">The Cartographer of Unmade Places</span>
+                      <span class="meta">Literary fantasy · 47,300 / 80,000</span>
+                    </span>
+                    <span class="pill pill-accent">open</span>
+                  </div>
+                  <div class="row">
+                    <span class="initial">M</span>
+                    <span class="info">
+                      <span class="title">Marginalia</span>
+                      <span class="meta">Essay collection · 12,847 / —</span>
+                    </span>
+                  </div>
+                  <div class="row">
+                    <span class="initial">A</span>
+                    <span class="info">
+                      <span class="title">A Letter to Myself in 1998</span>
+                      <span class="meta">Memoir · 3,200 / 40,000</span>
+                    </span>
+                  </div>
+                </div>
+                <div class="modal-foot">
+                  <span class="meta">3 stories in vault</span>
+                  <div class="actions">
+                    <button class="btn btn-ghost btn-sm">Import .docx</button>
+                    <button class="btn btn-primary btn-sm">New story</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================== -->
+      <!-- MIGRATION                                                  -->
+      <!-- ========================================================== -->
+      <section id="migration">
+        <div class="section-head">
+          <span class="section-num">03</span>
+          <h2>Migration burn-down</h2>
+          <span class="lede">47 components, four states. <strong>Phase 0:</strong> delete the four <span style="font-family: var(--mono); font-size: 12px; color: var(--ink-4);">●</span> dead orphans. Then each <span style="font-family: var(--mono); font-size: 12px; color: var(--danger);">●</span> is one PR.</span>
+        </div>
+
+        <div class="burn-summary">
+          <div class="burn-card">
+            <span class="num" style="color: #6aa84f;">18</span>
+            <span class="lbl">Done</span>
+            <div class="desc">Already on tokens. <code style="font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--ink-2);">StoryPicker</code> is the reference impl.</div>
+          </div>
+          <div class="burn-card">
+            <span class="num" style="color: color-mix(in srgb, var(--mark) 50%, var(--ink-2));">18</span>
+            <span class="lbl">Partial</span>
+            <div class="desc">Provisional — grep flagged mixed markers. Spot-check, then resolve to done / unmigrated / dead.</div>
+          </div>
+          <div class="burn-card">
+            <span class="num" style="color: var(--danger);">7</span>
+            <span class="lbl">Unmigrated</span>
+            <div class="desc">Live components on raw <code style="font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--ink-2);">neutral-*</code> / <code style="font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--ink-2);">red-*</code> / <code style="font-family: var(--mono); font-size: 11px; font-style: normal; color: var(--ink-2);">blue-*</code>. Real porting work.</div>
+          </div>
+          <div class="burn-card">
+            <span class="num" style="color: var(--ink-4);">4</span>
+            <span class="lbl">Dead — delete</span>
+            <div class="desc">Zero imports. Migrating these would be wasted effort. Delete in Phase 0.</div>
+          </div>
+        </div>
+
+        <div class="burn-bar" aria-label="Progress: 38% done, 38% partial, 15% unmigrated, 9% dead">
+          <div class="seg-done" style="flex: 18"></div>
+          <div class="seg-partial" style="flex: 18"></div>
+          <div class="seg-todo" style="flex: 7"></div>
+          <div class="seg-dead" style="flex: 4"></div>
+        </div>
+
+        <table class="burn-table">
+          <thead>
+            <tr>
+              <th>Component</th>
+              <th>Status</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody id="burn-rows"></tbody>
+        </table>
+      </section>
+
+      <!-- ========================================================== -->
+      <!-- PORTING                                                    -->
+      <!-- ========================================================== -->
+      <section id="porting">
+        <div class="section-head">
+          <span class="section-num">04</span>
+          <h2>Porting a component</h2>
+          <span class="lede">Worked example: <code style="font-family: var(--mono); font-size: 13px; color: var(--ink);">CharacterSheet.tsx</code> — exercises every primitive (Modal, Field, Input, Textarea, Button × 3 variants, nested confirm dialog).</span>
+        </div>
+
+        <div class="compare">
+          <div>
+            <div class="label" style="color: var(--danger);">● Before — hand-rolled chrome + raw Tailwind</div>
+<pre class="code"><span class="k">&lt;</span><span class="t">div</span> <span class="a">className</span>=<span class="s">"fixed inset-0 bg-black/40</span>
+<span class="s">    flex items-center justify-center z-50"</span>&gt;
+  <span class="k">&lt;</span><span class="t">div</span> <span class="a">role</span>=<span class="s">"dialog"</span> <span class="a">aria-modal</span>=<span class="s">"true"</span>
+       <span class="a">className</span>=<span class="s">"bg-white rounded-md shadow-lg</span>
+<span class="s">         w-full max-w-2xl max-h-[90vh]"</span>&gt;
+    <span class="k">&lt;</span><span class="t">form</span> <span class="a">onSubmit</span>={handleSubmit}&gt;
+      <span class="k">&lt;</span><span class="t">h2</span>&gt;Edit character<span class="k">&lt;/</span><span class="t">h2</span>&gt;
+
+      <span class="k">&lt;</span><span class="t">label</span>&gt;
+        <span class="k">&lt;</span><span class="t">span</span>&gt;Name *<span class="k">&lt;/</span><span class="t">span</span>&gt;
+        <span class="k">&lt;</span><span class="t">input</span> <span class="a">className</span>=<span class="s">"border</span>
+<span class="s">          border-neutral-300 rounded</span>
+<span class="s">          px-3 py-2 focus:ring-2</span>
+<span class="s">          focus:ring-blue-500"</span> /&gt;
+      <span class="k">&lt;/</span><span class="t">label</span>&gt;
+      <span class="c">{/* …6 more identical labels… */}</span>
+
+      <span class="k">&lt;</span><span class="t">button</span> <span class="a">className</span>=<span class="s">"bg-red-600</span>
+<span class="s">          text-white hover:bg-red-700"</span>&gt;
+        Delete
+      <span class="k">&lt;/</span><span class="t">button</span>&gt;
+      <span class="k">&lt;</span><span class="t">button</span> <span class="a">className</span>=<span class="s">"bg-neutral-100</span>
+<span class="s">          text-neutral-800"</span>&gt;Cancel<span class="k">&lt;/</span><span class="t">button</span>&gt;
+      <span class="k">&lt;</span><span class="t">button</span> <span class="a">className</span>=<span class="s">"bg-blue-600</span>
+<span class="s">          text-white hover:bg-blue-700"</span>&gt;Save<span class="k">&lt;/</span><span class="t">button</span>&gt;
+    <span class="k">&lt;/</span><span class="t">form</span>&gt;
+  <span class="k">&lt;/</span><span class="t">div</span>&gt;
+  <span class="c">{/* + nested confirm dialog repeats</span>
+<span class="c">      the entire backdrop + card chrome */}</span>
+<span class="k">&lt;/</span><span class="t">div</span>&gt;</pre>
+          </div>
+          <div>
+            <div class="label" style="color: #6aa84f;">● After — primitives do the chrome</div>
+<pre class="code"><span class="k">&lt;</span><span class="t">Modal</span> <span class="a">open</span>={open} <span class="a">onClose</span>={onClose}
+       <span class="a">labelledBy</span>={headingId} <span class="a">size</span>=<span class="s">"lg"</span>&gt;
+  <span class="k">&lt;</span><span class="t">form</span> <span class="a">onSubmit</span>={handleSubmit}&gt;
+    <span class="k">&lt;</span><span class="t">ModalHeader</span> <span class="a">titleId</span>={headingId}
+                 <span class="a">title</span>=<span class="s">"Edit character"</span>
+                 <span class="a">onClose</span>={onClose} /&gt;
+
+    <span class="k">&lt;</span><span class="t">ModalBody</span>&gt;
+      <span class="k">&lt;</span><span class="t">Field</span> <span class="a">htmlFor</span>={nameId} <span class="a">label</span>=<span class="s">"Name"</span> <span class="a">hint</span>=<span class="s">"Required"</span>&gt;
+        <span class="k">&lt;</span><span class="t">Input</span> <span class="a">id</span>={nameId} <span class="a">value</span>={fields.name}
+               <span class="a">onChange</span>={onName} /&gt;
+      <span class="k">&lt;/</span><span class="t">Field</span>&gt;
+      <span class="c">{/* role / age / appearance /</span>
+<span class="c">          voice / arc / personality */}</span>
+    <span class="k">&lt;/</span><span class="t">ModalBody</span>&gt;
+
+    <span class="k">&lt;</span><span class="t">ModalFooter</span>&gt;
+      <span class="k">&lt;</span><span class="t">Button</span> <span class="a">variant</span>=<span class="s">"danger"</span>
+              <span class="a">onClick</span>={openConfirm}&gt;Delete<span class="k">&lt;/</span><span class="t">Button</span>&gt;
+      <span class="k">&lt;</span><span class="t">div</span> <span class="a">className</span>=<span class="s">"ml-auto flex gap-2"</span>&gt;
+        <span class="k">&lt;</span><span class="t">Button</span> <span class="a">variant</span>=<span class="s">"ghost"</span>
+                <span class="a">onClick</span>={onClose}&gt;Cancel<span class="k">&lt;/</span><span class="t">Button</span>&gt;
+        <span class="k">&lt;</span><span class="t">Button</span> <span class="a">variant</span>=<span class="s">"primary"</span>
+                <span class="a">type</span>=<span class="s">"submit"</span>&gt;Save<span class="k">&lt;/</span><span class="t">Button</span>&gt;
+      <span class="k">&lt;/</span><span class="t">div</span>&gt;
+    <span class="k">&lt;/</span><span class="t">ModalFooter</span>&gt;
+  <span class="k">&lt;/</span><span class="t">form</span>&gt;
+
+  <span class="k">&lt;</span><span class="t">Modal</span> <span class="a">open</span>={confirmOpen} <span class="a">size</span>=<span class="s">"sm"</span>
+         <span class="a">role</span>=<span class="s">"alertdialog"</span>
+         <span class="a">dismissable</span>={<span class="k">false</span>}&gt;
+    <span class="c">{/* confirm body — same primitives */}</span>
+  <span class="k">&lt;/</span><span class="t">Modal</span>&gt;
+<span class="k">&lt;/</span><span class="t">Modal</span>&gt;</pre>
+          </div>
+        </div>
+
+        <p class="marginalia" style="margin-top: 20px; padding-top: 0; border: 0;">
+          What disappears: 4 × <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">bg-white rounded-md shadow-lg</code> backdrop blocks, 7 × hand-rolled <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">label + input</code> recipes, 6 × button color recipes (red / blue / neutral hover pairs), the <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">z-50</code> / <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">z-[60]</code> stacking dance, and 80+ lines of focus-trap / Escape / click-outside boilerplate. <strong>Roughly 150 lines down to 70</strong>; once <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">CharacterSheet</code> ships, <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">StoryModal</code> and <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">AccountPrivacyModal</code> follow the exact same shape.
+        </p>
+
+        <h3 style="margin-top: 36px;">Substitution cheatsheet <span class="h-meta">~90% of swaps you'll hit</span></h3>
+        <table class="sub-table">
+          <thead>
+            <tr><th>Camp B (Tailwind raw)</th><th></th><th>Camp A (token)</th></tr>
+          </thead>
+          <tbody>
+            <tr><td class="b">bg-white</td><td class="arrow">→</td><td class="a">bg-bg-elevated</td></tr>
+            <tr><td class="b">bg-neutral-50</td><td class="arrow">→</td><td class="a">bg-bg-sunken</td></tr>
+            <tr><td class="b">bg-neutral-100 (hover)</td><td class="arrow">→</td><td class="a">hover:bg-surface-hover</td></tr>
+            <tr><td class="b">border-neutral-200</td><td class="arrow">→</td><td class="a">border-line</td></tr>
+            <tr><td class="b">border-neutral-300</td><td class="arrow">→</td><td class="a">border-line-2</td></tr>
+            <tr><td class="b">text-neutral-900</td><td class="arrow">→</td><td class="a">text-ink</td></tr>
+            <tr><td class="b">text-neutral-700/800</td><td class="arrow">→</td><td class="a">text-ink-2</td></tr>
+            <tr><td class="b">text-neutral-500/600</td><td class="arrow">→</td><td class="a">text-ink-3</td></tr>
+            <tr><td class="b">text-neutral-400</td><td class="arrow">→</td><td class="a">text-ink-4</td></tr>
+            <tr><td class="b">text-red-600 / bg-red-600</td><td class="arrow">→</td><td class="a">text-danger / bg-danger (or &lt;Button variant="danger"&gt;)</td></tr>
+            <tr><td class="b">bg-blue-600 text-white (primary)</td><td class="arrow">→</td><td class="a">&lt;Button variant="primary"&gt;</td></tr>
+            <tr><td class="b">focus:ring-blue-400/500</td><td class="arrow">→</td><td class="a">focus:border-ink-3 (no ring)</td></tr>
+            <tr><td class="b">rounded-md / rounded-lg</td><td class="arrow">→</td><td class="a">rounded (3px) / rounded-lg (6px)</td></tr>
+            <tr><td class="b">shadow-sm / shadow-md / shadow-lg</td><td class="arrow">→</td><td class="a">shadow-card / shadow-card / shadow-pop (no mid tier)</td></tr>
+            <tr><td class="b">font-semibold text-lg (heading)</td><td class="arrow">→</td><td class="a">font-serif font-medium text-[18px]</td></tr>
+            <tr><td class="b">text-sm (body prose)</td><td class="arrow">→</td><td class="a">font-serif text-[13.5px] leading-[1.55]</td></tr>
+            <tr><td class="b">text-xs (metadata)</td><td class="arrow">→</td><td class="a">font-mono text-[11px] text-ink-4</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <p class="marginalia">
+        Files in this package — <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">design/tokens.css</code>, <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">design/primitives.tsx</code>, <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">MIGRATION.md</code> — drop straight into <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">frontend/src/design/</code> and the repo root. <strong>Phase 0:</strong> delete the four dead orphans (<code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">AIPanel</code>, <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">ModelSelector</code>, <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">WebSearchToggle</code>, <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">StoryCard</code>). Then 7 PRs port the live <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">●</code> components, starting with <code style="font-family: var(--mono); font-size: 12px; font-style: normal; color: var(--ink-2);">CharacterSheet</code>. When the table is all green, the prototype HTML retires and Storybook takes over.
+      </p>
+    </div>
+
+    <script>
+      /* =========================================================================
+       * Theme toggle
+       * ========================================================================= */
+      const buttons = document.querySelectorAll('[data-theme-set]');
+      buttons.forEach((b) => {
+        b.addEventListener('click', () => {
+          const t = b.getAttribute('data-theme-set');
+          document.documentElement.setAttribute('data-theme', t);
+          buttons.forEach((x) => x.classList.toggle('active', x === b));
+          // refresh hex labels
+          const root = getComputedStyle(document.documentElement);
+          const set = (id, name) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = root.getPropertyValue(name).trim();
+          };
+          set('hex-bg', '--bg');
+          set('hex-bg-elevated', '--bg-elevated');
+          set('hex-bg-sunken', '--bg-sunken');
+          set('hex-surface-hover', '--surface-hover');
+          set('hex-accent-soft', '--accent-soft');
+        });
+      });
+
+      /* =========================================================================
+       * Burn-down table data
+       * ========================================================================= */
+      const rows = [
+        ['AIPanel.tsx', 'dead', 'DELETE. Unmounted at F55. Zero imports.'],
+        ['AIResult.tsx', 'partial', 'Mixed. Spot-check needed.'],
+        ['AccountPrivacyModal.tsx', 'partial', 'Modal chrome on tokens; inner content raw.'],
+        ['AppShell.tsx', 'done', 'Uses tokens.'],
+        ['AuthForm.tsx', 'done', 'Reference impl for forms.'],
+        ['AutosaveIndicator.tsx', 'todo', 'text-neutral-500. 1-line fix.'],
+        ['BalanceDisplay.tsx', 'todo', 'text-neutral-500/600/700.'],
+        ['CastTab.tsx', 'partial', 'Spot-check.'],
+        ['ChapterList.tsx', 'todo', 'border-neutral-*, text-neutral-*, red-600.'],
+        ['CharRefMenu.tsx', 'done', 'var(--bg-elevated), var(--line-2).'],
+        ['CharacterList.tsx', 'partial', 'Spot-check.'],
+        ['CharacterPopover.tsx', 'partial', 'Spot-check.'],
+        ['CharacterPopoverHost.tsx', 'partial', 'Glue layer.'],
+        ['CharacterSheet.tsx', 'todo', 'WORKED EXAMPLE. Imported by EditorPage. neutral-*, red-*, blue-*, shadow-lg.'],
+        ['ChatComposer.tsx', 'done', 'Reference impl for composer surfaces.'],
+        ['ChatMessages.tsx', 'partial', 'Spot-check.'],
+        ['ChatPanel.tsx', 'partial', 'Composes Chat*; verify wrapper.'],
+        ['ContinueWriting.tsx', 'partial', 'Spot-check.'],
+        ['DarkModeToggle.tsx', 'partial', 'Likely small.'],
+        ['Editor.tsx', 'done', 'Composes Paper.'],
+        ['EditorEmptyHints.tsx', 'partial', 'Spot-check.'],
+        ['Export.tsx', 'todo', 'border-neutral-*, bg-white, hover:bg-neutral-100, shadow-md.'],
+        ['FormatBar.tsx', 'done', 'Reference impl for toolbar surfaces.'],
+        ['InlineAIResult.tsx', 'partial', 'Spot-check.'],
+        ['MessageCitations.tsx', 'partial', 'Spot-check.'],
+        ['ModelCard.tsx', 'partial', 'Spot-check.'],
+        ['ModelPicker.tsx', 'done', 'Reference impl for pickers.'],
+        ['ModelSelector.tsx', 'dead', 'DELETE. Replaced by ModelPicker. Zero imports.'],
+        ['OutlineTab.tsx', 'partial', 'Spot-check.'],
+        ['Paper.tsx', 'done', 'Reference impl for the editor surface.'],
+        ['RecoveryCodeHandoff.tsx', 'partial', 'Spot-check.'],
+        ['ResetPasswordForm.tsx', 'partial', 'Likely follows AuthForm.'],
+        ['SelectionBubble.tsx', 'done', 'var(--radius), ink/bg tokens.'],
+        ['Settings.tsx', 'partial', 'Wrapper; verify tab chrome.'],
+        ['SettingsAppearanceTab.tsx', 'partial', 'Spot-check.'],
+        ['SettingsModelsTab.tsx', 'partial', 'Spot-check.'],
+        ['SettingsWritingTab.tsx', 'done', 'text-ink-*, border-line, var(--accent).'],
+        ['Sidebar.tsx', 'done', 'Composes .sidebar-* from styles.css.'],
+        ['StoryCard.tsx', 'dead', 'DELETE. Superseded by StoryPicker (incl. embedded). Zero imports.'],
+        ['StoryModal.tsx', 'todo', 'bg-white, shadow-lg, border-neutral-300, red/blue/neutral.'],
+        ['StoryPicker.tsx', 'done', 'Reference impl — every modal should match this.'],
+        ['StoryPickerEmpty.tsx', 'partial', 'Spot-check.'],
+        ['TopBar.tsx', 'done', '.topbar classes from styles.css.'],
+        ['Transition.tsx', 'done', 'Pure motion utility.'],
+        ['UsageIndicator.tsx', 'todo', 'text-neutral-500. 1-line fix.'],
+        ['UserMenu.tsx', 'partial', 'Spot-check.'],
+        ['WebSearchToggle.tsx', 'dead', 'DELETE. Logic inlined into ChatComposer. Zero imports.'],
+      ];
+
+      const STATUS_LABEL = {
+        done:    'Done',
+        partial: 'Partial',
+        todo:    'Unmigrated',
+        dead:    'Dead — delete',
+      };
+
+      const tbody = document.getElementById('burn-rows');
+      // Order: todo first (the burn-down list), then partial, then done.
+      const ORDER = { dead: 0, todo: 1, partial: 2, done: 3 };
+      rows.sort((a, b) => ORDER[a[1]] - ORDER[b[1]] || a[0].localeCompare(b[0]));
+      for (const [name, status, note] of rows) {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td class="name">${name}</td>
+          <td><span class="status status-${status}"><span class="dot"></span>${STATUS_LABEL[status]}</span></td>
+          <td class="notes">${note}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    </script>
+  </body>
+</html>

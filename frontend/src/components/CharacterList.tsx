@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import { useCallback } from 'react';
+import { Button } from '@/design/primitives';
 import {
   type Character,
   useCharactersQuery,
@@ -75,7 +76,12 @@ export function CharacterList({
 
   if (isLoading) {
     return (
-      <div role="status" aria-live="polite" className="text-sm text-neutral-500">
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="character-list-loading"
+        className="font-sans text-[12.5px] text-ink-3"
+      >
         Loading characters…
       </div>
     );
@@ -84,7 +90,11 @@ export function CharacterList({
   if (isError) {
     return (
       <div className="flex flex-col gap-3">
-        <p role="alert" className="text-sm text-red-600">
+        <p
+          role="alert"
+          data-testid="character-list-error"
+          className="font-sans text-[12.5px] text-danger"
+        >
           Could not load characters
           {error instanceof Error && error.message ? `: ${error.message}` : ''}
         </p>
@@ -95,18 +105,19 @@ export function CharacterList({
   const list = characters ?? [];
 
   return (
-    <div className="flex flex-col gap-3">
-      <button
-        type="button"
+    <div className="flex flex-col gap-3" data-testid="character-list">
+      <Button
+        variant="ghost"
+        size="md"
         onClick={handleAdd}
         disabled={createCharacter.isPending}
-        className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors disabled:opacity-50"
+        data-testid="character-list-add"
       >
         {createCharacter.isPending ? 'Adding…' : 'Add character'}
-      </button>
+      </Button>
 
       {list.length === 0 ? (
-        <p className="text-sm text-neutral-500">No characters yet</p>
+        <p className="font-sans text-[12.5px] text-ink-3">No characters yet</p>
       ) : (
         <ul className="flex flex-col gap-1">
           {list.map((c) => {
@@ -118,13 +129,13 @@ export function CharacterList({
                   onClick={() => {
                     onOpenCharacter(c.id);
                   }}
-                  className="w-full min-w-0 text-left rounded border border-neutral-200 bg-white px-2 py-2 hover:bg-neutral-50"
+                  className="w-full min-w-0 text-left rounded border border-line bg-bg-elevated px-2 py-2 hover:bg-surface-hover transition-colors"
                 >
-                  <span className="block truncate text-sm font-medium text-neutral-900">
+                  <span className="block truncate font-sans text-[13px] font-medium text-ink">
                     {characterDisplayName(c)}
                   </span>
                   {secondary.length > 0 ? (
-                    <span className="block text-xs text-neutral-500">{secondary}</span>
+                    <span className="block font-mono text-[11px] text-ink-3">{secondary}</span>
                   ) : null}
                 </button>
               </li>

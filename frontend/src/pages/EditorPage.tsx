@@ -13,7 +13,7 @@
 //   - useSidebarTabStore                  → active tab
 //   - <CharacterSheet> modal              → page-root, id-driven
 //   - <FormatBar> + <Paper>               → editor slot (F52 — replaces F8)
-//   - <AIPanel> + ModelSelector + …       → chat slot (until F55)
+//   - <ChatPanel> (ChatMessages + ChatComposer + ModelPicker) → chat slot (F55)
 //   - <Export>                            → rendered below Paper (until F52 promote)
 //
 // Modal-mount convention (locked in F51 for the rest of the F-series):
@@ -430,7 +430,8 @@ export function EditorPage(): JSX.Element {
       <div
         role="status"
         aria-live="polite"
-        className="min-h-screen flex items-center justify-center text-neutral-600"
+        data-testid="editor-page-loading"
+        className="min-h-screen flex items-center justify-center font-sans text-[13px] text-ink-3"
       >
         Loading story…
       </div>
@@ -441,7 +442,8 @@ export function EditorPage(): JSX.Element {
     return (
       <div
         role="alert"
-        className="min-h-screen flex items-center justify-center px-6 text-center text-neutral-600"
+        data-testid="editor-page-error"
+        className="min-h-screen flex items-center justify-center px-6 text-center font-sans text-[13px] text-ink-3"
       >
         Could not load story
       </div>

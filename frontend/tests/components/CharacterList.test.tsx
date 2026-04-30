@@ -271,4 +271,23 @@ describe('CharacterList (F18)', () => {
     const alert = await screen.findByRole('alert', {}, { timeout: 3000 });
     expect(alert.textContent ?? '').toMatch(/could not load characters/i);
   });
+
+  it('renders with design-system token classes (no raw Tailwind colors)', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/characters')) {
+        return Promise.resolve(
+          jsonResponse(200, { characters: [char({ id: 'c-1', name: 'Ana' })] }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    renderList({});
+
+    const list = await screen.findByTestId('character-list');
+    expect(list.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+
+    const addButton = screen.getByTestId('character-list-add');
+    expect(addButton.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
 });

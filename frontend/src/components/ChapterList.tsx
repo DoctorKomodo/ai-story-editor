@@ -4,6 +4,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { useCallback, useState } from 'react';
+import { Button } from '@/design/primitives';
 import {
   type Chapter,
   chaptersQueryKey,
@@ -58,18 +59,19 @@ function ChapterRow({ chapter, active, onSelect }: ChapterRowProps): JSX.Element
       ref={setNodeRef}
       style={style}
       className={[
-        'flex items-center gap-2 rounded border px-2 py-2 bg-white',
-        active ? 'border-neutral-800' : 'border-neutral-200',
+        'flex items-center gap-2 rounded border px-2 py-2 bg-bg-elevated transition-colors',
+        active ? 'border-ink' : 'border-line hover:bg-surface-hover',
         isDragging ? 'opacity-60' : '',
       ]
         .filter(Boolean)
         .join(' ')}
       aria-current={active ? 'true' : undefined}
+      data-testid={`chapter-row-${chapter.id}`}
     >
       <button
         type="button"
         aria-label="Reorder"
-        className="cursor-grab touch-none text-neutral-400 hover:text-neutral-700 px-1"
+        className="cursor-grab touch-none text-ink-4 hover:text-ink-2 transition-colors px-1"
         {...attributes}
         {...listeners}
       >
@@ -82,10 +84,12 @@ function ChapterRow({ chapter, active, onSelect }: ChapterRowProps): JSX.Element
         }}
         className="flex-1 min-w-0 text-left"
       >
-        <span className="block truncate text-sm font-medium text-neutral-900">
+        <span className="block truncate font-sans text-[13px] font-medium text-ink">
           {chapterDisplayTitle(chapter)}
         </span>
-        <span className="block text-xs text-neutral-500">{formatWordCount(chapter.wordCount)}</span>
+        <span className="block font-mono text-[11px] text-ink-3">
+          {formatWordCount(chapter.wordCount)}
+        </span>
       </button>
     </li>
   );
@@ -145,7 +149,12 @@ export function ChapterList({
 
   if (isLoading) {
     return (
-      <div role="status" aria-live="polite" className="text-sm text-neutral-500">
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="chapter-list-loading"
+        className="font-sans text-[12.5px] text-ink-3"
+      >
         Loading chapters…
       </div>
     );
@@ -154,7 +163,11 @@ export function ChapterList({
   if (isError) {
     return (
       <div className="flex flex-col gap-3">
-        <p role="alert" className="text-sm text-red-600">
+        <p
+          role="alert"
+          data-testid="chapter-list-error"
+          className="font-sans text-[12.5px] text-danger"
+        >
           Could not load chapters
           {error instanceof Error && error.message ? `: ${error.message}` : ''}
         </p>
@@ -166,18 +179,19 @@ export function ChapterList({
   const ids = list.map((c) => c.id);
 
   return (
-    <div className="flex flex-col gap-3">
-      <button
-        type="button"
+    <div className="flex flex-col gap-3" data-testid="chapter-list">
+      <Button
+        variant="ghost"
+        size="md"
         onClick={handleAdd}
         disabled={createChapter.isPending}
-        className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors disabled:opacity-50"
+        data-testid="chapter-list-add"
       >
         {createChapter.isPending ? 'Adding…' : 'Add chapter'}
-      </button>
+      </Button>
 
       {list.length === 0 ? (
-        <p className="text-sm text-neutral-500">No chapters yet</p>
+        <p className="font-sans text-[12.5px] text-ink-3">No chapters yet</p>
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>

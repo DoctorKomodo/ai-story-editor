@@ -40,11 +40,15 @@ interface ThemeTile {
   ink: string;
 }
 
-// Hex values mirror `index.css`'s `--bg` / `--ink` per theme.
+// Hex values mirror `index.css`'s `--bg` / `--ink` per theme. Static
+// preview data so the swatches show the correct colors regardless of which
+// theme is active — can't use CSS vars without rendering each tile inside
+// a per-theme `data-theme` scope, which would be heavier than this 3-row
+// constant.
 const THEME_TILES: ReadonlyArray<ThemeTile> = [
-  { id: 'paper', label: 'Paper', bg: '#faf8f3', ink: '#1a1a1a' },
-  { id: 'sepia', label: 'Sepia', bg: '#f4ecd8', ink: '#2d230f' },
-  { id: 'dark', label: 'Dark', bg: '#14130f', ink: '#ebe7dc' },
+  { id: 'paper', label: 'Paper', bg: '#faf8f3', ink: '#1a1a1a' }, // lint:design-allow — theme-preview swatch data, not styling
+  { id: 'sepia', label: 'Sepia', bg: '#f4ecd8', ink: '#2d230f' }, // lint:design-allow — theme-preview swatch data, not styling
+  { id: 'dark', label: 'Dark', bg: '#14130f', ink: '#ebe7dc' }, // lint:design-allow — theme-preview swatch data, not styling
 ];
 
 // --- Prose font data --------------------------------------------------------
@@ -350,7 +354,7 @@ export function SettingsAppearanceTab(): JSX.Element {
             value={activeFont}
             disabled={settingsLoading}
             onChange={handleFontChange}
-            className="w-full px-3 py-2 text-[13px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="w-full px-3 py-2 text-[13px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
           >
             {PROSE_FONTS.map((f) => (
               <option key={f.id} value={f.id}>

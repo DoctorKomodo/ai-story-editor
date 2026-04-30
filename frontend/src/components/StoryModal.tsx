@@ -1,5 +1,15 @@
 import type { JSX } from 'react';
-import { type FormEvent, type MouseEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import {
+  Button,
+  Field,
+  Input,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Textarea,
+} from '@/design/primitives';
 import {
   type StoryInput,
   useCreateStoryMutation,
@@ -40,11 +50,6 @@ function mapError(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
-/**
- * Compute the PATCH payload as the diff between `initial` and current field
- * values: we only send fields the user actually changed. Missing from the
- * object ⇒ leave untouched server-side. Explicit `null` ⇒ clear the value.
- */
 function diffForPatch(
   initial: StoryModalInitial,
   current: { title: string; genre: string; synopsis: string; worldNotes: string },
@@ -77,6 +82,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
   const synopsisId = useId();
   const worldNotesId = useId();
   const headingId = useId();
+  const titleErrorId = useId();
 
   const [title, setTitle] = useState(initial?.title ?? '');
   const [genre, setGenre] = useState(initial?.genre ?? '');
@@ -104,7 +110,6 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
   // Focus the title input on open.
   useEffect(() => {
     if (!open) return;
-    // Defer a tick so the element is definitely mounted.
     const id = window.setTimeout(() => {
       titleInputRef.current?.focus();
     }, 0);
@@ -113,30 +118,12 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
     };
   }, [open]);
 
-  // Escape to close.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        onClose();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => {
-      window.removeEventListener('keydown', handler);
-    };
-  }, [open, onClose]);
-
   if (!open) return null;
 
   const trimmedTitle = title.trim();
   const titleInvalid = trimmedTitle.length === 0 || trimmedTitle.length > TITLE_MAX;
   const submitDisabled = titleInvalid || pending;
-
-  const handleBackdropClick = (e: MouseEvent<HTMLDivElement>): void => {
-    if (e.target === e.currentTarget) onClose();
-  };
+  const showTitleError = titleTouched && titleInvalid;
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
@@ -159,7 +146,6 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
           return;
         }
         const diff = diffForPatch(initial, { title, genre, synopsis, worldNotes });
-        // If nothing changed, just close — saves a pointless round trip.
         if (Object.keys(diff).length === 0) {
           onClose();
           return;
@@ -182,120 +168,109 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
       : 'Save changes';
 
   return (
-    <div
-      role="presentation"
-      onMouseDown={handleBackdropClick}
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4"
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={headingId}
-        className="bg-white rounded-md shadow-lg w-full max-w-lg"
-      >
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 p-6">
-          <h2 id={headingId} className="text-xl font-semibold">
-            {heading}
-          </h2>
+    <Modal open={open} onClose={onClose} labelledBy={headingId} size="md" testId="story-modal">
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col h-full min-h-0">
+        <ModalHeader titleId={headingId} title={heading} onClose={onClose} />
 
-          <label htmlFor={titleId} className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">
-              Title<span aria-hidden="true"> *</span>
-            </span>
-            <input
-              id={titleId}
-              ref={titleInputRef}
-              name="title"
-              value={title}
-              maxLength={TITLE_MAX}
-              required
-              aria-required="true"
-              aria-invalid={titleTouched && titleInvalid}
-              aria-describedby={titleTouched && titleInvalid ? `${titleId}-error` : undefined}
-              onChange={(e) => {
-                setTitle(e.target.value);
-                if (formError) setFormError(null);
-              }}
-              onBlur={() => {
-                setTitleTouched(true);
-              }}
-              className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            {titleTouched && titleInvalid ? (
-              <span id={`${titleId}-error`} className="text-sm text-red-600">
-                Title is required.
-              </span>
-            ) : null}
-          </label>
+        <ModalBody>
+          <div className="flex flex-col gap-3">
+            <Field
+              label="Title"
+              htmlFor={titleId}
+              hint="Required"
+              error={showTitleError ? <span id={titleErrorId}>Title is required.</span> : null}
+            >
+              <Input
+                id={titleId}
+                ref={titleInputRef}
+                name="title"
+                value={title}
+                maxLength={TITLE_MAX}
+                required
+                aria-required="true"
+                invalid={showTitleError}
+                aria-describedby={showTitleError ? titleErrorId : undefined}
+                onChange={(e) => {
+                  setTitle(e.target.value);
+                  if (formError) setFormError(null);
+                }}
+                onBlur={() => {
+                  setTitleTouched(true);
+                }}
+              />
+            </Field>
 
-          <label htmlFor={genreId} className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Genre</span>
-            <input
-              id={genreId}
-              name="genre"
-              value={genre}
-              maxLength={GENRE_MAX}
-              onChange={(e) => {
-                setGenre(e.target.value);
-              }}
-              className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </label>
+            <Field label="Genre" htmlFor={genreId}>
+              <Input
+                id={genreId}
+                name="genre"
+                value={genre}
+                maxLength={GENRE_MAX}
+                onChange={(e) => {
+                  setGenre(e.target.value);
+                }}
+              />
+            </Field>
 
-          <label htmlFor={synopsisId} className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">Synopsis</span>
-            <textarea
-              id={synopsisId}
-              name="synopsis"
-              value={synopsis}
-              maxLength={SYNOPSIS_MAX}
-              rows={3}
-              onChange={(e) => {
-                setSynopsis(e.target.value);
-              }}
-              className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
-            />
-          </label>
+            <Field label="Synopsis" htmlFor={synopsisId}>
+              <Textarea
+                id={synopsisId}
+                name="synopsis"
+                value={synopsis}
+                maxLength={SYNOPSIS_MAX}
+                rows={3}
+                onChange={(e) => {
+                  setSynopsis(e.target.value);
+                }}
+              />
+            </Field>
 
-          <label htmlFor={worldNotesId} className="flex flex-col gap-1 text-sm">
-            <span className="font-medium">World notes</span>
-            <textarea
-              id={worldNotesId}
-              name="worldNotes"
-              value={worldNotes}
-              maxLength={WORLD_NOTES_MAX}
-              rows={5}
-              onChange={(e) => {
-                setWorldNotes(e.target.value);
-              }}
-              className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
-            />
-          </label>
+            <Field label="World notes" htmlFor={worldNotesId}>
+              <Textarea
+                id={worldNotesId}
+                name="worldNotes"
+                value={worldNotes}
+                maxLength={WORLD_NOTES_MAX}
+                rows={5}
+                onChange={(e) => {
+                  setWorldNotes(e.target.value);
+                }}
+              />
+            </Field>
+          </div>
 
           {formError ? (
-            <p role="alert" className="text-sm text-red-600">
+            <p
+              role="alert"
+              className="mt-3 font-sans text-[12.5px] text-danger"
+              data-testid="story-modal-form-error"
+            >
               {formError}
             </p>
           ) : null}
+        </ModalBody>
 
-          <div className="flex justify-end gap-2 pt-2">
-            <button
+        <ModalFooter>
+          <div className="flex gap-2 ml-auto">
+            <Button
               type="button"
+              variant="ghost"
               onClick={onClose}
-              className="bg-neutral-100 text-neutral-800 rounded px-3 py-2 font-medium hover:bg-neutral-200 transition-colors"
+              data-testid="story-modal-cancel"
             >
               Cancel
-            </button>
-            <button
+            </Button>
+            <Button
               type="submit"
+              variant="primary"
               disabled={submitDisabled}
-              className="bg-blue-600 text-white rounded px-3 py-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
+              data-testid="story-modal-submit"
             >
               {submitLabel}
-            </button>
+            </Button>
           </div>
-        </form>
-      </div>
-    </div>
+        </ModalFooter>
+      </form>
+    </Modal>
   );
 }

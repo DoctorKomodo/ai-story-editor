@@ -2,13 +2,22 @@ import type { JSX } from 'react';
 import {
   type ChangeEvent,
   type FormEvent,
-  type MouseEvent,
   useCallback,
   useEffect,
   useId,
   useRef,
   useState,
 } from 'react';
+import {
+  Button,
+  Field,
+  Input,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+  Textarea,
+} from '@/design/primitives';
 import {
   type Character,
   type UpdateCharacterPatch,
@@ -22,13 +31,10 @@ import { ApiError } from '@/lib/api';
  * F19 — Character sheet modal. Full "edit all fields" surface for a single
  * character; opened from the sidebar (F18's `<CharacterList>`).
  *
- * Scope boundary:
- * - F37 (character popover) is the alternate entry point from the mockup
- *   and renders a compact subset; this modal stays as the full-fat editor.
- * - F46 (user settings modal) is a separate concern with its own component.
- *
- * Styling is deliberately minimal Tailwind — the mockup-fidelity Cast tab
- * redesign belongs to F27.
+ * Bundle-3 port: chrome and form fields are now composed from
+ * `@/design/primitives` (Modal / ModalHeader / ModalBody / ModalFooter /
+ * Field / Input / Textarea / Button). The nested confirm dialog uses a
+ * second Modal so backdrop / escape / focus management is centralised.
  */
 export interface CharacterSheetProps {
   storyId: string;
@@ -77,14 +83,6 @@ function mapError(err: unknown): string {
   return 'Something went wrong. Please try again.';
 }
 
-/**
- * Diff the current field state against the originally-loaded character and
- * produce a minimal PATCH body:
- * - Unchanged fields are omitted entirely (left untouched server-side).
- * - A cleared optional field becomes explicit `null`.
- * - `name` is always required; it is included whenever it differs from the
- *   original (and the submit is blocked upstream when it's blank).
- */
 function diffPatch(original: Character, current: FieldState): UpdateCharacterPatch {
   const out: UpdateCharacterPatch = {};
 
@@ -137,15 +135,12 @@ export function CharacterSheet({
 
   const nameInputRef = useRef<HTMLInputElement | null>(null);
 
-  // Seed fields from the fetched character. Re-runs whenever the query
-  // returns fresh data (e.g. after a different characterId opens).
   useEffect(() => {
     if (query.data) {
       setFields(toState(query.data));
     }
   }, [query.data]);
 
-  // Reset transient UI state each time a new character is opened.
   useEffect(() => {
     if (!open) {
       setFields(null);
@@ -170,35 +165,6 @@ export function CharacterSheet({
     };
   }, [open, fields]);
 
-  // Escape: close confirm first, otherwise close main.
-  useEffect(() => {
-    if (!open) return;
-    const handler = (e: KeyboardEvent): void => {
-      if (e.key !== 'Escape') return;
-      e.stopPropagation();
-      if (confirmOpen) {
-        setConfirmOpen(false);
-        setDeleteError(null);
-        return;
-      }
-      onClose();
-    };
-    window.addEventListener('keydown', handler);
-    return () => {
-      window.removeEventListener('keydown', handler);
-    };
-  }, [open, confirmOpen, onClose]);
-
-  const handleBackdropClick = useCallback(
-    (e: MouseEvent<HTMLDivElement>): void => {
-      // Click-outside on main backdrop is a no-op while the confirm dialog
-      // is up — confirm must be explicit.
-      if (confirmOpen) return;
-      if (e.target === e.currentTarget) onClose();
-    },
-    [confirmOpen, onClose],
-  );
-
   const handleFieldChange = useCallback(
     (key: FieldKey) =>
       (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
@@ -215,7 +181,6 @@ export function CharacterSheet({
     if (fields.name.trim().length === 0) return;
     setFormError(null);
     const patch = diffPatch(query.data, fields);
-    // No changes → just close; saves a round trip.
     if (Object.keys(patch).length === 0) {
       onClose();
       return;
@@ -248,30 +213,35 @@ export function CharacterSheet({
     query.isLoading || fields === null || nameTrimmed.length === 0 || savePending;
 
   return (
-    <div
-      role="presentation"
-      onMouseDown={handleBackdropClick}
-      className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 px-4"
+    <Modal
+      open={open}
+      onClose={onClose}
+      labelledBy={headingId}
+      size="lg"
+      dismissable={!confirmOpen}
+      testId="character-sheet"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={headingId}
-        className="bg-white rounded-md shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto"
-      >
-        <form onSubmit={handleSubmit} noValidate className="flex flex-col gap-4 p-6">
-          <h2 id={headingId} className="text-xl font-semibold">
-            Edit character
-          </h2>
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col h-full min-h-0">
+        <ModalHeader titleId={headingId} title="Edit character" onClose={onClose} />
 
+        <ModalBody>
           {query.isLoading ? (
-            <p role="status" aria-live="polite" className="text-sm text-neutral-500">
+            <p
+              role="status"
+              aria-live="polite"
+              className="font-sans text-[12.5px] text-ink-3"
+              data-testid="character-sheet-loading"
+            >
               Loading character…
             </p>
           ) : null}
 
           {query.isError ? (
-            <p role="alert" className="text-sm text-red-600">
+            <p
+              role="alert"
+              className="font-sans text-[12.5px] text-danger"
+              data-testid="character-sheet-load-error"
+            >
               Could not load character
               {query.error instanceof Error && query.error.message
                 ? `: ${query.error.message}`
@@ -280,197 +250,183 @@ export function CharacterSheet({
           ) : null}
 
           {fields !== null ? (
-            <>
-              <label htmlFor={nameId} className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">
-                  Name<span aria-hidden="true"> *</span>
-                </span>
-                <input
+            <div className="flex flex-col gap-3">
+              <Field label="Name" htmlFor={nameId} hint="Required">
+                <Input
                   id={nameId}
                   ref={nameInputRef}
                   name="name"
-                  type="text"
                   value={fields.name}
                   maxLength={NAME_MAX}
                   required
                   aria-required="true"
                   onChange={handleFieldChange('name')}
-                  className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </label>
+              </Field>
 
-              <label htmlFor={roleId} className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">Role</span>
-                <input
+              <Field label="Role" htmlFor={roleId}>
+                <Input
                   id={roleId}
                   name="role"
-                  type="text"
                   value={fields.role}
                   maxLength={ROLE_MAX}
                   onChange={handleFieldChange('role')}
-                  className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </label>
+              </Field>
 
-              <label htmlFor={ageId} className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">Age</span>
-                <input
+              <Field label="Age" htmlFor={ageId}>
+                <Input
                   id={ageId}
                   name="age"
-                  type="text"
                   value={fields.age}
                   maxLength={AGE_MAX}
                   onChange={handleFieldChange('age')}
-                  className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-              </label>
+              </Field>
 
-              <label htmlFor={appearanceId} className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">Appearance</span>
-                <textarea
+              <Field label="Appearance" htmlFor={appearanceId}>
+                <Textarea
                   id={appearanceId}
                   name="appearance"
                   value={fields.appearance}
                   maxLength={LONG_MAX}
                   rows={3}
                   onChange={handleFieldChange('appearance')}
-                  className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
                 />
-              </label>
+              </Field>
 
-              <label htmlFor={voiceId} className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">Voice</span>
-                <textarea
+              <Field label="Voice" htmlFor={voiceId}>
+                <Textarea
                   id={voiceId}
                   name="voice"
                   value={fields.voice}
                   maxLength={LONG_MAX}
                   rows={3}
                   onChange={handleFieldChange('voice')}
-                  className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
                 />
-              </label>
+              </Field>
 
-              <label htmlFor={arcId} className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">Arc</span>
-                <textarea
+              <Field label="Arc" htmlFor={arcId}>
+                <Textarea
                   id={arcId}
                   name="arc"
                   value={fields.arc}
                   maxLength={LONG_MAX}
                   rows={3}
                   onChange={handleFieldChange('arc')}
-                  className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
                 />
-              </label>
+              </Field>
 
-              <label htmlFor={personalityId} className="flex flex-col gap-1 text-sm">
-                <span className="font-medium">Personality</span>
-                <textarea
+              <Field label="Personality" htmlFor={personalityId}>
+                <Textarea
                   id={personalityId}
                   name="personality"
                   value={fields.personality}
                   maxLength={LONG_MAX}
                   rows={3}
                   onChange={handleFieldChange('personality')}
-                  className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-y"
                 />
-              </label>
-            </>
+              </Field>
+            </div>
           ) : null}
 
           {formError ? (
-            <p role="alert" className="text-sm text-red-600">
+            <p
+              role="alert"
+              className="mt-3 font-sans text-[12.5px] text-danger"
+              data-testid="character-sheet-form-error"
+            >
               {formError}
             </p>
           ) : null}
+        </ModalBody>
 
-          <div className="flex items-center justify-between gap-2 pt-2">
-            <button
-              type="button"
-              onClick={() => {
-                setConfirmOpen(true);
-                setDeleteError(null);
-              }}
-              disabled={query.isLoading || savePending || deletePending}
-              className="bg-red-600 text-white rounded px-3 py-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-700 transition-colors"
-            >
-              Delete
-            </button>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={onClose}
-                className="bg-neutral-100 text-neutral-800 rounded px-3 py-2 font-medium hover:bg-neutral-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={saveDisabled}
-                className="bg-blue-600 text-white rounded px-3 py-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 transition-colors"
-              >
-                {savePending ? 'Saving…' : 'Save'}
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-
-      {confirmOpen ? (
-        <div
-          role="presentation"
-          onMouseDown={(e) => {
-            // Click-outside the confirm is a no-op (must be explicit).
-            e.stopPropagation();
-          }}
-          className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] px-4"
-        >
-          <div
-            role="alertdialog"
-            aria-modal="true"
-            aria-labelledby={`${headingId}-confirm`}
-            className="bg-white rounded-md shadow-lg w-full max-w-sm"
+        <ModalFooter>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => {
+              setConfirmOpen(true);
+              setDeleteError(null);
+            }}
+            disabled={query.isLoading || savePending || deletePending}
+            data-testid="character-sheet-delete"
           >
-            <div className="flex flex-col gap-4 p-6">
-              <h3 id={`${headingId}-confirm`} className="text-lg font-semibold">
-                Delete this character?
-              </h3>
-              <p className="text-sm text-neutral-700">
-                Delete this character? This cannot be undone.
-              </p>
-              {deleteError ? (
-                <p role="alert" className="text-sm text-red-600">
-                  {deleteError}
-                </p>
-              ) : null}
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setConfirmOpen(false);
-                    setDeleteError(null);
-                  }}
-                  disabled={deletePending}
-                  className="bg-neutral-100 text-neutral-800 rounded px-3 py-2 font-medium hover:bg-neutral-200 transition-colors disabled:opacity-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    void handleConfirmDelete();
-                  }}
-                  disabled={deletePending}
-                  className="bg-red-600 text-white rounded px-3 py-2 font-medium disabled:opacity-50 disabled:cursor-not-allowed hover:bg-red-700 transition-colors"
-                >
-                  {deletePending ? 'Deleting…' : 'Confirm'}
-                </button>
-              </div>
-            </div>
+            Delete
+          </Button>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={onClose}
+              data-testid="character-sheet-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={saveDisabled}
+              data-testid="character-sheet-save"
+            >
+              {savePending ? 'Saving…' : 'Save'}
+            </Button>
           </div>
-        </div>
-      ) : null}
-    </div>
+        </ModalFooter>
+      </form>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => {
+          setConfirmOpen(false);
+          setDeleteError(null);
+        }}
+        labelledBy={`${headingId}-confirm`}
+        size="sm"
+        role="alertdialog"
+        testId="character-sheet-confirm"
+      >
+        <ModalHeader titleId={`${headingId}-confirm`} title="Delete this character?" />
+        <ModalBody>
+          <p className="font-serif text-[13.5px] leading-[1.55] text-ink-2">
+            Delete this character? This cannot be undone.
+          </p>
+          {deleteError ? (
+            <p
+              role="alert"
+              className="mt-3 font-sans text-[12.5px] text-danger"
+              data-testid="character-sheet-delete-error"
+            >
+              {deleteError}
+            </p>
+          ) : null}
+        </ModalBody>
+        <ModalFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={() => {
+              setConfirmOpen(false);
+              setDeleteError(null);
+            }}
+            disabled={deletePending}
+            data-testid="character-sheet-confirm-cancel"
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant="danger"
+            onClick={() => {
+              void handleConfirmDelete();
+            }}
+            disabled={deletePending}
+            data-testid="character-sheet-confirm-delete"
+          >
+            {deletePending ? 'Deleting…' : 'Confirm'}
+          </Button>
+        </ModalFooter>
+      </Modal>
+    </Modal>
   );
 }

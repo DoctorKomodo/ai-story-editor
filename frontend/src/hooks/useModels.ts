@@ -2,8 +2,8 @@
  * [F13] TanStack Query hook for Venice model metadata.
  *
  * Shape mirrors the backend's `ModelInfo`
- * (`backend/src/services/venice.models.service.ts`). The list is used by
- * `<ModelSelector />` to drive the AI panel's model dropdown.
+ * (`backend/src/services/venice.models.service.ts`). The list drives
+ * `<ModelPicker />` inside `<ChatComposer />`.
  *
  * Follow-ups:
  * - [F15] consumes the selected model id when calling `/api/ai/complete`.
@@ -33,7 +33,7 @@ export const modelsQueryKey = ['ai-models'] as const;
  * not re-hit the network unnecessarily.
  *
  * The query is enabled unconditionally — a 409 `venice_key_required` surfaces
- * as an `ApiError` which `<ModelSelector />` renders with its own copy.
+ * as an `ApiError` which `<ModelPicker />` renders with its own copy.
  */
 export function useModelsQuery(): UseQueryResult<Model[], Error> {
   return useQuery<Model[], Error>({
