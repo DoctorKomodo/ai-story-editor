@@ -51,7 +51,12 @@ export function UsageIndicator({ usage }: UsageIndicatorProps): JSX.Element | nu
   const label = `${parts.join(' / ')} remaining`;
 
   return (
-    <div role="status" aria-label="Venice usage" className="text-xs text-neutral-500">
+    <div
+      role="status"
+      aria-label="Venice usage"
+      data-testid="usage-indicator"
+      className="font-mono text-[11px] text-ink-3"
+    >
       {label}
     </div>
   );

@@ -55,6 +55,30 @@ describe('F17 · BalanceDisplay component', () => {
   });
 });
 
+describe('F17 · BalanceDisplay design tokens', () => {
+  it('loading state uses ink token classes', () => {
+    render(<BalanceDisplay balance={null} isLoading />);
+    const node = screen.getByTestId('balance-loading');
+    expect(node).toHaveClass('text-ink-3');
+    expect(node.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
+
+  it('error state uses ink token classes', () => {
+    render(<BalanceDisplay balance={null} isError errorCode="venice_key_required" />);
+    const node = screen.getByTestId('balance-error');
+    expect(node).toHaveClass('text-ink-3');
+    expect(node.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
+
+  it('populated state uses ink token classes', () => {
+    render(<BalanceDisplay balance={{ credits: 2415.3, diem: 482193 }} />);
+    const node = screen.getByTestId('balance-display');
+    expect(node).toHaveClass('text-ink-2');
+    expect(node).toHaveClass('font-mono');
+    expect(node.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
+});
+
 describe('F17 · formatters', () => {
   it('formatUsd formats as USD currency with 2 decimals', () => {
     expect(formatUsd(2415.3)).toBe('$2,415.30');

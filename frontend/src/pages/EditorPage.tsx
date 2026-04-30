@@ -430,7 +430,8 @@ export function EditorPage(): JSX.Element {
       <div
         role="status"
         aria-live="polite"
-        className="min-h-screen flex items-center justify-center text-neutral-600"
+        data-testid="editor-page-loading"
+        className="min-h-screen flex items-center justify-center font-sans text-[13px] text-ink-3"
       >
         Loading story…
       </div>
@@ -441,7 +442,8 @@ export function EditorPage(): JSX.Element {
     return (
       <div
         role="alert"
-        className="min-h-screen flex items-center justify-center px-6 text-center text-neutral-600"
+        data-testid="editor-page-error"
+        className="min-h-screen flex items-center justify-center px-6 text-center font-sans text-[13px] text-ink-3"
       >
         Could not load story
       </div>

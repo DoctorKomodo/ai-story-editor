@@ -85,7 +85,11 @@ export function AutosaveIndicator({
   }
 
   return (
-    <span role="status" className="text-sm text-neutral-500">
+    <span
+      role="status"
+      data-testid="autosave-indicator"
+      className="font-sans text-[12.5px] text-ink-3"
+    >
       {text}
     </span>
   );
