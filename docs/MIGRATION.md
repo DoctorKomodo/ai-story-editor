@@ -154,8 +154,17 @@ Verify the import path resolves (`@/design/primitives` if the project uses `@/*`
 Here is `CharacterSheet.tsx` before and after. It's the highest-leverage port in the table because:
 
 - It's actually rendered (`EditorPage` imports it).
-- It exercises **every** primitive: `Modal`, `ModalHeader/Body/Footer`, `Field`, `Input`, `Textarea`, `Button` (primary, secondary, danger), and a nested confirm dialog.
+- It exercises **every** primitive: `Modal`, `ModalHeader/Body/Footer`, `Field`, `Input`, `Textarea`, `Button` (primary, ghost, danger), and a nested confirm dialog.
 - Once it's done, `StoryModal` and `AccountPrivacyModal` follow the exact same shape.
+
+**Quick API cheatsheet** (read primitives.tsx for the full surface; these are the props the example below uses):
+
+| Primitive | Prop | Notes |
+|---|---|---|
+| `<Modal>` | `open`, `onClose`, `labelledBy`, `size`, `dismissable`, `embedded`, `role` | `dismissable={false}` disables ESC + backdrop. **No `dismissOnBackdrop`.** |
+| `<ModalHeader>` | `titleId`, `title`, `subtitle?`, `onClose?` | **`titleId`, not `id`.** Renders `<h2 id={titleId}>` so `<Modal labelledBy={titleId}>` matches. |
+| `<Button>` | `variant`, `size`, `loading` | Variants: `primary` \| `ghost` \| `danger` \| `link`. **No `secondary` — use `ghost`.** |
+| `<Field>` | `label`, `htmlFor?`, `hint?`, `error?` | **`htmlFor`, not `id`.** No `required` prop — pass `hint="Required"` and `required` on the inner `<Input>`. |
 
 The full file is ~470 lines; the slice below is a representative cross-section. The full PR diff lives in the proposal folder once you start the port.
 
@@ -258,10 +267,10 @@ return (
     size="lg"
   >
     <form onSubmit={handleSubmit} noValidate>
-      <ModalHeader id={headingId} title="Edit character" onClose={onClose} />
+      <ModalHeader titleId={headingId} title="Edit character" onClose={onClose} />
 
       <ModalBody>
-        <Field id={nameId} label="Name" required>
+        <Field htmlFor={nameId} label="Name" hint="Required">
           <Input
             id={nameId}
             ref={nameInputRef}
@@ -272,11 +281,11 @@ return (
           />
         </Field>
 
-        <Field id={roleId} label="Role">
+        <Field htmlFor={roleId} label="Role">
           <Input id={roleId} value={fields.role} onChange={handleFieldChange('role')} maxLength={ROLE_MAX} />
         </Field>
 
-        <Field id={appearanceId} label="Appearance">
+        <Field htmlFor={appearanceId} label="Appearance">
           <Textarea
             id={appearanceId}
             value={fields.appearance}
@@ -289,7 +298,7 @@ return (
         {/* …voice, arc, personality follow the same Field+Textarea pattern… */}
 
         {formError ? (
-          <p role="alert" className="font-sans text-[12.5px] text-[color:var(--danger)]">
+          <p role="alert" className="font-sans text-[12.5px] text-danger">
             {formError}
           </p>
         ) : null}
@@ -305,7 +314,7 @@ return (
           Delete
         </Button>
         <div className="flex gap-2 ml-auto">
-          <Button type="button" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
           <Button type="submit" variant="primary" disabled={saveDisabled}>
             {savePending ? 'Saving…' : 'Save'}
           </Button>
@@ -319,15 +328,15 @@ return (
       labelledBy={`${headingId}-confirm`}
       role="alertdialog"
       size="sm"
-      dismissOnBackdrop={false}
+      dismissable={false}
     >
-      <ModalHeader id={`${headingId}-confirm`} title="Delete this character?" />
+      <ModalHeader titleId={`${headingId}-confirm`} title="Delete this character?" />
       <ModalBody>
         <p className="font-serif text-[13.5px] leading-[1.55] text-ink-2">
           This cannot be undone.
         </p>
         {deleteError ? (
-          <p role="alert" className="font-sans text-[12.5px] text-[color:var(--danger)]">
+          <p role="alert" className="font-sans text-[12.5px] text-danger">
             {deleteError}
           </p>
         ) : null}
@@ -335,7 +344,7 @@ return (
       <ModalFooter>
         <Button
           type="button"
-          variant="secondary"
+          variant="ghost"
           onClick={() => setConfirmOpen(false)}
           disabled={deletePending}
         >
@@ -359,7 +368,7 @@ return (
 
 - 4 `bg-black/40 fixed inset-0 …` backdrop blocks (now inside `<Modal>`).
 - 7 hand-rolled `<label> + <input className="border border-neutral-300 rounded px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">` recipes (now `<Field>` + `<Input>`/`<Textarea>`).
-- 6 button color recipes (`bg-red-600 hover:bg-red-700`, `bg-blue-600 hover:bg-blue-700`, `bg-neutral-100 hover:bg-neutral-200`) — now `variant="danger" | "primary" | "secondary"`.
+- 6 button color recipes (`bg-red-600 hover:bg-red-700`, `bg-blue-600 hover:bg-blue-700`, `bg-neutral-100 hover:bg-neutral-200`) — now `variant="danger" | "primary" | "ghost"`.
 - The `z-50`/`z-[60]` stacking dance — `<Modal>` manages it.
 - Manual `aria-modal`/`role` wiring — `<Modal>` does this; pass `role="alertdialog"` for confirms.
 

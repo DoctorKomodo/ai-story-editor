@@ -1110,12 +1110,12 @@
 <pre class="code"><span class="k">&lt;</span><span class="t">Modal</span> <span class="a">open</span>={open} <span class="a">onClose</span>={onClose}
        <span class="a">labelledBy</span>={headingId} <span class="a">size</span>=<span class="s">"lg"</span>&gt;
   <span class="k">&lt;</span><span class="t">form</span> <span class="a">onSubmit</span>={handleSubmit}&gt;
-    <span class="k">&lt;</span><span class="t">ModalHeader</span> <span class="a">id</span>={headingId}
+    <span class="k">&lt;</span><span class="t">ModalHeader</span> <span class="a">titleId</span>={headingId}
                  <span class="a">title</span>=<span class="s">"Edit character"</span>
                  <span class="a">onClose</span>={onClose} /&gt;
 
     <span class="k">&lt;</span><span class="t">ModalBody</span>&gt;
-      <span class="k">&lt;</span><span class="t">Field</span> <span class="a">id</span>={nameId} <span class="a">label</span>=<span class="s">"Name"</span> <span class="a">required</span>&gt;
+      <span class="k">&lt;</span><span class="t">Field</span> <span class="a">htmlFor</span>={nameId} <span class="a">label</span>=<span class="s">"Name"</span> <span class="a">hint</span>=<span class="s">"Required"</span>&gt;
         <span class="k">&lt;</span><span class="t">Input</span> <span class="a">id</span>={nameId} <span class="a">value</span>={fields.name}
                <span class="a">onChange</span>={onName} /&gt;
       <span class="k">&lt;/</span><span class="t">Field</span>&gt;
@@ -1127,7 +1127,7 @@
       <span class="k">&lt;</span><span class="t">Button</span> <span class="a">variant</span>=<span class="s">"danger"</span>
               <span class="a">onClick</span>={openConfirm}&gt;Delete<span class="k">&lt;/</span><span class="t">Button</span>&gt;
       <span class="k">&lt;</span><span class="t">div</span> <span class="a">className</span>=<span class="s">"ml-auto flex gap-2"</span>&gt;
-        <span class="k">&lt;</span><span class="t">Button</span> <span class="a">variant</span>=<span class="s">"secondary"</span>
+        <span class="k">&lt;</span><span class="t">Button</span> <span class="a">variant</span>=<span class="s">"ghost"</span>
                 <span class="a">onClick</span>={onClose}&gt;Cancel<span class="k">&lt;/</span><span class="t">Button</span>&gt;
         <span class="k">&lt;</span><span class="t">Button</span> <span class="a">variant</span>=<span class="s">"primary"</span>
                 <span class="a">type</span>=<span class="s">"submit"</span>&gt;Save<span class="k">&lt;/</span><span class="t">Button</span>&gt;
@@ -1137,7 +1137,7 @@
 
   <span class="k">&lt;</span><span class="t">Modal</span> <span class="a">open</span>={confirmOpen} <span class="a">size</span>=<span class="s">"sm"</span>
          <span class="a">role</span>=<span class="s">"alertdialog"</span>
-         <span class="a">dismissOnBackdrop</span>={<span class="k">false</span>}&gt;
+         <span class="a">dismissable</span>={<span class="k">false</span>}&gt;
     <span class="c">{/* confirm body — same primitives */}</span>
   <span class="k">&lt;/</span><span class="t">Modal</span>&gt;
 <span class="k">&lt;/</span><span class="t">Modal</span>&gt;</pre>
