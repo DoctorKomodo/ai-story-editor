@@ -463,25 +463,25 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 
 ## 🧪 T — Testing
 
-- [ ] **[T1]** Auth route integration tests: register, duplicate email, login, wrong password, refresh, logout.
+- [x] **[T1]** Auth route integration tests: register, duplicate email, login, wrong password, refresh, logout.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/`
 
-- [ ] **[T2]** Stories route integration tests: CRUD, ownership enforcement, word count aggregation.
+- [x] **[T2]** Stories route integration tests: CRUD, ownership enforcement, word count aggregation.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/stories.test.ts tests/routes/story-detail.test.ts`
 
-- [ ] **[T3]** Chapters route integration tests: CRUD, reordering, word count on save.
+- [x] **[T3]** Chapters route integration tests: CRUD, reordering, word count on save.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/chapters.test.ts tests/routes/chapters-reorder.test.ts`
 
-- [ ] **[T4]** Characters route integration tests: CRUD, story scoping, cascade delete.
+- [x] **[T4]** Characters route integration tests: CRUD, story scoping, cascade delete.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/characters.test.ts`
 
-- [ ] **[T5]** Prompt builder unit tests: all 5 action types, character context present, worldNotes present, `include_venice_system_prompt` reflects the caller-supplied `includeVeniceSystemPrompt` setting (default `true`) independent of action type, model, and `Story.systemPrompt`, truncation removes from top of chapterContent only, budget respects model context length.
+- [x] **[T5]** Prompt builder unit tests: all 5 action types, character context present, worldNotes present, `include_venice_system_prompt` reflects the caller-supplied `includeVeniceSystemPrompt` setting (default `true`) independent of action type, model, and `Story.systemPrompt`, truncation removes from top of chapterContent only, budget respects model context length.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.service.test.ts tests/services/prompt.actions.test.ts`
 
-- [ ] **[T6]** Venice AI service unit tests (mocked HTTP): correct payload, stream forwarded, reasoning model flag applied correctly, rate limit headers extracted, error codes mapped, no raw Venice errors leaked.
+- [x] **[T6]** Venice AI service unit tests (mocked HTTP): correct payload, stream forwarded, reasoning model flag applied correctly, rate limit headers extracted, error codes mapped, no raw Venice errors leaked.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/`
 
-- [ ] **[T7]** Frontend component tests: Editor, AIPanel, ModelSelector, UsageIndicator, CharacterSheet, WebSearchToggle.
+- [x] **[T7]** Frontend component tests: Editor, AIPanel, ModelSelector, UsageIndicator, CharacterSheet, WebSearchToggle.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/`
 
 - [x] **[T8]** Playwright E2E (tier-2 PR-blocking smoke). Drives the live `make dev` stack through register → create story → BYOK Venice key save → add chapter → type into TipTap → trigger AI Continue → assert streamed mock response in the Continue-Writing region → assert the mock saw a chat-completion call. Venice is mocked in-process via `tests/e2e/fixtures/mock-venice.ts` (in-proc OpenAI-compatible HTTP server speaking SSE on `/v1/chat/completions` + `/v1/models`); the dockerised backend reaches it via `host.docker.internal` thanks to `extra_hosts: host-gateway` in the dev compose override. Per-user BYOK `endpoint` field steers the per-user OpenAI client at the mock without touching production code paths. Tier-3 (`tests/e2e-extended/` + cross-browser / soak runs) is intentionally NOT introduced here — add when first such case appears. Two assertions from the original blurb — "Saved ✓" autosave indicator and UsageIndicator delta — are tracked under [T8.1] (autosave never fires under the live stack inside the spec, suggesting a TanStack Query refetch races the local-draft useEffect in `EditorPage:215`; UsageIndicator only mounts inside `<AIPanel>`, which the Continue-Writing path doesn't surface).
@@ -491,7 +491,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
   - verify: `docker compose up -d && npx playwright test tests/e2e/full-flow.spec.ts --reporter=line`
   - verify: `docker compose up -d && npx playwright test tests/e2e/full-flow.spec.ts --reporter=line`
 
-- [ ] **[T9]** Full suite run — all tests pass before marking complete.
+- [x] **[T9]** Full suite run — all tests pass before marking complete.
   - verify: `cd backend && npm run test:backend -- --run && cd ../frontend && npm run test:frontend -- --run && echo "ALL TESTS PASSED"`
 
 ---
