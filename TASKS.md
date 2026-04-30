@@ -447,7 +447,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
   - plan: [docs/superpowers/plans/F71-storybook-tokens-story.md](docs/superpowers/plans/F71-storybook-tokens-story.md)
   - verify: `cd frontend && npm run build-storybook -- --quiet && npm run lint:design`
 
-- [ ] **[F72]** Add `Build Storybook` step to `.github/workflows/ci.yml`. Single new step: `- name: Build Storybook` running `npm --prefix frontend run build-storybook -- --quiet`. Slot it after the existing **Frontend build** step (around line 113) and before the **Test** section. Catches "story breaks because primitive prop renamed" before review. No further changes — visual regression is owned by [X24].
+- [x] **[F72]** Add `Build Storybook` step to `.github/workflows/ci.yml`. Single new step: `- name: Build Storybook` running `npm --prefix frontend run build-storybook -- --quiet`. Slot it after the existing **Frontend build** step (around line 113) and before the **Test** section. Catches "story breaks because primitive prop renamed" before review. No further changes — visual regression is owned by [X24].
   - verify: `grep -q "build-storybook" .github/workflows/ci.yml`
 
 - [ ] **[F73]** Backfill stories for the twelve components actively ported in Phase 2 (PR #39 commit `93d58d9`) — eleven new `*.stories.tsx` files (EditorPage skipped), single PR. Bundles, per-component story matrix, `Editor` TipTap demo-wrapper special case, [X22] sequencing note in the plan.
