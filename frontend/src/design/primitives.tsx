@@ -67,6 +67,8 @@ export interface ModalProps {
   dismissable?: boolean;
   /** Render only the card (no backdrop). Used by dashboard-embedded pickers. */
   embedded?: boolean;
+  /** ARIA role for the card. "dialog" (default) for forms; "alertdialog" for confirmations. */
+  role?: 'dialog' | 'alertdialog';
   /** Test ID for the card root. Backdrop gets `${testId}-backdrop`. */
   testId?: string;
   children: ReactNode;
@@ -86,6 +88,7 @@ export function Modal({
   size = 'md',
   dismissable = true,
   embedded = false,
+  role = 'dialog',
   testId,
   children,
 }: ModalProps): JSX.Element | null {
@@ -112,8 +115,9 @@ export function Modal({
   };
 
   const card = (
+    // biome-ignore lint/a11y/useAriaPropsSupportedByRole: role is `dialog | alertdialog`; both support aria-modal.
     <div
-      role="dialog"
+      role={role}
       aria-modal={embedded ? undefined : 'true'}
       aria-labelledby={labelledBy}
       data-testid={testId}

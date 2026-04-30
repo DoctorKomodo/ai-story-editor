@@ -254,4 +254,20 @@ describe('StoryModal (F6)', () => {
     renderModal(<StoryModal mode="create" open={false} onClose={onClose} />);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
+
+  it('renders with design-system primitives (Modal/Field/Button — no raw Tailwind colors)', () => {
+    renderModal(<StoryModal mode="create" open onClose={onClose} />);
+
+    const card = screen.getByTestId('story-modal');
+    expect(card.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+    expect(card).toHaveClass('bg-bg-elevated');
+    expect(card).toHaveClass('shadow-pop');
+
+    const submit = screen.getByTestId('story-modal-submit');
+    expect(submit.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+    expect(submit).toHaveClass('bg-ink');
+
+    const cancel = screen.getByTestId('story-modal-cancel');
+    expect(cancel.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
 });

@@ -87,7 +87,7 @@ The 💀 row is kept here for historical context only — the files are gone. Th
 | `CharacterList.tsx` | ✅ | Bundle 2 — primitives Button + token swap (border-line / bg-bg-elevated / text-ink / text-danger error). |
 | `CharacterPopover.tsx` | ✅ | Spot-check clean. |
 | `CharacterPopoverHost.tsx` | ✅ | Spot-check clean. Glue layer; minimal styling. |
-| `CharacterSheet.tsx` | 🔴 | **Worked example below.** Imported by `EditorPage`. `neutral-100/200/300/700/800`, `red-600/700`, `blue-500/600/700`, `shadow-lg`. |
+| `CharacterSheet.tsx` | ✅ | Bundle 3 — **the worked example.** Ported to Modal + ModalHeader/Body/Footer + Field + Input + Textarea + Button (primary/ghost/danger), with a nested `role="alertdialog"` confirm dialog. |
 | `ChatComposer.tsx` | ✅ | Reference impl for composer surfaces. |
 | `ChatMessages.tsx` | ✅ | Spot-check clean. |
 | `ChatPanel.tsx` | ✅ | Spot-check clean. |
@@ -113,7 +113,7 @@ The 💀 row is kept here for historical context only — the files are gone. Th
 | `SettingsWritingTab.tsx` | ✅ | Uses `text-ink-2`, `text-ink-4`, `border-line`, `var(--accent)`. |
 | `Sidebar.tsx` | ✅ | Composes `.sidebar-*` classes from `styles.css`. |
 | `StoryCard.tsx` | 💀 | Deleted in Phase 0. Superseded by `StoryPicker` (embedded mode). |
-| `StoryModal.tsx` | 🔴 | `bg-white`, `shadow-lg`, `border-neutral-300`, `red-600`, `blue-500/600/700`, `neutral-100/200/800`. |
+| `StoryModal.tsx` | ✅ | Bundle 3 — same primitive composition as `CharacterSheet`, single dialog (no nested confirm). |
 | `StoryPicker.tsx` | ✅ | **Reference impl** — every other modal should match this. |
 | `StoryPickerEmpty.tsx` | ✅ | Spot-check clean. |
 | `TopBar.tsx` | ✅ | Uses `.topbar` classes from `styles.css`. |
@@ -128,9 +128,9 @@ The 💀 row is kept here for historical context only — the files are gone. Th
 | `RegisterPage.tsx` | ✅ | Composes `AuthForm`. |
 | `ResetPasswordPage.tsx` | ✅ | Spot-check clean. |
 
-**Burn-down counts (post-Bundle 2):** 🔴 2 · ✅ 41 · 💀 4 (deleted).
+**Burn-down counts (post-Bundle 3):** 🔴 0 · ✅ 43 · 💀 4 (deleted).
 
-Bundles 1 and 2 are complete. Remaining 🔴: `CharacterSheet.tsx` and `StoryModal.tsx` — both are Bundle 3 (modal ports), the highest-leverage swap because they exercise every primitive (`Modal`, `ModalHeader/Body/Footer`, `Field`, `Input`, `Textarea`, `Button` × 3 variants). After Bundle 3 the table is fully green.
+The burn-down is complete — every component renders with design tokens and primitives. Remaining work in HANDOFF.md: Phase 3 (`lint:design` CI guard) is still untracked at `frontend/scripts/lint-design.mjs`; install it and wire it to CI to lock the result in. Optional next: the deferred Playwright snapshot pass over the three themes for the modal ports (`CharacterSheet`, `StoryModal`, `AccountPrivacyModal`).
 
 ---
 
