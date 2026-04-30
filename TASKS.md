@@ -20,7 +20,7 @@
 ## Current focus
 
 - **In flight:** F-series follow-ups (F51–F67 share branch + PR per memory note); T8.1 done on its own branch awaiting merge.
-- **Deferred:** [X19] Express 5 migration (path-to-regexp@8 syntax churn — not mechanical).
+- **Deferred:** none.
 - **Cold sections (archived in `docs/done/`):** S, A, D, E, V, L.
 - **Hot sections (live work, see below):** AU, B, F, I, T, X.
 
@@ -463,25 +463,25 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 
 ## 🧪 T — Testing
 
-- [ ] **[T1]** Auth route integration tests: register, duplicate email, login, wrong password, refresh, logout.
+- [x] **[T1]** Auth route integration tests: register, duplicate email, login, wrong password, refresh, logout.
   - verify: `cd backend && npm run test:backend -- --run tests/auth/`
 
-- [ ] **[T2]** Stories route integration tests: CRUD, ownership enforcement, word count aggregation.
+- [x] **[T2]** Stories route integration tests: CRUD, ownership enforcement, word count aggregation.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/stories.test.ts tests/routes/story-detail.test.ts`
 
-- [ ] **[T3]** Chapters route integration tests: CRUD, reordering, word count on save.
+- [x] **[T3]** Chapters route integration tests: CRUD, reordering, word count on save.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/chapters.test.ts tests/routes/chapters-reorder.test.ts`
 
-- [ ] **[T4]** Characters route integration tests: CRUD, story scoping, cascade delete.
+- [x] **[T4]** Characters route integration tests: CRUD, story scoping, cascade delete.
   - verify: `cd backend && npm run test:backend -- --run tests/routes/characters.test.ts`
 
-- [ ] **[T5]** Prompt builder unit tests: all 5 action types, character context present, worldNotes present, `include_venice_system_prompt` reflects the caller-supplied `includeVeniceSystemPrompt` setting (default `true`) independent of action type, model, and `Story.systemPrompt`, truncation removes from top of chapterContent only, budget respects model context length.
+- [x] **[T5]** Prompt builder unit tests: all 5 action types, character context present, worldNotes present, `include_venice_system_prompt` reflects the caller-supplied `includeVeniceSystemPrompt` setting (default `true`) independent of action type, model, and `Story.systemPrompt`, truncation removes from top of chapterContent only, budget respects model context length.
   - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.service.test.ts tests/services/prompt.actions.test.ts`
 
-- [ ] **[T6]** Venice AI service unit tests (mocked HTTP): correct payload, stream forwarded, reasoning model flag applied correctly, rate limit headers extracted, error codes mapped, no raw Venice errors leaked.
+- [x] **[T6]** Venice AI service unit tests (mocked HTTP): correct payload, stream forwarded, reasoning model flag applied correctly, rate limit headers extracted, error codes mapped, no raw Venice errors leaked.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/`
 
-- [ ] **[T7]** Frontend component tests: Editor, AIPanel, ModelSelector, UsageIndicator, CharacterSheet, WebSearchToggle.
+- [x] **[T7]** Frontend component tests: Editor, AIPanel, ModelSelector, UsageIndicator, CharacterSheet, WebSearchToggle.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/`
 
 - [x] **[T8]** Playwright E2E (tier-2 PR-blocking smoke). Drives the live `make dev` stack through register → create story → BYOK Venice key save → add chapter → type into TipTap → trigger AI Continue → assert streamed mock response in the Continue-Writing region → assert the mock saw a chat-completion call. Venice is mocked in-process via `tests/e2e/fixtures/mock-venice.ts` (in-proc OpenAI-compatible HTTP server speaking SSE on `/v1/chat/completions` + `/v1/models`); the dockerised backend reaches it via `host.docker.internal` thanks to `extra_hosts: host-gateway` in the dev compose override. Per-user BYOK `endpoint` field steers the per-user OpenAI client at the mock without touching production code paths. Tier-3 (`tests/e2e-extended/` + cross-browser / soak runs) is intentionally NOT introduced here — add when first such case appears. Two assertions from the original blurb — "Saved ✓" autosave indicator and UsageIndicator delta — are tracked under [T8.1] (autosave never fires under the live stack inside the spec, suggesting a TanStack Query refetch races the local-draft useEffect in `EditorPage:215`; UsageIndicator only mounts inside `<AIPanel>`, which the Continue-Writing path doesn't surface).
@@ -491,7 +491,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
   - verify: `docker compose up -d && npx playwright test tests/e2e/full-flow.spec.ts --reporter=line`
   - verify: `docker compose up -d && npx playwright test tests/e2e/full-flow.spec.ts --reporter=line`
 
-- [ ] **[T9]** Full suite run — all tests pass before marking complete.
+- [x] **[T9]** Full suite run — all tests pass before marking complete.
   - verify: `cd backend && npm run test:backend -- --run && cd ../frontend && npm run test:frontend -- --run && echo "ALL TESTS PASSED"`
 
 ---
@@ -557,5 +557,11 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
 - [ ] **[X18]** Display name in the registration flow. Today `frontend/src/components/AuthForm.tsx` collects only `username` + `password`; `frontend/src/hooks/useAuth.ts:register()` defaults the backend-required `name` to the username so the schema's `nameSchema` (min 1) passes. Add a third `Display name` field to the register variant of `<AuthForm>` (login variant unchanged), validate min 1 / max 80 client-side to mirror `nameSchema`, and pass it through `register({ name, username, password })`. Update `Credentials` (or split into `LoginCredentials` / `RegisterCredentials`) so the type captures the register-only field. Sweep the existing register tests to assert `name` is sent in the body. Pairs with [X3]'s display-name editor — together they let users set + later edit a name distinct from the login handle.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/AuthForm.test.tsx tests/hooks/useAuth.test.tsx tests/pages/recovery-code-handoff.test.tsx`
 
-- [ ] **[X19]** Migrate backend to **Express 5** (`express ^4.21.x → ^5.x`). Dependabot PR #30 fails because Express 5 swapped its router to `path-to-regexp@8`, which removed two pieces of legacy syntax we use today: (1) optional path params written as `:foo?` (e.g. `/api/stories/:storyId?` and similar in `auth.routes.ts` / `chat.routes.ts` / others) — must become explicit dual route registrations or use the new named-group form per the path-to-regexp@8 docs; (2) bare wildcard `*` (e.g. the rate-limit binding `/api/ai/*` in `backend/src/middleware/security.ts`) — must become `/api/ai/{*splat}` (or `*path`). Other Express 5 changes to verify: `req.body` is now `undefined` (not `{}`) when no body parser ran — confirm no handler reads `req.body.x` without first checking; async error propagation now works without `next(err)` in awaited handlers, but our global error handler in `backend/src/middleware/error.ts` should still catch — leave as-is; `res.redirect('back')` removed (we don't use it; grep to confirm). Steps: (a) sweep every route file for `?` optional params and `*` wildcards (`grep -RnE "['\"][^'\"]*[:*?][^'\"]*['\"]" backend/src/routes backend/src/middleware`); (b) bump `express`, `@types/express` (already on 5), `express-rate-limit` (verify peer); (c) re-run `npm run test:backend` — expect failures only in `tests/middleware/security.test.ts` and any route test exercising optional params, then fix in code, not in tests; (d) confirm helmet + cookie-parser + cors middleware ordering still works (Express 5 keeps the same `(req, res, next)` signature). Coordinate with `security-reviewer` because middleware bootstrap is in scope.
+- [ ] **[X20]** Finish the [X15] act-warning sweep — it was ticked but a verbose run still emits **60** `An update to <Component> inside a test was not wrapped in act(...)` lines across **9** files: `AppShell.test.tsx`, `ChatComposer.test.tsx`, `ChatPanel.test.tsx`, `InlineAIResult.test.tsx`, `ModelPicker.test.tsx`, `SelectionBubble.test.tsx`, `Settings.appearance.test.tsx`, `Settings.models.test.tsx`, `Sidebar.test.tsx`. Two distinct root causes seen so far: (a) TanStack Query settle-after-test — the `useUserSettingsQuery` resolution fires `setSizeDraft` / `setTweaks` / etc. inside seed `useEffect`s after the test's last `await` returns (`SettingsAppearanceTab.tsx:208,252,276`); fix per-test by `await waitFor(() => expect(...).toBe(...))` on a settings-derived element, or by adding a settle-helper to `tests/setup.ts` and calling it after every render; (b) Zustand `setState` from outside React combined with `useLayoutEffect`-driven re-positioning (`SelectionBubble.tsx:157`); some tests already wrap `setState` in `act()` but the chained re-render still leaks. The X15 fix pattern (`await userEvent.click` / `await screen.findBy…` / `await waitFor`) is correct — apply consistently. Verify with the exact command in [X15] (`--reporter=verbose`, asserting zero `not wrapped in act` lines).
+  - verify: `cd frontend && bash -c 'npm run test:frontend -- --run --reporter=verbose 2>&1 | grep -c "not wrapped in act"' | tee /tmp/act-count && [ "$(cat /tmp/act-count)" = "0" ]`
+
+- [x] **[X19]** Migrate backend to **Express 5** (`express ^4.21.x → ^5.x`). Dependabot PR #30 fails because Express 5 swapped its router to `path-to-regexp@8`, which removed two pieces of legacy syntax we use today: (1) optional path params written as `:foo?` (e.g. `/api/stories/:storyId?` and similar in `auth.routes.ts` / `chat.routes.ts` / others) — must become explicit dual route registrations or use the new named-group form per the path-to-regexp@8 docs; (2) bare wildcard `*` (e.g. the rate-limit binding `/api/ai/*` in `backend/src/middleware/security.ts`) — must become `/api/ai/{*splat}` (or `*path`). Other Express 5 changes to verify: `req.body` is now `undefined` (not `{}`) when no body parser ran — confirm no handler reads `req.body.x` without first checking; async error propagation now works without `next(err)` in awaited handlers, but our global error handler in `backend/src/middleware/error.ts` should still catch — leave as-is; `res.redirect('back')` removed (we don't use it; grep to confirm). Steps: (a) sweep every route file for `?` optional params and `*` wildcards (`grep -RnE "['\"][^'\"]*[:*?][^'\"]*['\"]" backend/src/routes backend/src/middleware`); (b) bump `express`, `@types/express` (already on 5), `express-rate-limit` (verify peer); (c) re-run `npm run test:backend` — expect failures only in `tests/middleware/security.test.ts` and any route test exercising optional params, then fix in code, not in tests; (d) confirm helmet + cookie-parser + cors middleware ordering still works (Express 5 keeps the same `(req, res, next)` signature). Coordinate with `security-reviewer` because middleware bootstrap is in scope.
   - verify: `cd backend && npm run test:backend`
+
+- [ ] **[X21]** Track upstream Prisma fix for `@hono/node-server` advisory **GHSA-92pp-h63x-v22m** (path-traversal in `serveStatic` via repeated slashes). Pulled in transitively as `prisma → @prisma/dev → @hono/node-server@<1.19.13`. `@prisma/dev` is the package powering `prisma studio` / `prisma dev` — it's a dev-only surface and is not loaded by `@prisma/client` at runtime, so production hosts (which only run `prisma migrate deploy`) are not exposed. The Prisma maintainers ship bundled-dep bumps in patch releases; periodically re-run `cd backend && npm audit` and bump `prisma` / `@prisma/client` / `@prisma/adapter-pg` together when a clean version is available. Don't take `npm audit fix --force` — its proposed fix is `prisma@6.19.3`, a major-version downgrade. Close this when the audit advisory disappears without a downgrade, or when the underlying advisory is withdrawn.
+  - verify: `cd backend && bash -c 'npm audit --omit=dev --json 2>/dev/null | jq ".vulnerabilities | to_entries | map(select(.value.via[] | type==\"object\" and .source==1107173)) | length"' | tee /tmp/x21-count && [ "$(cat /tmp/x21-count)" = "0" ]`

@@ -184,13 +184,13 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     }
 
     // Sanity: assert the test actually wrote rows to scan — a passing test
-    // against an empty DB would be a false negative.
-    const counts = await Promise.all(
-      NARRATIVE_TABLES.map(async (t) => {
-        const r = await pg.query<{ c: string }>(`SELECT count(*)::text AS c FROM "${t}"`);
-        return Number(r.rows[0]!.c);
-      }),
-    );
+    // against an empty DB would be a false negative. Serialised because `pg`
+    // is a single Client; concurrent .query() on one Client is deprecated.
+    const counts: number[] = [];
+    for (const t of NARRATIVE_TABLES) {
+      const r = await pg.query<{ c: string }>(`SELECT count(*)::text AS c FROM "${t}"`);
+      counts.push(Number(r.rows[0]!.c));
+    }
     for (let i = 0; i < NARRATIVE_TABLES.length; i += 1) {
       expect(
         counts[i],

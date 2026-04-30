@@ -104,11 +104,14 @@ describe('requireOwnership middleware', () => {
       next();
     });
     // Mount without a param segment — Express gives an empty string at req.params.storyId.
-    app.get(
-      '/:storyId?',
-      requireOwnership('story', { idParam: 'storyId', client: prisma }),
-      (_req, res) => res.json({ ok: true }),
-    );
+    // Express 5 / path-to-regexp@8 dropped `:storyId?` optional-param syntax; register
+    // both `/` and `/:storyId` explicitly to reach the empty-id case.
+    const handler = (
+      ...args: Parameters<ReturnType<typeof requireOwnership>>
+    ): ReturnType<ReturnType<typeof requireOwnership>> =>
+      requireOwnership('story', { idParam: 'storyId', client: prisma })(...args);
+    app.get('/', handler, (_req, res) => res.json({ ok: true }));
+    app.get('/:storyId', handler, (_req, res) => res.json({ ok: true }));
     const res = await request(app).get('/');
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('missing_resource_id');

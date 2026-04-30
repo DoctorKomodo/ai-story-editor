@@ -55,7 +55,8 @@ describe('security middleware', () => {
           legacyHeaders: false,
         }),
       );
-      mini.all('/api/ai/*', (_req, res) => res.json({ ok: true }));
+      // Express 5 / path-to-regexp@8 requires named splat: `/api/ai/{*rest}`.
+      mini.all('/api/ai/{*rest}', (_req, res) => res.json({ ok: true }));
       mini.all('/api/health', (_req, res) => res.json({ ok: true }));
       return mini;
     }
