@@ -264,4 +264,27 @@ describe('ChapterList (F10)', () => {
     const alert = await screen.findByRole('alert', {}, { timeout: 3000 });
     expect(alert.textContent ?? '').toMatch(/could not load chapters/i);
   });
+
+  it('renders with design-system token classes (no raw Tailwind colors)', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/chapters')) {
+        return Promise.resolve(
+          jsonResponse(200, { chapters: [chap({ id: 'ch-1', orderIndex: 0 })] }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    renderList(vi.fn(), 'ch-1');
+
+    const list = await screen.findByTestId('chapter-list');
+    expect(list.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+
+    const addButton = screen.getByTestId('chapter-list-add');
+    expect(addButton.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+
+    const row = screen.getByTestId('chapter-row-ch-1');
+    expect(row.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+    expect(row).toHaveClass('border-ink');
+  });
 });

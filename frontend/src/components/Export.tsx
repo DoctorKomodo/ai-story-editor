@@ -12,6 +12,7 @@ import type { JSX } from 'react';
 
 import type { JSONContent } from '@tiptap/core';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Button } from '@/design/primitives';
 import { downloadTxt } from '@/lib/downloadTxt';
 import { serializeChapterTxt, serializeStoryTxt } from '@/lib/exportTxt';
 
@@ -93,32 +94,35 @@ export function Export({ story, activeChapterId }: ExportProps): JSX.Element {
 
   return (
     <div ref={containerRef} className="relative">
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="md"
         aria-haspopup="menu"
         aria-expanded={open}
         aria-controls="export-menu-panel"
         onClick={() => {
           setOpen((v) => !v);
         }}
-        className="rounded border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium hover:bg-neutral-100 transition-colors"
+        data-testid="export-toggle"
       >
         Export
-      </button>
+      </Button>
 
       {open ? (
         <div
           id="export-menu-panel"
           role="menu"
           aria-label="Export menu"
-          className="absolute right-0 mt-1 w-48 rounded border border-neutral-200 bg-white py-1 shadow-md z-10"
+          data-testid="export-menu"
+          className="absolute right-0 mt-1 w-48 rounded border border-line bg-bg-elevated py-1 shadow-pop z-10"
         >
           <button
             type="button"
             role="menuitem"
             onClick={handleExportChapter}
             disabled={activeChapter === null}
-            className="block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-100 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+            data-testid="export-chapter"
+            className="block w-full px-3 py-1.5 text-left font-sans text-[12.5px] text-ink hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           >
             Export chapter
           </button>
@@ -126,7 +130,8 @@ export function Export({ story, activeChapterId }: ExportProps): JSX.Element {
             type="button"
             role="menuitem"
             onClick={handleExportStory}
-            className="block w-full px-3 py-1.5 text-left text-sm hover:bg-neutral-100"
+            data-testid="export-story"
+            className="block w-full px-3 py-1.5 text-left font-sans text-[12.5px] text-ink hover:bg-surface-hover transition-colors"
           >
             Export full story
           </button>

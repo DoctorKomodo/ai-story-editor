@@ -59,8 +59,8 @@ function ToolbarButton({ label, onClick, isActive, children }: ToolbarButtonProp
       onClick={onClick}
       className={
         isActive
-          ? 'rounded border border-neutral-400 bg-neutral-200 px-2 py-1 text-sm font-medium text-neutral-900'
-          : 'rounded border border-neutral-300 bg-white px-2 py-1 text-sm font-medium text-neutral-700 hover:bg-neutral-100'
+          ? 'rounded border border-ink bg-accent-soft px-2 py-1 font-sans text-[12.5px] font-medium text-ink transition-colors'
+          : 'rounded border border-line bg-bg-elevated px-2 py-1 font-sans text-[12.5px] font-medium text-ink-2 hover:bg-surface-hover hover:text-ink transition-colors'
       }
     >
       {children}
@@ -91,7 +91,7 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
       attributes: {
         // Tailwind `prose` would be nice here but F32 handles typography.
         class:
-          'min-h-[300px] w-full rounded border border-neutral-200 bg-white p-4 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-blue-400',
+          'min-h-[300px] w-full rounded border border-line bg-bg-elevated p-4 text-ink focus:outline-none focus:border-ink-3 transition-colors',
         role: 'textbox',
         'aria-multiline': 'true',
         'aria-label': 'Chapter body',
@@ -153,7 +153,7 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
         >
           <span className="italic">I</span>
         </ToolbarButton>
-        <span aria-hidden="true" className="mx-1 h-5 w-px bg-neutral-300" />
+        <span aria-hidden="true" className="mx-1 h-5 w-px bg-line-2" />
         <ToolbarButton
           label="Heading 1"
           isActive={editor?.isActive('heading', { level: 1 }) ?? false}
@@ -186,7 +186,11 @@ export function Editor({ initialBodyJson, onUpdate, onReady }: EditorProps): JSX
 
       <EditorContent editor={editor} />
 
-      <div role="status" className="border-t border-neutral-200 pt-2 text-sm text-neutral-600">
+      <div
+        role="status"
+        data-testid="editor-word-count"
+        className="border-t border-line pt-2 font-mono text-[11px] text-ink-3"
+      >
         {wordLabel}
       </div>
     </div>

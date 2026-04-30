@@ -75,16 +75,16 @@ The 💀 row is kept here for historical context only — the files are gone. Th
 | Component | Status | Notes |
 |---|---|---|
 | `AIPanel.tsx` | 💀 | Deleted in Phase 0. Replaced by `ChatPanel` (`ChatComposer` + `ChatMessages`). |
-| `AIResult.tsx` | 🔴 | Spot-check printed — has raw Tailwind colors. |
+| `AIResult.tsx` | ✅ | Bundle 2 — primitives + token swap (border-line / bg-bg-sunken / text-ink-2 / text-danger / Button variant=ghost). |
 | `AccountPrivacyModal.tsx` | ✅ | Spot-check clean. Uses `Modal` chrome + token classes. |
 | `AppShell.tsx` | ✅ | Uses tokens. |
 | `AuthForm.tsx` | ✅ | Reference impl for forms. Reads as primitives target. |
-| `AutosaveIndicator.tsx` | 🔴 | `text-neutral-500`. Tiny — 1-line fix. |
-| `BalanceDisplay.tsx` | 🔴 | `text-neutral-500/600/700`. Mostly text colors. |
+| `AutosaveIndicator.tsx` | ✅ | Bundle 1 — text-ink-3 / font-sans. |
+| `BalanceDisplay.tsx` | ✅ | Bundle 1 — text-ink-3 / text-ink-2 / font-mono. |
 | `CastTab.tsx` | ✅ | Spot-check clean. |
-| `ChapterList.tsx` | 🔴 | `border-neutral-200/800`, `text-neutral-400/500/700/900`, `red-600`. |
+| `ChapterList.tsx` | ✅ | Bundle 2 — primitives Button + token swap (border-line / border-ink active / bg-bg-elevated / text-ink / text-danger error). |
 | `CharRefMenu.tsx` | ✅ | Uses `var(--bg-elevated)`, `var(--line-2)`. |
-| `CharacterList.tsx` | 🔴 | Spot-check printed. |
+| `CharacterList.tsx` | ✅ | Bundle 2 — primitives Button + token swap (border-line / bg-bg-elevated / text-ink / text-danger error). |
 | `CharacterPopover.tsx` | ✅ | Spot-check clean. |
 | `CharacterPopoverHost.tsx` | ✅ | Spot-check clean. Glue layer; minimal styling. |
 | `CharacterSheet.tsx` | 🔴 | **Worked example below.** Imported by `EditorPage`. `neutral-100/200/300/700/800`, `red-600/700`, `blue-500/600/700`, `shadow-lg`. |
@@ -92,10 +92,10 @@ The 💀 row is kept here for historical context only — the files are gone. Th
 | `ChatMessages.tsx` | ✅ | Spot-check clean. |
 | `ChatPanel.tsx` | ✅ | Spot-check clean. |
 | `ContinueWriting.tsx` | ✅ | Spot-check clean. |
-| `DarkModeToggle.tsx` | 🔴 | Spot-check printed. |
-| `Editor.tsx` | 🔴 | **Surprise demotion.** Toolbar buttons + editor frame use `neutral-100/200/300/400/700/900`, `bg-white`, `focus:ring-blue-400`. |
+| `DarkModeToggle.tsx` | ✅ | Bundle 2 — primitives Button (variant=ghost, role=switch). `dark:` variants dropped (theme switching is data-theme based). |
+| `Editor.tsx` | ✅ | Bundle 2 — token swap on toolbar (border-line / bg-bg-elevated / accent-soft active), editor surface (border-line / bg-bg-elevated / focus:border-ink-3, no ring), and word-count footer (text-ink-3 / font-mono). |
 | `EditorEmptyHints.tsx` | ✅ | Spot-check clean. |
-| `Export.tsx` | 🔴 | `border-neutral-200/300`, `bg-white`, `hover:bg-neutral-100`, `shadow-md`. |
+| `Export.tsx` | ✅ | Bundle 2 — primitives Button trigger + token swap on dropdown (border-line / bg-bg-elevated / shadow-pop / hover:bg-surface-hover). |
 | `FormatBar.tsx` | ✅ | Reference impl for toolbar surfaces. |
 | `InlineAIResult.tsx` | ✅ | Spot-check clean. |
 | `MessageCitations.tsx` | ✅ | Spot-check clean. |
@@ -118,19 +118,19 @@ The 💀 row is kept here for historical context only — the files are gone. Th
 | `StoryPickerEmpty.tsx` | ✅ | Spot-check clean. |
 | `TopBar.tsx` | ✅ | Uses `.topbar` classes from `styles.css`. |
 | `Transition.tsx` | ✅ | Pure motion utility. |
-| `UsageIndicator.tsx` | 🔴 | `text-neutral-500`. 1-line fix. |
+| `UsageIndicator.tsx` | ✅ | Bundle 1 — text-ink-3 / font-mono. |
 | `UserMenu.tsx` | ✅ | Spot-check clean. |
 | `WebSearchToggle.tsx` | 💀 | Deleted in Phase 0. Logic inlined into `ChatComposer`. |
 | **Pages** | | |
 | `DashboardPage.tsx` | ✅ | Hosts `StoryPicker` (embedded) + `StoryModal`. |
-| `EditorPage.tsx` | 🔴 | **Surprise demotion.** Loading/error fallbacks use `text-neutral-600`. |
+| `EditorPage.tsx` | ✅ | Bundle 1 — loading/error fallbacks → text-ink-3 / font-sans. |
 | `LoginPage.tsx` | ✅ | Composes `AuthForm`. |
 | `RegisterPage.tsx` | ✅ | Composes `AuthForm`. |
 | `ResetPasswordPage.tsx` | ✅ | Spot-check clean. |
 
-**Burn-down counts (post-Phase 1.5):** 🔴 12 · ✅ 31 · 💀 4 (deleted).
+**Burn-down counts (post-Bundle 2):** 🔴 2 · ✅ 41 · 💀 4 (deleted).
 
-Each `🔴` is one PR in Phase 2. Suggested order in `HANDOFF.md` § Phase 2; the two surprise demotions (`Editor.tsx`, `pages/EditorPage.tsx`) are not yet placed in that ordering — slot them by blast radius: `EditorPage.tsx` is two-line cosmetic chrome (small), `Editor.tsx` is medium (toolbar + editor frame + focus ring).
+Bundles 1 and 2 are complete. Remaining 🔴: `CharacterSheet.tsx` and `StoryModal.tsx` — both are Bundle 3 (modal ports), the highest-leverage swap because they exercise every primitive (`Modal`, `ModalHeader/Body/Footer`, `Field`, `Input`, `Textarea`, `Button` × 3 variants). After Bundle 3 the table is fully green.
 
 ---
 
