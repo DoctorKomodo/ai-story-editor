@@ -13,7 +13,7 @@
 //   - useSidebarTabStore                  → active tab
 //   - <CharacterSheet> modal              → page-root, id-driven
 //   - <FormatBar> + <Paper>               → editor slot (F52 — replaces F8)
-//   - <AIPanel> + ModelSelector + …       → chat slot (until F55)
+//   - <ChatPanel> (ChatMessages + ChatComposer + ModelPicker) → chat slot (F55)
 //   - <Export>                            → rendered below Paper (until F52 promote)
 //
 // Modal-mount convention (locked in F51 for the rest of the F-series):
