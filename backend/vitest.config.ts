@@ -9,11 +9,7 @@ export default defineConfig({
     exclude: ['tests/live/**', 'node_modules/**', 'dist/**'],
     setupFiles: ['tests/setup.ts'],
     globalSetup: ['tests/globalSetup.ts'],
-    pool: 'forks',
-    poolOptions: {
-      forks: { singleFork: true },
-    },
-    fileParallelism: false,
+    maxWorkers: 1,
     sequence: { concurrent: false },
     // Fail if the run collected no tests at all — defence against config
     // drift (e.g. an `include` glob that silently matches nothing) or an
