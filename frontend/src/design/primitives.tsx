@@ -139,7 +139,7 @@ export function Modal({
       role="presentation"
       data-testid={testId ? `${testId}-backdrop` : undefined}
       onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 bg-[rgba(20,18,12,.4)] backdrop-blur-[3px] flex items-center justify-center"
+      className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px] flex items-center justify-center"
     >
       {card}
     </div>

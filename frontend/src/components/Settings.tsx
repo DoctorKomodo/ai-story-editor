@@ -123,7 +123,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
       role="presentation"
       data-testid="settings-backdrop"
       onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
+      className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px]"
     >
       <div
         role="dialog"
@@ -359,7 +359,7 @@ function VeniceTab(): JSX.Element {
               onChange={(e) => {
                 setApiKeyDraft(e.target.value);
               }}
-              className="flex-1 px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              className="flex-1 px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
             />
             <button
               type="button"
@@ -415,7 +415,7 @@ function VeniceTab(): JSX.Element {
               className={[
                 'mt-1 inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono',
                 verifyPill.kind === 'ok'
-                  ? 'bg-[color-mix(in_srgb,#6aa84f_16%,transparent)] text-[#3e6e2a]'
+                  ? 'bg-[color-mix(in_srgb,#6aa84f_16%,transparent)] text-[#3e6e2a]' /* lint:design-allow — one-off success-pill green; no --success token in the system yet. */
                   : 'bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] text-[color:var(--danger)]',
               ].join(' ')}
             >
@@ -453,7 +453,7 @@ function VeniceTab(): JSX.Element {
               setEndpointDraft(e.target.value);
               seededEndpointRef.current = true;
             }}
-            className="px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
           />
         </div>
 
@@ -472,7 +472,7 @@ function VeniceTab(): JSX.Element {
             onChange={(e) => {
               setOrganizationDraft(e.target.value);
             }}
-            className="px-3 py-2 text-[13px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+            className="px-3 py-2 text-[13px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
           />
         </div>
       </section>

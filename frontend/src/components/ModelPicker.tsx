@@ -84,7 +84,7 @@ export function ModelPicker({ open, onClose }: ModelPickerProps): JSX.Element | 
       role="presentation"
       data-testid="model-picker-backdrop"
       onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
+      className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px]"
     >
       <div
         role="dialog"

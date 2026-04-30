@@ -104,7 +104,7 @@ const BTN_SECONDARY =
   'inline-flex items-center justify-center px-3 py-2 text-[12.5px] font-medium font-sans bg-[var(--bg-elevated)] text-[var(--ink)] border border-[var(--line-2)] rounded-[var(--radius)] hover:bg-[var(--surface-hover)] transition-colors';
 
 const BTN_DANGER =
-  'inline-flex items-center justify-center px-3 py-2 text-[13px] font-medium font-sans bg-[var(--danger)] text-white rounded-[var(--radius)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors';
+  'inline-flex items-center justify-center px-3 py-2 text-[13px] font-medium font-sans bg-danger text-bg rounded-[var(--radius)] hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors';
 
 function mapApiError(err: unknown, on401: string): string {
   if (err instanceof ApiError) {
@@ -456,7 +456,7 @@ export function AccountPrivacyModal({
       role="presentation"
       data-testid="ap-backdrop"
       onMouseDown={handleBackdrop}
-      className="t-backdrop-in fixed inset-0 z-50 bg-[rgba(20,18,12,.4)] backdrop-blur-[3px]"
+      className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px]"
     >
       <div
         role="dialog"

@@ -352,7 +352,7 @@ export function SettingsModelsTab(): JSX.Element {
                 setPromptDraft(e.target.value);
               }}
               onBlur={handlePromptBlur}
-              className="font-serif w-full min-h-[120px] p-3 border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:ring-2 focus:ring-[var(--accent)]"
+              className="font-serif w-full min-h-[120px] p-3 border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
             />
           </div>
         )}

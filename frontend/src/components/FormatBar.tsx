@@ -337,7 +337,7 @@ function StyleSelector({ editor }: StyleSelectorProps): JSX.Element {
           id={menuId}
           role="menu"
           aria-label="Paragraph style"
-          className="absolute left-0 top-full z-20 mt-1 w-[220px] rounded-md border border-line bg-bg-elevated py-1 shadow-md"
+          className="absolute left-0 top-full z-20 mt-1 w-[220px] rounded-md border border-line bg-bg-elevated py-1 shadow-pop"
         >
           {STYLE_OPTIONS.map((opt) => {
             const active = opt.label === label;
@@ -435,7 +435,7 @@ function LinkPopover({ editor }: LinkPopoverProps): JSX.Element {
         <div
           role="dialog"
           aria-label="Link"
-          className="absolute left-0 top-full z-20 mt-1 flex w-[280px] items-center gap-1 rounded-md border border-line bg-bg-elevated p-2 shadow-md"
+          className="absolute left-0 top-full z-20 mt-1 flex w-[280px] items-center gap-1 rounded-md border border-line bg-bg-elevated p-2 shadow-pop"
         >
           <input
             ref={inputRef}

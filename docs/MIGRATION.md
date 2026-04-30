@@ -130,7 +130,11 @@ The 💀 row is kept here for historical context only — the files are gone. Th
 
 **Burn-down counts (post-Bundle 3):** 🔴 0 · ✅ 43 · 💀 4 (deleted).
 
-The burn-down is complete — every component renders with design tokens and primitives. Remaining work in HANDOFF.md: Phase 3 (`lint:design` CI guard) is still untracked at `frontend/scripts/lint-design.mjs`; install it and wire it to CI to lock the result in. Optional next: the deferred Playwright snapshot pass over the three themes for the modal ports (`CharacterSheet`, `StoryModal`, `AccountPrivacyModal`).
+The burn-down is complete — every component renders with design tokens and primitives.
+
+**Phase 3 (lint:design) is live.** `frontend/scripts/lint-design.mjs` is wired up as `npm run lint:design` and runs in `.github/workflows/ci.yml` between the frontend typecheck and the production build. Pure-Node implementation — no `rg` install required on the runner. The script catches six categories of token drift (raw palette colors, black/white literals, mid-tier shadows, hex/rgb/hsl/oklch arbitrary values, raw hex codes, focus rings) and honors a `lint:design-allow` marker for one-off escapes. The Bundle-3 sweep also added a `--color-backdrop` token to `index.css` (`bg-backdrop` utility) so all 5 modals share one literal-free backdrop class.
+
+Optional next: the deferred Playwright snapshot pass over the three themes for the modal ports (`CharacterSheet`, `StoryModal`, `AccountPrivacyModal`).
 
 ---
 
