@@ -2,8 +2,16 @@ import '@testing-library/jest-dom/vitest';
 import { cleanup } from '@testing-library/react';
 import { afterEach } from 'vitest';
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // Drain TipTap React v3's deferred destroy (a setTimeout queued from
+  // useEditor's effect cleanup — see @tiptap/react/dist/index.js:463).
+  // Without this, the destroy can fire after vitest tears down jsdom and
+  // throws `ReferenceError: window is not defined` from a different test
+  // file on each run.
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 });
 
 // jsdom doesn't implement Range#getClientRects / getBoundingClientRect;
