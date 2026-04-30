@@ -439,7 +439,7 @@ Surfaced by the final cross-cutting review of the B-series branch + the V22 Veni
   - plan: [docs/superpowers/plans/F69-storybook-primitive-stories.md](docs/superpowers/plans/F69-storybook-primitive-stories.md)
   - verify: `cd frontend && npm run build-storybook -- --quiet && npm run lint:design && npx biome ci src/design/`
 
-- [ ] **[F70]** Author `Modal.stories.tsx` with a stateful `ModalDemo` wrapper covering the five behavioural axes (size, dismissable, role, focus trap, `labelledBy`). Demo wrapper + per-story manual verification matrix in the plan.
+- [x] **[F70]** Author `Modal.stories.tsx` with a stateful `ModalDemo` wrapper covering the five behavioural axes (size, dismissable, role, focus trap, `labelledBy`). Demo wrapper + per-story manual verification matrix in the plan.
   - plan: [docs/superpowers/plans/F70-storybook-modal-story.md](docs/superpowers/plans/F70-storybook-modal-story.md)
   - verify: `cd frontend && npm run build-storybook -- --quiet && npm run lint:design && npx biome ci src/design/Modal.stories.tsx`
 
