@@ -12,7 +12,7 @@ migrate:
 	cd backend && npx prisma migrate deploy
 
 seed:
-	cd backend && npx ts-node-dev --transpile-only ../scripts/seed.ts
+	docker compose exec backend npx ts-node --transpile-only prisma/seed.ts
 
 reset-db:
 	docker compose down -v

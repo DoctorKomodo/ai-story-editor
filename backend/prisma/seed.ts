@@ -37,6 +37,17 @@ import { createStoryRepo } from '../src/repos/story.repo';
 import { createAuthService } from '../src/services/auth.service';
 import { attachDekToRequest, unwrapDekWithPassword } from '../src/services/content-crypto.service';
 
+// Hard refusal in production. The seed creates a fixed-credential demo user
+// ("demo" / "demopass123") and prints the recovery code to stdout — neither
+// is acceptable in any environment that ships to real users. Set
+// ALLOW_PROD_SEED=1 only if you have a deliberate, documented reason.
+if (process.env.NODE_ENV === 'production' && process.env.ALLOW_PROD_SEED !== '1') {
+  throw new Error(
+    'seed.ts: refusing to run with NODE_ENV=production. ' +
+      'Set ALLOW_PROD_SEED=1 to override (you almost certainly should not).',
+  );
+}
+
 const connectionString = process.env.DATABASE_URL;
 if (!connectionString) {
   throw new Error('DATABASE_URL is required to run the seed script');
@@ -158,11 +169,75 @@ async function main(): Promise<void> {
     notes: 'Never seen eating or sleeping. His compass points at people, not north.',
   });
 
+  // Second story — a contrasting genre so testing across stories exercises
+  // the genre / system-prompt branches, not just two fantasy drafts.
+  const story2 = await storyRepo.create({
+    title: 'A Quiet Year on Halsey Street',
+    synopsis:
+      'A retired forensic accountant moves into a brownstone and slowly unravels what the previous tenant left behind.',
+    genre: 'literary mystery',
+    worldNotes:
+      'Brooklyn, present day. The brownstone has been in the same family since 1912; every tenant has left something behind in the walls.',
+  });
+
+  const story2Ch1Text =
+    'Eleanor unpacked the kitchen first, the way her late husband would have. ' +
+    'Plates on the second shelf, mugs on the third, a single glass left out for water at night. ' +
+    'It was only when she opened the lower cabinet that she found the envelope, taped to the back wall, addressed in a hand she did not recognise.';
+
+  const story2Ch2Text =
+    'The envelope contained three things: a key cut from brass, a photograph of a doorway she had never seen, ' +
+    'and a Polaroid of her own front step taken — judging by the maple — sometime in October, perhaps a decade ago. ' +
+    'On the back, in the same unfamiliar hand: "Don\'t bother the basement before spring."';
+
+  await chapterRepo.create({
+    storyId: story2.id as string,
+    title: 'The Envelope in the Cabinet',
+    bodyJson: paragraphDoc(story2Ch1Text),
+    orderIndex: 0,
+    wordCount: countWords(story2Ch1Text),
+  });
+
+  await chapterRepo.create({
+    storyId: story2.id as string,
+    title: 'Three Things and a Warning',
+    bodyJson: paragraphDoc(story2Ch2Text),
+    orderIndex: 1,
+    wordCount: countWords(story2Ch2Text),
+  });
+
+  await characterRepo.create({
+    storyId: story2.id as string,
+    name: 'Eleanor Vance',
+    role: 'protagonist',
+    physicalDescription:
+      'Sixty-three, neat grey bob, half-moon reading glasses she forgets on every flat surface in the house.',
+    personality: 'Methodical to a fault. Distrusts coincidence. Makes lists about lists.',
+    backstory:
+      'Thirty years tracing money for the IRS, four of them on the trail of a single shell company that was never charged.',
+    notes:
+      'Drinks her coffee black; a rotating selection of teas after 4pm. Keeps a ledger in green ink.',
+  });
+
+  await characterRepo.create({
+    storyId: story2.id as string,
+    name: 'The Previous Tenant',
+    role: 'absent antagonist',
+    physicalDescription:
+      'Unknown. Estate filings list him as M. Halsey but no one in the building remembers him clearly.',
+    personality:
+      'Inferred only: patient, deliberate, fond of arranging clues for someone who would arrive after him.',
+    backstory:
+      'Lived in the apartment for eleven years before his death. Left no will, no next of kin, and a dozen sealed envelopes in places only the next tenant would find.',
+    notes:
+      "Eleanor's first instinct is that he wanted to be found. Her second is that he wanted someone *specific* to find him.",
+  });
+
   const counts = {
     users: await prisma.user.count(),
     stories: await prisma.story.count({ where: { userId: user.id } }),
-    chapters: await prisma.chapter.count({ where: { storyId: story.id as string } }),
-    characters: await prisma.character.count({ where: { storyId: story.id as string } }),
+    chapters: await prisma.chapter.count({ where: { story: { userId: user.id } } }),
+    characters: await prisma.character.count({ where: { story: { userId: user.id } } }),
   };
 
   // Seed summary — credentials + the one-time recoveryCode for the operator.
