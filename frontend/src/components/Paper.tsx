@@ -43,7 +43,10 @@ export interface PaperProps {
   chapterTitle?: string | null;
   initialBodyJson?: JSONContent | null;
   onUpdate?: (args: { bodyJson: JSONContent; wordCount: number }) => void;
-  onReady?: (editor: TiptapEditor) => void;
+  // Called with the new TipTap instance on mount and with `null` on unmount
+  // (Paper is keyed on chapterId — a chapter switch destroys the editor).
+  // Consumers must clear any stored ref when they receive null.
+  onReady?: (editor: TiptapEditor | null) => void;
   // The chapter id is bound at render time to defeat blur-vs-chapter-switch
   // races (see ChapterTitleInput). Callers can ignore the id when they only
   // care about the active chapter, but it's the source of truth for the PATCH.
@@ -259,13 +262,21 @@ export function Paper({
   const isEmpty = editor?.isEmpty ?? true;
 
   // Fire onReady once per editor instance — guards against React
-  // StrictMode double-invoke and parent-callback identity churn.
+  // StrictMode double-invoke and parent-callback identity churn. On unmount
+  // (e.g. Paper is keyed on chapterId and the user switches chapters)
+  // notify the parent so it can drop its `editor` state — otherwise the
+  // parent holds a destroyed TipTap instance for a render cycle and
+  // FormatBar / InlineAIResult crash on `editor.isActive(...)`.
   const readyFiredFor = useRef<TiptapEditor | null>(null);
   useEffect(() => {
     if (!editor) return;
     if (readyFiredFor.current === editor) return;
     readyFiredFor.current = editor;
     onReadyRef.current?.(editor);
+    return () => {
+      readyFiredFor.current = null;
+      onReadyRef.current?.(null);
+    };
   }, [editor]);
 
   // Swap content when the controlled prop changes, but only when it

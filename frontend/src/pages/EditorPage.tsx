@@ -112,7 +112,10 @@ export function EditorPage(): JSX.Element {
   const activeTab = useSidebarTabStore((s) => s.sidebarTab);
 
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
-  const handleEditorReady = useCallback((ed: TiptapEditor) => {
+  // Paper passes `null` on unmount (chapter switch via key={chapterId}); we
+  // must drop the destroyed instance immediately so FormatBar / InlineAIResult
+  // don't read `editor.isActive(...)` on a torn-down TipTap instance.
+  const handleEditorReady = useCallback((ed: TiptapEditor | null) => {
     setEditor(ed);
   }, []);
 

@@ -185,14 +185,19 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
         safeSetStatus('saved');
 
         // If the payload changed while the save was in flight, schedule a
-        // debounced follow-up with the newest value.
+        // debounced follow-up with the newest value. Reuse the *snapshotted*
+        // save fn so the follow-up cannot drift onto a different chapter
+        // when the user switched chapters during the in-flight window:
+        // `saveRef.current` was updated to the new chapter's `handleSave`
+        // by the time the promise resolved, but the typed payload still
+        // belongs to the previous chapter and must PATCH that id.
         if (
           pendingFollowupRef.current &&
           latestPayloadRef.current !== null &&
           !equalsRef.current(latestPayloadRef.current, payloadToSave)
         ) {
           pendingFollowupRef.current = false;
-          scheduleDebouncedSave();
+          scheduleDebouncedSave(saveFn);
         } else {
           pendingFollowupRef.current = false;
         }
@@ -202,14 +207,16 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
         safeSetStatus('error');
 
         // If the payload changed while the failing save was in flight,
-        // treat it as a normal debounced edit (implicit retry).
+        // treat it as a normal debounced edit (implicit retry). Same
+        // snapshot reuse as the success branch — the retry must stay on
+        // the original chapter id.
         if (
           pendingFollowupRef.current &&
           latestPayloadRef.current !== null &&
           !equalsRef.current(latestPayloadRef.current, payloadToSave)
         ) {
           pendingFollowupRef.current = false;
-          scheduleDebouncedSave();
+          scheduleDebouncedSave(saveFn);
           return;
         }
         pendingFollowupRef.current = false;
@@ -230,10 +237,12 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
       }
     };
 
-    const scheduleDebouncedSave = (): void => {
+    const scheduleDebouncedSave = (overrideSave?: (p: T) => Promise<void>): void => {
       clearDebounce();
       clearRetry();
-      const snapshotSave = saveRef.current;
+      // Caller can pass an explicit save fn to keep a follow-up locked to the
+      // chapter the original save was scheduled for; otherwise re-snapshot.
+      const snapshotSave = overrideSave ?? saveRef.current;
       debounceSaveRef.current = snapshotSave;
       debounceTimerRef.current = setTimeout(() => {
         debounceTimerRef.current = null;
