@@ -4,7 +4,8 @@ import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { useCallback, useState } from 'react';
-import { Button } from '@/design/primitives';
+import { ChapterListSectionHeader } from '@/components/ChapterListSectionHeader';
+import { GripIcon } from '@/design/primitives';
 import {
   type ChapterMeta,
   chaptersQueryKey,
@@ -14,15 +15,12 @@ import {
   useReorderChaptersMutation,
 } from '@/hooks/useChapters';
 import { ApiError } from '@/lib/api';
+import { formatWordCountCompact } from '@/lib/formatWordCount';
 
 export interface ChapterListProps {
   storyId: string;
   activeChapterId: string | null;
   onSelectChapter: (chapterId: string) => void;
-}
-
-function formatWordCount(n: number): string {
-  return `${n.toLocaleString('en-US')} ${n === 1 ? 'word' : 'words'}`;
 }
 
 function chapterDisplayTitle(c: ChapterMeta): string {
@@ -38,16 +36,14 @@ interface ChapterRowProps {
 }
 
 /**
- * Single row. Uses `useSortable` so F11's drag-to-reorder works; for F10 the
- * drag handle exists but only does anything once the DndContext is wired
- * (it is — see ChapterList below). The whole row is a button except for the
- * drag handle itself, which sits to the left and captures pointer events so
- * a drag does not fire the row's click.
+ * Single row. Uses `useSortable` so drag-to-reorder works. The grip handle
+ * sits to the left and captures pointer events so a drag does not fire the
+ * row's click. Task 12 extends ChapterRowProps with onRequestDelete +
+ * isDeleting — do not add those here.
  */
 function ChapterRow({ chapter, active, onSelect }: ChapterRowProps): JSX.Element {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: chapter.id,
-  });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } =
+    useSortable({ id: chapter.id });
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -58,39 +54,53 @@ function ChapterRow({ chapter, active, onSelect }: ChapterRowProps): JSX.Element
     <li
       ref={setNodeRef}
       style={style}
+      data-active={active ? 'true' : undefined}
+      data-over={isOver ? 'true' : undefined}
+      data-testid={`chapter-row-${chapter.id}`}
+      aria-current={active ? 'true' : undefined}
       className={[
-        'flex items-center gap-2 rounded border px-2 py-2 bg-bg-elevated transition-colors',
-        active ? 'border-ink' : 'border-line hover:bg-surface-hover',
+        'group flex items-center gap-2 pl-3 pr-2 h-8 rounded-[var(--radius)]',
+        'transition-colors cursor-pointer',
+        active ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--surface-hover)]',
+        isOver ? 'ring-1 ring-ink' : '',
         isDragging ? 'opacity-60' : '',
       ]
         .filter(Boolean)
         .join(' ')}
-      aria-current={active ? 'true' : undefined}
-      data-testid={`chapter-row-${chapter.id}`}
     >
       <button
         type="button"
         aria-label="Reorder"
-        className="cursor-grab touch-none text-ink-4 hover:text-ink-2 transition-colors px-1"
+        data-testid={`chapter-row-${chapter.id}-grip`}
+        className={[
+          'grip cursor-grab touch-none text-ink-4 hover:text-ink-2',
+          'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+          'is-coarse-pointer-visible',
+          'flex-shrink-0',
+        ].join(' ')}
         {...attributes}
         {...listeners}
       >
-        <span aria-hidden="true">::</span>
+        <GripIcon />
       </button>
+      <span
+        aria-hidden="true"
+        className="font-mono text-[11px] text-ink-4 tabular-nums w-5 flex-shrink-0"
+      >
+        {String(chapter.orderIndex + 1).padStart(2, '0')}
+      </span>
       <button
         type="button"
         onClick={() => {
           onSelect(chapter.id);
         }}
-        className="flex-1 min-w-0 text-left"
+        className="flex-1 min-w-0 text-left font-serif text-[14px] text-ink leading-tight truncate"
       >
-        <span className="block truncate font-sans text-[13px] font-medium text-ink">
-          {chapterDisplayTitle(chapter)}
-        </span>
-        <span className="block font-mono text-[11px] text-ink-3">
-          {formatWordCount(chapter.wordCount)}
-        </span>
+        {chapterDisplayTitle(chapter)}
       </button>
+      <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
+        {formatWordCountCompact(chapter.wordCount)}
+      </span>
     </li>
   );
 }
@@ -153,7 +163,7 @@ export function ChapterList({
         role="status"
         aria-live="polite"
         data-testid="chapter-list-loading"
-        className="font-sans text-[12.5px] text-ink-3"
+        className="font-sans text-[12.5px] text-ink-3 px-3"
       >
         Loading chapters…
       </div>
@@ -162,11 +172,11 @@ export function ChapterList({
 
   if (isError) {
     return (
-      <div className="flex flex-col gap-3">
+      <div className="flex flex-col">
         <p
           role="alert"
           data-testid="chapter-list-error"
-          className="font-sans text-[12.5px] text-danger"
+          className="font-sans text-[12.5px] text-danger px-3"
         >
           Could not load chapters
           {error instanceof Error && error.message ? `: ${error.message}` : ''}
@@ -179,19 +189,11 @@ export function ChapterList({
   const ids = list.map((c) => c.id);
 
   return (
-    <div className="flex flex-col gap-3" data-testid="chapter-list">
-      <Button
-        variant="ghost"
-        size="md"
-        onClick={handleAdd}
-        disabled={createChapter.isPending}
-        data-testid="chapter-list-add"
-      >
-        {createChapter.isPending ? 'Adding…' : 'Add chapter'}
-      </Button>
+    <div className="flex flex-col" data-testid="chapter-list">
+      <ChapterListSectionHeader onAdd={handleAdd} pending={createChapter.isPending} />
 
       {list.length === 0 ? (
-        <p className="font-sans text-[12.5px] text-ink-3">No chapters yet</p>
+        <p className="font-sans text-[12.5px] text-ink-3 px-3">No chapters yet</p>
       ) : (
         <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
           <SortableContext items={ids} strategy={verticalListSortingStrategy}>

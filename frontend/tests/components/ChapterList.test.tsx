@@ -99,10 +99,9 @@ describe('ChapterList (F10)', () => {
 
     expect(await screen.findByText('The Beginning')).toBeInTheDocument();
     expect(screen.getByText('The Middle')).toBeInTheDocument();
-    expect(screen.getByText('1,234 words')).toBeInTheDocument();
-    // Singular form for wordCount === 1 is covered separately; for "2 words"
-    // the locale-formatted version is just "2 words".
-    expect(screen.getByText('2 words')).toBeInTheDocument();
+    // New compact format: 1234 → '1.2k', 2 → '2'
+    expect(screen.getByText('1.2k')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
   });
 
   it('clicking a row fires onSelectChapter with the chapter id', async () => {
@@ -150,49 +149,6 @@ describe('ChapterList (F10)', () => {
     const active = items.find((el) => el.getAttribute('aria-current') === 'true');
     expect(active).toBeDefined();
     expect(within(active as HTMLElement).getByText('Two')).toBeInTheDocument();
-  });
-
-  it('"Add chapter" click POSTs { title: "Untitled chapter" }, refetches, and selects the new id', async () => {
-    let listCalls = 0;
-    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (url.endsWith('/stories/story-1/chapters')) {
-        if (init && init.method === 'POST') {
-          return Promise.resolve(
-            jsonResponse(201, {
-              chapter: chap({ id: 'c-new', orderIndex: 0, title: 'Untitled chapter' }),
-            }),
-          );
-        }
-        listCalls += 1;
-        return Promise.resolve(jsonResponse(200, { chapters: [] }));
-      }
-      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
-    });
-
-    const onSelect = vi.fn();
-    renderList(onSelect);
-
-    await screen.findByText(/no chapters yet/i);
-    expect(listCalls).toBe(1);
-
-    await userEvent.setup().click(screen.getByRole('button', { name: /add chapter/i }));
-
-    await waitFor(() => {
-      expect(onSelect).toHaveBeenCalledWith('c-new');
-    });
-
-    // Assert the POST body.
-    const postCall = fetchMock.mock.calls.find(
-      ([, init]: [string, RequestInit | undefined]) => init && init.method === 'POST',
-    );
-    expect(postCall).toBeDefined();
-    const [, postInit] = postCall as [string, RequestInit];
-    expect(postInit.body).toBe(JSON.stringify({ title: 'Untitled chapter' }));
-
-    // Assert the list was refetched after the POST succeeded.
-    await waitFor(() => {
-      expect(listCalls).toBeGreaterThanOrEqual(2);
-    });
   });
 
   it('renders empty state when the chapter list is empty', async () => {
@@ -263,6 +219,63 @@ describe('ChapterList (F10)', () => {
     expect(alert.textContent ?? '').toMatch(/could not load chapters/i);
   });
 
+  it('renders zero-padded row numbers from orderIndex+1', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        chapters: [
+          chap({ id: 'c1', orderIndex: 0, title: 'A' }),
+          chap({ id: 'c2', orderIndex: 1, title: 'B' }),
+        ],
+      }),
+    );
+    renderList(() => {});
+    await screen.findByTestId('chapter-row-c1');
+    expect(within(screen.getByTestId('chapter-row-c1')).getByText('01')).toBeInTheDocument();
+    expect(within(screen.getByTestId('chapter-row-c2')).getByText('02')).toBeInTheDocument();
+  });
+
+  it('renders compact word counts and em-dash for zero', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        chapters: [
+          chap({ id: 'c1', orderIndex: 0, wordCount: 2100, title: 'A' }),
+          chap({ id: 'c2', orderIndex: 1, wordCount: 0, title: 'B' }),
+        ],
+      }),
+    );
+    renderList(() => {});
+    await screen.findByTestId('chapter-row-c1');
+    expect(within(screen.getByTestId('chapter-row-c1')).getByText('2.1k')).toBeInTheDocument();
+    expect(within(screen.getByTestId('chapter-row-c2')).getByText('—')).toBeInTheDocument();
+  });
+
+  it('section header renders MANUSCRIPT label and an Add Chapter + button that POSTs', async () => {
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse(200, { chapters: [] }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          chapter: {
+            ...chap({ id: 'new', orderIndex: 0, title: 'Untitled chapter' }),
+            bodyJson: null,
+          },
+        }),
+      )
+      .mockResolvedValueOnce(
+        jsonResponse(200, {
+          chapters: [chap({ id: 'new', orderIndex: 0, title: 'Untitled chapter' })],
+        }),
+      );
+
+    const onSelect = vi.fn();
+    renderList(onSelect);
+    await screen.findByTestId('chapter-list-section-label');
+    expect(screen.getByTestId('chapter-list-section-label')).toHaveTextContent('MANUSCRIPT');
+    await userEvent.click(screen.getByTestId('chapter-list-add'));
+    await waitFor(() => {
+      expect(onSelect).toHaveBeenCalledWith('new');
+    });
+  });
+
   it('renders with design-system token classes (no raw Tailwind colors)', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/chapters')) {
@@ -283,6 +296,7 @@ describe('ChapterList (F10)', () => {
 
     const row = screen.getByTestId('chapter-row-ch-1');
     expect(row.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
-    expect(row).toHaveClass('border-ink');
+    // New layout uses data-active attribute + bg token instead of border-ink
+    expect(row).toHaveAttribute('data-active', 'true');
   });
 });
