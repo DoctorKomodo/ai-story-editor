@@ -157,19 +157,41 @@ export interface DeleteCharacterInput {
   id: string;
 }
 
+export interface DeleteCharacterMutationContext {
+  previous: Character[] | undefined;
+}
+
 export function useDeleteCharacterMutation(
   storyId: string,
-): UseMutationResult<void, Error, DeleteCharacterInput> {
+): UseMutationResult<void, Error, DeleteCharacterInput, DeleteCharacterMutationContext> {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id }: DeleteCharacterInput): Promise<void> => {
+  return useMutation<void, Error, DeleteCharacterInput, DeleteCharacterMutationContext>({
+    mutationFn: async ({ id }) => {
       await api<void>(
         `/stories/${encodeURIComponent(storyId)}/characters/${encodeURIComponent(id)}`,
         { method: 'DELETE' },
       );
     },
+    onMutate: async ({ id }): Promise<DeleteCharacterMutationContext> => {
+      await qc.cancelQueries({ queryKey: charactersQueryKey(storyId) });
+      const previous = qc.getQueryData<Character[]>(charactersQueryKey(storyId));
+      if (previous !== undefined) {
+        const next = computeCharactersAfterDelete(previous, id);
+        if (next !== null) {
+          qc.setQueryData<Character[]>(charactersQueryKey(storyId), next);
+        }
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData<Character[]>(charactersQueryKey(storyId), context.previous);
+      }
+    },
     onSuccess: (_void, { id }) => {
       qc.removeQueries({ queryKey: characterQueryKey(storyId, id) });
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: charactersQueryKey(storyId) });
     },
   });
@@ -190,6 +212,44 @@ function arrayMove<T>(list: readonly T[], fromIndex: number, toIndex: number): T
 
 function withSequentialOrderIndex<T extends { orderIndex: number }>(list: readonly T[]): T[] {
   return list.map((c, idx) => (c.orderIndex === idx ? c : { ...c, orderIndex: idx }));
+}
+
+export interface ReorderItem {
+  id: string;
+  orderIndex: number;
+}
+
+export interface ReorderCharactersMutationContext {
+  previous: Character[] | undefined;
+}
+
+export function useReorderCharactersMutation(
+  storyId: string,
+): UseMutationResult<void, Error, Character[], ReorderCharactersMutationContext> {
+  const qc = useQueryClient();
+  return useMutation<void, Error, Character[], ReorderCharactersMutationContext>({
+    mutationFn: async (nextList: Character[]): Promise<void> => {
+      const items: ReorderItem[] = nextList.map((c) => ({ id: c.id, orderIndex: c.orderIndex }));
+      await api<void>(`/stories/${encodeURIComponent(storyId)}/characters/reorder`, {
+        method: 'PATCH',
+        body: { characters: items },
+      });
+    },
+    onMutate: async (nextList: Character[]): Promise<ReorderCharactersMutationContext> => {
+      await qc.cancelQueries({ queryKey: charactersQueryKey(storyId) });
+      const previous = qc.getQueryData<Character[]>(charactersQueryKey(storyId));
+      qc.setQueryData<Character[]>(charactersQueryKey(storyId), nextList);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData<Character[]>(charactersQueryKey(storyId), context.previous);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: charactersQueryKey(storyId) });
+    },
+  });
 }
 
 /**
