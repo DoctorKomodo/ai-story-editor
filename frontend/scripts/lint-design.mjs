@@ -54,12 +54,7 @@ const PATTERNS = [
 // =============================================================================
 
 const EXCLUDE_FILES = new Set(['index.css']);
-const EXCLUDE_SUFFIXES = [
-  '.test.tsx',
-  '.test.ts',
-  '.spec.tsx',
-  '.spec.ts',
-];
+const EXCLUDE_SUFFIXES = ['.test.tsx', '.test.ts', '.spec.tsx', '.spec.ts'];
 const INCLUDE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
 // =============================================================================
