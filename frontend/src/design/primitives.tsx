@@ -489,7 +489,7 @@ export function Spinner({ size = 12 }: { size?: number }): JSX.Element {
  * CloseIcon — used by ModalHeader's auto-close button
  * ========================================================================== */
 
-function CloseIcon(): JSX.Element {
+export function CloseIcon(): JSX.Element {
   return (
     <svg
       width="14"
@@ -504,6 +504,19 @@ function CloseIcon(): JSX.Element {
     >
       <path d="M18 6L6 18" />
       <path d="M6 6l12 12" />
+    </svg>
+  );
+}
+
+export function GripIcon(): JSX.Element {
+  return (
+    <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor" aria-hidden="true">
+      <circle cx="3" cy="3" r="1.2" />
+      <circle cx="9" cy="3" r="1.2" />
+      <circle cx="3" cy="7" r="1.2" />
+      <circle cx="9" cy="7" r="1.2" />
+      <circle cx="3" cy="11" r="1.2" />
+      <circle cx="9" cy="11" r="1.2" />
     </svg>
   );
 }
