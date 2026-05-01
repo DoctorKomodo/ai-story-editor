@@ -333,8 +333,8 @@ describe('Chapter routes [B3]', () => {
     expect(res.status).toBe(200);
     expect(res.body.chapter.title).toBe('Readable Chapter');
     // Body should come back as a parsed JSON tree, not a string.
-    expect(typeof res.body.chapter.body).toBe('object');
-    expect(res.body.chapter.body.type).toBe('doc');
+    expect(typeof res.body.chapter.bodyJson).toBe('object');
+    expect(res.body.chapter.bodyJson.type).toBe('doc');
     expect(res.body.chapter.wordCount).toBe(2);
     expect(res.body.chapter.orderIndex).toBe(0);
     expect(res.body.chapter.storyId).toBe(storyId);
@@ -447,8 +447,8 @@ describe('Chapter routes [B3]', () => {
     expect(r1.status).toBe(200);
     expect(r1.body.chapter.title).toBe('New Title');
     expect(r1.body.chapter.wordCount).toBe(3);
-    expect(r1.body.chapter.body.type).toBe('doc');
-    const p = (r1.body.chapter.body.content as Array<{ content: Array<{ text: string }> }>)[0];
+    expect(r1.body.chapter.bodyJson.type).toBe('doc');
+    const p = (r1.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>)[0];
     expect(p.content[0].text).toBe('One two three.');
     assertNoCiphertextKeys(r1.body.chapter);
 
@@ -485,14 +485,14 @@ describe('Chapter routes [B3]', () => {
       .send({ bodyJson: null });
     expect(r.status).toBe(200);
     expect(r.body.chapter.wordCount).toBe(0);
-    expect(r.body.chapter.body).toBeNull();
+    expect(r.body.chapter.bodyJson).toBeNull();
 
     const follow = await request(app)
       .get(`/api/stories/${storyId}/chapters/${chapterId}`)
       .set('Authorization', `Bearer ${accessToken}`);
     expect(follow.status).toBe(200);
     expect(follow.body.chapter.wordCount).toBe(0);
-    expect(follow.body.chapter.body).toBeNull();
+    expect(follow.body.chapter.bodyJson).toBeNull();
 
     // Row-level assertion: body triple is SQL NULL, not ciphertext of "null".
     const row = await prisma.chapter.findUnique({

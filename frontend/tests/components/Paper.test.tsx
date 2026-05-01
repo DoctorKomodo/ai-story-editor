@@ -1,5 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { describe, expect, it, vi } from 'vitest';
 import { Paper, type PaperProps } from '@/components/Paper';
@@ -117,6 +117,7 @@ describe('Paper (F32)', () => {
   it('renders the chapter heading with italic font, zero-padded label, and bottom border', async () => {
     const { unmount } = await renderAndGrab({
       storyTitle: 'Hollow Crown',
+      chapterId: 'ch-test-1',
       chapterTitle: 'A Quiet Beginning',
       chapterNumber: 3,
     });
@@ -127,11 +128,11 @@ describe('Paper (F32)', () => {
     // mt-12 = 48px top margin per spec.
     expect(heading.className).toMatch(/mt-12/);
 
-    const h2 = screen.getByRole('heading', { level: 2 });
-    expect(h2).toHaveTextContent('A Quiet Beginning');
-    expect(h2.className).toMatch(/italic/);
-    expect(h2.className).toMatch(/font-serif/);
-    expect(h2.className).toMatch(/text-\[22px\]/);
+    const titleInput = screen.getByTestId('chapter-title-input') as HTMLInputElement;
+    expect(titleInput.value).toBe('A Quiet Beginning');
+    expect(titleInput.className).toMatch(/italic/);
+    expect(titleInput.className).toMatch(/font-serif/);
+    expect(titleInput.className).toMatch(/text-\[22px\]/);
 
     // Right-aligned `§ NN` label, zero-padded.
     expect(screen.getByTestId('chapter-label')).toHaveTextContent('§ 03');
@@ -234,6 +235,65 @@ describe('Paper (F32)', () => {
     });
     last = onUpdate.mock.calls.at(-1);
     expect(last![0].wordCount).toBe(2);
+
+    unmount();
+  });
+
+  it('chapter title input commits the bound chapterId on blur, not the latest prop', async () => {
+    // Mounts with chapterId 'A', user blurs after editing — onCommit must
+    // receive 'A' (the id bound at render time), defending against the race
+    // where a chapter switch updates the prop before blur fires.
+    const onChapterTitleChange = vi.fn();
+    const { unmount } = await renderAndGrab({
+      chapterId: 'A',
+      chapterTitle: 'Chapter A title',
+      onChapterTitleChange,
+    });
+
+    const input = screen.getByTestId('chapter-title-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'Renamed Chapter A' } });
+    fireEvent.blur(input);
+
+    expect(onChapterTitleChange).toHaveBeenCalledTimes(1);
+    expect(onChapterTitleChange).toHaveBeenCalledWith('A', 'Renamed Chapter A');
+
+    unmount();
+  });
+
+  it('blurring an empty chapter title silently reverts without firing onCommit', async () => {
+    // Backend Zod schema requires title.min(1); the input mirrors that
+    // constraint client-side so a 400 PATCH never fires.
+    const onChapterTitleChange = vi.fn();
+    const { unmount } = await renderAndGrab({
+      chapterId: 'A',
+      chapterTitle: 'Original',
+      onChapterTitleChange,
+    });
+
+    const input = screen.getByTestId('chapter-title-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: '   ' } });
+    fireEvent.blur(input);
+
+    expect(onChapterTitleChange).not.toHaveBeenCalled();
+    expect(input.value).toBe('Original');
+
+    unmount();
+  });
+
+  it('Escape reverts the chapter title draft without committing', async () => {
+    const onChapterTitleChange = vi.fn();
+    const { unmount } = await renderAndGrab({
+      chapterId: 'A',
+      chapterTitle: 'Original',
+      onChapterTitleChange,
+    });
+
+    const input = screen.getByTestId('chapter-title-input') as HTMLInputElement;
+    fireEvent.change(input, { target: { value: 'half-typed' } });
+    fireEvent.keyDown(input, { key: 'Escape' });
+
+    expect(input.value).toBe('Original');
+    expect(onChapterTitleChange).not.toHaveBeenCalled();
 
     unmount();
   });

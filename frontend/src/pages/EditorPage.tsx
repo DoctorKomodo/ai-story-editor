@@ -265,6 +265,12 @@ export function EditorPage(): JSX.Element {
   const autosave = useAutosave<JSONContent>({
     payload: draftBodyJson,
     save: handleSave,
+    // Treat each chapter as its own document — switching chapters resets the
+    // baseline so the new chapter's freshly-loaded body isn't mistaken for a
+    // dirty edit of the old one (which would fire a spurious PATCH and, if a
+    // save was in flight during the switch, could land the new body under the
+    // new chapter id via the pending-follow-up branch).
+    resetKey: activeChapterId,
   });
 
   const handlePaperUpdate = useCallback(
@@ -273,6 +279,23 @@ export function EditorPage(): JSX.Element {
       setDraftBodyJson(bodyJson);
     },
     [],
+  );
+
+  const handleChapterTitleChange = useCallback(
+    (chapterId: string, title: string): void => {
+      // The chapter id is bound from `<ChapterTitleInput>`'s closure (Paper)
+      // rather than read from `activeChapterId` here, so a blur fired during
+      // a chapter switch still PATCHes the chapter the user was renaming.
+      if (!story?.id) return;
+      // Mutation's onSuccess refreshes both the chapters list cache and the
+      // single-chapter cache, so the sidebar list re-renders with the new title.
+      void updateChapter.mutateAsync({
+        storyId: story.id,
+        chapterId,
+        input: { title },
+      });
+    },
+    [story?.id, updateChapter],
   );
 
   const handleSidebarAdd = useCallback((): void => {
@@ -525,11 +548,13 @@ export function EditorPage(): JSX.Element {
                   storyTitle={story.title}
                   storyGenre={story.genre}
                   storyWordCount={totalWordCount}
+                  chapterId={activeChapterId}
                   chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
                   chapterTitle={activeChapter?.title ?? null}
                   initialBodyJson={(chapterQuery.data?.bodyJson as JSONContent | null) ?? null}
                   onUpdate={handlePaperUpdate}
                   onReady={handleEditorReady}
+                  onChapterTitleChange={handleChapterTitleChange}
                 />
               ) : (
                 <div

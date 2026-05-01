@@ -268,7 +268,7 @@ export function createChatMessagesRouter() {
       });
 
       // ── 6. Build prompt from chapter + story context ──────────────────────
-      const chapterContent = tipTapJsonToText(chapter.body ?? null);
+      const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
       const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
