@@ -113,6 +113,10 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Build Storybook
+        working-directory: frontend
+        run: npm run build-storybook -- --quiet
+
       # ── Test ───────────────────────────────────────────────────────────────
       - name: Prisma migrate (test DB)
         working-directory: backend

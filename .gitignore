@@ -12,6 +12,7 @@ backend/.env.live
 dist/
 build/
 *.tsbuildinfo
+storybook-static/
 
 # Logs
 *.log

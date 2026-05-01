@@ -47,17 +47,14 @@ const PATTERNS = [
 
 // =============================================================================
 // Files exempt from the rule (relative to `src/`).
+//
+// Stories are deliberately NOT excluded — Storybook is where bad habits
+// are most contagious, so the same drift rules apply. If you ever need
+// a "legacy demo" story, use the `lint:design-allow` marker per line.
 // =============================================================================
 
 const EXCLUDE_FILES = new Set(['index.css']);
-const EXCLUDE_SUFFIXES = [
-  '.stories.tsx',
-  '.stories.ts',
-  '.test.tsx',
-  '.test.ts',
-  '.spec.tsx',
-  '.spec.ts',
-];
+const EXCLUDE_SUFFIXES = ['.test.tsx', '.test.ts', '.spec.tsx', '.spec.ts'];
 const INCLUDE_EXTENSIONS = new Set(['.ts', '.tsx']);
 
 // =============================================================================
