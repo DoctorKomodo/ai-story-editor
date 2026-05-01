@@ -16,6 +16,10 @@ export interface SidebarProps {
   totalWordCount?: number;
   goalWordCount?: number;
   onOpenStoryPicker?: () => void;
+  /** Render `N` under the CHAPTERS label. `null` ⇒ count line hidden (loading). */
+  chaptersCount?: number | null;
+  /** Render `N` under the CAST label. `null` ⇒ count line hidden. */
+  castCount?: number | null;
   chaptersBody: ReactNode;
   castBody?: ReactNode;
   outlineBody?: ReactNode;
@@ -86,6 +90,8 @@ export function Sidebar({
   totalWordCount,
   goalWordCount,
   onOpenStoryPicker,
+  chaptersCount = null,
+  castCount = null,
   chaptersBody,
   castBody = null,
   outlineBody = null,
@@ -140,6 +146,8 @@ export function Sidebar({
       >
         {TABS.map((t) => {
           const isActive = activeTab === t.id;
+          const count = t.id === 'chapters' ? chaptersCount : t.id === 'cast' ? castCount : null;
+          const ariaLabel = count !== null ? `${t.label} (${String(count)})` : undefined;
           return (
             <button
               key={t.id}
@@ -148,17 +156,28 @@ export function Sidebar({
               role="tab"
               aria-selected={isActive}
               aria-controls={t.panelId}
+              aria-label={ariaLabel}
               tabIndex={isActive ? 0 : -1}
               onClick={() => setSidebarTab(t.id)}
               className={[
-                'sidebar-tab relative px-2.5 py-2 font-sans text-[12px] tracking-[.02em] uppercase transition-colors',
+                'sidebar-tab relative flex flex-col items-center px-2.5 py-2 font-sans text-[12px] tracking-[.02em] uppercase transition-colors',
                 isActive
                   ? "text-ink after:absolute after:right-2.5 after:bottom-[-1px] after:left-2.5 after:h-px after:bg-ink after:content-['']"
                   : 'text-ink-4 hover:text-ink-2',
               ].join(' ')}
               data-testid={`sidebar-tab-${t.id}`}
             >
-              {t.label}
+              <span>{t.label}</span>
+              {count !== null ? (
+                <span
+                  className={[
+                    'font-mono text-[11px] tabular-nums',
+                    isActive ? 'text-ink-3' : 'text-ink-4',
+                  ].join(' ')}
+                >
+                  {String(count)}
+                </span>
+              ) : null}
             </button>
           );
         })}
