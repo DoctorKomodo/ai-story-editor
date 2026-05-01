@@ -19,6 +19,7 @@ const sampleCharacter: Character = {
   voice: 'Quiet, precise. Holds eye contact a beat longer than is comfortable.',
   arc: 'Learns to trust her own judgement after a series of avoidable misreadings.',
   personality: 'Careful, curious, slow to anger but absolute once she gets there.',
+  orderIndex: 0,
   createdAt: '2026-04-01T12:00:00Z',
   updatedAt: '2026-04-30T12:00:00Z',
 };

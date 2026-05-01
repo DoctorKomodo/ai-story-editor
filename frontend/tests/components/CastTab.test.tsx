@@ -14,6 +14,7 @@ function char(overrides: Partial<Character> & { id: string }): Character {
     voice: null,
     arc: null,
     personality: null,
+    orderIndex: 0,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
     ...overrides,

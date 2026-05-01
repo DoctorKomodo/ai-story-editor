@@ -29,6 +29,7 @@ function makeCharacter(overrides: Partial<Character> = {}): Character {
     voice: 'Measured and warm',
     arc: 'From doubt to conviction',
     personality: 'Curious',
+    orderIndex: 0,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
     ...overrides,

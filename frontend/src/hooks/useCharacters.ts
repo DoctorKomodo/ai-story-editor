@@ -30,6 +30,7 @@ export interface Character {
   voice: string | null;
   arc: string | null;
   personality: string | null;
+  orderIndex: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -172,4 +173,55 @@ export function useDeleteCharacterMutation(
       void qc.invalidateQueries({ queryKey: charactersQueryKey(storyId) });
     },
   });
+}
+
+/**
+ * Pure array-move helper. Returns a new array.
+ */
+function arrayMove<T>(list: readonly T[], fromIndex: number, toIndex: number): T[] {
+  if (fromIndex === toIndex) return list.slice();
+  if (fromIndex < 0 || fromIndex >= list.length) return list.slice();
+  if (toIndex < 0 || toIndex >= list.length) return list.slice();
+  const next = list.slice();
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved as T);
+  return next;
+}
+
+function withSequentialOrderIndex<T extends { orderIndex: number }>(list: readonly T[]): T[] {
+  return list.map((c, idx) => (c.orderIndex === idx ? c : { ...c, orderIndex: idx }));
+}
+
+/**
+ * Pure handler used by the CastTab's `DndContext.onDragEnd`. Given the cache
+ * and a dnd-kit `{active, over}` pair, returns the new list (with sequential
+ * orderIndex). Returns null when nothing needs to change.
+ */
+export function computeReorderedCharacters(
+  current: readonly Character[],
+  activeId: string,
+  overId: string | null,
+): Character[] | null {
+  if (overId === null) return null;
+  if (activeId === overId) return null;
+  const fromIndex = current.findIndex((c) => c.id === activeId);
+  const toIndex = current.findIndex((c) => c.id === overId);
+  if (fromIndex === -1 || toIndex === -1) return null;
+  const moved = arrayMove(current, fromIndex, toIndex);
+  return withSequentialOrderIndex(moved);
+}
+
+/**
+ * Pure helper for the optimistic delete update — removes the character and
+ * reassigns sequential orderIndex on the remainder. Returns null when the id
+ * isn't present.
+ */
+export function computeCharactersAfterDelete(
+  current: readonly Character[],
+  characterId: string,
+): Character[] | null {
+  const idx = current.findIndex((c) => c.id === characterId);
+  if (idx === -1) return null;
+  const remaining = current.filter((c) => c.id !== characterId);
+  return withSequentialOrderIndex(remaining);
 }
