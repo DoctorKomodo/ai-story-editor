@@ -26,7 +26,7 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
     });
 
     expect(created.title).toBe('Chapter One');
-    expect(created.body).toEqual(body);
+    expect(created.bodyJson).toEqual(body);
     expect(created.wordCount).toBe(4);
     expect(created.orderIndex).toBe(0);
 
@@ -65,7 +65,7 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
       bodyJson: { type: 'doc', content: [{ type: 'paragraph' }] },
       wordCount: 42,
     });
-    expect(updated?.body).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
+    expect(updated?.bodyJson).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
     expect(updated?.wordCount).toBe(42);
   });
 });

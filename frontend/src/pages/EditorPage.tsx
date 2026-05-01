@@ -275,6 +275,20 @@ export function EditorPage(): JSX.Element {
     [],
   );
 
+  const handleChapterTitleChange = useCallback(
+    (title: string): void => {
+      if (!story?.id || !activeChapterId) return;
+      // Mutation's onSuccess refreshes both the chapters list cache and the
+      // single-chapter cache, so the sidebar list re-renders with the new title.
+      void updateChapter.mutateAsync({
+        storyId: story.id,
+        chapterId: activeChapterId,
+        input: { title },
+      });
+    },
+    [story?.id, activeChapterId, updateChapter],
+  );
+
   const handleSidebarAdd = useCallback((): void => {
     if (!story?.id) return;
     if (activeTab === 'chapters') {
@@ -530,6 +544,7 @@ export function EditorPage(): JSX.Element {
                   initialBodyJson={(chapterQuery.data?.bodyJson as JSONContent | null) ?? null}
                   onUpdate={handlePaperUpdate}
                   onReady={handleEditorReady}
+                  onChapterTitleChange={handleChapterTitleChange}
                 />
               ) : (
                 <div

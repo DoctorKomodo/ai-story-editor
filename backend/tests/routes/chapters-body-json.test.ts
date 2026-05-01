@@ -115,10 +115,10 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     expect(res.status).toBe(200);
     expect(res.body.chapter.wordCount).toBe(4);
     // Body comes back as a parsed JSON tree, not a string.
-    expect(typeof res.body.chapter.body).toBe('object');
-    expect(res.body.chapter.body.type).toBe('doc');
+    expect(typeof res.body.chapter.bodyJson).toBe('object');
+    expect(res.body.chapter.bodyJson.type).toBe('doc');
     const firstParagraph = (
-      res.body.chapter.body.content as Array<{ content: Array<{ text: string }> }>
+      res.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>
     )[0];
     expect(firstParagraph.content[0].text).toBe('four five six seven');
   });
@@ -144,7 +144,7 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       .send({ bodyJson: null });
     expect(res.status).toBe(200);
     expect(res.body.chapter.wordCount).toBe(0);
-    expect(res.body.chapter.body).toBeNull();
+    expect(res.body.chapter.bodyJson).toBeNull();
   });
 
   it('PATCH with whitespace-only / empty-paragraph bodyJson yields wordCount 0', async () => {
@@ -198,7 +198,7 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     expect(res.status).toBe(200);
     expect(res.body.chapter.title).toBe('New Title');
     expect(res.body.chapter.wordCount).toBe(7);
-    const p = (res.body.chapter.body.content as Array<{ content: Array<{ text: string }> }>)[0];
+    const p = (res.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>)[0];
     expect(p.content[0].text).toBe('one two three four five six seven');
   });
 
@@ -227,8 +227,8 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     expect(res.body.chapter.status).toBe('revision');
     // Body + wordCount must be UNCHANGED.
     expect(res.body.chapter.wordCount).toBe(4);
-    expect(typeof res.body.chapter.body).toBe('object');
-    const p = (res.body.chapter.body.content as Array<{ content: Array<{ text: string }> }>)[0];
+    expect(typeof res.body.chapter.bodyJson).toBe('object');
+    const p = (res.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>)[0];
     expect(p.content[0].text).toBe('alpha beta gamma delta');
 
     // Follow-up GET confirms the body was not rewritten.
@@ -237,7 +237,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       .set('Authorization', `Bearer ${accessToken}`);
     expect(follow.status).toBe(200);
     expect(follow.body.chapter.wordCount).toBe(4);
-    const fp = (follow.body.chapter.body.content as Array<{ content: Array<{ text: string }> }>)[0];
+    const fp = (
+      follow.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>
+    )[0];
     expect(fp.content[0].text).toBe('alpha beta gamma delta');
   });
 

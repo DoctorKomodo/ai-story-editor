@@ -186,7 +186,7 @@ export function createAiRouter() {
       });
 
       // ── 8. Extract chapter plaintext from decrypted TipTap body ──────────
-      const chapterContent = tipTapJsonToText(chapter.body ?? null);
+      const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
 
       // ── 9. Build prompt ───────────────────────────────────────────────────
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;

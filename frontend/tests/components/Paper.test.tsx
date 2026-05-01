@@ -127,11 +127,11 @@ describe('Paper (F32)', () => {
     // mt-12 = 48px top margin per spec.
     expect(heading.className).toMatch(/mt-12/);
 
-    const h2 = screen.getByRole('heading', { level: 2 });
-    expect(h2).toHaveTextContent('A Quiet Beginning');
-    expect(h2.className).toMatch(/italic/);
-    expect(h2.className).toMatch(/font-serif/);
-    expect(h2.className).toMatch(/text-\[22px\]/);
+    const titleInput = screen.getByTestId('chapter-title-input') as HTMLInputElement;
+    expect(titleInput.value).toBe('A Quiet Beginning');
+    expect(titleInput.className).toMatch(/italic/);
+    expect(titleInput.className).toMatch(/font-serif/);
+    expect(titleInput.className).toMatch(/text-\[22px\]/);
 
     // Right-aligned `§ NN` label, zero-padded.
     expect(screen.getByTestId('chapter-label')).toHaveTextContent('§ 03');

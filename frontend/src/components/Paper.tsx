@@ -1,7 +1,7 @@
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
 import type { JSX, ReactNode } from 'react';
-import { Fragment, useEffect, useMemo, useRef } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CharRefMenu } from '@/components/CharRefMenu';
 import { EditorEmptyHints } from '@/components/EditorEmptyHints';
 import { useCharactersQuery } from '@/hooks/useCharacters';
@@ -44,6 +44,7 @@ export interface PaperProps {
   initialBodyJson?: JSONContent | null;
   onUpdate?: (args: { bodyJson: JSONContent; wordCount: number }) => void;
   onReady?: (editor: TiptapEditor) => void;
+  onChapterTitleChange?: (title: string) => void;
 }
 
 const DEFAULT_EMPTY_DOC: JSONContent = {
@@ -117,6 +118,53 @@ function SubRow({ genre, draftLabel, wordCount, status }: SubRowProps): JSX.Elem
   );
 }
 
+function ChapterTitleInput({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit?: (next: string) => void;
+}): JSX.Element {
+  // Local draft so typing is instantaneous; commit on blur or Enter so we
+  // don't issue a PATCH on every keystroke. Re-sync when the prop changes
+  // (chapter switch, server-side rename, optimistic-update settle).
+  const [draft, setDraft] = useState<string>(value);
+  useEffect(() => {
+    setDraft(value);
+  }, [value]);
+
+  const commit = (): void => {
+    const next = draft.trim();
+    if (next === value) return;
+    onCommit?.(next);
+  };
+
+  return (
+    <input
+      type="text"
+      value={draft}
+      onChange={(e) => {
+        setDraft(e.target.value);
+      }}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          (e.currentTarget as HTMLInputElement).blur();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          setDraft(value);
+          (e.currentTarget as HTMLInputElement).blur();
+        }
+      }}
+      data-testid="chapter-title-input"
+      aria-label="Chapter title"
+      placeholder="Untitled chapter"
+      className="flex-1 bg-transparent font-serif text-[22px] italic text-ink outline-none focus:bg-[var(--accent-soft)]/30 rounded-sm px-1 -mx-1"
+    />
+  );
+}
+
 export function Paper({
   storyTitle,
   storyGenre,
@@ -128,6 +176,7 @@ export function Paper({
   initialBodyJson,
   onUpdate,
   onReady,
+  onChapterTitleChange,
 }: PaperProps): JSX.Element {
   // `useEditor` re-creates options on every render but only re-subscribes
   // its callbacks at mount; route the prop callbacks through refs so the
@@ -228,12 +277,12 @@ export function Paper({
         status={storyStatus}
       />
 
-      {chapterTitle ? (
+      {chapterTitle !== null && chapterTitle !== undefined ? (
         <header
           data-testid="chapter-heading"
           className="chapter-heading mt-12 flex items-baseline gap-3 border-b border-line pt-2 pb-2"
         >
-          <h2 className="flex-1 font-serif text-[22px] italic text-ink">{chapterTitle}</h2>
+          <ChapterTitleInput value={chapterTitle} onCommit={onChapterTitleChange} />
           {chapterLabel ? (
             <span
               data-testid="chapter-label"

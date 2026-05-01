@@ -236,15 +236,20 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
 
 function shape(row: unknown, req: Request) {
   const projected = projectDecrypted(req, row as Record<string, unknown>, ENCRYPTED_FIELDS);
-  // Surface `body` as parsed JSON when it's present; callers expect the tree,
-  // not the serialised string.
+  // The encrypted column is named `body` (matching `bodyCiphertext/Iv/AuthTag`),
+  // but the API contract surfaces the TipTap document tree as `bodyJson`. Parse
+  // the serialised JSON and rename the field on the way out.
+  let bodyJson: unknown = null;
   if (typeof projected.body === 'string' && projected.body.length > 0) {
     try {
-      projected.body = JSON.parse(projected.body);
+      bodyJson = JSON.parse(projected.body);
     } catch {
-      // Non-JSON plaintext — shouldn't happen post-[E11]; leave as string
-      // so the caller can see something went wrong rather than crash.
+      // Non-JSON plaintext — shouldn't happen post-[E11]; surface as-is so
+      // the caller can see something went wrong rather than crash.
+      bodyJson = projected.body;
     }
   }
+  delete projected.body;
+  projected.bodyJson = bodyJson;
   return projected;
 }
