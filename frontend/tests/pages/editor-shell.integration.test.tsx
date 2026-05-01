@@ -181,28 +181,4 @@ describe('EditorPage shell integration (F51)', () => {
 
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
   });
-
-  it('Outline tab + button is a no-op (OutlineTab owns its own add affordance)', async () => {
-    useSidebarTabStore.setState({ sidebarTab: 'outline' });
-    renderEditor();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('sidebar-add-button')).toBeInTheDocument();
-    });
-
-    const beforeCalls = fetchMock.mock.calls.length;
-    await userEvent.setup().click(screen.getByTestId('sidebar-add-button'));
-
-    // No POST fired. (Mutations would have called fetch beyond the resting set.)
-    const writeCalls = fetchMock.mock.calls.filter(([url, init]) => {
-      const method = ((init as RequestInit | undefined)?.method ?? 'GET').toUpperCase();
-      return (
-        method !== 'GET' &&
-        typeof url === 'string' &&
-        (url.includes('/chapters') || url.includes('/characters') || url.includes('/outline'))
-      );
-    });
-    expect(writeCalls.length).toBe(0);
-    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(beforeCalls);
-  });
 });

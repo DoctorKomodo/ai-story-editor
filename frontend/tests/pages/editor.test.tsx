@@ -196,7 +196,7 @@ describe('EditorPage (F51 — AppShell shell)', () => {
     expect(useSidebarTabStore.getState().sidebarTab).toBe('outline');
   });
 
-  it('sidebar + button on Chapters tab POSTs to /stories/:id/chapters', async () => {
+  it('MANUSCRIPT + button on Chapters tab POSTs to /stories/:id/chapters', async () => {
     fetchMock.mockImplementation((url: string, init?: RequestInit) => {
       if (
         url.endsWith('/stories/abc123/chapters') &&
@@ -222,82 +222,16 @@ describe('EditorPage (F51 — AppShell shell)', () => {
     renderEditor();
 
     await waitFor(() => {
-      expect(screen.getByTestId('sidebar-add-button')).toBeInTheDocument();
+      expect(screen.getByTestId('chapter-list-add')).toBeInTheDocument();
     });
 
-    await userEvent.setup().click(screen.getByTestId('sidebar-add-button'));
+    await userEvent.setup().click(screen.getByTestId('chapter-list-add'));
 
     await waitFor(() => {
       const call = fetchMock.mock.calls.find(
         ([url, init]) =>
           typeof url === 'string' &&
           url.endsWith('/stories/abc123/chapters') &&
-          (init as RequestInit | undefined)?.method?.toUpperCase() === 'POST',
-      );
-      expect(call).toBeDefined();
-    });
-  });
-
-  it('sidebar + button on Cast tab POSTs to /stories/:id/characters', async () => {
-    useSidebarTabStore.setState({ sidebarTab: 'cast' });
-    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
-      if (
-        url.endsWith('/stories/abc123/characters') &&
-        (init?.method ?? 'GET').toUpperCase() === 'POST'
-      ) {
-        return Promise.resolve(
-          jsonResponse(201, {
-            character: {
-              id: 'new-char',
-              storyId: 'abc123',
-              name: 'Untitled',
-              role: null,
-              age: null,
-              appearance: null,
-              voice: null,
-              arc: null,
-              personality: null,
-              createdAt: '2026-04-27T00:00:00.000Z',
-              updatedAt: '2026-04-27T00:00:00.000Z',
-            },
-          }),
-        );
-      }
-      if (url.endsWith('/stories/abc123/characters/new-char')) {
-        return Promise.resolve(
-          jsonResponse(200, {
-            character: {
-              id: 'new-char',
-              storyId: 'abc123',
-              name: 'Untitled',
-              role: null,
-              age: null,
-              appearance: null,
-              voice: null,
-              arc: null,
-              personality: null,
-              createdAt: '2026-04-27T00:00:00.000Z',
-              updatedAt: '2026-04-27T00:00:00.000Z',
-            },
-          }),
-        );
-      }
-      return mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() })))(url);
-    });
-
-    renderEditor();
-
-    await waitFor(() => {
-      expect(screen.getByTestId('sidebar-add-button')).toBeInTheDocument();
-    });
-
-    await userEvent.setup().click(screen.getByTestId('sidebar-add-button'));
-
-    await waitFor(() => {
-      const call = fetchMock.mock.calls.find(
-        ([url, init]) =>
-          typeof url === 'string' &&
-          url.endsWith('/stories/abc123/characters') &&
           (init as RequestInit | undefined)?.method?.toUpperCase() === 'POST',
       );
       expect(call).toBeDefined();

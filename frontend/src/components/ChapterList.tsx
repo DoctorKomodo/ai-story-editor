@@ -127,7 +127,6 @@ function ChapterRow({
         className={[
           'grip cursor-grab touch-none text-ink-4 hover:text-ink-2',
           'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
-          'is-coarse-pointer-visible',
           'flex-shrink-0',
         ].join(' ')}
         {...attributes}
