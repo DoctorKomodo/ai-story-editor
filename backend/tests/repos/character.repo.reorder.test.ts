@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { createCharacterRepo } from '../../src/repos/character.repo';
+import { CharacterNotOwnedError, createCharacterRepo } from '../../src/repos/character.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { makeUserContext, resetAllTables } from './_req';
 
@@ -102,6 +102,44 @@ describe('character.repo — orderIndex', () => {
       const list = await createCharacterRepo(alice.req).findManyForStory(story.id as string);
       expect(list).toHaveLength(1);
       expect(list[0]?.id).toBe(ch.id);
+    });
+  });
+
+  describe('reorder()', () => {
+    it('rewrites orderIndex via the [D16] two-phase swap (no P2002 mid-transaction)', async () => {
+      const ctx = await makeUserContext('cr-swap');
+      const story = await createStoryRepo(ctx.req).create({ title: 's' });
+      const repo = createCharacterRepo(ctx.req);
+      const a = await repo.create({ storyId: story.id as string, name: 'a', orderIndex: 0 });
+      const b = await repo.create({ storyId: story.id as string, name: 'b', orderIndex: 1 });
+      const c = await repo.create({ storyId: story.id as string, name: 'c', orderIndex: 2 });
+
+      await repo.reorder(story.id as string, [
+        { id: c.id as string, orderIndex: 0 },
+        { id: a.id as string, orderIndex: 1 },
+        { id: b.id as string, orderIndex: 2 },
+      ]);
+
+      const list = await repo.findManyForStory(story.id as string);
+      expect(list.map((ch) => ch.id)).toEqual([c.id, a.id, b.id]);
+      expect(list.map((ch) => ch.orderIndex)).toEqual([0, 1, 2]);
+    });
+
+    it('throws CharacterNotOwnedError when one of the ids belongs to another user', async () => {
+      const alice = await makeUserContext('cr-alice');
+      const bob = await makeUserContext('cr-bob');
+      const story = await createStoryRepo(alice.req).create({ title: 's' });
+      const a = await createCharacterRepo(alice.req).create({
+        storyId: story.id as string,
+        name: 'a',
+        orderIndex: 0,
+      });
+
+      await expect(
+        createCharacterRepo(bob.req).reorder(story.id as string, [
+          { id: a.id as string, orderIndex: 0 },
+        ]),
+      ).rejects.toBeInstanceOf(CharacterNotOwnedError);
     });
   });
 });

@@ -3,6 +3,13 @@ import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
+export class CharacterNotOwnedError extends Error {
+  constructor() {
+    super('character.repo: one or more characters not owned by caller');
+    this.name = 'CharacterNotOwnedError';
+  }
+}
+
 const ENCRYPTED_FIELDS = [
   'name',
   'role',
@@ -151,6 +158,42 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     });
   }
 
+  async function reorder(
+    storyId: string,
+    items: Array<{ id: string; orderIndex: number }>,
+  ): Promise<void> {
+    const userId = resolveUserId(req);
+    const ids = items.map((i) => i.id);
+    const found = await client.character.findMany({
+      where: { id: { in: ids }, storyId, story: { userId } },
+      select: { id: true },
+    });
+    if (found.length !== ids.length) {
+      throw new CharacterNotOwnedError();
+    }
+
+    // [D16] Two-phase swap. Phase 1 parks every targeted row at a NEGATIVE
+    // temp value (cannot collide with real data; orderIndex >= 0 is enforced
+    // at the route layer). Phase 2 writes the final values; the unique
+    // constraint sees each target slot vacated. Both phases inside one
+    // interactive transaction so the intermediate negative state is never
+    // visible to readers.
+    await client.$transaction(async (tx) => {
+      for (let i = 0; i < items.length; i++) {
+        await tx.character.update({
+          where: { id: items[i]!.id },
+          data: { orderIndex: -(i + 1) },
+        });
+      }
+      for (const item of items) {
+        await tx.character.update({
+          where: { id: item.id },
+          data: { orderIndex: item.orderIndex },
+        });
+      }
+    });
+  }
+
   async function maxOrderIndex(storyId: string): Promise<number | null> {
     const userId = resolveUserId(req);
     const agg = await client.character.aggregate({
@@ -160,5 +203,5 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     return agg._max.orderIndex ?? null;
   }
 
-  return { create, findById, findManyForStory, update, remove, maxOrderIndex };
+  return { create, findById, findManyForStory, update, remove, reorder, maxOrderIndex };
 }
