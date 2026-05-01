@@ -54,6 +54,7 @@ export function AutosaveIndicator({
   // Whenever the status (or savedAt / retryAt) changes, snap `now` so the
   // first render after a transition reflects current wall-clock time without
   // waiting up to TICK_MS.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: trigger-only deps — we want to re-run on every transition, the body doesn't read them
   useEffect(() => {
     setNow(Date.now());
   }, [status, savedAt, retryAt]);

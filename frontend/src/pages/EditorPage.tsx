@@ -473,6 +473,7 @@ export function EditorPage(): JSX.Element {
 
   // Cancel + clear the inline card on chapter / story switch so a half-streamed
   // rewrite doesn't bleed into the next chapter.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChapterId / story?.id are trigger deps — the body intentionally just clears, regardless of value
   useEffect(() => {
     clearInlineAIResult();
     lastRunArgsRef.current = null;

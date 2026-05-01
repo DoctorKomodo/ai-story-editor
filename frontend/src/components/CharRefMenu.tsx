@@ -67,6 +67,7 @@ export function CharRefMenu(): JSX.Element | null {
     };
   }, [open]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: items.length is a trigger — when the suggestion count changes the menu height re-measures
   useEffect(() => {
     if (!open) return;
     if (!ref.current) return;
