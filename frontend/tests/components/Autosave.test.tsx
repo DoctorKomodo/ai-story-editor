@@ -217,4 +217,61 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     expect(save).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenNthCalledWith(2, 'fixed-B');
   });
+
+  it('flushes a pending debounce against the previous save fn when resetKey changes', async () => {
+    // Regression: switching chapters inside the 4s debounce window used to
+    // drop the typed-but-unsaved edit. The hook now flushes the pending
+    // debounce against the *snapshotted* save fn (closed over the previous
+    // chapter id) before resetting baseline state. The flush happens
+    // synchronously from the resetKey effect — no fake-timer advance needed.
+    const saveA = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const saveB = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+
+    function FlushHarness(): JSX.Element {
+      const [key, setKey] = useState<string>('A');
+      const [payload, setPayload] = useState<string | null>('baseline-A');
+      const save = key === 'A' ? saveA : saveB;
+      useAutosave({ payload, save, debounceMs: DEBOUNCE_MS, resetKey: key });
+      return (
+        <>
+          <button type="button" onClick={() => setPayload('typed-in-A')}>
+            TypeInA
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setKey('B');
+              setPayload('baseline-B');
+            }}
+          >
+            SwitchToB
+          </button>
+        </>
+      );
+    }
+
+    render(<FlushHarness />);
+
+    // Type into chapter A — schedules a debounce.
+    clickButton('TypeInA');
+    await advance(100);
+    expect(saveA).not.toHaveBeenCalled();
+
+    // Switch chapters before the 4s debounce fires. The flush should land
+    // the typed-but-unsaved payload against the OLD save fn.
+    clickButton('SwitchToB');
+    // Allow the fire-and-forget promise to settle.
+    await advance(0);
+
+    expect(saveA).toHaveBeenCalledTimes(1);
+    expect(saveA).toHaveBeenCalledWith('typed-in-A');
+    expect(saveB).not.toHaveBeenCalled();
+
+    // Advancing past the original debounce window must NOT fire saveA again
+    // (the timer was cleared) and must NOT misroute the flushed payload to
+    // saveB as a baseline-mismatch.
+    await advance(DEBOUNCE_MS + 200);
+    expect(saveA).toHaveBeenCalledTimes(1);
+    expect(saveB).not.toHaveBeenCalled();
+  });
 });

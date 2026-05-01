@@ -61,6 +61,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
 
   // Timer + in-flight state.
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The save callback snapshotted at debounce-schedule time, so a pending
+  // debounce can be flushed against the *original* callback even after the
+  // parent has rerendered with a new one (e.g. chapter switch).
+  const debounceSaveRef = useRef<((p: T) => Promise<void>) | null>(null);
   const retryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
   const pendingFollowupRef = useRef(false);
@@ -77,6 +81,60 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     debounceMsRef.current = debounceMs;
   }, [debounceMs]);
 
+  // Reset baseline state when `resetKey` changes (e.g. chapter switch in the
+  // editor). Declared *before* the payload effect so that on a render where
+  // both `resetKey` and `payload` change in the same tick (chapter switch
+  // immediately seeds the new chapter's body), the flush observes the
+  // previous chapter's snapshotted save + typed payload before the payload
+  // effect overwrites them.
+  //
+  // Without this, `lastSavedPayloadRef` keeps the previous chapter's body;
+  // the new chapter's freshly-loaded body then differs from it and schedules
+  // a spurious PATCH. We also cancel any pending debounce / retry / follow-up
+  // so an in-flight save for the previous key can't resurface as a save
+  // under the new key.
+  const lastResetKeyRef = useRef<typeof resetKey>(resetKey);
+  useEffect(() => {
+    if (Object.is(lastResetKeyRef.current, resetKey)) return;
+    lastResetKeyRef.current = resetKey;
+
+    // Flush a pending debounce against the snapshotted save fn before we
+    // discard it. Without this, a typed-but-not-yet-saved edit would be
+    // silently dropped when the user switches to another chapter inside the
+    // debounce window. The snapshotted callback was captured when the
+    // debounce was scheduled and is still closed over the *previous* key
+    // (e.g. the chapter id the user typed in), so the PATCH lands under the
+    // correct id even after the parent rerenders with a new save fn.
+    const pendingSave = debounceSaveRef.current;
+    const pendingPayload = latestPayloadRef.current;
+    if (debounceTimerRef.current !== null && pendingSave !== null && pendingPayload !== null) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+      debounceSaveRef.current = null;
+      // Fire-and-forget: the user has moved on, blocking the chapter switch
+      // on a network round-trip is the wrong UX. A failed flush is no worse
+      // than a failed in-flight save — the typed text is gone either way and
+      // the user can re-enter it.
+      void pendingSave(pendingPayload).catch(() => {});
+    } else if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+      debounceSaveRef.current = null;
+    }
+
+    baselineSetRef.current = false;
+    lastSavedPayloadRef.current = null;
+    pendingFollowupRef.current = false;
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (mountedRef.current) {
+      setStatus('idle');
+      setRetryAt(null);
+    }
+  }, [resetKey]);
+
   // React to payload changes.
   useEffect(() => {
     latestPayloadRef.current = payload;
@@ -86,6 +144,7 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
         clearTimeout(debounceTimerRef.current);
         debounceTimerRef.current = null;
       }
+      debounceSaveRef.current = null;
     };
     const clearRetry = (): void => {
       if (retryTimerRef.current !== null) {
@@ -175,8 +234,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
       clearDebounce();
       clearRetry();
       const snapshotSave = saveRef.current;
+      debounceSaveRef.current = snapshotSave;
       debounceTimerRef.current = setTimeout(() => {
         debounceTimerRef.current = null;
+        debounceSaveRef.current = null;
         if (!mountedRef.current) return;
         void runSave(snapshotSave);
       }, debounceMsRef.current);
@@ -212,33 +273,6 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
 
     scheduleDebouncedSave();
   }, [payload]);
-
-  // Reset baseline state when `resetKey` changes (e.g. chapter switch in the
-  // editor). Without this, `lastSavedPayloadRef` keeps the previous chapter's
-  // body; the new chapter's freshly-loaded body then differs from it and
-  // schedules a spurious PATCH. We also cancel any pending debounce / retry /
-  // follow-up so an in-flight save for the previous key can't resurface as a
-  // save under the new key.
-  const lastResetKeyRef = useRef<typeof resetKey>(resetKey);
-  useEffect(() => {
-    if (Object.is(lastResetKeyRef.current, resetKey)) return;
-    lastResetKeyRef.current = resetKey;
-    baselineSetRef.current = false;
-    lastSavedPayloadRef.current = null;
-    pendingFollowupRef.current = false;
-    if (debounceTimerRef.current !== null) {
-      clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-    if (retryTimerRef.current !== null) {
-      clearTimeout(retryTimerRef.current);
-      retryTimerRef.current = null;
-    }
-    if (mountedRef.current) {
-      setStatus('idle');
-      setRetryAt(null);
-    }
-  }, [resetKey]);
 
   // Unmount cleanup. The setup intentionally re-asserts mountedRef.current
   // = true: under React.StrictMode dev, useEffect runs setup → cleanup →
