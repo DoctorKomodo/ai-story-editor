@@ -65,8 +65,20 @@ export function useCharactersQuery(
   });
 }
 
+/**
+ * POST body shape accepted by the create endpoint. Only `name` is required;
+ * any optional field provided is forwarded as-is. Empty/blank values should
+ * be omitted by the caller (do not send `""`); to clear a field after create,
+ * use the update mutation with an explicit `null`.
+ */
 export interface CreateCharacterInput {
   name: string;
+  role?: string;
+  age?: string;
+  appearance?: string;
+  voice?: string;
+  arc?: string;
+  personality?: string;
 }
 
 export function useCreateCharacterMutation(
