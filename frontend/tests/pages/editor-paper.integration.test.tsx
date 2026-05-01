@@ -44,7 +44,6 @@ function makeChapter(overrides: Record<string, unknown> = {}): Record<string, un
     orderIndex: 0,
     wordCount: 0,
     status: 'draft',
-    bodyJson: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
     ...overrides,
@@ -174,6 +173,89 @@ describe('EditorPage paper integration (F52)', () => {
     const titleInput = (await screen.findByTestId('chapter-title-input')) as HTMLInputElement;
     expect(titleInput.value).toMatch(/opening/i);
     expect(screen.queryByTestId('editor-empty-state')).toBeNull();
+  });
+
+  it('swaps the editor body when the active chapter changes (incl. empty bodies)', async () => {
+    // Regression: switching chapters must replace the editor's content even
+    // when the new chapter's body is `null` (freshly created). Earlier the
+    // in-place setContent effect early-returned on `!initialBodyJson` and the
+    // previous chapter's text remained visible under the new chapter's title.
+    const ch1 = makeChapter({ id: 'ch1', title: 'First', orderIndex: 0, wordCount: 3 });
+    const ch2 = makeChapter({ id: 'ch2', title: 'Second', orderIndex: 1, wordCount: 0 });
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/auth/refresh'))
+        return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
+      if (url.endsWith('/auth/me'))
+        return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+      if (url.endsWith('/stories/abc123'))
+        return Promise.resolve(jsonResponse(200, { story: makeStory() }));
+      if (url.endsWith('/stories/abc123/chapters'))
+        return Promise.resolve(jsonResponse(200, { chapters: [ch1, ch2] }));
+      if (url.endsWith('/stories/abc123/chapters/ch1')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chapter: {
+              ...ch1,
+              bodyJson: {
+                type: 'doc',
+                content: [
+                  { type: 'paragraph', content: [{ type: 'text', text: 'First chapter body.' }] },
+                ],
+              },
+            },
+          }),
+        );
+      }
+      if (url.endsWith('/stories/abc123/chapters/ch2')) {
+        // Empty body — this is the case that previously left the editor
+        // showing ch1's text.
+        return Promise.resolve(jsonResponse(200, { chapter: { ...ch2, bodyJson: null } }));
+      }
+      if (url.endsWith('/stories/abc123/characters'))
+        return Promise.resolve(jsonResponse(200, { characters: [] }));
+      if (url.endsWith('/stories/abc123/outline'))
+        return Promise.resolve(jsonResponse(200, { items: [] }));
+      if (url.endsWith('/ai/balance'))
+        return Promise.resolve(jsonResponse(200, { balance: { dollars: 1, vcu: 100 } }));
+      if (url.endsWith('/ai/models')) return Promise.resolve(jsonResponse(200, { models: [] }));
+      if (url.endsWith('/users/me/settings')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            settings: {
+              theme: 'paper',
+              prose: { font: 'serif', size: 18, lineHeight: 1.7 },
+              writing: {
+                spellcheck: true,
+                typewriterMode: false,
+                focusMode: false,
+                dailyWordGoal: 500,
+              },
+              chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
+              ai: { includeVeniceSystemPrompt: true },
+            },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    useActiveChapterStore.setState({ activeChapterId: 'ch1' });
+    renderEditor();
+
+    const body = await screen.findByRole('textbox', { name: /chapter body/i });
+    await waitFor(() => expect(body.textContent ?? '').toContain('First chapter body.'));
+
+    act(() => {
+      useActiveChapterStore.setState({ activeChapterId: 'ch2' });
+    });
+
+    // After the switch, the editor must NOT still show ch1's prose. With the
+    // `key={activeChapterId}` remount it reinitialises to the canonical empty
+    // doc.
+    await waitFor(() => {
+      const next = screen.getByRole('textbox', { name: /chapter body/i });
+      expect(next.textContent ?? '').not.toContain('First chapter body.');
+    });
   });
 
   it('Find button surfaces the [X17] tooltip until the feature ships', async () => {

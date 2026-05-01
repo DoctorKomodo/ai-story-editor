@@ -28,6 +28,7 @@ coverage/
 playwright-report/
 test-results/
 vitest-result.json
+.playwright-mcp/
 
 # Database backups
 backups/*.sql.gz

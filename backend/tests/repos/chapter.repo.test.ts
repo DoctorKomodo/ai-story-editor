@@ -50,6 +50,40 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
     expect(await bobRepo.findById(ch.id as string)).toBeNull();
   });
 
+  it('findManyForStory returns metadata-only rows — title decrypted, no bodyJson', async () => {
+    const ctx = await makeUserContext('many-meta');
+    const story = await createStoryRepo(ctx.req).create({ title: 's' });
+    const repo = createChapterRepo(ctx.req);
+    const body = {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'secret prose' }] }],
+    };
+    await repo.create({
+      storyId: story.id as string,
+      title: 'Encrypted Title',
+      bodyJson: body,
+      wordCount: 2,
+      orderIndex: 0,
+    });
+
+    const list = await repo.findManyForStory(story.id as string);
+    expect(list).toHaveLength(1);
+    const ch = list[0]!;
+    // Title is decrypted (otherwise the sidebar can't render).
+    expect(ch.title).toBe('Encrypted Title');
+    // Metadata is present.
+    expect(ch.wordCount).toBe(2);
+    expect(ch.orderIndex).toBe(0);
+    expect(ch.status).toBe('draft');
+    // Body must NOT be present in the metadata projection — search the full
+    // object so this fails loudly if a future change reintroduces it.
+    expect(Object.keys(ch as Record<string, unknown>)).not.toContain('bodyJson');
+    expect(Object.keys(ch as Record<string, unknown>)).not.toContain('body');
+    // Ciphertext columns are stripped by `projectDecrypted` regardless.
+    expect(Object.keys(ch as Record<string, unknown>)).not.toContain('bodyCiphertext');
+    expect(Object.keys(ch as Record<string, unknown>)).not.toContain('titleCiphertext');
+  });
+
   it('update replaces body ciphertext; wordCount stays plaintext', async () => {
     const ctx = await makeUserContext();
     const story = await createStoryRepo(ctx.req).create({ title: 's' });

@@ -406,6 +406,10 @@ describe('Chapter routes [B3]', () => {
     ]);
     for (const ch of res.body.chapters) {
       assertNoCiphertextKeys(ch);
+      // List endpoint is metadata-only (docs/api-contract.md:102) — no body
+      // is shipped over the wire. Single-chapter GET is the body authority.
+      expect(Object.keys(ch)).not.toContain('bodyJson');
+      expect(Object.keys(ch)).not.toContain('body');
     }
   });
 

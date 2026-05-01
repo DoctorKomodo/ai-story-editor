@@ -9,24 +9,35 @@ import {
 import { api } from '@/lib/api';
 
 /**
- * Narrow chapter shape the chapter-list / editor need. Mirrors what the
- * backend's chapter repo returns — ciphertext fields are already stripped.
- * `bodyJson` is the TipTap document tree (or `null` for an empty chapter).
+ * Metadata-only chapter shape, returned by the list endpoint
+ * (`GET /api/stories/:storyId/chapters`). The list does NOT include `bodyJson`
+ * — sidebar / list consumers don't need it, and decrypting every chapter on
+ * every list refresh is expensive at scale. The single-chapter
+ * `useChapterQuery` is the sole authority for `bodyJson`.
  */
-export interface Chapter {
+export interface ChapterMeta {
   id: string;
   storyId: string;
   title: string;
   wordCount: number;
   orderIndex: number;
   status: 'draft' | 'revision' | 'final';
-  bodyJson: unknown;
   createdAt: string;
   updatedAt: string;
 }
 
+/**
+ * Full chapter shape, returned by the single-chapter endpoint
+ * (`GET /api/stories/:storyId/chapters/:chapterId`) and by create / update
+ * mutations. `bodyJson` is the TipTap document tree (or `null` for an empty
+ * chapter), decrypted by the backend chapter repo.
+ */
+export interface Chapter extends ChapterMeta {
+  bodyJson: unknown;
+}
+
 export interface ChaptersResponse {
-  chapters: Chapter[];
+  chapters: ChapterMeta[];
 }
 
 export interface ChapterResponse {
@@ -39,10 +50,12 @@ export interface ChapterResponse {
 export const chaptersQueryKey = (storyId: string): readonly [string, string] =>
   ['chapters', storyId] as const;
 
-export function useChaptersQuery(storyId: string | undefined): UseQueryResult<Chapter[], Error> {
+export function useChaptersQuery(
+  storyId: string | undefined,
+): UseQueryResult<ChapterMeta[], Error> {
   return useQuery({
     queryKey: chaptersQueryKey(storyId ?? ''),
-    queryFn: async (): Promise<Chapter[]> => {
+    queryFn: async (): Promise<ChapterMeta[]> => {
       const res = await api<ChaptersResponse>(
         `/stories/${encodeURIComponent(storyId ?? '')}/chapters`,
       );
@@ -106,12 +119,14 @@ export function arrayMove<T>(list: readonly T[], fromIndex: number, toIndex: num
  * Reassign sequential `orderIndex` values 0..N-1 across the given chapters.
  * The backend validates uniqueness; duplicates must not slip through.
  */
-export function withSequentialOrderIndex(list: readonly Chapter[]): Chapter[] {
+export function withSequentialOrderIndex<T extends { orderIndex: number }>(
+  list: readonly T[],
+): T[] {
   return list.map((c, idx) => (c.orderIndex === idx ? c : { ...c, orderIndex: idx }));
 }
 
 export interface ReorderMutationContext {
-  previous: Chapter[] | undefined;
+  previous: ChapterMeta[] | undefined;
 }
 
 /**
@@ -128,25 +143,25 @@ export interface ReorderMutationContext {
  */
 export function useReorderChaptersMutation(
   storyId: string,
-): UseMutationResult<void, Error, Chapter[], ReorderMutationContext> {
+): UseMutationResult<void, Error, ChapterMeta[], ReorderMutationContext> {
   const qc = useQueryClient();
-  return useMutation<void, Error, Chapter[], ReorderMutationContext>({
-    mutationFn: async (nextList: Chapter[]): Promise<void> => {
+  return useMutation<void, Error, ChapterMeta[], ReorderMutationContext>({
+    mutationFn: async (nextList: ChapterMeta[]): Promise<void> => {
       const items: ReorderItem[] = nextList.map((c) => ({ id: c.id, orderIndex: c.orderIndex }));
       await api<void>(`/stories/${encodeURIComponent(storyId)}/chapters/reorder`, {
         method: 'PATCH',
         body: { chapters: items },
       });
     },
-    onMutate: async (nextList: Chapter[]): Promise<ReorderMutationContext> => {
+    onMutate: async (nextList: ChapterMeta[]): Promise<ReorderMutationContext> => {
       await qc.cancelQueries({ queryKey: chaptersQueryKey(storyId) });
-      const previous = qc.getQueryData<Chapter[]>(chaptersQueryKey(storyId));
-      qc.setQueryData<Chapter[]>(chaptersQueryKey(storyId), nextList);
+      const previous = qc.getQueryData<ChapterMeta[]>(chaptersQueryKey(storyId));
+      qc.setQueryData<ChapterMeta[]>(chaptersQueryKey(storyId), nextList);
       return { previous };
     },
     onError: (_err, _vars, context) => {
       if (context?.previous !== undefined) {
-        qc.setQueryData<Chapter[]>(chaptersQueryKey(storyId), context.previous);
+        qc.setQueryData<ChapterMeta[]>(chaptersQueryKey(storyId), context.previous);
       }
     },
     onSettled: () => {
@@ -165,10 +180,10 @@ export function useReorderChaptersMutation(
  * when nothing needs to change (no `over`, same id, or unknown ids).
  */
 export function computeReorderedChapters(
-  current: readonly Chapter[],
+  current: readonly ChapterMeta[],
   activeId: string,
   overId: string | null,
-): Chapter[] | null {
+): ChapterMeta[] | null {
   if (overId === null) return null;
   if (activeId === overId) return null;
   const fromIndex = current.findIndex((c) => c.id === activeId);
@@ -182,8 +197,8 @@ export function computeReorderedChapters(
  * Read the chapters cache for a story. Thin wrapper that keeps tests + the
  * drag handler from having to spell out the query key.
  */
-export function getChaptersFromCache(qc: QueryClient, storyId: string): Chapter[] | undefined {
-  return qc.getQueryData<Chapter[]>(chaptersQueryKey(storyId));
+export function getChaptersFromCache(qc: QueryClient, storyId: string): ChapterMeta[] | undefined {
+  return qc.getQueryData<ChapterMeta[]>(chaptersQueryKey(storyId));
 }
 
 // ---- single-chapter query (F52) ----
@@ -192,9 +207,16 @@ export const chapterQueryKey = (chapterId: string): readonly [string, string] =>
   ['chapter', chapterId] as const;
 
 /**
- * Read a single chapter. When `storyId` is supplied and the chapter is already
- * present in the chapters-list cache for that story, returns it from cache
- * with no fetch. Otherwise issues `GET /api/stories/:storyId/chapters/:id`.
+ * Read a single chapter via `GET /api/stories/:storyId/chapters/:chapterId`.
+ * `storyId` is required for the URL build. The single-chapter query is the
+ * sole authority for `bodyJson` — the chapters-list cache is metadata-only,
+ * so a list-cache short-circuit would feed `null` into Paper's body and would
+ * not re-fetch the freshly-decrypted body when the user re-opens the chapter.
+ *
+ * TanStack Query handles repeat visits via `staleTime` (30s) + `gcTime`
+ * (default 5min): cache hits within staleTime are instant, stale-but-cached
+ * hits return immediately and refetch in the background, and the autosave
+ * `onSuccess` continuously refreshes the cache while editing.
  *
  * Disabled when `chapterId` is null/undefined.
  */
@@ -202,7 +224,6 @@ export function useChapterQuery(
   chapterId: string | null | undefined,
   storyId?: string,
 ): UseQueryResult<Chapter, Error> {
-  const qc = useQueryClient();
   return useQuery({
     queryKey: chapterQueryKey(chapterId ?? ''),
     enabled: typeof chapterId === 'string' && chapterId.length > 0,
@@ -210,15 +231,8 @@ export function useChapterQuery(
       if (typeof chapterId !== 'string' || chapterId.length === 0) {
         throw new Error('chapterId required');
       }
-      // Cache short-circuit: if the chapters list for the story is in cache,
-      // return the matching entry without a round-trip.
-      if (typeof storyId === 'string' && storyId.length > 0) {
-        const list = qc.getQueryData<Chapter[]>(chaptersQueryKey(storyId));
-        const hit = list?.find((c) => c.id === chapterId);
-        if (hit) return hit;
-      }
       if (typeof storyId !== 'string' || storyId.length === 0) {
-        throw new Error('useChapterQuery: storyId required when chapter is not in cache');
+        throw new Error('useChapterQuery: storyId required');
       }
       const res = await api<ChapterResponse>(
         `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}`,
@@ -253,10 +267,14 @@ export function useUpdateChapterMutation(): UseMutationResult<Chapter, Error, Up
       return res.chapter;
     },
     onSuccess: (chapter) => {
-      qc.setQueryData<Chapter[] | undefined>(chaptersQueryKey(chapter.storyId), (prev) => {
+      // List cache is metadata-only — strip `bodyJson` before merging.
+      const { bodyJson: _bodyJson, ...meta } = chapter;
+      void _bodyJson;
+      qc.setQueryData<ChapterMeta[] | undefined>(chaptersQueryKey(chapter.storyId), (prev) => {
         if (!prev) return prev;
-        return prev.map((c) => (c.id === chapter.id ? chapter : c));
+        return prev.map((c) => (c.id === chapter.id ? (meta as ChapterMeta) : c));
       });
+      // Per-chapter cache holds the full body — feeds the next render of Paper.
       qc.setQueryData<Chapter>(chapterQueryKey(chapter.id), chapter);
     },
   });

@@ -217,4 +217,138 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     expect(save).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenNthCalledWith(2, 'fixed-B');
   });
+
+  it('flushes a pending debounce against the previous save fn when resetKey changes', async () => {
+    // Regression: switching chapters inside the 4s debounce window used to
+    // drop the typed-but-unsaved edit. The hook now flushes the pending
+    // debounce against the *snapshotted* save fn (closed over the previous
+    // chapter id) before resetting baseline state. The flush happens
+    // synchronously from the resetKey effect — no fake-timer advance needed.
+    const saveA = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const saveB = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+
+    function FlushHarness(): JSX.Element {
+      const [key, setKey] = useState<string>('A');
+      const [payload, setPayload] = useState<string | null>('baseline-A');
+      const save = key === 'A' ? saveA : saveB;
+      useAutosave({ payload, save, debounceMs: DEBOUNCE_MS, resetKey: key });
+      return (
+        <>
+          <button type="button" onClick={() => setPayload('typed-in-A')}>
+            TypeInA
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setKey('B');
+              setPayload('baseline-B');
+            }}
+          >
+            SwitchToB
+          </button>
+        </>
+      );
+    }
+
+    render(<FlushHarness />);
+
+    // Type into chapter A — schedules a debounce.
+    clickButton('TypeInA');
+    await advance(100);
+    expect(saveA).not.toHaveBeenCalled();
+
+    // Switch chapters before the 4s debounce fires. The flush should land
+    // the typed-but-unsaved payload against the OLD save fn.
+    clickButton('SwitchToB');
+    // Allow the fire-and-forget promise to settle.
+    await advance(0);
+
+    expect(saveA).toHaveBeenCalledTimes(1);
+    expect(saveA).toHaveBeenCalledWith('typed-in-A');
+    expect(saveB).not.toHaveBeenCalled();
+
+    // Advancing past the original debounce window must NOT fire saveA again
+    // (the timer was cleared) and must NOT misroute the flushed payload to
+    // saveB as a baseline-mismatch.
+    await advance(DEBOUNCE_MS + 200);
+    expect(saveA).toHaveBeenCalledTimes(1);
+    expect(saveB).not.toHaveBeenCalled();
+  });
+
+  it('does not misroute a follow-up to the new save fn when chapter switches mid-flight', async () => {
+    // Pins the cross-chapter safety contract: if a save is in flight for
+    // chapter A and the user types again (pendingFollowupRef=true) and then
+    // switches chapters before the in-flight save resolves, the follow-up
+    // must NOT call the new chapter's save fn under any circumstances.
+    //
+    // Current behaviour: the resetKey effect resets pendingFollowupRef to
+    // false, so the follow-up is dropped — the second batch of typing is
+    // lost (acceptable: a chapter switch is an explicit "I'm done here"
+    // signal). Defense-in-depth: even if the reset were removed, the
+    // follow-up branch passes the snapshotted saveFn to scheduleDebouncedSave
+    // so the PATCH would still land on chapter A, never chapter B.
+    let resolveFirstSave!: () => void;
+    const saveA = vi.fn<(p: string) => Promise<void>>().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolveFirstSave = resolve;
+        }),
+    );
+    const saveB = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+
+    function FollowUpHarness(): JSX.Element {
+      const [key, setKey] = useState<string>('A');
+      const [payload, setPayload] = useState<string | null>('baseline-A');
+      const save = key === 'A' ? saveA : saveB;
+      useAutosave({ payload, save, debounceMs: DEBOUNCE_MS, resetKey: key });
+      return (
+        <>
+          <button type="button" onClick={() => setPayload('typed-A1')}>
+            TypeA1
+          </button>
+          <button type="button" onClick={() => setPayload('typed-A2')}>
+            TypeA2
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setKey('B');
+              setPayload('baseline-B');
+            }}
+          >
+            SwitchToB
+          </button>
+        </>
+      );
+    }
+
+    render(<FollowUpHarness />);
+
+    clickButton('TypeA1');
+    await advance(DEBOUNCE_MS + 100);
+    expect(saveA).toHaveBeenCalledTimes(1);
+    expect(saveA).toHaveBeenLastCalledWith('typed-A1');
+
+    // Edit again while saveA is in flight → pendingFollowupRef = true.
+    clickButton('TypeA2');
+    await advance(50);
+
+    // Switch chapters before the in-flight saveA resolves.
+    clickButton('SwitchToB');
+    await advance(0);
+
+    // Resolve saveA. Whatever the follow-up branch decides, saveB must
+    // remain untouched — the typed payload belongs to chapter A.
+    resolveFirstSave();
+    await advance(DEBOUNCE_MS + 200);
+
+    expect(saveB).not.toHaveBeenCalled();
+    // saveA may or may not be called a second time depending on the
+    // follow-up policy — both are acceptable. The hard invariant is "no
+    // cross-chapter PATCH". If saveA *is* called twice, it must carry
+    // chapter A's typed payload, never chapter B's baseline.
+    if (saveA.mock.calls.length > 1) {
+      expect(saveA.mock.calls[1]?.[0]).toBe('typed-A2');
+    }
+  });
 });
