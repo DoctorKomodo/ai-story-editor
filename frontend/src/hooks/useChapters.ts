@@ -194,6 +194,23 @@ export function computeReorderedChapters(
 }
 
 /**
+ * Pure helper for the delete optimistic update — removes the chapter and
+ * reassigns sequential orderIndex on the remainder.
+ *
+ * Returns `null` if the id isn't present (nothing to do — caller should
+ * skip the mutation).
+ */
+export function computeChaptersAfterDelete(
+  current: readonly ChapterMeta[],
+  chapterId: string,
+): ChapterMeta[] | null {
+  const idx = current.findIndex((c) => c.id === chapterId);
+  if (idx === -1) return null;
+  const remaining = current.filter((c) => c.id !== chapterId);
+  return withSequentialOrderIndex(remaining);
+}
+
+/**
  * Read the chapters cache for a story. Thin wrapper that keeps tests + the
  * drag handler from having to spell out the query key.
  */

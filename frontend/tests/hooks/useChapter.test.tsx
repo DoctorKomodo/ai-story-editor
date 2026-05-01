@@ -4,7 +4,9 @@ import type { JSX, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type Chapter,
+  type ChapterMeta,
   chaptersQueryKey,
+  computeChaptersAfterDelete,
   useChapterQuery,
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
@@ -177,5 +179,45 @@ describe('useUpdateChapterMutation', () => {
     // the response before merging it in. If a future change drops the
     // destructure-and-spread, this assertion fails.
     expect(Object.keys(list[0] as Record<string, unknown>)).not.toContain('bodyJson');
+  });
+});
+
+function meta(id: string, orderIndex: number): ChapterMeta {
+  return {
+    id,
+    storyId: 's',
+    title: id,
+    wordCount: 0,
+    orderIndex,
+    status: 'draft',
+    createdAt: '2026-04-01T00:00:00Z',
+    updatedAt: '2026-04-01T00:00:00Z',
+  };
+}
+
+describe('computeChaptersAfterDelete', () => {
+  it('returns null when the chapter id is not present', () => {
+    const list = [meta('a', 0), meta('b', 1)];
+    expect(computeChaptersAfterDelete(list, 'zzz')).toBeNull();
+  });
+
+  it('removes the chapter and reassigns orderIndex 0..N-1', () => {
+    const list = [meta('a', 0), meta('b', 1), meta('c', 2), meta('d', 3)];
+    const next = computeChaptersAfterDelete(list, 'b');
+    expect(next).not.toBeNull();
+    expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
+      ['a', 0],
+      ['c', 1],
+      ['d', 2],
+    ]);
+  });
+
+  it('preserves existing orderIndex when no shift is needed', () => {
+    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const next = computeChaptersAfterDelete(list, 'c');
+    expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
+      ['a', 0],
+      ['b', 1],
+    ]);
   });
 });
