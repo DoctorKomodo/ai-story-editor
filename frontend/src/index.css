@@ -518,12 +518,14 @@ body {
 }
 
 /* ============================================================================
- * Chapters UI — affordance visibility on active / drop-target rows + coarse
- * pointer (touch) hit-target enlargement. Scoped to chapter rows by testId
- * prefix to avoid collisions with unrelated `*-delete` testIds.
+ * Chapters / Cast — affordance visibility on active or drop-target rows + coarse
+ * pointer (touch) hit-target enlargement. Selectors scoped by testId prefix to
+ * avoid collisions with unrelated `*-delete` testIds.
  * ========================================================================== */
 [data-testid^="chapter-row-"][data-active="true"] [data-testid$="-grip"],
-[data-testid^="chapter-row-"][data-over="true"] [data-testid$="-grip"] {
+[data-testid^="chapter-row-"][data-over="true"] [data-testid$="-grip"],
+[data-testid^="character-row-"][data-active="true"] [data-testid$="-grip"],
+[data-testid^="character-row-"][data-over="true"] [data-testid$="-grip"] {
   opacity: 1;
 }
 
@@ -533,7 +535,9 @@ body {
    * outranks Tailwind's single-class `opacity-0` so we don't need `!important`.
    */
   [data-testid^="chapter-row-"][data-testid$="-grip"],
-  [data-testid^="chapter-row-"][data-testid$="-delete"] {
+  [data-testid^="chapter-row-"][data-testid$="-delete"],
+  [data-testid^="character-row-"][data-testid$="-grip"],
+  [data-testid^="character-row-"][data-testid$="-delete"] {
     opacity: 1;
     min-width: 32px;
     min-height: 32px;
