@@ -273,6 +273,62 @@ export interface UpdateChapterArgs {
   input: UpdateChapterInput;
 }
 
+export interface DeleteChapterArgs {
+  chapterId: string;
+}
+
+export interface DeleteMutationContext {
+  previous: ChapterMeta[] | undefined;
+}
+
+/**
+ * Delete a chapter via DELETE /api/stories/:storyId/chapters/:chapterId.
+ *
+ * Optimistic: removes from the list cache + reassigns sequential orderIndex
+ * immediately. Backend reassigns server-side in the same transaction; we
+ * mirror it client-side so the UI doesn't show a numbering gap during the
+ * round-trip.
+ *
+ * On error: rolls back to the snapshot. On settled: invalidates so the
+ * server's truth wins. On success: also evicts the per-chapter cache so a
+ * stale hit can't resurrect deleted body content.
+ */
+export function useDeleteChapterMutation(
+  storyId: string,
+): UseMutationResult<void, Error, DeleteChapterArgs, DeleteMutationContext> {
+  const qc = useQueryClient();
+  return useMutation<void, Error, DeleteChapterArgs, DeleteMutationContext>({
+    mutationFn: async ({ chapterId }) => {
+      await api<void>(
+        `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}`,
+        { method: 'DELETE' },
+      );
+    },
+    onMutate: async ({ chapterId }) => {
+      await qc.cancelQueries({ queryKey: chaptersQueryKey(storyId) });
+      const previous = qc.getQueryData<ChapterMeta[]>(chaptersQueryKey(storyId));
+      if (previous !== undefined) {
+        const next = computeChaptersAfterDelete(previous, chapterId);
+        if (next !== null) {
+          qc.setQueryData<ChapterMeta[]>(chaptersQueryKey(storyId), next);
+        }
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData<ChapterMeta[]>(chaptersQueryKey(storyId), context.previous);
+      }
+    },
+    onSuccess: (_void, { chapterId }) => {
+      qc.removeQueries({ queryKey: chapterQueryKey(chapterId) });
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: chaptersQueryKey(storyId) });
+    },
+  });
+}
+
 export function useUpdateChapterMutation(): UseMutationResult<Chapter, Error, UpdateChapterArgs> {
   const qc = useQueryClient();
   return useMutation<Chapter, Error, UpdateChapterArgs>({

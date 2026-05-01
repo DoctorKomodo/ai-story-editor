@@ -5,9 +5,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type Chapter,
   type ChapterMeta,
+  chapterQueryKey,
   chaptersQueryKey,
   computeChaptersAfterDelete,
   useChapterQuery,
+  useDeleteChapterMutation,
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
 import { resetApiClientForTests, setAccessToken } from '@/lib/api';
@@ -218,6 +220,70 @@ describe('computeChaptersAfterDelete', () => {
     expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
       ['a', 0],
       ['b', 1],
+    ]);
+  });
+});
+
+describe('useDeleteChapterMutation', () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('tok-1');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
+
+  it('DELETEs the chapter, evicts the per-chapter cache, and reassigns the list cache optimistically', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(chaptersQueryKey('s1'), [meta('a', 0), meta('b', 1), meta('c', 2)]);
+    qc.setQueryData(chapterQueryKey('b'), { ...meta('b', 1), bodyJson: null });
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { result } = renderHook(() => useDeleteChapterMutation('s1'), {
+      wrapper: makeWrapper(qc),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ chapterId: 'b' });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/stories/s1/chapters/b');
+    expect((init as RequestInit).method).toBe('DELETE');
+
+    expect(qc.getQueryData(chapterQueryKey('b'))).toBeUndefined();
+
+    await waitFor(() => {
+      const list = qc.getQueryData<ChapterMeta[]>(chaptersQueryKey('s1'));
+      expect(list?.map((c) => c.id)).toEqual(['a', 'c']);
+    });
+  });
+
+  it('rolls back the cache on 500', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(chaptersQueryKey('s1'), [meta('a', 0), meta('b', 1)]);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: { code: 'oops' } }));
+
+    const { result } = renderHook(() => useDeleteChapterMutation('s1'), {
+      wrapper: makeWrapper(qc),
+    });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({ chapterId: 'b' })).rejects.toBeDefined();
+    });
+
+    expect(qc.getQueryData<ChapterMeta[]>(chaptersQueryKey('s1'))?.map((c) => c.id)).toEqual([
+      'a',
+      'b',
     ]);
   });
 });
