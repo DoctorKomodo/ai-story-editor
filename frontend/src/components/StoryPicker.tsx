@@ -4,12 +4,15 @@
 // .docx button + primary New story button.
 //
 // Faithful port of `mockups/frontend-prototype/design/modals.jsx` (the
-// `StoryPicker` + `StoryRow` block) using the `.modal-backdrop` / `.modal`
-// chrome from `mockups/frontend-prototype/design/styles.css` lines 876–937.
+// `StoryPicker` + `StoryRow` block).
+//
+// [X22] Ported onto the `<Modal>` primitive — backdrop, Escape, click-outside,
+// focus management, and close-X chrome all live in the primitive now. Embedded
+// mode (F58 — dashboard surface) passes `embedded` through to the primitive.
 import type { JSX } from 'react';
-import { type MouseEvent, useEffect, useId, useRef } from 'react';
+import { useId } from 'react';
 import { StoryPickerEmpty } from '@/components/StoryPickerEmpty';
-import { useEscape } from '@/hooks/useKeyboardShortcuts';
+import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import { useStoriesQuery } from '@/hooks/useStories';
 
 export interface StoryPickerProps {
@@ -30,25 +33,6 @@ export interface StoryPickerProps {
   embedded?: boolean;
 }
 
-function CloseIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6L6 18" />
-      <path d="M6 6l12 12" />
-    </svg>
-  );
-}
-
 function initialOf(title: string): string {
   const t = title.trim();
   if (t.length === 0) return 'U';
@@ -65,37 +49,7 @@ export function StoryPicker({
   embedded = false,
 }: StoryPickerProps): JSX.Element | null {
   const headingId = useId();
-  const closeBtnRef = useRef<HTMLButtonElement | null>(null);
-
-  // Always call hooks unconditionally; the query is cheap when idle.
   const { data: stories, isLoading, isError, error } = useStoriesQuery();
-
-  // Focus the close button when the modal opens.
-  useEffect(() => {
-    if (!open) return;
-    const id = window.setTimeout(() => {
-      closeBtnRef.current?.focus();
-    }, 0);
-    return () => {
-      window.clearTimeout(id);
-    };
-  }, [open]);
-
-  // [F57] Escape closes the modal — priority 100 via the F47 registry.
-  // [F58] Disabled in embedded mode (the picker is a permanent surface,
-  // not a dismissable modal).
-  useEscape(
-    () => {
-      onClose();
-    },
-    { priority: 100, enabled: open && !embedded },
-  );
-
-  if (!open) return null;
-
-  const handleBackdropMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
-    if (e.target === e.currentTarget) onClose();
-  };
 
   const handleSelect = (id: string): void => {
     onSelectStory(id);
@@ -104,47 +58,24 @@ export function StoryPicker({
 
   const count = stories?.length ?? 0;
 
-  const card = (
-    <div
-      role="dialog"
-      aria-modal={embedded ? undefined : 'true'}
-      aria-labelledby={headingId}
-      data-testid="story-picker"
-      className={[
-        'w-[480px] max-w-[94vw] max-h-[82vh] flex flex-col overflow-hidden',
-        'rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop',
-        embedded ? '' : 't-modal-in fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
-      ]
-        .filter(Boolean)
-        .join(' ')}
+  return (
+    <Modal
+      open={open}
+      onClose={onClose}
+      labelledBy={headingId}
+      size="md"
+      embedded={embedded}
+      testId="story-picker"
     >
-      <header className="px-[18px] py-[14px] border-b border-line flex items-center justify-between">
-        <div>
-          <h2
-            id={headingId}
-            className="m-0 font-serif text-[18px] font-medium text-ink tracking-[-0.005em]"
-          >
-            Your Stories
-          </h2>
-          <div className="mt-[2px] text-[12px] text-ink-4 font-sans">
-            Switch projects or start a new one
-          </div>
-        </div>
-        {!embedded ? (
-          <button
-            ref={closeBtnRef}
-            type="button"
-            className="icon-btn"
-            onClick={onClose}
-            aria-label="Close"
-            data-testid="story-picker-close"
-          >
-            <CloseIcon />
-          </button>
-        ) : null}
-      </header>
+      <ModalHeader
+        titleId={headingId}
+        title="Your Stories"
+        subtitle="Switch projects or start a new one"
+        onClose={embedded ? undefined : onClose}
+        closeTestId="story-picker-close"
+      />
 
-      <div className="flex-1 overflow-y-auto p-3" data-testid="story-picker-body">
+      <ModalBody data-testid="story-picker-body">
         {isLoading ? (
           <div className="py-8 text-center font-mono text-[12px] text-ink-4">Loading stories…</div>
         ) : isError ? (
@@ -208,44 +139,22 @@ export function StoryPicker({
             })}
           </div>
         )}
-      </div>
+      </ModalBody>
 
-      <footer className="px-[18px] py-3 border-t border-line flex items-center justify-between gap-3">
-        <span className="font-mono text-[12px] text-ink-4" data-testid="story-picker-count">
-          {count} {count === 1 ? 'story' : 'stories'} in vault
-        </span>
-        <div className="flex gap-2">
-          <button
-            type="button"
-            className="px-3 py-1.5 text-[12px] border border-line rounded-[var(--radius)] text-ink-2 hover:bg-[var(--surface-hover)] hover:text-ink transition-colors"
-            onClick={onImportDocx}
-            data-testid="story-picker-import"
-          >
-            Import .docx
-          </button>
-          <button
-            type="button"
-            className="px-3 py-1.5 text-[12px] rounded-[var(--radius)] bg-ink text-bg hover:bg-ink-2 transition-colors"
-            onClick={onCreateStory}
-            data-testid="story-picker-new"
-          >
-            New story
-          </button>
-        </div>
-      </footer>
-    </div>
-  );
-
-  if (embedded) return card;
-
-  return (
-    <div
-      role="presentation"
-      data-testid="story-picker-backdrop"
-      onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px]"
-    >
-      {card}
-    </div>
+      <ModalFooter
+        leading={
+          <span data-testid="story-picker-count">
+            {count} {count === 1 ? 'story' : 'stories'} in vault
+          </span>
+        }
+      >
+        <Button variant="ghost" onClick={onImportDocx} data-testid="story-picker-import">
+          Import .docx
+        </Button>
+        <Button variant="primary" onClick={onCreateStory} data-testid="story-picker-new">
+          New story
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 }

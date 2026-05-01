@@ -69,8 +69,10 @@ export interface ModalProps {
   embedded?: boolean;
   /** ARIA role for the card. "dialog" (default) for forms; "alertdialog" for confirmations. */
   role?: 'dialog' | 'alertdialog';
-  /** Test ID for the card root. Backdrop gets `${testId}-backdrop`. */
+  /** Test ID for the card root. Backdrop defaults to `${testId}-backdrop`. */
   testId?: string;
+  /** Override the backdrop's test ID (otherwise `${testId}-backdrop`). */
+  backdropTestId?: string;
   children: ReactNode;
 }
 
@@ -90,6 +92,7 @@ export function Modal({
   embedded = false,
   role = 'dialog',
   testId,
+  backdropTestId,
   children,
 }: ModalProps): JSX.Element | null {
   // Escape closes (priority 100 — same as StoryPicker convention).
@@ -134,10 +137,12 @@ export function Modal({
 
   if (embedded) return card;
 
+  const computedBackdropTestId = backdropTestId ?? (testId ? `${testId}-backdrop` : undefined);
+
   return (
     <div
       role="presentation"
-      data-testid={testId ? `${testId}-backdrop` : undefined}
+      data-testid={computedBackdropTestId}
       onMouseDown={handleBackdropMouseDown}
       className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px] flex items-center justify-center"
     >
@@ -158,6 +163,10 @@ export interface ModalHeaderProps {
   subtitle?: ReactNode;
   /** Render the X close button. Pass undefined to hide. */
   onClose?: () => void;
+  /** Disable the close button (e.g. while a destructive flow is mid-state). */
+  closeDisabled?: boolean;
+  /** Override the close button's test ID. Defaults to `modal-close`. */
+  closeTestId?: string;
   /** Right-aligned slot, e.g. tabs or a secondary action. */
   trailing?: ReactNode;
 }
@@ -167,6 +176,8 @@ export function ModalHeader({
   title,
   subtitle,
   onClose,
+  closeDisabled,
+  closeTestId,
   trailing,
 }: ModalHeaderProps): JSX.Element {
   return (
@@ -185,7 +196,12 @@ export function ModalHeader({
       <div className="flex items-center gap-2 flex-shrink-0">
         {trailing}
         {onClose ? (
-          <IconButton onClick={onClose} ariaLabel="Close" testId="modal-close">
+          <IconButton
+            onClick={onClose}
+            disabled={closeDisabled}
+            ariaLabel="Close"
+            testId={closeTestId ?? 'modal-close'}
+          >
             <CloseIcon />
           </IconButton>
         ) : null}

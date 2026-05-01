@@ -6,12 +6,19 @@
 // Self-hosting tab is intentionally omitted (stakeholder direction, see
 // task brief). Auto-save semantics: each form field fires its mutation on
 // change; the footer's Cancel / Done both just close the modal.
+//
+// [X22] Ported onto the `<Modal>` primitive — backdrop, Escape, click-outside,
+// and focus-trap chrome all live in the primitive now. The tab strip is
+// inlined as a direct child between <ModalHeader> and <ModalBody> rather than
+// extracted into a <ModalTabbed> primitive — Settings is the only multi-tab
+// modal in the app (the other role="tablist" usages live in Sidebar /
+// ChatPanel / ChatComposer, not modals).
 import type { JSX } from 'react';
-import { type MouseEvent, useEffect, useId, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
-import { useEscape } from '@/hooks/useKeyboardShortcuts';
+import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
 import {
   useDeleteVeniceKeyMutation,
@@ -34,25 +41,6 @@ const TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'writing', label: 'Writing' },
   { id: 'appearance', label: 'Appearance' },
 ];
-
-function CloseIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6L6 18" />
-      <path d="M6 6l12 12" />
-    </svg>
-  );
-}
 
 function EyeIcon(): JSX.Element {
   return (
@@ -98,138 +86,94 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
   const titleId = useId();
   const [activeTab, setActiveTab] = useState<SettingsTab>('venice');
 
-  // [F57] Escape closes — priority 100 via the F47 registry.
-  useEscape(
-    () => {
-      onClose();
-    },
-    { priority: 100, enabled: open },
-  );
-
   // Reset to Venice tab whenever the modal re-opens — avoids stale tab
   // state bleeding across opens.
   useEffect(() => {
     if (open) setActiveTab('venice');
   }, [open]);
 
-  if (!open) return null;
-
-  const handleBackdropMouseDown = (e: MouseEvent<HTMLDivElement>): void => {
-    if (e.target === e.currentTarget) onClose();
-  };
-
   return (
-    <div
-      role="presentation"
-      data-testid="settings-backdrop"
-      onMouseDown={handleBackdropMouseDown}
-      className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px]"
+    <Modal
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      size="xl"
+      testId="settings-modal"
+      backdropTestId="settings-backdrop"
     >
+      <ModalHeader
+        titleId={titleId}
+        title="Settings"
+        subtitle="Configure Venice.ai integration, writing preferences, and self-hosting"
+        onClose={onClose}
+        closeTestId="settings-close"
+      />
+
       <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        data-testid="settings-modal"
-        className="t-modal-in fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[720px] max-w-[94vw] max-h-[80vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
+        role="tablist"
+        aria-label="Settings sections"
+        className="px-[18px] border-b border-line flex gap-1 flex-shrink-0"
       >
-        <header className="px-[18px] py-[14px] border-b border-line flex items-start justify-between gap-3">
-          <div>
-            <h2
-              id={titleId}
-              className="m-0 font-serif text-[18px] font-medium text-ink tracking-[-0.005em]"
+        {TABS.map((tab) => {
+          const active = tab.id === activeTab;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-controls={`settings-panel-${tab.id}`}
+              id={`settings-tab-${tab.id}`}
+              data-testid={`settings-tab-${tab.id}`}
+              onClick={() => {
+                setActiveTab(tab.id);
+              }}
+              className={[
+                'relative px-3 py-2 text-[13px] font-sans transition-colors',
+                active
+                  ? 'text-ink after:absolute after:left-0 after:right-0 after:-bottom-px after:h-px after:bg-ink'
+                  : 'text-ink-3 hover:text-ink',
+              ].join(' ')}
             >
-              Settings
-            </h2>
-            <div className="mt-[2px] text-[12px] text-ink-4 font-sans">
-              Configure Venice.ai integration, writing preferences, and self-hosting
-            </div>
-          </div>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={onClose}
-            aria-label="Close"
-            data-testid="settings-close"
-          >
-            <CloseIcon />
-          </button>
-        </header>
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
 
-        <div
-          role="tablist"
-          aria-label="Settings sections"
-          className="px-[18px] border-b border-line flex gap-1"
-        >
-          {TABS.map((tab) => {
-            const active = tab.id === activeTab;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                aria-controls={`settings-panel-${tab.id}`}
-                id={`settings-tab-${tab.id}`}
-                data-testid={`settings-tab-${tab.id}`}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                }}
-                className={[
-                  'relative px-3 py-2 text-[13px] font-sans transition-colors',
-                  active
-                    ? 'text-ink after:absolute after:left-0 after:right-0 after:-bottom-px after:h-px after:bg-ink'
-                    : 'text-ink-3 hover:text-ink',
-                ].join(' ')}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
+      <ModalBody
+        className="flex-1 overflow-y-auto p-4"
+        role="tabpanel"
+        id={`settings-panel-${activeTab}`}
+        aria-labelledby={`settings-tab-${activeTab}`}
+        data-testid={`settings-panel-${activeTab}`}
+      >
+        {activeTab === 'venice' ? (
+          <VeniceTab />
+        ) : activeTab === 'models' ? (
+          <SettingsModelsTab />
+        ) : activeTab === 'writing' ? (
+          <SettingsWritingTab />
+        ) : (
+          <SettingsAppearanceTab />
+        )}
+      </ModalBody>
 
-        <div
-          className="flex-1 overflow-y-auto p-4"
-          role="tabpanel"
-          id={`settings-panel-${activeTab}`}
-          aria-labelledby={`settings-tab-${activeTab}`}
-          data-testid={`settings-panel-${activeTab}`}
-        >
-          {activeTab === 'venice' ? (
-            <VeniceTab />
-          ) : activeTab === 'models' ? (
-            <SettingsModelsTab />
-          ) : activeTab === 'writing' ? (
-            <SettingsWritingTab />
-          ) : (
-            <SettingsAppearanceTab />
-          )}
-        </div>
-
-        <footer className="px-[18px] py-3 border-t border-line flex items-center justify-between gap-3">
-          <span className="font-mono text-[12px] text-ink-4" data-testid="settings-autosave-hint">
+      <ModalFooter
+        leading={
+          <span data-testid="settings-autosave-hint">
             Changes save automatically to your local vault
           </span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              data-testid="settings-cancel"
-              className="px-3 py-1.5 text-[12px] border border-line rounded-[var(--radius)] text-ink-2 hover:bg-[var(--surface-hover)] hover:text-ink transition-colors"
-              onClick={onClose}
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              data-testid="settings-done"
-              className="px-3 py-1.5 text-[12px] rounded-[var(--radius)] bg-ink text-bg hover:bg-ink-2 transition-colors"
-              onClick={onClose}
-            >
-              Done
-            </button>
-          </div>
-        </footer>
-      </div>
-    </div>
+        }
+      >
+        <Button variant="ghost" data-testid="settings-cancel" onClick={onClose}>
+          Cancel
+        </Button>
+        <Button variant="primary" data-testid="settings-done" onClick={onClose}>
+          Done
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 }
 

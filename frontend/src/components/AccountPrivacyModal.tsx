@@ -1,9 +1,6 @@
 // [F61] Account & Privacy modal — opened from the user menu's
-// "Account & privacy" entry. Mirrors the F43 SettingsModal shell (720px,
-// centered, Escape via the F47/F57 priority dispatcher, backdrop click,
-// keyframe-compatible centring transform from F58).
-//
-// Sectioned (NOT tabbed) — four short sections in vertical order:
+// "Account & privacy" entry. Sectioned (NOT tabbed) — four short sections
+// in vertical order:
 //   1. Change password               → POST /api/auth/change-password    [AU15]
 //   2. Rotate recovery code          → POST /api/auth/rotate-recovery-code [AU17]
 //      (re-uses <RecoveryCodeHandoff> from F59 verbatim for the result UI)
@@ -13,15 +10,21 @@
 //
 // No auto-save: each section has its own explicit submit. The footer's
 // "Done" just closes the modal; it does not save anything.
-import type { JSX, MouseEvent, ReactNode } from 'react';
+//
+// [X22] Ported onto the `<Modal>` primitive — backdrop, Escape, click-outside,
+// and focus management all live in the primitive now. The recovery-code-
+// handoff close gate uses `dismissable={!closeBlocked}` plus the close-X
+// `closeDisabled` to block all dismissal paths while a freshly issued
+// recovery code is on screen.
+import type { JSX, ReactNode } from 'react';
 import { useEffect, useId, useState } from 'react';
+import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import {
   type ChangePasswordInput,
   useChangePasswordMutation,
   useRotateRecoveryCodeMutation,
   useSignOutEverywhereMutation,
 } from '@/hooks/useAccount';
-import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { ApiError } from '@/lib/api';
 import { RecoveryCodeHandoff } from './RecoveryCodeHandoff';
 
@@ -38,25 +41,6 @@ const ERR_GENERIC = 'Something went wrong. Please try again.';
 const ERR_RATE = 'Too many attempts. Try again in a minute.';
 const ERR_PW_INCORRECT = 'Current password is incorrect.';
 const ERR_RECOVERY_PW_INCORRECT = 'Password is incorrect.';
-
-function CloseIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M18 6L6 18" />
-      <path d="M6 6l12 12" />
-    </svg>
-  );
-}
 
 interface SectionProps {
   title: string;
@@ -431,105 +415,68 @@ export function AccountPrivacyModal({
   // gated Continue button.
   const [closeBlocked, setCloseBlocked] = useState(false);
 
-  // Escape handling uses the F47/F57 priority-aware dispatcher. Priority 100
-  // matches the other modals (Settings, StoryPicker, ModelPicker) so an open
-  // Account & Privacy modal swallows Escape before any popover or the
-  // selection bubble (priority 50 / 10) sees it. The hook is a no-op when
-  // `enabled: false`, so we gate on `open` rather than checking inside.
-  useEscape(
-    () => {
-      onClose();
-      return true;
-    },
-    { enabled: open && !closeBlocked, priority: 100 },
-  );
-
-  if (!open) return null;
-
-  const handleBackdrop = (e: MouseEvent<HTMLDivElement>): void => {
-    if (closeBlocked) return;
-    if (e.target === e.currentTarget) onClose();
-  };
-
   return (
-    <div
-      role="presentation"
-      data-testid="ap-backdrop"
-      onMouseDown={handleBackdrop}
-      className="t-backdrop-in fixed inset-0 z-50 bg-backdrop backdrop-blur-[3px]"
+    <Modal
+      open={open}
+      onClose={onClose}
+      labelledBy={titleId}
+      size="lg"
+      dismissable={!closeBlocked}
+      testId="account-privacy-modal"
+      backdropTestId="ap-backdrop"
     >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby={titleId}
-        data-testid="account-privacy-modal"
-        className="t-modal-in fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[720px] max-w-[94vw] max-h-[85vh] flex flex-col overflow-hidden rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop"
-      >
-        <header className="flex items-start justify-between px-[18px] py-[14px] border-b border-line gap-3">
-          <div>
-            <h2
-              id={titleId}
-              className="font-serif text-[18px] font-medium tracking-[-0.005em] m-0 text-ink"
-            >
-              Account &amp; privacy
-            </h2>
-            <p className="text-[12px] text-ink-4 font-sans m-0 mt-[2px]">
-              Manage credentials, recovery, and sessions for{' '}
-              <span className="font-mono text-ink-3">@{username}</span>.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="icon-btn"
-            onClick={onClose}
-            disabled={closeBlocked}
-            aria-label="Close"
-            data-testid="account-privacy-close"
-          >
-            <CloseIcon />
-          </button>
-        </header>
+      <ModalHeader
+        titleId={titleId}
+        title="Account & privacy"
+        subtitle={
+          <>
+            Manage credentials, recovery, and sessions for{' '}
+            <span className="font-mono text-ink-3">@{username}</span>.
+          </>
+        }
+        onClose={onClose}
+        closeDisabled={closeBlocked}
+        closeTestId="account-privacy-close"
+      />
 
-        <div className="flex-1 overflow-y-auto px-[18px]">
-          <Section
-            title="Change password"
-            hint="Use your current password to set a new one. Other sessions will be signed out."
-          >
-            <ChangePasswordSection />
-          </Section>
-          <Section
-            title="Rotate recovery code"
-            hint="Generate a new recovery code. The old code becomes invalid the moment you confirm."
-          >
-            <RotateRecoverySection username={username} onShowRecoveryCode={setCloseBlocked} />
-          </Section>
-          <Section
-            title="Sign out everywhere"
-            hint="Revoke every active session, including this one. You'll need to sign in again."
-          >
-            <SignOutEverywhereSection />
-          </Section>
-          <Section
-            title="Delete account"
-            hint="Permanently remove your account and every story, chapter, character, and chat you've written."
-            danger
-          >
-            <DeleteAccountSection />
-          </Section>
-        </div>
+      <ModalBody className="flex-1 overflow-y-auto !py-0 px-[18px]">
+        <Section
+          title="Change password"
+          hint="Use your current password to set a new one. Other sessions will be signed out."
+        >
+          <ChangePasswordSection />
+        </Section>
+        <Section
+          title="Rotate recovery code"
+          hint="Generate a new recovery code. The old code becomes invalid the moment you confirm."
+        >
+          <RotateRecoverySection username={username} onShowRecoveryCode={setCloseBlocked} />
+        </Section>
+        <Section
+          title="Sign out everywhere"
+          hint="Revoke every active session, including this one. You'll need to sign in again."
+        >
+          <SignOutEverywhereSection />
+        </Section>
+        <Section
+          title="Delete account"
+          hint="Permanently remove your account and every story, chapter, character, and chat you've written."
+          danger
+        >
+          <DeleteAccountSection />
+        </Section>
+      </ModalBody>
 
-        <footer className="flex justify-end px-[18px] py-3 border-t border-line">
-          <button
-            type="button"
-            data-testid="account-privacy-done"
-            onClick={onClose}
-            disabled={closeBlocked}
-            className={BTN_SECONDARY}
-          >
-            Done
-          </button>
-        </footer>
-      </div>
-    </div>
+      <ModalFooter>
+        <Button
+          variant="ghost"
+          data-testid="account-privacy-done"
+          onClick={onClose}
+          disabled={closeBlocked}
+        >
+          Done
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 }
