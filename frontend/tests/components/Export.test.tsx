@@ -5,7 +5,7 @@
 // contains indirect assertions for `sanitiseFilename` (via the download
 // attribute of the synthesized `<a>`) and `downloadTxt` (via jsdom's real
 // anchor click path with `URL.createObjectURL` stubbed).
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JSONContent } from '@tiptap/core';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -183,38 +183,38 @@ describe('F20 · <Export> component', () => {
     clickSpy.mockRestore();
   });
 
+  // Bodies are resolved lazily on click via the `resolveBody` callback —
+  // EditorPage wires this to TanStack Query's per-chapter cache.
+  const FIXTURE_BODIES: Record<string, ReturnType<typeof makeDoc>> = {
+    'ch-1': makeDoc([paragraph('Opening line.')]),
+    'ch-2': makeDoc([paragraph('Into the sea.')]),
+  };
+  const resolveBody = vi.fn(async (chapterId: string) => FIXTURE_BODIES[chapterId] ?? null);
+
   const sampleStory = {
     id: 'story-1',
     title: 'My Story',
     chapters: [
-      {
-        id: 'ch-1',
-        title: 'First Chapter',
-        orderIndex: 0,
-        bodyJson: makeDoc([paragraph('Opening line.')]),
-      },
-      {
-        id: 'ch-2',
-        title: 'The Ocean: A Journey/Part',
-        orderIndex: 1,
-        bodyJson: makeDoc([paragraph('Into the sea.')]),
-      },
+      { id: 'ch-1', title: 'First Chapter', orderIndex: 0 },
+      { id: 'ch-2', title: 'The Ocean: A Journey/Part', orderIndex: 1 },
     ],
   };
 
   it('disables the chapter export button when activeChapterId is null', async () => {
-    render(<Export story={sampleStory} activeChapterId={null} />);
+    render(<Export story={sampleStory} activeChapterId={null} resolveBody={resolveBody} />);
     await userEvent.click(screen.getByRole('button', { name: /export/i }));
     const chapterBtn = screen.getByRole('menuitem', { name: /export chapter/i });
     expect(chapterBtn).toBeDisabled();
   });
 
   it('exports chapter content beginning with title + blank line + body', async () => {
-    render(<Export story={sampleStory} activeChapterId="ch-1" />);
+    render(<Export story={sampleStory} activeChapterId="ch-1" resolveBody={resolveBody} />);
     await userEvent.click(screen.getByRole('button', { name: /export/i }));
     await userEvent.click(screen.getByRole('menuitem', { name: /export chapter/i }));
 
-    expect(capturedAnchor).not.toBeNull();
+    await waitFor(() => {
+      expect(capturedAnchor).not.toBeNull();
+    });
     expect(capturedAnchor?.getAttribute('download')).toBe('First Chapter.txt');
     expect(capturedAnchor?.getAttribute('href')).toMatch(/^blob:/);
 
@@ -224,11 +224,13 @@ describe('F20 · <Export> component', () => {
   });
 
   it('sanitises the chapter filename (replaces : and / with -, collapses whitespace)', async () => {
-    render(<Export story={sampleStory} activeChapterId="ch-2" />);
+    render(<Export story={sampleStory} activeChapterId="ch-2" resolveBody={resolveBody} />);
     await userEvent.click(screen.getByRole('button', { name: /export/i }));
     await userEvent.click(screen.getByRole('menuitem', { name: /export chapter/i }));
 
-    expect(capturedAnchor).not.toBeNull();
+    await waitFor(() => {
+      expect(capturedAnchor).not.toBeNull();
+    });
     expect(capturedAnchor?.getAttribute('download')).toBe('The Ocean- A Journey-Part.txt');
   });
 
@@ -238,11 +240,13 @@ describe('F20 · <Export> component', () => {
       ...sampleStory,
       chapters: [sampleStory.chapters[1]!, sampleStory.chapters[0]!],
     };
-    render(<Export story={reversed} activeChapterId={null} />);
+    render(<Export story={reversed} activeChapterId={null} resolveBody={resolveBody} />);
     await userEvent.click(screen.getByRole('button', { name: /export/i }));
     await userEvent.click(screen.getByRole('menuitem', { name: /export full story/i }));
 
-    expect(capturedAnchor).not.toBeNull();
+    await waitFor(() => {
+      expect(capturedAnchor).not.toBeNull();
+    });
     expect(capturedAnchor?.getAttribute('download')).toBe('My Story.txt');
     expect(capturedBlobs.length).toBe(1);
     const text = await capturedBlobs[0]!.text();
@@ -252,7 +256,7 @@ describe('F20 · <Export> component', () => {
   });
 
   it('renders with design-system token classes (no raw Tailwind colors)', async () => {
-    render(<Export story={sampleStory} activeChapterId={null} />);
+    render(<Export story={sampleStory} activeChapterId={null} resolveBody={resolveBody} />);
     const trigger = screen.getByTestId('export-toggle');
     expect(trigger.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
 

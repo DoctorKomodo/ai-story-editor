@@ -4,6 +4,11 @@ import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = ['title', 'body'] as const;
+// `findManyForStory` is metadata-only — no body fetched, no body decrypted.
+// Sidebar / list consumers don't need the body, and skipping it saves a full
+// AES-GCM decrypt + JSON.parse per chapter on every list refresh. The single-
+// chapter `findById` is the sole authority for `bodyJson`.
+const META_ENCRYPTED_FIELDS = ['title'] as const;
 
 export interface ChapterCreateInput {
   storyId: string;
@@ -94,11 +99,30 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   async function findManyForStory(storyId: string) {
     const userId = resolveUserId(req);
     await ensureStoryOwned(client, storyId, userId);
+    // Metadata-only: skip the body ciphertext triple at the DB layer. This
+    // saves a per-chapter AES-GCM decrypt + JSON.parse on every list refresh,
+    // matches the documented API contract (docs/api-contract.md:102), and
+    // keeps the wire payload independent of chapter-body size. The single-
+    // chapter `findById` is the sole authority for `bodyJson`.
     const rows = await client.chapter.findMany({
       where: { storyId, story: { userId } },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+      select: {
+        id: true,
+        storyId: true,
+        orderIndex: true,
+        status: true,
+        wordCount: true,
+        createdAt: true,
+        updatedAt: true,
+        // title triple — decrypted by `shapeMeta`. Body triple deliberately
+        // omitted; readers that need it must hit `findById`.
+        titleCiphertext: true,
+        titleIv: true,
+        titleAuthTag: true,
+      },
     });
-    return rows.map((r) => shape(r, req));
+    return rows.map((r) => shapeMeta(r, req));
   }
 
   async function update(id: string, input: ChapterUpdateInput) {
@@ -232,6 +256,14 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     aggregateForStories,
     listWordCountsForStory,
   };
+}
+
+// Metadata-only projection used by `findManyForStory`. Decrypts the title
+// triple only — body ciphertext columns are not selected at the DB layer, so
+// `bodyJson` is intentionally absent from the projected output. Callers that
+// need the body must use `findById`.
+function shapeMeta(row: unknown, req: Request) {
+  return projectDecrypted(req, row as Record<string, unknown>, META_ENCRYPTED_FIELDS);
 }
 
 function shape(row: unknown, req: Request) {

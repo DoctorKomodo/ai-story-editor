@@ -6,7 +6,7 @@ import type { JSX } from 'react';
 import { useCallback, useState } from 'react';
 import { Button } from '@/design/primitives';
 import {
-  type Chapter,
+  type ChapterMeta,
   chaptersQueryKey,
   computeReorderedChapters,
   useChaptersQuery,
@@ -25,14 +25,14 @@ function formatWordCount(n: number): string {
   return `${n.toLocaleString('en-US')} ${n === 1 ? 'word' : 'words'}`;
 }
 
-function chapterDisplayTitle(c: Chapter): string {
+function chapterDisplayTitle(c: ChapterMeta): string {
   const trimmed = c.title.trim();
   if (trimmed.length > 0) return trimmed;
   return `Chapter ${String(c.orderIndex + 1)}`;
 }
 
 interface ChapterRowProps {
-  chapter: Chapter;
+  chapter: ChapterMeta;
   active: boolean;
   onSelect: (id: string) => void;
 }
@@ -128,7 +128,7 @@ export function ChapterList({
     (event: DragEndEvent): void => {
       const activeId = String(event.active.id);
       const overId = event.over ? String(event.over.id) : null;
-      const current = queryClient.getQueryData<Chapter[]>(chaptersQueryKey(storyId));
+      const current = queryClient.getQueryData<ChapterMeta[]>(chaptersQueryKey(storyId));
       if (current === undefined) return;
       const next = computeReorderedChapters(current, activeId, overId);
       if (next === null) return;

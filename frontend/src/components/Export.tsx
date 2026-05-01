@@ -16,11 +16,16 @@ import { Button } from '@/design/primitives';
 import { downloadTxt } from '@/lib/downloadTxt';
 import { serializeChapterTxt, serializeStoryTxt } from '@/lib/exportTxt';
 
+/**
+ * Chapter shape used by export, body-less. Bodies are resolved lazily on
+ * click via the `resolveBody` callback so the Export menu doesn't force the
+ * editor to keep every chapter's plaintext in memory just in case the user
+ * eventually opens the menu.
+ */
 export interface ExportStoryChapter {
   id: string;
   title: string;
   orderIndex: number;
-  bodyJson: JSONContent | null;
 }
 
 export interface ExportStory {
@@ -32,6 +37,12 @@ export interface ExportStory {
 export interface ExportProps {
   story: ExportStory;
   activeChapterId: string | null;
+  /**
+   * Resolve a chapter's TipTap JSON tree on demand. EditorPage wires this to
+   * `queryClient.fetchQuery(chapterQueryKey(id), ...)` so cached chapters are
+   * returned instantly and uncached ones cost one `GET /chapters/:id`.
+   */
+  resolveBody: (chapterId: string) => Promise<JSONContent | null>;
 }
 
 /**
@@ -44,8 +55,10 @@ function sanitiseFilename(raw: string): string {
   return collapsed === '' ? 'Untitled' : collapsed;
 }
 
-export function Export({ story, activeChapterId }: ExportProps): JSX.Element {
+export function Export({ story, activeChapterId, resolveBody }: ExportProps): JSX.Element {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   const activeChapter =
@@ -77,20 +90,43 @@ export function Export({ story, activeChapterId }: ExportProps): JSX.Element {
     };
   }, [open]);
 
-  const handleExportChapter = useCallback((): void => {
-    if (activeChapter === null) return;
-    const content = serializeChapterTxt(activeChapter);
-    const filename = `${sanitiseFilename(activeChapter.title)}.txt`;
-    downloadTxt(filename, content);
-    setOpen(false);
-  }, [activeChapter]);
+  const handleExportChapter = useCallback(async (): Promise<void> => {
+    if (activeChapter === null || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const bodyJson = await resolveBody(activeChapter.id);
+      const content = serializeChapterTxt({ ...activeChapter, bodyJson });
+      const filename = `${sanitiseFilename(activeChapter.title)}.txt`;
+      downloadTxt(filename, content);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setBusy(false);
+    }
+  }, [activeChapter, busy, resolveBody]);
 
-  const handleExportStory = useCallback((): void => {
-    const content = serializeStoryTxt(story);
-    const filename = `${sanitiseFilename(story.title)}.txt`;
-    downloadTxt(filename, content);
-    setOpen(false);
-  }, [story]);
+  const handleExportStory = useCallback(async (): Promise<void> => {
+    if (busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      // Resolve in parallel — TanStack Query's `fetchQuery` dedupes per key,
+      // and cached chapters return synchronously without a network round-trip.
+      const withBodies = await Promise.all(
+        story.chapters.map(async (c) => ({ ...c, bodyJson: await resolveBody(c.id) })),
+      );
+      const content = serializeStoryTxt({ ...story, chapters: withBodies });
+      const filename = `${sanitiseFilename(story.title)}.txt`;
+      downloadTxt(filename, content);
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Export failed');
+    } finally {
+      setBusy(false);
+    }
+  }, [busy, resolveBody, story]);
 
   return (
     <div ref={containerRef} className="relative">
@@ -119,22 +155,36 @@ export function Export({ story, activeChapterId }: ExportProps): JSX.Element {
           <button
             type="button"
             role="menuitem"
-            onClick={handleExportChapter}
-            disabled={activeChapter === null}
+            onClick={() => {
+              void handleExportChapter();
+            }}
+            disabled={activeChapter === null || busy}
             data-testid="export-chapter"
             className="block w-full px-3 py-1.5 text-left font-sans text-[12.5px] text-ink hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           >
-            Export chapter
+            {busy ? 'Exporting…' : 'Export chapter'}
           </button>
           <button
             type="button"
             role="menuitem"
-            onClick={handleExportStory}
+            onClick={() => {
+              void handleExportStory();
+            }}
+            disabled={busy}
             data-testid="export-story"
-            className="block w-full px-3 py-1.5 text-left font-sans text-[12.5px] text-ink hover:bg-surface-hover transition-colors"
+            className="block w-full px-3 py-1.5 text-left font-sans text-[12.5px] text-ink hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-transparent"
           >
-            Export full story
+            {busy ? 'Exporting…' : 'Export full story'}
           </button>
+          {error !== null ? (
+            <p
+              role="alert"
+              data-testid="export-error"
+              className="px-3 pt-1 pb-1.5 font-sans text-[11.5px] text-danger"
+            >
+              {error}
+            </p>
+          ) : null}
         </div>
       ) : null}
     </div>

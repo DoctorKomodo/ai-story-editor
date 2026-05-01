@@ -1,12 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { Chapter } from '@/hooks/useChapters';
+import type { ChapterMeta } from '@/hooks/useChapters';
 import { chaptersQueryKey } from '@/hooks/useChapters';
 import { ChapterList } from './ChapterList';
 
 const STORY_ID = 'story-demo';
 
-const sampleChapters: Chapter[] = [
+const sampleChapters: ChapterMeta[] = [
   {
     id: 'c1',
     storyId: STORY_ID,
@@ -14,7 +14,6 @@ const sampleChapters: Chapter[] = [
     wordCount: 1240,
     orderIndex: 0,
     status: 'draft',
-    bodyJson: null,
     createdAt: '2026-04-01T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
   },
@@ -25,7 +24,6 @@ const sampleChapters: Chapter[] = [
     wordCount: 980,
     orderIndex: 1,
     status: 'draft',
-    bodyJson: null,
     createdAt: '2026-04-02T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
   },
@@ -36,13 +34,12 @@ const sampleChapters: Chapter[] = [
     wordCount: 0,
     orderIndex: 2,
     status: 'draft',
-    bodyJson: null,
     createdAt: '2026-04-03T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
   },
 ];
 
-function withClient(seed: Chapter[] | null) {
+function withClient(seed: ChapterMeta[] | null) {
   return (Story: () => React.ReactElement) => {
     const client = new QueryClient({
       defaultOptions: {

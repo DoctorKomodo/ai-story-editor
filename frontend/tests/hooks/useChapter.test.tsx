@@ -54,18 +54,40 @@ describe('useChapterQuery', () => {
     resetApiClientForTests();
   });
 
-  it('returns the chapter from the chapters-list cache when present (no extra fetch)', async () => {
+  it('does NOT short-circuit off the chapters-list cache (list is metadata-only)', async () => {
+    // The list cache is body-less by design; reading from it would feed null
+    // bodies into Paper. The single-chapter GET must always fire on a cold
+    // per-chapter cache, even when a metadata entry for the same id is in
+    // the chapters-list cache.
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const cached = makeChapter();
-    client.setQueryData(chaptersQueryKey('s1'), [cached]);
+    // Seed only the metadata-shaped list — no `bodyJson`.
+    client.setQueryData(chaptersQueryKey('s1'), [
+      {
+        id: 'c1',
+        storyId: 's1',
+        title: 'Opening',
+        orderIndex: 0,
+        wordCount: 42,
+        status: 'draft' as const,
+        createdAt: '2026-04-01T00:00:00.000Z',
+        updatedAt: '2026-04-24T00:00:00.000Z',
+      },
+    ]);
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, {
+        chapter: makeChapter({ bodyJson: { type: 'doc', content: [{ type: 'paragraph' }] } }),
+      }),
+    );
 
     const { result } = renderHook(() => useChapterQuery('c1', 's1'), {
       wrapper: makeWrapper(client),
     });
 
-    await waitFor(() => expect(result.current.data).toBeDefined());
-    expect(result.current.data).toEqual(cached);
-    expect(fetchMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(result.current.data?.bodyJson).toBeDefined());
+    // GET /chapters/c1 must have been called — no short-circuit off the list.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe('/api/stories/s1/chapters/c1');
   });
 
   it('falls back to a single-chapter GET when the cache is cold', async () => {
@@ -151,5 +173,9 @@ describe('useUpdateChapterMutation', () => {
 
     const list = client.getQueryData(chaptersQueryKey('s1')) as Chapter[];
     expect(list[0]?.wordCount).toBe(5);
+    // List cache is metadata-only — `onSuccess` must strip `bodyJson` from
+    // the response before merging it in. If a future change drops the
+    // destructure-and-spread, this assertion fails.
+    expect(Object.keys(list[0] as Record<string, unknown>)).not.toContain('bodyJson');
   });
 });

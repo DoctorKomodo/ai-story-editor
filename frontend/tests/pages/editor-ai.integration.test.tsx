@@ -46,7 +46,6 @@ function makeChapter(): Record<string, unknown> {
     orderIndex: 0,
     wordCount: 0,
     status: 'draft',
-    bodyJson: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
   };

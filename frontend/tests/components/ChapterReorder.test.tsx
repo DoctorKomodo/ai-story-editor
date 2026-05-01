@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   arrayMove,
-  type Chapter,
+  type ChapterMeta,
   chaptersQueryKey,
   computeReorderedChapters,
   useReorderChaptersMutation,
@@ -22,7 +22,7 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-function chap(id: string, orderIndex: number): Chapter {
+function chap(id: string, orderIndex: number): ChapterMeta {
   return {
     id,
     storyId: 'story-1',
@@ -30,7 +30,6 @@ function chap(id: string, orderIndex: number): Chapter {
     wordCount: 0,
     orderIndex,
     status: 'draft',
-    bodyJson: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
   };
@@ -135,7 +134,7 @@ describe('useReorderChaptersMutation', () => {
     });
 
     await waitFor(() => {
-      const cached = qc.getQueryData<Chapter[]>(chaptersQueryKey('story-1'));
+      const cached = qc.getQueryData<ChapterMeta[]>(chaptersQueryKey('story-1'));
       expect(cached?.map((c) => c.id)).toEqual(['b', 'c', 'a']);
     });
 
@@ -186,7 +185,7 @@ describe('useReorderChaptersMutation', () => {
       expect(result.current.isError).toBe(true);
     });
 
-    const cached = qc.getQueryData<Chapter[]>(chaptersQueryKey('story-1'));
+    const cached = qc.getQueryData<ChapterMeta[]>(chaptersQueryKey('story-1'));
     expect(cached?.map((c) => c.id)).toEqual(['a', 'b', 'c']);
   });
 
@@ -217,7 +216,7 @@ describe('useReorderChaptersMutation', () => {
     });
 
     await waitFor(() => {
-      const cached = qc.getQueryData<Chapter[]>(chaptersQueryKey('story-1'));
+      const cached = qc.getQueryData<ChapterMeta[]>(chaptersQueryKey('story-1'));
       expect(cached?.map((c) => c.id)).toEqual(['b', 'c', 'a']);
     });
   });

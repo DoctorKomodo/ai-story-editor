@@ -23,7 +23,6 @@ interface ChapterFixture {
   wordCount: number;
   orderIndex: number;
   status: 'draft';
-  bodyJson: null;
   createdAt: string;
   updatedAt: string;
 }
@@ -36,7 +35,6 @@ function chap(
     title: `Chapter ${String(overrides.orderIndex + 1)}`,
     wordCount: 0,
     status: 'draft',
-    bodyJson: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
     ...overrides,

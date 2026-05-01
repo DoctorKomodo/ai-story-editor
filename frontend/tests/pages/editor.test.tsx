@@ -210,7 +210,6 @@ describe('EditorPage (F51 — AppShell shell)', () => {
               title: '',
               orderIndex: 0,
               wordCount: 0,
-              bodyJson: null,
               createdAt: '2026-04-27T00:00:00.000Z',
               updatedAt: '2026-04-27T00:00:00.000Z',
             },

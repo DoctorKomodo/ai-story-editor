@@ -22,6 +22,7 @@
 //   AppShell. F55 mounts <SettingsModal>, <StoryPicker>, <ModelPicker> here;
 //   F61 mounts <AccountPrivacyModal>.
 
+import { useQueryClient } from '@tanstack/react-query';
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -55,6 +56,8 @@ import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
 import { useBalanceQuery } from '@/hooks/useBalance';
 import {
+  type Chapter,
+  chapterQueryKey,
   useChapterQuery,
   useChaptersQuery,
   useCreateChapterMutation,
@@ -69,7 +72,7 @@ import {
 } from '@/hooks/useChat';
 import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useStoryQuery } from '@/hooks/useStories';
-import { ApiError } from '@/lib/api';
+import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
@@ -87,6 +90,7 @@ export function EditorPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
+  const queryClient = useQueryClient();
   const storyQuery = useStoryQuery(id);
   const story = storyQuery.data;
   const chaptersQuery = useChaptersQuery(story?.id);
@@ -337,6 +341,9 @@ export function EditorPage(): JSX.Element {
   const exportStory: ExportStory | null = useMemo(() => {
     if (!story) return null;
     const chapters = chaptersQuery.data ?? [];
+    // List cache is metadata-only; bodies are resolved lazily by Export via
+    // `resolveExportBody` below, which hits the per-chapter cache (or fetches
+    // on miss).
     return {
       id: story.id,
       title: story.title,
@@ -344,10 +351,30 @@ export function EditorPage(): JSX.Element {
         id: c.id,
         title: c.title,
         orderIndex: c.orderIndex,
-        bodyJson: (c.bodyJson as JSONContent | null) ?? null,
       })),
     };
   }, [story, chaptersQuery.data]);
+
+  const resolveExportBody = useCallback(
+    async (chapterId: string): Promise<JSONContent | null> => {
+      if (!story?.id) return null;
+      // `fetchQuery` returns cached data when fresh, otherwise issues one
+      // `GET /chapters/:id`. Same staleTime as `useChapterQuery` so the
+      // dedupe behaviour matches the editor mount path.
+      const chapter = await queryClient.fetchQuery<Chapter>({
+        queryKey: chapterQueryKey(chapterId),
+        queryFn: async () => {
+          const res = await api<{ chapter: Chapter }>(
+            `/stories/${encodeURIComponent(story.id)}/chapters/${encodeURIComponent(chapterId)}`,
+          );
+          return res.chapter;
+        },
+        staleTime: 30_000,
+      });
+      return (chapter.bodyJson as JSONContent | null) ?? null;
+    },
+    [queryClient, story?.id],
+  );
 
   const totalWordCount = useMemo(() => {
     return (chaptersQuery.data ?? []).reduce((sum, c) => sum + (c.wordCount ?? 0), 0);
@@ -585,7 +612,11 @@ export function EditorPage(): JSX.Element {
               ) : null}
               {exportStory ? (
                 <div className="mx-auto mt-4 flex w-full max-w-[720px] justify-end px-6 pb-6">
-                  <Export story={exportStory} activeChapterId={activeChapterId} />
+                  <Export
+                    story={exportStory}
+                    activeChapterId={activeChapterId}
+                    resolveBody={resolveExportBody}
+                  />
                 </div>
               ) : null}
             </div>
