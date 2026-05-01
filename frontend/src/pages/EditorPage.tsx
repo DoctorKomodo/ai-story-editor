@@ -127,10 +127,10 @@ export function EditorPage(): JSX.Element {
     setEditor(ed);
   }, []);
 
-  // [F19] Character sheet modal is id-driven; null = closed. The sheet only
-  // edits — the create path uses the create mutation directly and then opens
-  // the new id here.
-  const [openCharacterId, setOpenCharacterId] = useState<string | null>(null);
+  // [F19 + F28] Character sheet modal — discriminated state covers both edit
+  // (existing id) and create (new) modes. null = closed.
+  type CharacterModalState = { mode: 'edit'; id: string } | { mode: 'create' } | null;
+  const [characterModal, setCharacterModal] = useState<CharacterModalState>(null);
 
   // [F54] Character popover host — opened from charRef hover (F36 dispatcher,
   // wired inside the host) and from Cast-tab clicks (imperative ref).
@@ -139,7 +139,10 @@ export function EditorPage(): JSX.Element {
     characterPopoverRef.current?.openFor(id, el);
   }, []);
   const handleEditCharacter = useCallback((id: string) => {
-    setOpenCharacterId(id);
+    setCharacterModal({ mode: 'edit', id });
+  }, []);
+  const handleCreateCharacter = useCallback(() => {
+    setCharacterModal({ mode: 'create' });
   }, []);
 
   // [F55] Page-root modal state. The page renders each modal at the bottom
@@ -546,7 +549,7 @@ export function EditorPage(): JSX.Element {
                 storyId={story.id}
                 characters={charactersQuery.data ?? []}
                 onOpenCharacter={handleOpenCharacterFromCast}
-                onCreateCharacter={() => undefined}
+                onCreateCharacter={handleCreateCharacter}
                 isLoading={charactersQuery.isLoading}
                 isError={charactersQuery.isError}
               />
@@ -645,13 +648,25 @@ export function EditorPage(): JSX.Element {
         }
       />
 
-      {openCharacterId !== null ? (
+      {characterModal?.mode === 'edit' ? (
         <CharacterSheet
           storyId={story.id}
           mode="edit"
-          characterId={openCharacterId}
+          characterId={characterModal.id}
           onClose={() => {
-            setOpenCharacterId(null);
+            setCharacterModal(null);
+          }}
+        />
+      ) : null}
+      {characterModal?.mode === 'create' ? (
+        <CharacterSheet
+          storyId={story.id}
+          mode="create"
+          onClose={(createdId) => {
+            setCharacterModal(null);
+            if (createdId !== null) {
+              setSelectedCharacterId(createdId);
+            }
           }}
         />
       ) : null}
