@@ -76,6 +76,7 @@ import { triggerAskAI } from '@/lib/askAi';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
+import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
 
 function extractSelection(editor: TiptapEditor): string {
@@ -107,6 +108,13 @@ export function EditorPage(): JSX.Element {
 
   const activeChapterId = useActiveChapterStore((s) => s.activeChapterId);
   const setActiveChapterId = useActiveChapterStore((s) => s.setActiveChapterId);
+  const setSelectedCharacterId = useSelectedCharacterStore((s) => s.setSelectedCharacterId);
+
+  // Clear cast selection when the active chapter or story changes — keeps
+  // the inline-delete affordance scoped to a single editing context.
+  useEffect(() => {
+    setSelectedCharacterId(null);
+  }, [activeChapterId, story?.id, setSelectedCharacterId]);
 
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   // Paper passes `null` on unmount (chapter switch via key={chapterId}); we
