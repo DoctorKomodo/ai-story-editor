@@ -532,6 +532,7 @@ export function EditorPage(): JSX.Element {
             }
             castBody={
               <CastTab
+                storyId={story.id}
                 characters={charactersQuery.data ?? []}
                 onOpenCharacter={handleOpenCharacterFromCast}
                 isLoading={charactersQuery.isLoading}

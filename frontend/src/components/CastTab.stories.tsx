@@ -91,6 +91,7 @@ const meta = {
   title: 'Components/CastTab',
   component: CastTab,
   args: {
+    storyId: STORY_ID,
     onOpenCharacter: () => {},
   },
   decorators: [sidebarFrame],
@@ -99,11 +100,11 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-export const PrincipalAndSupporting: Story = {
+export const FullCast: Story = {
   args: { characters: sampleCharacters },
 };
 
-export const PrincipalOnly: Story = {
+export const TwoCharacters: Story = {
   args: { characters: sampleCharacters.slice(0, 2) },
 };
 
