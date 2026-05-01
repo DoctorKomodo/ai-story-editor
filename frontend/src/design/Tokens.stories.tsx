@@ -12,7 +12,17 @@ const COLOR_TOKENS: { group: string; names: string[] }[] = [
   { group: 'Lines', names: ['--line', '--line-2'] },
   {
     group: 'Accent',
-    names: ['--accent', '--accent-soft', '--mark', '--selection', '--ai', '--ai-soft', '--danger'],
+    names: [
+      '--accent',
+      '--accent-soft',
+      '--mark',
+      '--selection',
+      '--ai',
+      '--ai-soft',
+      '--success',
+      '--success-soft',
+      '--danger',
+    ],
   },
   { group: 'Backdrop', names: ['--color-backdrop'] },
 ];

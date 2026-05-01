@@ -31,6 +31,8 @@
   --danger: #8a3b2f;
   --ai: #5a4a8a;
   --ai-soft: #ece8f4;
+  --success: #3e6e2a;
+  --success-soft: #e0ecd1;
 
   --serif: "Iowan Old Style", "Palatino Linotype", "Palatino", "Book Antiqua", Georgia, serif;
   --sans: "Söhne", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
@@ -63,6 +65,8 @@
   --selection: #e0d09a;
   --ai: #6b4a3a;
   --ai-soft: #ead9c4;
+  --success: #5e7a36;
+  --success-soft: #dde6c8;
 }
 
 /* Dark theme */
@@ -84,6 +88,8 @@
   --selection: #3a3628;
   --ai: #b8a8e0;
   --ai-soft: #26233a;
+  --success: #8fb86a;
+  --success-soft: #1f2a17;
 }
 
 /* [F23] Custom variant: `dark:` utilities now key off data-theme="dark"
@@ -117,6 +123,8 @@
   --color-danger: var(--danger);
   --color-ai: var(--ai);
   --color-ai-soft: var(--ai-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
 
   /* Modal backdrop tint — alpha-blended dark overlay used by every modal.
      Defined here so consumers can write `bg-backdrop` instead of arbitrary
