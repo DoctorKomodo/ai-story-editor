@@ -111,7 +111,10 @@ export function EditorPage(): JSX.Element {
   const setSelectedCharacterId = useSelectedCharacterStore((s) => s.setSelectedCharacterId);
 
   // Clear cast selection when the active chapter or story changes — keeps
-  // the inline-delete affordance scoped to a single editing context.
+  // the inline-delete affordance scoped to a single editing context. The deps
+  // are triggers, not values read by the body; the lint exhaustive-deps check
+  // can't tell the difference.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: triggers, not value reads.
   useEffect(() => {
     setSelectedCharacterId(null);
   }, [activeChapterId, story?.id, setSelectedCharacterId]);
