@@ -60,10 +60,9 @@ import {
   chapterQueryKey,
   useChapterQuery,
   useChaptersQuery,
-  useCreateChapterMutation,
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
-import { useCharactersQuery, useCreateCharacterMutation } from '@/hooks/useCharacters';
+import { useCharactersQuery } from '@/hooks/useCharacters';
 import {
   useChatMessagesQuery,
   useChatsQuery,
@@ -78,7 +77,6 @@ import { useActiveChapterStore } from '@/store/activeChapter';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSessionStore } from '@/store/session';
-import { useSidebarTabStore } from '@/store/sidebarTab';
 
 function extractSelection(editor: TiptapEditor): string {
   const { from, to } = editor.state.selection;
@@ -109,7 +107,6 @@ export function EditorPage(): JSX.Element {
 
   const activeChapterId = useActiveChapterStore((s) => s.activeChapterId);
   const setActiveChapterId = useActiveChapterStore((s) => s.setActiveChapterId);
-  const activeTab = useSidebarTabStore((s) => s.sidebarTab);
 
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   // Paper passes `null` on unmount (chapter switch via key={chapterId}); we
@@ -207,9 +204,6 @@ export function EditorPage(): JSX.Element {
     [navigate],
   );
 
-  const createChapter = useCreateChapterMutation(story?.id ?? '');
-  const createCharacter = useCreateCharacterMutation(story?.id ?? '');
-
   // [F52] Active chapter content is read via the cache-first single-chapter
   // query, then mirrored into local state so Paper's onUpdate can mutate it
   // without re-rendering through TanStack Query on every keystroke. Autosave
@@ -304,27 +298,6 @@ export function EditorPage(): JSX.Element {
     },
     [story?.id, updateChapter],
   );
-
-  const handleSidebarAdd = useCallback((): void => {
-    if (!story?.id) return;
-    if (activeTab === 'chapters') {
-      createChapter.mutate({ title: '' });
-      return;
-    }
-    if (activeTab === 'cast') {
-      createCharacter.mutate(
-        { name: 'Untitled' },
-        {
-          onSuccess: (created) => {
-            setOpenCharacterId(created.id);
-          },
-        },
-      );
-      return;
-    }
-    // Outline: OutlineTab owns its own add affordance via onAddItem; the
-    // sidebar + button is a documented no-op for this tab.
-  }, [activeTab, story?.id, createChapter, createCharacter]);
 
   // [F53] inline-result store wiring; full handler defined after activeChapter
   // is derived (the handler reads activeChapter.orderIndex / title for the
@@ -545,7 +518,6 @@ export function EditorPage(): JSX.Element {
             onOpenStoryPicker={() => {
               setStoryPickerOpen(true);
             }}
-            onAdd={handleSidebarAdd}
             chaptersBody={
               <ChapterList
                 storyId={story.id}

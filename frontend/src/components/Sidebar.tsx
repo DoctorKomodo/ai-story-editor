@@ -16,8 +16,6 @@ export interface SidebarProps {
   totalWordCount?: number;
   goalWordCount?: number;
   onOpenStoryPicker?: () => void;
-  /** Plus button — parent targets the active tab. */
-  onAdd?: () => void;
   chaptersBody: ReactNode;
   castBody?: ReactNode;
   outlineBody?: ReactNode;
@@ -60,25 +58,6 @@ function ChevronDownIcon(): JSX.Element {
   );
 }
 
-function PlusIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
 interface TabSpec {
   id: SidebarTab;
   label: string;
@@ -107,7 +86,6 @@ export function Sidebar({
   totalWordCount,
   goalWordCount,
   onOpenStoryPicker,
-  onAdd,
   chaptersBody,
   castBody = null,
   outlineBody = null,
@@ -151,16 +129,6 @@ export function Sidebar({
           <span className="chev flex-shrink-0 text-ink-4" aria-hidden="true">
             <ChevronDownIcon />
           </span>
-        </button>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Add"
-          title="Add"
-          onClick={onAdd}
-          data-testid="sidebar-add-button"
-        >
-          <PlusIcon />
         </button>
       </div>
 

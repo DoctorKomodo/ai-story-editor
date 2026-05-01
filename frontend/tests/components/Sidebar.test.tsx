@@ -57,11 +57,9 @@ describe('Sidebar', () => {
     expect(onOpenStoryPicker).toHaveBeenCalledTimes(1);
   });
 
-  it('clicking the plus button fires onAdd', () => {
-    const onAdd = vi.fn();
-    renderSidebar({ onAdd });
-    fireEvent.click(screen.getByTestId('sidebar-add-button'));
-    expect(onAdd).toHaveBeenCalledTimes(1);
+  it('does not render a sidebar-level + button (chapters owns its own add)', () => {
+    renderSidebar();
+    expect(screen.queryByTestId('sidebar-add-button')).toBeNull();
   });
 
   it('renders three tabs in correct order', () => {
