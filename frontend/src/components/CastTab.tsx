@@ -29,7 +29,6 @@ import {
   type Character,
   charactersQueryKey,
   computeReorderedCharacters,
-  useCreateCharacterMutation,
   useDeleteCharacterMutation,
   useReorderCharactersMutation,
 } from '@/hooks/useCharacters';
@@ -40,6 +39,7 @@ export interface CastTabProps {
   storyId: string;
   characters: Character[];
   onOpenCharacter: (id: string, anchorEl: HTMLElement) => void;
+  onCreateCharacter: () => void;
   isLoading?: boolean;
   isError?: boolean;
 }
@@ -208,11 +208,11 @@ export function CastTab({
   storyId,
   characters,
   onOpenCharacter,
+  onCreateCharacter,
   isLoading,
   isError,
 }: CastTabProps): JSX.Element {
   const queryClient = useQueryClient();
-  const createCharacter = useCreateCharacterMutation(storyId);
   const reorderCharacters = useReorderCharactersMutation(storyId);
   const deleteCharacter = useDeleteCharacterMutation(storyId);
   const selectedCharacterId = useSelectedCharacterStore((s) => s.selectedCharacterId);
@@ -229,15 +229,8 @@ export function CastTab({
   );
 
   const handleAdd = useCallback((): void => {
-    createCharacter.mutate(
-      { name: 'Untitled' },
-      {
-        onSuccess: (created) => {
-          setSelectedCharacterId(created.id);
-        },
-      },
-    );
-  }, [createCharacter, setSelectedCharacterId]);
+    onCreateCharacter();
+  }, [onCreateCharacter]);
 
   const handleSelect = useCallback(
     (id: string, anchorEl: HTMLElement): void => {
@@ -293,7 +286,7 @@ export function CastTab({
 
   return (
     <div className="flex flex-col" data-testid="cast-list">
-      <CastSectionHeader onAdd={handleAdd} pending={createCharacter.isPending} />
+      <CastSectionHeader onAdd={handleAdd} />
 
       {isError === true ? (
         <p role="alert" className="px-3 py-2 text-[12px] text-danger">

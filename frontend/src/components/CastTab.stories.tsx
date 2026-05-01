@@ -126,6 +126,7 @@ const meta = {
     storyId: STORY_ID,
     characters: sampleCharacters,
     onOpenCharacter: () => {},
+    onCreateCharacter: () => undefined,
   },
 } satisfies Meta<typeof CastTab>;
 

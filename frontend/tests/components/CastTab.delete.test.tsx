@@ -48,6 +48,7 @@ function CastTabWithQuery({ storyId }: { storyId: string }): React.ReactElement 
       storyId={storyId}
       characters={characters}
       onOpenCharacter={() => {}}
+      onCreateCharacter={vi.fn()}
       isLoading={isLoading}
       isError={isError}
     />

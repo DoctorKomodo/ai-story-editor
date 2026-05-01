@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CastTab } from '@/components/CastTab';
 import type { Character } from '@/hooks/useCharacters';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
@@ -24,7 +24,7 @@ function meta(id: string, orderIndex: number, name?: string): Character {
 
 function renderCast(
   characters: Character[],
-  opts?: { isLoading?: boolean; isError?: boolean },
+  opts?: { isLoading?: boolean; isError?: boolean; onCreateCharacter?: () => void },
 ): void {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
@@ -33,6 +33,7 @@ function renderCast(
         storyId="s1"
         characters={characters}
         onOpenCharacter={vi.fn()}
+        onCreateCharacter={opts?.onCreateCharacter ?? vi.fn()}
         isLoading={opts?.isLoading}
         isError={opts?.isError}
       />
@@ -41,8 +42,16 @@ function renderCast(
 }
 
 describe('CastTab', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
   beforeEach(() => {
     useSelectedCharacterStore.setState({ selectedCharacterId: null });
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders DRAMATIS PERSONAE header even when empty', () => {
@@ -79,5 +88,13 @@ describe('CastTab', () => {
       'character-row-a',
       'character-row-c',
     ]);
+  });
+
+  it('clicking + invokes onCreateCharacter once and does not fire any network request', () => {
+    const onCreateCharacter = vi.fn();
+    renderCast([], { onCreateCharacter });
+    fireEvent.click(screen.getByLabelText(/add character/i));
+    expect(onCreateCharacter).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });

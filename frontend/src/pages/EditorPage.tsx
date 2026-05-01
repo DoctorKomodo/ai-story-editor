@@ -546,6 +546,7 @@ export function EditorPage(): JSX.Element {
                 storyId={story.id}
                 characters={charactersQuery.data ?? []}
                 onOpenCharacter={handleOpenCharacterFromCast}
+                onCreateCharacter={() => undefined}
                 isLoading={charactersQuery.isLoading}
                 isError={charactersQuery.isError}
               />
