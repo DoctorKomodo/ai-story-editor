@@ -1,52 +1,61 @@
+import {
+  DndContext,
+  type DragEndEvent,
+  KeyboardSensor,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
-import type { Character } from '@/hooks/useCharacters';
+import { useCallback, useRef, useState } from 'react';
+import { CastSectionHeader } from '@/components/CastSectionHeader';
+import {
+  CloseIcon,
+  GripIcon,
+  IconButton,
+  InlineConfirm,
+  useInlineConfirm,
+} from '@/design/primitives';
+import {
+  type Character,
+  charactersQueryKey,
+  computeReorderedCharacters,
+  useDeleteCharacterMutation,
+  useReorderCharactersMutation,
+} from '@/hooks/useCharacters';
+import { ApiError } from '@/lib/api';
+import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 
-/**
- * F28 — Cast sidebar tab.
- *
- * Renders the story's characters split into two sections — Principal (the first
- * two characters) and Supporting (the rest) — using the mockup's `.char-card`
- * styling: 28px circular avatar with a deterministic colored tint, serif-italic
- * initial, name (13/500) and "role · Age N" secondary line.
- *
- * Click on a card calls `onOpenCharacter(id)`. The avatar inside the button is
- * `aria-hidden`; the whole card is the focusable target. F37 will plug the
- * Character Popover into the same callback (anchored to the avatar element);
- * until it lands the parent routes the click to the F19 character sheet modal.
- *
- * Data is fetched by the parent via `useCharactersQuery` and passed in as
- * props — keeps this component dumb and easy to test.
- */
 export interface CastTabProps {
+  storyId: string;
   characters: Character[];
-  /**
-   * [F54] Forwards the avatar/card button element so the F37 popover can
-   * anchor below it.
-   */
   onOpenCharacter: (id: string, anchorEl: HTMLElement) => void;
+  onCreateCharacter: () => void;
   isLoading?: boolean;
   isError?: boolean;
 }
 
-/** Initial letter for the avatar — uppercase, falls back to "?" if empty. */
 function avatarInitial(c: Character): string {
   const trimmed = c.name.trim();
   if (trimmed.length === 0) return '?';
   return trimmed.charAt(0).toUpperCase();
 }
 
-/** Display name — "Untitled" when the character has no name. */
 function displayName(c: Character): string {
   const trimmed = c.name.trim();
   if (trimmed.length === 0) return 'Untitled';
   return trimmed;
 }
 
-/**
- * Secondary line under the name: role and/or `Age N`, separated by " · ".
- * Returns the empty string when both fields are blank — the caller
- * suppresses the line entirely in that case.
- */
 function characterSecondary(c: Character): string {
   const parts: string[] = [];
   const role = c.role?.trim() ?? '';
@@ -56,11 +65,6 @@ function characterSecondary(c: Character): string {
   return parts.join(' · ');
 }
 
-/**
- * Deterministic 6-entry palette of design-token-aware tints. The character id
- * (or name as a fallback) hashes into one slot. Each tint is a `color-mix`
- * over a token color so it adapts to the active theme automatically.
- */
 const AVATAR_PALETTE: readonly string[] = [
   'color-mix(in srgb, var(--ai) 18%, transparent)',
   'color-mix(in srgb, var(--accent-soft) 80%, transparent)',
@@ -76,100 +80,247 @@ function avatarBg(seed: string): string {
     hash = (hash * 31 + seed.charCodeAt(i)) | 0;
   }
   const idx = Math.abs(hash) % AVATAR_PALETTE.length;
-  // Non-null: idx is always in-range and the palette is non-empty.
   return AVATAR_PALETTE[idx] as string;
 }
 
-interface CharCardProps {
+interface CharRowProps {
   character: Character;
-  onOpenCharacter: (id: string, anchorEl: HTMLElement) => void;
+  selected: boolean;
+  onSelect: (id: string, anchorEl: HTMLElement) => void;
+  onRequestDelete: (id: string) => Promise<void>;
+  isDeleting: boolean;
 }
 
-function CharCard({ character, onOpenCharacter }: CharCardProps): JSX.Element {
-  const secondary = characterSecondary(character);
+function CharRow({
+  character,
+  selected,
+  onSelect,
+  onRequestDelete,
+  isDeleting,
+}: CharRowProps): JSX.Element {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } =
+    useSortable({ id: character.id });
+
+  const liRef = useRef<HTMLLIElement>(null);
+  const confirm = useInlineConfirm(liRef);
+
+  const setRefs = (node: HTMLLIElement | null): void => {
+    liRef.current = node;
+    setNodeRef(node);
+  };
+
+  const style: React.CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+
+  const onConfirmDelete = async (): Promise<void> => {
+    try {
+      await onRequestDelete(character.id);
+      confirm.dismiss();
+    } catch {
+      /* aria-live carries the message; keep confirm open for retry. */
+    }
+  };
+
   return (
-    <button
-      type="button"
-      onClick={(e) => {
-        onOpenCharacter(character.id, e.currentTarget);
-      }}
-      className="char-card flex gap-2.5 items-start px-3 py-2.5 mx-1 mb-1 rounded-[var(--radius)] cursor-pointer hover:bg-[var(--surface-hover)] w-[calc(100%-8px)] text-left transition-colors"
+    <li
+      ref={setRefs}
+      style={style}
+      data-active={selected ? 'true' : undefined}
+      data-over={isOver ? 'true' : undefined}
+      data-testid={`character-row-${character.id}`}
+      aria-current={selected ? 'true' : undefined}
+      className={[
+        'group relative flex items-center gap-2 px-2 py-2.5 mx-1 mb-1',
+        'rounded-[var(--radius)] transition-colors w-[calc(100%-8px)]',
+        selected ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--surface-hover)]',
+        isOver ? 'ring-1 ring-ink' : '',
+        isDragging ? 'opacity-60' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
-      <span
-        className="char-avatar grid place-items-center w-7 h-7 rounded-full font-serif italic text-[13px] text-ink border border-[var(--line-2)] flex-shrink-0"
-        style={{ background: avatarBg(character.id || character.name) }}
-        aria-hidden="true"
+      <button
+        type="button"
+        aria-label="Reorder"
+        data-testid={`character-row-${character.id}-grip`}
+        className={[
+          'cursor-grab touch-none text-ink-4 hover:text-ink-2',
+          'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+          'flex-shrink-0',
+        ].join(' ')}
+        {...attributes}
+        {...listeners}
       >
-        {avatarInitial(character)}
-      </span>
-      <span className="char-info flex-1 min-w-0 text-left">
-        <span className="char-name block text-[13px] font-medium text-ink truncate">
-          {displayName(character)}
+        <GripIcon />
+      </button>
+      <button
+        type="button"
+        onClick={(e) => {
+          onSelect(character.id, e.currentTarget);
+        }}
+        className="flex items-center gap-2.5 flex-1 min-w-0 text-left"
+      >
+        <span
+          className="grid place-items-center w-7 h-7 rounded-full font-serif italic text-[13px] text-ink border border-[var(--line-2)] flex-shrink-0"
+          style={{ background: avatarBg(character.id || character.name) }}
+          aria-hidden="true"
+        >
+          {avatarInitial(character)}
         </span>
-        {secondary.length > 0 ? (
-          <span className="char-role block text-[11px] text-ink-4 truncate tracking-[.02em]">
-            {secondary}
+        <span className="flex-1 min-w-0 text-left">
+          <span className="block text-[13px] font-medium text-ink truncate">
+            {displayName(character)}
           </span>
-        ) : null}
-      </span>
-    </button>
+          {characterSecondary(character).length > 0 ? (
+            <span className="block text-[11px] text-ink-4 truncate tracking-[.02em]">
+              {characterSecondary(character)}
+            </span>
+          ) : null}
+        </span>
+      </button>
+      {confirm.open ? (
+        <InlineConfirm
+          {...confirm.props}
+          label={`Delete ${displayName(character)}`}
+          onConfirm={() => {
+            void onConfirmDelete();
+          }}
+          pending={isDeleting}
+          testId={`character-row-${character.id}-confirm`}
+        />
+      ) : selected ? (
+        <IconButton
+          ariaLabel={`Delete ${displayName(character)}`}
+          onClick={confirm.ask}
+          testId={`character-row-${character.id}-delete`}
+          className="flex-shrink-0"
+        >
+          <CloseIcon />
+        </IconButton>
+      ) : null}
+    </li>
   );
 }
 
 export function CastTab({
+  storyId,
   characters,
   onOpenCharacter,
+  onCreateCharacter,
   isLoading,
   isError,
 }: CastTabProps): JSX.Element {
-  if (isError === true) {
-    return (
-      <div role="alert" className="px-3 py-2 text-[12px] text-danger">
-        Failed to load characters
-      </div>
-    );
-  }
+  const queryClient = useQueryClient();
+  const reorderCharacters = useReorderCharactersMutation(storyId);
+  const deleteCharacter = useDeleteCharacterMutation(storyId);
+  const selectedCharacterId = useSelectedCharacterStore((s) => s.selectedCharacterId);
+  const setSelectedCharacterId = useSelectedCharacterStore((s) => s.setSelectedCharacterId);
 
-  if (isLoading === true && characters.length === 0) {
-    return (
-      <div role="status" aria-live="polite" className="px-3 py-2 text-[12px] text-ink-4">
-        Loading cast…
-      </div>
-    );
-  }
+  const [reorderStatus, setReorderStatus] = useState<string>('');
+  const [deleteStatus, setDeleteStatus] = useState<string>('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
 
-  if (characters.length === 0) {
-    return (
-      <div className="px-3 py-2 text-[12px] text-ink-4">
-        No characters yet. Use the + button to add one.
-      </div>
-    );
-  }
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 5 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
 
-  const principal = characters.slice(0, 2);
-  const supporting = characters.slice(2);
+  const handleAdd = useCallback((): void => {
+    onCreateCharacter();
+  }, [onCreateCharacter]);
+
+  const handleSelect = useCallback(
+    (id: string, anchorEl: HTMLElement): void => {
+      setSelectedCharacterId(id);
+      onOpenCharacter(id, anchorEl);
+    },
+    [onOpenCharacter, setSelectedCharacterId],
+  );
+
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent): void => {
+      const activeId = String(event.active.id);
+      const overId = event.over ? String(event.over.id) : null;
+      const current = queryClient.getQueryData<Character[]>(charactersQueryKey(storyId));
+      if (current === undefined) return;
+      const next = computeReorderedCharacters(current, activeId, overId);
+      if (next === null) return;
+      setReorderStatus('');
+      reorderCharacters.mutate(next, {
+        onError: () => {
+          setReorderStatus('Reorder failed — reverted');
+        },
+        onSuccess: () => {
+          setReorderStatus('');
+        },
+      });
+    },
+    [queryClient, reorderCharacters, storyId],
+  );
+
+  const handleRequestDelete = useCallback(
+    async (id: string): Promise<void> => {
+      setDeleteStatus('');
+      setPendingDeleteId(id);
+      try {
+        await deleteCharacter.mutateAsync({ id });
+        if (selectedCharacterId === id) setSelectedCharacterId(null);
+      } catch (err) {
+        const message =
+          err instanceof ApiError && err.status === 404
+            ? 'Character already removed — refreshed'
+            : 'Delete failed — try again';
+        setDeleteStatus(message);
+        throw err;
+      } finally {
+        setPendingDeleteId(null);
+      }
+    },
+    [deleteCharacter, selectedCharacterId, setSelectedCharacterId],
+  );
+
+  const ids = characters.map((c) => c.id);
 
   return (
-    <div className="flex flex-col">
-      <section className="sidebar-section">
-        <header className="sidebar-section-header px-2 pt-2 pb-1 text-[11px] uppercase tracking-[.08em] text-ink-4">
-          Principal
-        </header>
-        {principal.map((c) => (
-          <CharCard key={c.id} character={c} onOpenCharacter={onOpenCharacter} />
-        ))}
-      </section>
+    <div className="flex flex-col" data-testid="cast-list">
+      <CastSectionHeader onAdd={handleAdd} />
 
-      {supporting.length > 0 ? (
-        <section className="sidebar-section">
-          <header className="sidebar-section-header px-2 pt-2 pb-1 text-[11px] uppercase tracking-[.08em] text-ink-4">
-            Supporting
-          </header>
-          {supporting.map((c) => (
-            <CharCard key={c.id} character={c} onOpenCharacter={onOpenCharacter} />
-          ))}
-        </section>
-      ) : null}
+      {isError === true ? (
+        <p role="alert" className="px-3 py-2 text-[12px] text-danger">
+          Failed to load characters
+        </p>
+      ) : isLoading === true && characters.length === 0 ? (
+        <p role="status" aria-live="polite" className="px-3 py-2 text-[12px] text-ink-4">
+          Loading cast…
+        </p>
+      ) : characters.length === 0 ? (
+        <p className="px-3 py-2 text-[12px] text-ink-4">No characters yet</p>
+      ) : (
+        <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+          <SortableContext items={ids} strategy={verticalListSortingStrategy}>
+            <ul className="flex flex-col">
+              {characters.map((c) => (
+                <CharRow
+                  key={c.id}
+                  character={c}
+                  selected={selectedCharacterId === c.id}
+                  onSelect={handleSelect}
+                  onRequestDelete={handleRequestDelete}
+                  isDeleting={pendingDeleteId === c.id}
+                />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      <div role="status" aria-live="polite" className="sr-only">
+        {reorderStatus}
+        {deleteStatus}
+      </div>
     </div>
   );
 }

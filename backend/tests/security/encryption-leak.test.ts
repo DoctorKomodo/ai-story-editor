@@ -99,6 +99,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
 
     await characterRepo.create({
       storyId: story.id as string,
+      orderIndex: 0,
       name: `char-name ${SENTINEL}`,
       role: `role ${SENTINEL}`,
       age: `age ${SENTINEL}`,

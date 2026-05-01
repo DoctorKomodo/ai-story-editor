@@ -59,7 +59,14 @@ function renderSheet(props: {
   const onClose = (props.onClose ?? vi.fn()) as ReturnType<typeof vi.fn>;
   render(
     <QueryClientProvider client={qc}>
-      <CharacterSheet storyId="story-1" characterId={props.characterId} onClose={onClose} />
+      {props.characterId !== null ? (
+        <CharacterSheet
+          storyId="story-1"
+          mode="edit"
+          characterId={props.characterId}
+          onClose={onClose}
+        />
+      ) : null}
     </QueryClientProvider>,
   );
   return { client: qc, onClose };
@@ -113,6 +120,31 @@ describe('CharacterSheet (F19)', () => {
     expect(screen.getByLabelText(/voice/i)).toHaveValue('Measured');
     expect(screen.getByLabelText(/arc/i)).toHaveValue('Redemption');
     expect(screen.getByLabelText(/personality/i)).toHaveValue('Curious');
+  });
+
+  it('typing in a non-name field keeps focus on that field (regression: F19 caret jump)', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/characters/c1')) {
+        return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1' }) }));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    const user = userEvent.setup();
+    renderSheet({ characterId: 'c1' });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/name/i)).toHaveValue('Ada');
+    });
+
+    const role = screen.getByLabelText(/role/i) as HTMLInputElement;
+    role.focus();
+    expect(role).toHaveFocus();
+
+    await user.type(role, 'X');
+
+    expect(role).toHaveFocus();
+    expect(role).toHaveValue('ProtagonistX');
   });
 
   it('shows role="status" while GET is pending', async () => {

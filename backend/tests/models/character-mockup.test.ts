@@ -28,7 +28,7 @@ describe('Character plaintext shape (post-E11)', () => {
   it('defaults initial + color to null', async () => {
     const story = await makeStory();
     const c = await prisma.character.create({
-      data: { storyId: story.id },
+      data: { storyId: story.id, orderIndex: 0 },
     });
     expect(c.initial).toBeNull();
     expect(c.color).toBeNull();
@@ -39,6 +39,7 @@ describe('Character plaintext shape (post-E11)', () => {
     const c = await prisma.character.create({
       data: {
         storyId: story.id,
+        orderIndex: 0,
         initial: 'E',
         color: '#a88b4c',
       },

@@ -55,7 +55,7 @@ describe('Story model', () => {
     const user = await makeUser('c@example.com');
     const story = await prisma.story.create({ data: { userId: user.id } });
     await prisma.chapter.create({ data: { orderIndex: 0, storyId: story.id } });
-    await prisma.character.create({ data: { storyId: story.id } });
+    await prisma.character.create({ data: { storyId: story.id, orderIndex: 0 } });
 
     await prisma.story.delete({ where: { id: story.id } });
 

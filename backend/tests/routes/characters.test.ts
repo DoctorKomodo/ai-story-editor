@@ -205,6 +205,7 @@ describe('Character routes [B5]', () => {
 
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Readable Char',
       role: 'mentor',
       notes: 'guides hero',
@@ -229,6 +230,7 @@ describe('Character routes [B5]', () => {
 
     const charA = await createCharacterRepo(req).create({
       storyId: storyA.id as string,
+      orderIndex: 0,
       name: 'Char in A',
     });
 
@@ -247,6 +249,7 @@ describe('Character routes [B5]', () => {
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
     const char = await createCharacterRepo(reqA).create({
       storyId: story.id as string,
+      orderIndex: 0,
       name: 'A char',
     });
 
@@ -264,12 +267,16 @@ describe('Character routes [B5]', () => {
     const story = await createStoryRepo(req).create({ title: 'Ordered' });
     const storyId = story.id as string;
 
-    const first = await createCharacterRepo(req).create({ storyId, name: 'First' });
+    const first = await createCharacterRepo(req).create({ storyId, orderIndex: 0, name: 'First' });
     // Ensure strictly increasing createdAt timestamps.
     await new Promise((r) => setTimeout(r, 5));
-    const second = await createCharacterRepo(req).create({ storyId, name: 'Second' });
+    const second = await createCharacterRepo(req).create({
+      storyId,
+      orderIndex: 1,
+      name: 'Second',
+    });
     await new Promise((r) => setTimeout(r, 5));
-    const third = await createCharacterRepo(req).create({ storyId, name: 'Third' });
+    const third = await createCharacterRepo(req).create({ storyId, orderIndex: 2, name: 'Third' });
 
     const res = await request(app)
       .get(`/api/stories/${storyId}/characters`)
@@ -314,6 +321,7 @@ describe('Character routes [B5]', () => {
 
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Original',
       role: 'sidekick',
       notes: 'keep me',
@@ -351,6 +359,7 @@ describe('Character routes [B5]', () => {
     const storyId = story.id as string;
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Char',
     });
 
@@ -369,6 +378,7 @@ describe('Character routes [B5]', () => {
     const storyId = story.id as string;
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Char',
     });
 
@@ -390,6 +400,7 @@ describe('Character routes [B5]', () => {
     const storyId = story.id as string;
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Doomed',
     });
     const id = created.id as string;
@@ -404,5 +415,134 @@ describe('Character routes [B5]', () => {
       .get(`/api/stories/${storyId}/characters/${id}`)
       .set('Authorization', `Bearer ${accessToken}`);
     expect(get.status).toBe(403);
+  });
+
+  // ── POST + DELETE + PATCH /reorder integration ────────────────────────────
+
+  describe('POST + DELETE + PATCH /reorder integration', () => {
+    it('POST allocates sequential orderIndex starting at 0', async () => {
+      const accessToken = await registerAndLogin('cr-post-seq');
+      const req = makeFakeReq(accessToken);
+      const story = await createStoryRepo(req).create({ title: 's' });
+      const storyId = story.id as string;
+
+      for (const name of ['a', 'b', 'c']) {
+        const res = await request(app)
+          .post(`/api/stories/${storyId}/characters`)
+          .set('Authorization', `Bearer ${accessToken}`)
+          .send({ name });
+        expect(res.status).toBe(201);
+      }
+
+      const list = await request(app)
+        .get(`/api/stories/${storyId}/characters`)
+        .set('Authorization', `Bearer ${accessToken}`);
+      expect(list.status).toBe(200);
+      expect(
+        (list.body.characters as Array<{ orderIndex: number }>).map((c) => c.orderIndex),
+      ).toEqual([0, 1, 2]);
+    });
+
+    it('DELETE /:characterId reassigns sequential orderIndex on the remaining list', async () => {
+      const accessToken = await registerAndLogin('cr-del-reseq');
+      const req = makeFakeReq(accessToken);
+      const story = await createStoryRepo(req).create({ title: 's' });
+      const storyId = story.id as string;
+
+      const repo = createCharacterRepo(req);
+      const a = await repo.create({ storyId, name: 'a', orderIndex: 0 });
+      const b = await repo.create({ storyId, name: 'b', orderIndex: 1 });
+      const c = await repo.create({ storyId, name: 'c', orderIndex: 2 });
+      const d = await repo.create({ storyId, name: 'd', orderIndex: 3 });
+
+      const del = await request(app)
+        .delete(`/api/stories/${storyId}/characters/${b.id as string}`)
+        .set('Authorization', `Bearer ${accessToken}`);
+      expect(del.status).toBe(204);
+
+      const after = await request(app)
+        .get(`/api/stories/${storyId}/characters`)
+        .set('Authorization', `Bearer ${accessToken}`);
+      expect(after.status).toBe(200);
+      const remaining = after.body.characters as Array<{ id: string; orderIndex: number }>;
+      expect(remaining.map((ch) => ch.orderIndex)).toEqual([0, 1, 2]);
+      expect(remaining.map((ch) => ch.id)).toEqual([a.id, c.id, d.id]);
+    });
+
+    it('PATCH /reorder returns 204 and the next GET reflects the new order', async () => {
+      const accessToken = await registerAndLogin('cr-reorder');
+      const req = makeFakeReq(accessToken);
+      const story = await createStoryRepo(req).create({ title: 's' });
+      const storyId = story.id as string;
+
+      const repo = createCharacterRepo(req);
+      const a = await repo.create({ storyId, name: 'a', orderIndex: 0 });
+      const b = await repo.create({ storyId, name: 'b', orderIndex: 1 });
+      const c = await repo.create({ storyId, name: 'c', orderIndex: 2 });
+
+      const reorder = await request(app)
+        .patch(`/api/stories/${storyId}/characters/reorder`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          characters: [
+            { id: c.id, orderIndex: 0 },
+            { id: a.id, orderIndex: 1 },
+            { id: b.id, orderIndex: 2 },
+          ],
+        });
+      expect(reorder.status).toBe(204);
+
+      const after = await request(app)
+        .get(`/api/stories/${storyId}/characters`)
+        .set('Authorization', `Bearer ${accessToken}`);
+      expect((after.body.characters as Array<{ id: string }>).map((ch) => ch.id)).toEqual([
+        c.id,
+        a.id,
+        b.id,
+      ]);
+    });
+
+    it('PATCH /reorder returns 400 on duplicate orderIndex values', async () => {
+      const accessToken = await registerAndLogin('cr-dup-ord');
+      const req = makeFakeReq(accessToken);
+      const story = await createStoryRepo(req).create({ title: 's' });
+      const storyId = story.id as string;
+      const a = await createCharacterRepo(req).create({ storyId, name: 'a', orderIndex: 0 });
+      const b = await createCharacterRepo(req).create({ storyId, name: 'b', orderIndex: 1 });
+
+      const res = await request(app)
+        .patch(`/api/stories/${storyId}/characters/reorder`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          characters: [
+            { id: a.id, orderIndex: 0 },
+            { id: b.id, orderIndex: 0 },
+          ],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('validation_error');
+    });
+
+    it('PATCH /reorder returns 403 when one of the ids belongs to another user', async () => {
+      const aliceToken = await registerAndLogin('cr-alice');
+      const bobToken = await registerAndLogin('cr-bob');
+      const aliceReq = makeFakeReq(aliceToken);
+      const bobReq = makeFakeReq(bobToken);
+      const aliceStory = await createStoryRepo(aliceReq).create({ title: 's' });
+      const bobStory = await createStoryRepo(bobReq).create({ title: 's' });
+      const aliceChar = await createCharacterRepo(aliceReq).create({
+        storyId: aliceStory.id as string,
+        name: 'a',
+        orderIndex: 0,
+      });
+
+      const res = await request(app)
+        .patch(`/api/stories/${bobStory.id as string}/characters/reorder`)
+        .set('Authorization', `Bearer ${bobToken}`)
+        .send({ characters: [{ id: aliceChar.id, orderIndex: 0 }] });
+      // Either the route's CharacterNotOwnedError handler (→ 403) or the
+      // ownership middleware on the parent story (→ 403). Both are 403.
+      expect(res.status).toBe(403);
+    });
   });
 });

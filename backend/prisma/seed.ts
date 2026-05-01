@@ -148,6 +148,7 @@ async function main(): Promise<void> {
 
   await characterRepo.create({
     storyId: story.id as string,
+    orderIndex: 0,
     name: 'Maren Oake',
     role: 'protagonist',
     physicalDescription:
@@ -160,6 +161,7 @@ async function main(): Promise<void> {
 
   await characterRepo.create({
     storyId: story.id as string,
+    orderIndex: 1,
     name: 'The Stranger',
     role: 'mentor / mystery',
     physicalDescription:
@@ -208,6 +210,7 @@ async function main(): Promise<void> {
 
   await characterRepo.create({
     storyId: story2.id as string,
+    orderIndex: 0,
     name: 'Eleanor Vance',
     role: 'protagonist',
     physicalDescription:
@@ -221,6 +224,7 @@ async function main(): Promise<void> {
 
   await characterRepo.create({
     storyId: story2.id as string,
+    orderIndex: 1,
     name: 'The Previous Tenant',
     role: 'absent antagonist',
     physicalDescription:

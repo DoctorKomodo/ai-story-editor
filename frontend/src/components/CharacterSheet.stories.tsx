@@ -19,6 +19,7 @@ const sampleCharacter: Character = {
   voice: 'Quiet, precise. Holds eye contact a beat longer than is comfortable.',
   arc: 'Learns to trust her own judgement after a series of avoidable misreadings.',
   personality: 'Careful, curious, slow to anger but absolute once she gets there.',
+  orderIndex: 0,
   createdAt: '2026-04-01T12:00:00Z',
   updatedAt: '2026-04-30T12:00:00Z',
 };
@@ -44,11 +45,14 @@ function Demo() {
       <Button variant="ghost" onClick={() => setOpen(true)}>
         Reopen sheet
       </Button>
-      <CharacterSheet
-        storyId={STORY_ID}
-        characterId={open ? CHARACTER_ID : null}
-        onClose={() => setOpen(false)}
-      />
+      {open ? (
+        <CharacterSheet
+          storyId={STORY_ID}
+          mode="edit"
+          characterId={CHARACTER_ID}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
     </QueryClientProvider>
   );
 }

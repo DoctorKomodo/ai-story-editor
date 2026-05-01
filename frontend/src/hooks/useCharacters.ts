@@ -30,6 +30,7 @@ export interface Character {
   voice: string | null;
   arc: string | null;
   personality: string | null;
+  orderIndex: number;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,8 +65,20 @@ export function useCharactersQuery(
   });
 }
 
+/**
+ * POST body shape accepted by the create endpoint. Only `name` is required;
+ * any optional field provided is forwarded as-is. Empty/blank values should
+ * be omitted by the caller (do not send `""`); to clear a field after create,
+ * use the update mutation with an explicit `null`.
+ */
 export interface CreateCharacterInput {
   name: string;
+  role?: string;
+  age?: string;
+  appearance?: string;
+  voice?: string;
+  arc?: string;
+  personality?: string;
 }
 
 export function useCreateCharacterMutation(
@@ -156,20 +169,131 @@ export interface DeleteCharacterInput {
   id: string;
 }
 
+export interface DeleteCharacterMutationContext {
+  previous: Character[] | undefined;
+}
+
 export function useDeleteCharacterMutation(
   storyId: string,
-): UseMutationResult<void, Error, DeleteCharacterInput> {
+): UseMutationResult<void, Error, DeleteCharacterInput, DeleteCharacterMutationContext> {
   const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async ({ id }: DeleteCharacterInput): Promise<void> => {
+  return useMutation<void, Error, DeleteCharacterInput, DeleteCharacterMutationContext>({
+    mutationFn: async ({ id }) => {
       await api<void>(
         `/stories/${encodeURIComponent(storyId)}/characters/${encodeURIComponent(id)}`,
         { method: 'DELETE' },
       );
     },
+    onMutate: async ({ id }): Promise<DeleteCharacterMutationContext> => {
+      await qc.cancelQueries({ queryKey: charactersQueryKey(storyId) });
+      const previous = qc.getQueryData<Character[]>(charactersQueryKey(storyId));
+      if (previous !== undefined) {
+        const next = computeCharactersAfterDelete(previous, id);
+        if (next !== null) {
+          qc.setQueryData<Character[]>(charactersQueryKey(storyId), next);
+        }
+      }
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData<Character[]>(charactersQueryKey(storyId), context.previous);
+      }
+    },
     onSuccess: (_void, { id }) => {
       qc.removeQueries({ queryKey: characterQueryKey(storyId, id) });
+    },
+    onSettled: () => {
       void qc.invalidateQueries({ queryKey: charactersQueryKey(storyId) });
     },
   });
+}
+
+/**
+ * Pure array-move helper. Returns a new array.
+ */
+function arrayMove<T>(list: readonly T[], fromIndex: number, toIndex: number): T[] {
+  if (fromIndex === toIndex) return list.slice();
+  if (fromIndex < 0 || fromIndex >= list.length) return list.slice();
+  if (toIndex < 0 || toIndex >= list.length) return list.slice();
+  const next = list.slice();
+  const [moved] = next.splice(fromIndex, 1);
+  next.splice(toIndex, 0, moved as T);
+  return next;
+}
+
+function withSequentialOrderIndex<T extends { orderIndex: number }>(list: readonly T[]): T[] {
+  return list.map((c, idx) => (c.orderIndex === idx ? c : { ...c, orderIndex: idx }));
+}
+
+export interface ReorderItem {
+  id: string;
+  orderIndex: number;
+}
+
+export interface ReorderCharactersMutationContext {
+  previous: Character[] | undefined;
+}
+
+export function useReorderCharactersMutation(
+  storyId: string,
+): UseMutationResult<void, Error, Character[], ReorderCharactersMutationContext> {
+  const qc = useQueryClient();
+  return useMutation<void, Error, Character[], ReorderCharactersMutationContext>({
+    mutationFn: async (nextList: Character[]): Promise<void> => {
+      const items: ReorderItem[] = nextList.map((c) => ({ id: c.id, orderIndex: c.orderIndex }));
+      await api<void>(`/stories/${encodeURIComponent(storyId)}/characters/reorder`, {
+        method: 'PATCH',
+        body: { characters: items },
+      });
+    },
+    onMutate: async (nextList: Character[]): Promise<ReorderCharactersMutationContext> => {
+      await qc.cancelQueries({ queryKey: charactersQueryKey(storyId) });
+      const previous = qc.getQueryData<Character[]>(charactersQueryKey(storyId));
+      qc.setQueryData<Character[]>(charactersQueryKey(storyId), nextList);
+      return { previous };
+    },
+    onError: (_err, _vars, context) => {
+      if (context?.previous !== undefined) {
+        qc.setQueryData<Character[]>(charactersQueryKey(storyId), context.previous);
+      }
+    },
+    onSettled: () => {
+      void qc.invalidateQueries({ queryKey: charactersQueryKey(storyId) });
+    },
+  });
+}
+
+/**
+ * Pure handler used by the CastTab's `DndContext.onDragEnd`. Given the cache
+ * and a dnd-kit `{active, over}` pair, returns the new list (with sequential
+ * orderIndex). Returns null when nothing needs to change.
+ */
+export function computeReorderedCharacters(
+  current: readonly Character[],
+  activeId: string,
+  overId: string | null,
+): Character[] | null {
+  if (overId === null) return null;
+  if (activeId === overId) return null;
+  const fromIndex = current.findIndex((c) => c.id === activeId);
+  const toIndex = current.findIndex((c) => c.id === overId);
+  if (fromIndex === -1 || toIndex === -1) return null;
+  const moved = arrayMove(current, fromIndex, toIndex);
+  return withSequentialOrderIndex(moved);
+}
+
+/**
+ * Pure helper for the optimistic delete update — removes the character and
+ * reassigns sequential orderIndex on the remainder. Returns null when the id
+ * isn't present.
+ */
+export function computeCharactersAfterDelete(
+  current: readonly Character[],
+  characterId: string,
+): Character[] | null {
+  const idx = current.findIndex((c) => c.id === characterId);
+  if (idx === -1) return null;
+  const remaining = current.filter((c) => c.id !== characterId);
+  return withSequentialOrderIndex(remaining);
 }

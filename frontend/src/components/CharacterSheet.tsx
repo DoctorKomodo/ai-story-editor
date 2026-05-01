@@ -20,8 +20,10 @@ import {
 } from '@/design/primitives';
 import {
   type Character,
+  type CreateCharacterInput,
   type UpdateCharacterPatch,
   useCharacterQuery,
+  useCreateCharacterMutation,
   useDeleteCharacterMutation,
   useUpdateCharacterMutation,
 } from '@/hooks/useCharacters';
@@ -36,12 +38,9 @@ import { ApiError } from '@/lib/api';
  * Field / Input / Textarea / Button). The nested confirm dialog uses a
  * second Modal so backdrop / escape / focus management is centralised.
  */
-export interface CharacterSheetProps {
-  storyId: string;
-  /** `null` closes the modal. */
-  characterId: string | null;
-  onClose: () => void;
-}
+export type CharacterSheetProps =
+  | { storyId: string; mode: 'edit'; characterId: string; onClose: () => void }
+  | { storyId: string; mode: 'create'; onClose: (createdId: string | null) => void };
 
 const NAME_MAX = 200;
 const ROLE_MAX = 200;
@@ -108,11 +107,23 @@ function diffPatch(original: Character, current: FieldState): UpdateCharacterPat
   return out;
 }
 
-export function CharacterSheet({
+const EMPTY_FIELDS: FieldState = {
+  name: '',
+  role: '',
+  age: '',
+  appearance: '',
+  voice: '',
+  arc: '',
+  personality: '',
+};
+
+function CreateCharacterSheet({
   storyId,
-  characterId,
   onClose,
-}: CharacterSheetProps): JSX.Element | null {
+}: {
+  storyId: string;
+  onClose: (createdId: string | null) => void;
+}): JSX.Element {
   const headingId = useId();
   const nameId = useId();
   const roleId = useId();
@@ -122,9 +133,194 @@ export function CharacterSheet({
   const arcId = useId();
   const personalityId = useId();
 
-  const open = characterId !== null;
+  const createMutation = useCreateCharacterMutation(storyId);
+  const [fields, setFields] = useState<FieldState>(EMPTY_FIELDS);
+  const [formError, setFormError] = useState<string | null>(null);
+  const nameInputRef = useRef<HTMLInputElement | null>(null);
 
-  const query = useCharacterQuery(open ? storyId : null, characterId);
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      nameInputRef.current?.focus();
+    }, 0);
+    return () => {
+      window.clearTimeout(id);
+    };
+  }, []);
+
+  const handleFieldChange =
+    (key: FieldKey) =>
+    (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+      const value = e.target.value;
+      setFields((prev) => ({ ...prev, [key]: value }));
+      if (formError) setFormError(null);
+    };
+
+  const handleCancel = useCallback((): void => {
+    onClose(null);
+  }, [onClose]);
+
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
+    e.preventDefault();
+    const trimmedName = fields.name.trim();
+    if (trimmedName.length === 0) return;
+    setFormError(null);
+    const input: CreateCharacterInput = { name: trimmedName };
+    const role = nullable(fields.role);
+    if (role !== null) input.role = role;
+    const age = nullable(fields.age);
+    if (age !== null) input.age = age;
+    const appearance = nullable(fields.appearance);
+    if (appearance !== null) input.appearance = appearance;
+    const voice = nullable(fields.voice);
+    if (voice !== null) input.voice = voice;
+    const arc = nullable(fields.arc);
+    if (arc !== null) input.arc = arc;
+    const personality = nullable(fields.personality);
+    if (personality !== null) input.personality = personality;
+
+    try {
+      const created = await createMutation.mutateAsync(input);
+      onClose(created.id);
+    } catch (err) {
+      setFormError(mapError(err));
+    }
+  };
+
+  const savePending = createMutation.isPending;
+  const nameTrimmed = fields.name.trim();
+  const saveDisabled = nameTrimmed.length === 0 || savePending;
+
+  return (
+    <Modal open onClose={handleCancel} labelledBy={headingId} size="lg" testId="character-sheet">
+      <form onSubmit={handleSubmit} noValidate className="flex flex-col h-full min-h-0">
+        <ModalHeader titleId={headingId} title="Create character" onClose={handleCancel} />
+        <ModalBody>
+          <div className="flex flex-col gap-3">
+            <Field label="Name" htmlFor={nameId} hint="Required">
+              <Input
+                id={nameId}
+                ref={nameInputRef}
+                name="name"
+                value={fields.name}
+                maxLength={NAME_MAX}
+                required
+                aria-required="true"
+                onChange={handleFieldChange('name')}
+              />
+            </Field>
+            <Field label="Role" htmlFor={roleId}>
+              <Input
+                id={roleId}
+                name="role"
+                value={fields.role}
+                maxLength={ROLE_MAX}
+                onChange={handleFieldChange('role')}
+              />
+            </Field>
+            <Field label="Age" htmlFor={ageId}>
+              <Input
+                id={ageId}
+                name="age"
+                value={fields.age}
+                maxLength={AGE_MAX}
+                onChange={handleFieldChange('age')}
+              />
+            </Field>
+            <Field label="Appearance" htmlFor={appearanceId}>
+              <Textarea
+                id={appearanceId}
+                name="appearance"
+                value={fields.appearance}
+                maxLength={LONG_MAX}
+                rows={3}
+                onChange={handleFieldChange('appearance')}
+              />
+            </Field>
+            <Field label="Voice" htmlFor={voiceId}>
+              <Textarea
+                id={voiceId}
+                name="voice"
+                value={fields.voice}
+                maxLength={LONG_MAX}
+                rows={3}
+                onChange={handleFieldChange('voice')}
+              />
+            </Field>
+            <Field label="Arc" htmlFor={arcId}>
+              <Textarea
+                id={arcId}
+                name="arc"
+                value={fields.arc}
+                maxLength={LONG_MAX}
+                rows={3}
+                onChange={handleFieldChange('arc')}
+              />
+            </Field>
+            <Field label="Personality" htmlFor={personalityId}>
+              <Textarea
+                id={personalityId}
+                name="personality"
+                value={fields.personality}
+                maxLength={LONG_MAX}
+                rows={3}
+                onChange={handleFieldChange('personality')}
+              />
+            </Field>
+          </div>
+          {formError ? (
+            <p
+              role="alert"
+              className="mt-3 font-sans text-[12.5px] text-danger"
+              data-testid="character-sheet-form-error"
+            >
+              {formError}
+            </p>
+          ) : null}
+        </ModalBody>
+        <ModalFooter>
+          <div className="flex gap-2 ml-auto">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={handleCancel}
+              data-testid="character-sheet-cancel"
+            >
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={saveDisabled}
+              data-testid="character-sheet-save"
+            >
+              {savePending ? 'Saving…' : 'Save'}
+            </Button>
+          </div>
+        </ModalFooter>
+      </form>
+    </Modal>
+  );
+}
+
+function EditCharacterSheet({
+  storyId,
+  characterId,
+  onClose,
+}: {
+  storyId: string;
+  characterId: string;
+  onClose: () => void;
+}): JSX.Element {
+  const headingId = useId();
+  const nameId = useId();
+  const roleId = useId();
+  const ageId = useId();
+  const appearanceId = useId();
+  const voiceId = useId();
+  const arcId = useId();
+  const personalityId = useId();
+
+  const query = useCharacterQuery(storyId, characterId);
   const updateMutation = useUpdateCharacterMutation(storyId);
   const deleteMutation = useDeleteCharacterMutation(storyId);
 
@@ -134,6 +330,7 @@ export function CharacterSheet({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const hasFocusedNameRef = useRef(false);
 
   useEffect(() => {
     if (query.data) {
@@ -141,29 +338,19 @@ export function CharacterSheet({
     }
   }, [query.data]);
 
+  // Focus the name input once, when fields first become available.
+  // Re-running on every `fields` change yanks focus back from whichever
+  // field the user is typing in.
   useEffect(() => {
-    if (!open) {
-      setFields(null);
-      setFormError(null);
-      setConfirmOpen(false);
-      setDeleteError(null);
-      return;
-    }
-    setFormError(null);
-    setConfirmOpen(false);
-    setDeleteError(null);
-  }, [open]);
-
-  // Focus the name input once fields are available.
-  useEffect(() => {
-    if (!open || fields === null) return;
+    if (fields === null || hasFocusedNameRef.current) return;
+    hasFocusedNameRef.current = true;
     const id = window.setTimeout(() => {
       nameInputRef.current?.focus();
     }, 0);
     return () => {
       window.clearTimeout(id);
     };
-  }, [open, fields]);
+  }, [fields]);
 
   const handleFieldChange = useCallback(
     (key: FieldKey) =>
@@ -204,8 +391,6 @@ export function CharacterSheet({
     }
   };
 
-  if (!open) return null;
-
   const savePending = updateMutation.isPending;
   const deletePending = deleteMutation.isPending;
   const nameTrimmed = fields?.name.trim() ?? '';
@@ -214,7 +399,7 @@ export function CharacterSheet({
 
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       labelledBy={headingId}
       size="lg"
@@ -428,5 +613,18 @@ export function CharacterSheet({
         </ModalFooter>
       </Modal>
     </Modal>
+  );
+}
+
+export function CharacterSheet(props: CharacterSheetProps): JSX.Element {
+  if (props.mode === 'create') {
+    return <CreateCharacterSheet storyId={props.storyId} onClose={props.onClose} />;
+  }
+  return (
+    <EditCharacterSheet
+      storyId={props.storyId}
+      characterId={props.characterId}
+      onClose={props.onClose}
+    />
   );
 }

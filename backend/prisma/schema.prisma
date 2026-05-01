@@ -125,6 +125,7 @@ model Character {
   id                  String   @id @default(cuid())
   initial             String?
   color               String?
+  orderIndex          Int
   // [E6] ciphertext triples for every narrative field — now the SOLE source
   // of truth. `color`, `initial`, `storyId`, timestamps remain plaintext (UI
   // hints + structural fields). Plaintext narrative siblings were dropped in
@@ -166,6 +167,10 @@ model Character {
   story               Story    @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
   @@index([storyId])
+  // [cast-ui] Same race guard as Chapter — unique constraint prevents
+  // aggregate(_max)+insert race in POST handler and provides the btree index
+  // Postgres needs for `ORDER BY orderIndex ASC`.
+  @@unique([storyId, orderIndex])
 }
 
 model OutlineItem {

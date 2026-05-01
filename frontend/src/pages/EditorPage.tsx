@@ -76,6 +76,7 @@ import { triggerAskAI } from '@/lib/askAi';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
+import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
 
 function extractSelection(editor: TiptapEditor): string {
@@ -107,6 +108,16 @@ export function EditorPage(): JSX.Element {
 
   const activeChapterId = useActiveChapterStore((s) => s.activeChapterId);
   const setActiveChapterId = useActiveChapterStore((s) => s.setActiveChapterId);
+  const setSelectedCharacterId = useSelectedCharacterStore((s) => s.setSelectedCharacterId);
+
+  // Clear cast selection when the active chapter or story changes — keeps
+  // the inline-delete affordance scoped to a single editing context. The deps
+  // are triggers, not values read by the body; the lint exhaustive-deps check
+  // can't tell the difference.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: triggers, not value reads.
+  useEffect(() => {
+    setSelectedCharacterId(null);
+  }, [activeChapterId, story?.id, setSelectedCharacterId]);
 
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   // Paper passes `null` on unmount (chapter switch via key={chapterId}); we
@@ -116,10 +127,10 @@ export function EditorPage(): JSX.Element {
     setEditor(ed);
   }, []);
 
-  // [F19] Character sheet modal is id-driven; null = closed. The sheet only
-  // edits — the create path uses the create mutation directly and then opens
-  // the new id here.
-  const [openCharacterId, setOpenCharacterId] = useState<string | null>(null);
+  // [F19 + F28] Character sheet modal — discriminated state covers both edit
+  // (existing id) and create (new) modes. null = closed.
+  type CharacterModalState = { mode: 'edit'; id: string } | { mode: 'create' } | null;
+  const [characterModal, setCharacterModal] = useState<CharacterModalState>(null);
 
   // [F54] Character popover host — opened from charRef hover (F36 dispatcher,
   // wired inside the host) and from Cast-tab clicks (imperative ref).
@@ -128,7 +139,10 @@ export function EditorPage(): JSX.Element {
     characterPopoverRef.current?.openFor(id, el);
   }, []);
   const handleEditCharacter = useCallback((id: string) => {
-    setOpenCharacterId(id);
+    setCharacterModal({ mode: 'edit', id });
+  }, []);
+  const handleCreateCharacter = useCallback(() => {
+    setCharacterModal({ mode: 'create' });
   }, []);
 
   // [F55] Page-root modal state. The page renders each modal at the bottom
@@ -532,8 +546,10 @@ export function EditorPage(): JSX.Element {
             }
             castBody={
               <CastTab
+                storyId={story.id}
                 characters={charactersQuery.data ?? []}
                 onOpenCharacter={handleOpenCharacterFromCast}
+                onCreateCharacter={handleCreateCharacter}
                 isLoading={charactersQuery.isLoading}
                 isError={charactersQuery.isError}
               />
@@ -632,13 +648,28 @@ export function EditorPage(): JSX.Element {
         }
       />
 
-      <CharacterSheet
-        storyId={story.id}
-        characterId={openCharacterId}
-        onClose={() => {
-          setOpenCharacterId(null);
-        }}
-      />
+      {characterModal?.mode === 'edit' ? (
+        <CharacterSheet
+          storyId={story.id}
+          mode="edit"
+          characterId={characterModal.id}
+          onClose={() => {
+            setCharacterModal(null);
+          }}
+        />
+      ) : null}
+      {characterModal?.mode === 'create' ? (
+        <CharacterSheet
+          storyId={story.id}
+          mode="create"
+          onClose={(createdId) => {
+            setCharacterModal(null);
+            if (createdId !== null) {
+              setSelectedCharacterId(createdId);
+            }
+          }}
+        />
+      ) : null}
 
       {/* [F54] Character popover — opened from charRef hover and Cast clicks.
           Edit footer routes back into the F19 character sheet. */}
