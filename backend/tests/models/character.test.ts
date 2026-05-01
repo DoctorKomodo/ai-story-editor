@@ -26,7 +26,7 @@ describe('Character model', () => {
   it('creates a character with nullable ciphertext fields', async () => {
     const story = await makeStory();
     const character = await prisma.character.create({
-      data: { storyId: story.id, color: '#abcdef', initial: 'A' },
+      data: { storyId: story.id, orderIndex: 0, color: '#abcdef', initial: 'A' },
     });
     expect(character.id).toMatch(/^c[a-z0-9]+$/);
     expect(character.color).toBe('#abcdef');
@@ -46,14 +46,18 @@ describe('Character model', () => {
   it('allows multiple characters per story', async () => {
     const story = await makeStory('char-c@example.com');
     await prisma.character.createMany({
-      data: [{ storyId: story.id }, { storyId: story.id }, { storyId: story.id }],
+      data: [
+        { storyId: story.id, orderIndex: 0 },
+        { storyId: story.id, orderIndex: 1 },
+        { storyId: story.id, orderIndex: 2 },
+      ],
     });
     expect(await prisma.character.count({ where: { storyId: story.id } })).toBe(3);
   });
 
   it('cascades character deletes when the story is deleted', async () => {
     const story = await makeStory('char-d@example.com');
-    await prisma.character.create({ data: { storyId: story.id } });
+    await prisma.character.create({ data: { storyId: story.id, orderIndex: 0 } });
     await prisma.story.delete({ where: { id: story.id } });
     expect(await prisma.character.count({ where: { storyId: story.id } })).toBe(0);
   });

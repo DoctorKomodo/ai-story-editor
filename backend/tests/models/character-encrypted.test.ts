@@ -12,6 +12,7 @@ describe('[E6] Character — ciphertext columns', () => {
     const created = await prisma.character.create({
       data: {
         storyId: story.id,
+        orderIndex: 0,
         color: '#cafe00',
         initial: 'P',
         nameCiphertext: SENTINEL.ciphertext,
@@ -67,7 +68,7 @@ describe('[E6] Character — ciphertext columns', () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
     const created = await prisma.character.create({
-      data: { storyId: story.id, color: '#111222', initial: 'X' },
+      data: { storyId: story.id, orderIndex: 0, color: '#111222', initial: 'X' },
     });
     expect(created.color).toBe('#111222');
     expect(created.initial).toBe('X');

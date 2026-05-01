@@ -45,7 +45,7 @@ async function seedTwoUsersAndAStory(): Promise<{
   const chapter = await prisma.chapter.create({
     data: { orderIndex: 0, storyId: story.id },
   });
-  const character = await prisma.character.create({ data: { storyId: story.id } });
+  const character = await prisma.character.create({ data: { storyId: story.id, orderIndex: 0 } });
   const outline = await prisma.outlineItem.create({
     data: { order: 0, status: 'pending', storyId: story.id },
   });
