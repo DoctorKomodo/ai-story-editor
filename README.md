@@ -14,40 +14,110 @@ A self-hosted, web-based story and text editor with Venice.ai AI integration. Us
 └── docker-compose.yml
 ```
 
+Source of truth for development work is [TASKS.md](TASKS.md). Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md). Production deployment notes are in [SELF_HOSTING.md](SELF_HOSTING.md).
+
 ## Quick start
 
-1. Copy `.env.example` to `.env` and fill in values (including your Venice.ai API key).
-2. `docker compose up -d`
-3. Frontend: http://localhost:3000 — Backend: http://localhost:4000
+```bash
+cp .env.example .env        # then edit values
+make dev                    # postgres + backend + frontend
+                            # frontend :3000  ·  backend :4000
+make seed                   # creates the demo user and sample content
+```
 
-See [SELF_HOSTING.md](SELF_HOSTING.md) for production deployment instructions.
+Sign in at <http://localhost:3000/login> with the demo credentials below.
 
-## Development
+## Demo / dev test user
 
-Source of truth for development work is [TASKS.md](TASKS.md). Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md).
+`make seed` creates a fixed-credential demo user with a couple of stories, chapters, and characters. The seed refuses to run against `NODE_ENV=production` (override only via `ALLOW_PROD_SEED=1`, which you almost certainly should not).
+
+| | |
+|---|---|
+| Username | `demo` |
+| Password | `demopass123` |
+| Recovery code | printed by the seed run — copy it from the terminal if you want to exercise the recovery / reset flows |
+| Stories | *The Lantern Keeper* (fantasy), *A Quiet Year on Halsey Street* (literary mystery) |
+| Per story | 2 chapters + 2 characters |
+
+Re-running `make seed` is idempotent: it deletes the demo user (cascade wipes their stories / chapters / characters / chats / messages) and recreates everything fresh.
+
+## Day-to-day commands
+
+| | |
+|---|---|
+| `make dev` | start the stack |
+| `make stop` | stop the stack |
+| `make logs` | tail all services |
+| `make migrate` | apply pending migrations (`prisma migrate deploy`) |
+| `make seed` | seed the demo user + content (dev only) |
+| `make reset-db` | **destructive** — wipes the `pgdata` volume and re-migrates |
+
+Need a clean dev environment from scratch? `make reset-db && make dev && make seed` will give you a fresh DB with a freshly-registered demo user.
+
+## Tests and lint
+
+All commands are run from the repo root unless otherwise noted.
+
+### Test suites
+
+| Command | Scope |
+|---|---|
+| `make test` | backend (vitest) + frontend (vitest) |
+| `cd backend && npm test` | backend unit + integration |
+| `cd backend && npm run db:test:reset` | reset the test DB before a full backend run |
+| `cd backend && npm run test:live` | opt-in live Venice tests (requires `backend/.env.live` — never in CI) |
+| `cd frontend && npm test` | frontend unit + integration (jsdom) |
+| `make test-e2e` | Playwright E2E (requires the stack to be up) |
+| `npm run test:e2e:visual` | Playwright visual-regression sweep (developer-run, not CI-gated) |
+
+Single-task verify: `/task-verify <TASK_ID>` (project-local slash command, see `.claude/skills/task-verify/`) runs the `verify:` from `TASKS.md` for that task and reports the true exit code.
+
+### Lint and format
+
+| Command | Scope |
+|---|---|
+| `npm run lint` | Biome check across the whole repo |
+| `npm run lint:fix` | Biome with `--write` |
+| `npm run format` | Biome format with `--write` |
+| `npm run format:check` | Biome format dry-run |
+| `cd frontend && npm run lint:design` | design-token guard (forbids raw Tailwind colour utilities) |
+| `cd backend && npx tsc --noEmit` | backend typecheck |
+| `cd frontend && npx tsc --noEmit` | frontend typecheck |
+
+A `lint-staged` + Biome pre-commit hook runs automatically on `git commit` (see `Pre-commit hook` below).
+
+### Storybook
+
+Component stories for primitives, modals, and major components.
+
+```bash
+cd frontend
+npm run storybook              # http://localhost:6006
+npm run build-storybook        # static build to frontend/storybook-static
+```
+
+## Pre-commit hook
+
+Pre-commit runs [Biome](https://biomejs.dev) via `lint-staged` (see `package.json`). Initial hook install: `npm install` at the repo root triggers `simple-git-hooks` via the `prepare` script. If the hook isn't firing on commit, run `npx simple-git-hooks` from the repo root to re-register it.
+
+To bypass in an emergency: `SKIP_SIMPLE_GIT_HOOKS=1 git commit …`. Don't make it a habit — CI will catch what the hook would have.
 
 ## Repository policy
 
-### Branch protection — configure on GitHub before inviting contributors
+### Branch protection
 
-The CI pipeline (`.github/workflows/ci.yml`) and secret-scan workflow (`.github/workflows/secret-scan.yml`) are only enforcement points if `main` is protected. Without branch protection, a direct push bypasses every gate. Configure the following under **Settings → Branches → Branch protection rules → `main`**:
+The CI pipeline (`.github/workflows/ci.yml`) and secret-scan workflow (`.github/workflows/secret-scan.yml`) are only enforcement points if `main` is protected. Configure under **Settings → Branches → Branch protection rules → `main`**:
 
 - **Require a pull request before merging** — yes. Disallow direct pushes to `main`.
 - **Require status checks to pass before merging** — yes. Required checks:
   - `CI / lint · typecheck · test`
   - `Secret scan / gitleaks`
-- **Require branches to be up to date before merging** — yes. Forces a rebase/merge from `main` before the merge button unblocks, so CI runs against the exact SHA that will land.
+- **Require branches to be up to date before merging** — yes.
 - **Require conversation resolution before merging** — yes.
-- **Do not allow bypassing the above settings** — yes, including for admins. CI is only valuable if nobody skips it.
+- **Do not allow bypassing the above settings** — yes, including for admins.
 - **Allow force pushes** — no.
 - **Allow deletions** — no.
 
 ### Dependency updates
 
-Dependabot is configured in `.github/dependabot.yml` to open weekly grouped PRs for each of the three npm workspaces (root / backend / frontend) and for GitHub Actions. Minor + patch updates are grouped; majors get their own PR. Review and merge as any other PR — CI gates apply.
-
-### Pre-commit hook
-
-Pre-commit runs [Biome](https://biomejs.dev) via `lint-staged` (see `package.json`). Initial hook install: `npm install` at the repo root triggers `simple-git-hooks` via the `prepare` script. If the hook isn't firing on commit, run `npx simple-git-hooks` from the repo root to re-register it.
-
-To bypass in an emergency: `SKIP_SIMPLE_GIT_HOOKS=1 git commit …`. Don't make it a habit — CI will catch what the hook would have.
+Dependabot is configured in `.github/dependabot.yml` to open weekly grouped PRs for each of the three npm workspaces (root / backend / frontend) and for GitHub Actions. Minor + patch updates are grouped; majors get their own PR. CI gates apply.

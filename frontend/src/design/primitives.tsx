@@ -140,6 +140,7 @@ export function Modal({
   const computedBackdropTestId = backdropTestId ?? (testId ? `${testId}-backdrop` : undefined);
 
   return (
+    // biome-ignore lint/a11y/noStaticElementInteractions: presentation backdrop — keyboard close is handled by Esc, not focus on the backdrop
     <div
       role="presentation"
       data-testid={computedBackdropTestId}

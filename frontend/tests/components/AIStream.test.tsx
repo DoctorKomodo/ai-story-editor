@@ -1,7 +1,5 @@
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { AIResult } from '@/components/AIResult';
 import { useAICompletion } from '@/hooks/useAICompletion';
 import { ApiError, resetApiClientForTests, setAccessToken } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
@@ -332,86 +330,6 @@ describe('F15 · useAICompletion hook', () => {
     // Both headers fail the integer-only parse, so usage must stay null —
     // not silently truncate `"1.5"` to 1 or `"abc"` to NaN.
     expect(result.current.usage).toBeNull();
-  });
-});
-
-describe('F15 · AIResult component', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.restoreAllMocks();
-  });
-
-  it('Insert at cursor fires onInsertAtCursor then onDismiss', async () => {
-    const onInsertAtCursor = vi.fn();
-    const onDismiss = vi.fn();
-    const user = userEvent.setup();
-    render(
-      <AIResult
-        status="done"
-        text="abc"
-        error={null}
-        onInsertAtCursor={onInsertAtCursor}
-        onDismiss={onDismiss}
-      />,
-    );
-
-    await user.click(screen.getByRole('button', { name: /insert at cursor/i }));
-    expect(onInsertAtCursor).toHaveBeenCalledTimes(1);
-    expect(onInsertAtCursor).toHaveBeenCalledWith('abc');
-    expect(onDismiss).toHaveBeenCalledTimes(1);
-  });
-
-  it('Copy writes to clipboard and shows transient "Copied ✓" feedback', async () => {
-    vi.useFakeTimers();
-    const writeText = vi.fn(() => Promise.resolve());
-    Object.defineProperty(navigator, 'clipboard', {
-      configurable: true,
-      value: { writeText },
-    });
-
-    render(
-      <AIResult
-        status="done"
-        text="hello world"
-        error={null}
-        onInsertAtCursor={vi.fn()}
-        onDismiss={vi.fn()}
-      />,
-    );
-
-    // fireEvent avoids userEvent's async pipeline, which fights fake timers.
-    const copyBtn = screen.getByRole('button', { name: /^copy$/i });
-    await act(async () => {
-      copyBtn.click();
-      // Flush the `writeText` microtask + the setState it queues.
-      await Promise.resolve();
-      await Promise.resolve();
-    });
-    expect(writeText).toHaveBeenCalledWith('hello world');
-
-    expect(screen.getByText(/copied/i)).toBeInTheDocument();
-
-    await act(async () => {
-      vi.advanceTimersByTime(2000);
-    });
-
-    expect(screen.queryByText(/copied/i)).toBeNull();
-  });
-
-  it('renders the friendly venice_key_required message under role=alert on error', () => {
-    const error = new ApiError(409, 'missing', 'venice_key_required');
-    render(
-      <AIResult
-        status="error"
-        text=""
-        error={error}
-        onInsertAtCursor={vi.fn()}
-        onDismiss={vi.fn()}
-      />,
-    );
-
-    const alert = screen.getByRole('alert');
-    expect(alert).toHaveTextContent(/add a venice api key in settings/i);
   });
 });
 

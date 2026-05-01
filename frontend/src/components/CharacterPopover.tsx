@@ -125,7 +125,7 @@ export function CharacterPopover({
     const onMouseDown = (e: MouseEvent): void => {
       const target = e.target as Node | null;
       if (!target) return;
-      if (popoverRef.current && popoverRef.current.contains(target)) return;
+      if (popoverRef.current?.contains(target)) return;
       if (anchorEl.contains(target)) return;
       onClose();
     };

@@ -142,7 +142,7 @@ describe('ContinueWriting (F35)', () => {
   });
 
   it('truncates cursor context to the last 500 chars', () => {
-    const long = 'a'.repeat(600) + 'TAIL';
+    const long = `${'a'.repeat(600)}TAIL`;
     const { editor } = makeEditorMock(long);
     render(<ContinueWriting editor={editor} {...baseProps} />);
     fireEvent.click(screen.getByRole('button', { name: 'Continue writing' }));

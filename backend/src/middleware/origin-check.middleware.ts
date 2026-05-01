@@ -52,7 +52,7 @@ export function requireAllowedOrigin(allowedOrigin: string) {
     // proxies) may strip Origin but retain Referer; check with a
     // startsWith+'/' guard so `https://evil.com?victim=https://allowed/…`
     // cannot sneak past a naive prefix match.
-    if (referer !== null && referer.startsWith(`${allowedOrigin}/`)) {
+    if (referer?.startsWith(`${allowedOrigin}/`)) {
       next();
       return;
     }

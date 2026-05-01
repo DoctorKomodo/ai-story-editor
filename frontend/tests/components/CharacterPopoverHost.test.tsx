@@ -27,10 +27,10 @@ function makeCharacter(overrides: Partial<Character> = {}): Character {
   };
 }
 
-function withQueryClient(
-  ui: ReactNode,
-  characters: Character[] = [makeCharacter()],
-): { wrapper: ({ children }: { children: ReactNode }) => JSX.Element; client: QueryClient } {
+function withQueryClient(characters: Character[] = [makeCharacter()]): {
+  wrapper: ({ children }: { children: ReactNode }) => JSX.Element;
+  client: QueryClient;
+} {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   client.setQueryData(charactersQueryKey('s1'), characters);
   function Wrapper({ children }: { children: ReactNode }): JSX.Element {
@@ -60,7 +60,7 @@ describe('CharacterPopoverHost (F54)', () => {
 
   it('opens popover when openFor is called with a character id + element', async () => {
     const onEdit = vi.fn();
-    const { wrapper: Wrapped } = withQueryClient(<></>);
+    const { wrapper: Wrapped } = withQueryClient();
     const hostRef: { current: CharacterPopoverHostHandle | null } = { current: null };
     const anchor = document.createElement('button');
     document.body.appendChild(anchor);
@@ -89,7 +89,7 @@ describe('CharacterPopoverHost (F54)', () => {
 
   it('Edit click dismisses popover and calls onEdit with the character id', async () => {
     const onEdit = vi.fn();
-    const { wrapper: Wrapped } = withQueryClient(<></>);
+    const { wrapper: Wrapped } = withQueryClient();
     const hostRef: { current: CharacterPopoverHostHandle | null } = { current: null };
     const anchor = document.createElement('button');
     document.body.appendChild(anchor);

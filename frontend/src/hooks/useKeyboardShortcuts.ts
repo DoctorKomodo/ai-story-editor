@@ -27,7 +27,7 @@ export interface UseKeyboardShortcutOptions {
 interface Registration {
   id: number;
   key: ShortcutKey;
-  handler: (e: KeyboardEvent) => boolean | void;
+  handler: (e: KeyboardEvent) => boolean | undefined;
   priority: number;
 }
 
@@ -81,7 +81,7 @@ export function __resetShortcutsForTests(): void {
  */
 export function useKeyboardShortcut(
   key: ShortcutKey,
-  handler: (e: KeyboardEvent) => boolean | void,
+  handler: (e: KeyboardEvent) => boolean | undefined,
   options?: UseKeyboardShortcutOptions,
 ): void {
   const handlerRef = useRef(handler);
@@ -111,21 +111,21 @@ export function useKeyboardShortcut(
 }
 
 export function useEscape(
-  handler: (e: KeyboardEvent) => boolean | void,
+  handler: (e: KeyboardEvent) => boolean | undefined,
   options?: UseKeyboardShortcutOptions,
 ): void {
   useKeyboardShortcut('escape', handler, options);
 }
 
 export function useModEnter(
-  handler: (e: KeyboardEvent) => boolean | void,
+  handler: (e: KeyboardEvent) => boolean | undefined,
   options?: UseKeyboardShortcutOptions,
 ): void {
   useKeyboardShortcut('mod+enter', handler, options);
 }
 
 export function useAltEnter(
-  handler: (e: KeyboardEvent) => boolean | void,
+  handler: (e: KeyboardEvent) => boolean | undefined,
   options?: UseKeyboardShortcutOptions,
 ): void {
   useKeyboardShortcut('alt+enter', handler, options);

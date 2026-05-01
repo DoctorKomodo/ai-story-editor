@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import { Button } from '@/design/primitives';
 import { AccountPrivacyModal } from './AccountPrivacyModal';
 
@@ -50,12 +51,17 @@ function Demo({ withRecoveryCode = false }: DemoProps) {
   }, [withRecoveryCode]);
 
   return (
-    <QueryClientProvider client={makeClient()}>
-      <Button variant="ghost" onClick={() => setOpen(true)}>
-        Reopen modal
-      </Button>
-      <AccountPrivacyModal open={open} onClose={() => setOpen(false)} username="alice" />
-    </QueryClientProvider>
+    // Sign-out-everywhere uses `useNavigate` to bounce to /login on success;
+    // wrap in MemoryRouter so the hook resolves a Router context inside the
+    // isolated story preview.
+    <MemoryRouter>
+      <QueryClientProvider client={makeClient()}>
+        <Button variant="ghost" onClick={() => setOpen(true)}>
+          Reopen modal
+        </Button>
+        <AccountPrivacyModal open={open} onClose={() => setOpen(false)} username="alice" />
+      </QueryClientProvider>
+    </MemoryRouter>
   );
 }
 

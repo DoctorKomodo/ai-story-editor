@@ -143,6 +143,7 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
 
   // Auto-grow: reset to 'auto' so scrollHeight reflects current content,
   // then cap at MAX_TEXTAREA_HEIGHT_PX.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `value` is the trigger — every keystroke must re-measure scrollHeight, the body reads it via the ref
   useLayoutEffect(() => {
     const el = textareaRef.current;
     if (el === null) return;
