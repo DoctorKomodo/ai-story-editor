@@ -572,6 +572,13 @@ export function EditorPage(): JSX.Element {
             <div className="flex-1 overflow-y-auto">
               {activeChapterId ? (
                 <Paper
+                  // Key on chapterId so switching chapters tears down the
+                  // previous TipTap editor and mounts a fresh one seeded
+                  // with the new chapter's body. Without this, useEditor
+                  // retains its initial content across chapter switches and
+                  // the in-place setContent effect skips empty bodies — the
+                  // user sees the old chapter's text under the new title.
+                  key={activeChapterId}
                   storyTitle={story.title}
                   storyGenre={story.genre}
                   storyWordCount={totalWordCount}
