@@ -439,7 +439,7 @@ export function AccountPrivacyModal({
         closeTestId="account-privacy-close"
       />
 
-      <ModalBody className="flex-1 overflow-y-auto px-[18px]">
+      <ModalBody className="flex-1 overflow-y-auto !py-0 px-[18px]">
         <Section
           title="Change password"
           hint="Use your current password to set a new one. Other sessions will be signed out."

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/design/primitives';
 import type { Model } from '@/hooks/useModels';
 import { modelsQueryKey } from '@/hooks/useModels';
@@ -50,10 +50,12 @@ function makeClient(models: Model[]): QueryClient {
 
 function Demo({ models, selectedId }: { models: Model[]; selectedId: string | null }) {
   const [open, setOpen] = useState(true);
-  // Seed the selection so one card renders as `aria-checked=true`.
-  if (useModelStore.getState().modelId !== selectedId) {
+  // Seed the selection so one card renders as `aria-checked=true`. Effect,
+  // not render-phase: setState during render violates React's rules and
+  // double-fires under Strict Mode.
+  useEffect(() => {
     useModelStore.setState({ modelId: selectedId });
-  }
+  }, [selectedId]);
   return (
     <QueryClientProvider client={makeClient(models)}>
       <Button variant="ghost" onClick={() => setOpen(true)}>
