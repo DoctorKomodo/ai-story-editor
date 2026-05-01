@@ -7,6 +7,11 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './tests/e2e',
   testMatch: ['**/*.spec.ts'],
+  // [X24] Visual regression lives in its own developer-run config
+  // (playwright.visual.config.ts → `npm run test:e2e:visual`). Excluded
+  // from the default tier-2 sweep because three themes × ~7 surfaces of
+  // OS-pinned PNGs are too fragile for shared CI today.
+  testIgnore: ['**/visual.spec.ts'],
   // 60s — full-flow walks register → BYOK → AI Continue → autosave assertions
   // and exceeds the default 30s on a cold stack.
   timeout: 60_000,
