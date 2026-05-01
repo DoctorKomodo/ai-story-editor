@@ -290,7 +290,9 @@ body {
    Class names match the mockup so F26/F27/F38 can target them. */
 .app-shell {
   display: grid;
-  grid-template-columns: 260px 1fr 360px;
+  /* Sidebar scales with viewport: 260px floor (matches `min-w-[260px]` on the
+   * Sidebar root), grows ~22vw, capped at 390px (~50% larger) on wide screens. */
+  grid-template-columns: clamp(260px, 22vw, 390px) 1fr 360px;
   grid-template-rows: 44px 1fr;
   grid-template-areas:
     "topbar topbar topbar"
@@ -320,7 +322,7 @@ body {
 }
 
 .app-shell[data-layout="nochat"] {
-  grid-template-columns: 260px 1fr 0;
+  grid-template-columns: clamp(260px, 22vw, 390px) 1fr 0;
 }
 .app-shell[data-layout="nochat"] > .chat {
   display: none;
