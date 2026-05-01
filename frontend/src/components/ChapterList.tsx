@@ -16,15 +16,22 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { ChapterListSectionHeader } from '@/components/ChapterListSectionHeader';
-import { GripIcon } from '@/design/primitives';
+import {
+  CloseIcon,
+  GripIcon,
+  IconButton,
+  InlineConfirm,
+  useInlineConfirm,
+} from '@/design/primitives';
 import {
   type ChapterMeta,
   chaptersQueryKey,
   computeReorderedChapters,
   useChaptersQuery,
   useCreateChapterMutation,
+  useDeleteChapterMutation,
   useReorderChaptersMutation,
 } from '@/hooks/useChapters';
 import { ApiError } from '@/lib/api';
@@ -34,6 +41,12 @@ export interface ChapterListProps {
   storyId: string;
   activeChapterId: string | null;
   onSelectChapter: (chapterId: string) => void;
+  /**
+   * Called after a chapter is successfully deleted. Lets the parent clear
+   * `activeChapterId` if the active chapter was removed (otherwise the
+   * editor would render against a dead id). Optional.
+   */
+  onChapterDeleted?: (chapterId: string) => void;
 }
 
 function chapterDisplayTitle(c: ChapterMeta): string {
@@ -46,26 +59,52 @@ interface ChapterRowProps {
   chapter: ChapterMeta;
   active: boolean;
   onSelect: (id: string) => void;
+  onRequestDelete: (chapterId: string) => Promise<void>;
+  isDeleting: boolean;
 }
 
 /**
  * Single row. Uses `useSortable` so drag-to-reorder works. The grip handle
  * sits to the left and captures pointer events so a drag does not fire the
- * row's click. Task 12 extends ChapterRowProps with onRequestDelete +
- * isDeleting — do not add those here.
+ * row's click. The × delete button is shown only on the active row; clicking
+ * it opens an InlineConfirm that replaces the word-count slot.
  */
-function ChapterRow({ chapter, active, onSelect }: ChapterRowProps): JSX.Element {
+function ChapterRow({
+  chapter,
+  active,
+  onSelect,
+  onRequestDelete,
+  isDeleting,
+}: ChapterRowProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } =
     useSortable({ id: chapter.id });
+
+  const liRef = useRef<HTMLLIElement>(null);
+  const confirm = useInlineConfirm(liRef);
+
+  const setRefs = (node: HTMLLIElement | null): void => {
+    liRef.current = node;
+    setNodeRef(node);
+  };
 
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
   };
 
+  const onConfirmDelete = async (): Promise<void> => {
+    try {
+      await onRequestDelete(chapter.id);
+      confirm.dismiss();
+    } catch {
+      // Mutation surfaces error via parent's aria-live region; keep the
+      // confirm open so the user can retry.
+    }
+  };
+
   return (
     <li
-      ref={setNodeRef}
+      ref={setRefs}
       style={style}
       data-active={active ? 'true' : undefined}
       data-over={isOver ? 'true' : undefined}
@@ -111,9 +150,33 @@ function ChapterRow({ chapter, active, onSelect }: ChapterRowProps): JSX.Element
       >
         {chapterDisplayTitle(chapter)}
       </button>
-      <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
-        {formatWordCountCompact(chapter.wordCount)}
-      </span>
+      {confirm.open ? (
+        <InlineConfirm
+          {...confirm.props}
+          label={`Delete ${chapterDisplayTitle(chapter)}`}
+          onConfirm={() => {
+            void onConfirmDelete();
+          }}
+          pending={isDeleting}
+          testId={`chapter-row-${chapter.id}-confirm`}
+        />
+      ) : (
+        <>
+          <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
+            {formatWordCountCompact(chapter.wordCount)}
+          </span>
+          {active ? (
+            <IconButton
+              ariaLabel={`Delete ${chapterDisplayTitle(chapter)}`}
+              onClick={confirm.ask}
+              testId={`chapter-row-${chapter.id}-delete`}
+              className="flex-shrink-0"
+            >
+              <CloseIcon />
+            </IconButton>
+          ) : null}
+        </>
+      )}
     </li>
   );
 }
@@ -122,6 +185,7 @@ export function ChapterList({
   storyId,
   activeChapterId,
   onSelectChapter,
+  onChapterDeleted,
 }: ChapterListProps): JSX.Element {
   const { data: chapters, isLoading, isError, error } = useChaptersQuery(storyId);
   const createChapter = useCreateChapterMutation(storyId);
@@ -129,6 +193,31 @@ export function ChapterList({
   const queryClient = useQueryClient();
 
   const [reorderStatus, setReorderStatus] = useState<string>('');
+
+  const deleteChapter = useDeleteChapterMutation(storyId);
+  const [deleteStatus, setDeleteStatus] = useState<string>('');
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const handleRequestDelete = useCallback(
+    async (chapterId: string): Promise<void> => {
+      setDeleteStatus('');
+      setPendingDeleteId(chapterId);
+      try {
+        await deleteChapter.mutateAsync({ chapterId });
+        if (onChapterDeleted) onChapterDeleted(chapterId);
+      } catch (err) {
+        const message =
+          err instanceof ApiError && err.status === 404
+            ? 'Chapter already removed — refreshed'
+            : 'Delete failed — try again';
+        setDeleteStatus(message);
+        throw err;
+      } finally {
+        setPendingDeleteId(null);
+      }
+    },
+    [deleteChapter, onChapterDeleted],
+  );
 
   // Mouse: 4px activation distance.
   // Touch: 200ms long-press, 5px tolerance — lets the user scroll the list
@@ -221,6 +310,8 @@ export function ChapterList({
                   chapter={c}
                   active={c.id === activeChapterId}
                   onSelect={onSelectChapter}
+                  onRequestDelete={handleRequestDelete}
+                  isDeleting={pendingDeleteId === c.id}
                 />
               ))}
             </ul>
@@ -230,6 +321,7 @@ export function ChapterList({
 
       <div role="status" aria-live="polite" className="sr-only">
         {reorderStatus}
+        {deleteStatus}
       </div>
     </div>
   );
