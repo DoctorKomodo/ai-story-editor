@@ -23,6 +23,14 @@ export interface UseAutosaveOptions<T> {
   debounceMs?: number;
   /** Default `Object.is`. */
   equals?: (a: T, b: T) => boolean;
+  /**
+   * When supplied, a change in this key resets the baseline state — the next
+   * non-null `payload` is treated as a fresh baseline (no save fires). Use it
+   * to avoid spurious saves when the same hook is reused across logically
+   * distinct documents (e.g. chapter switches in the editor). Any in-flight
+   * timer or pending follow-up for the previous key is cancelled.
+   */
+  resetKey?: string | number | null;
 }
 
 export interface UseAutosaveResult {
@@ -34,7 +42,7 @@ export interface UseAutosaveResult {
 }
 
 export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
-  const { payload, save, debounceMs = 4000, equals = Object.is } = opts;
+  const { payload, save, debounceMs = 4000, equals = Object.is, resetKey } = opts;
 
   const [status, setStatus] = useState<AutosaveStatus>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -90,7 +98,15 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
       if (mountedRef.current) setStatus(next);
     };
 
-    const runSave = async (): Promise<void> => {
+    // The save function is snapshotted at debounce-schedule time and passed
+    // through `runSave` (and its retry). Otherwise — if `runSave` dereffed
+    // `saveRef.current` itself — a save scheduled while the parent was looking
+    // at chapter A could pick up the new `handleSave` (closed over chapter B's
+    // id) when its timer fires after a chapter switch. The `resetKey` reset
+    // already cancels timers on switch, but the snapshot makes the invariant
+    // explicit: a scheduled save is locked to the callback that was current
+    // when it was scheduled.
+    const runSave = async (saveFn: (p: T) => Promise<void>): Promise<void> => {
       const payloadToSave = latestPayloadRef.current;
       if (payloadToSave === null) return;
 
@@ -98,7 +114,7 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
       safeSetStatus('saving');
 
       try {
-        await saveRef.current(payloadToSave);
+        await saveFn(payloadToSave);
         lastSavedPayloadRef.current = payloadToSave;
         if (!mountedRef.current) return;
 
@@ -139,7 +155,8 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
         }
         pendingFollowupRef.current = false;
 
-        // One-shot retry after 2 * debounceMs.
+        // One-shot retry after 2 * debounceMs. Reuse the same snapshotted
+        // save function so the retry can't drift onto a different chapter.
         clearRetry();
         const retryDelay = debounceMsRef.current * 2;
         if (mountedRef.current) {
@@ -149,7 +166,7 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
           retryTimerRef.current = null;
           if (!mountedRef.current) return;
           setRetryAt(null);
-          void runSave();
+          void runSave(saveFn);
         }, retryDelay);
       }
     };
@@ -157,10 +174,11 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     const scheduleDebouncedSave = (): void => {
       clearDebounce();
       clearRetry();
+      const snapshotSave = saveRef.current;
       debounceTimerRef.current = setTimeout(() => {
         debounceTimerRef.current = null;
         if (!mountedRef.current) return;
-        void runSave();
+        void runSave(snapshotSave);
       }, debounceMsRef.current);
     };
 
@@ -194,6 +212,33 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
 
     scheduleDebouncedSave();
   }, [payload]);
+
+  // Reset baseline state when `resetKey` changes (e.g. chapter switch in the
+  // editor). Without this, `lastSavedPayloadRef` keeps the previous chapter's
+  // body; the new chapter's freshly-loaded body then differs from it and
+  // schedules a spurious PATCH. We also cancel any pending debounce / retry /
+  // follow-up so an in-flight save for the previous key can't resurface as a
+  // save under the new key.
+  const lastResetKeyRef = useRef<typeof resetKey>(resetKey);
+  useEffect(() => {
+    if (Object.is(lastResetKeyRef.current, resetKey)) return;
+    lastResetKeyRef.current = resetKey;
+    baselineSetRef.current = false;
+    lastSavedPayloadRef.current = null;
+    pendingFollowupRef.current = false;
+    if (debounceTimerRef.current !== null) {
+      clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = null;
+    }
+    if (retryTimerRef.current !== null) {
+      clearTimeout(retryTimerRef.current);
+      retryTimerRef.current = null;
+    }
+    if (mountedRef.current) {
+      setStatus('idle');
+      setRetryAt(null);
+    }
+  }, [resetKey]);
 
   // Unmount cleanup. The setup intentionally re-asserts mountedRef.current
   // = true: under React.StrictMode dev, useEffect runs setup → cleanup →

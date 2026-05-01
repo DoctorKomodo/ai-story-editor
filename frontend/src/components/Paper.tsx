@@ -44,7 +44,11 @@ export interface PaperProps {
   initialBodyJson?: JSONContent | null;
   onUpdate?: (args: { bodyJson: JSONContent; wordCount: number }) => void;
   onReady?: (editor: TiptapEditor) => void;
-  onChapterTitleChange?: (title: string) => void;
+  // The chapter id is bound at render time to defeat blur-vs-chapter-switch
+  // races (see ChapterTitleInput). Callers can ignore the id when they only
+  // care about the active chapter, but it's the source of truth for the PATCH.
+  chapterId?: string | null;
+  onChapterTitleChange?: (chapterId: string, title: string) => void;
 }
 
 const DEFAULT_EMPTY_DOC: JSONContent = {
@@ -119,11 +123,17 @@ function SubRow({ genre, draftLabel, wordCount, status }: SubRowProps): JSX.Elem
 }
 
 function ChapterTitleInput({
+  chapterId,
   value,
   onCommit,
 }: {
+  // `chapterId` is bound into the commit closure so a blur fired while the
+  // user clicks a different chapter still PATCHes the chapter that was
+  // displayed when they were typing — not whatever activeChapterId is at the
+  // moment React processes the blur (which can already be the next chapter).
+  chapterId: string;
   value: string;
-  onCommit?: (next: string) => void;
+  onCommit?: (chapterId: string, next: string) => void;
 }): JSX.Element {
   // Local draft so typing is instantaneous; commit on blur or Enter so we
   // don't issue a PATCH on every keystroke. Re-sync when the prop changes
@@ -135,8 +145,15 @@ function ChapterTitleInput({
 
   const commit = (): void => {
     const next = draft.trim();
+    // Empty title is rejected by the backend (`title: z.string().min(1)`).
+    // Mirror that here as a silent revert so blurring an empty input restores
+    // the previous title rather than firing a PATCH that 400s with no UI.
+    if (next.length === 0) {
+      setDraft(value);
+      return;
+    }
     if (next === value) return;
-    onCommit?.(next);
+    onCommit?.(chapterId, next);
   };
 
   return (
@@ -171,6 +188,7 @@ export function Paper({
   draftLabel,
   storyWordCount,
   storyStatus,
+  chapterId,
   chapterNumber,
   chapterTitle,
   initialBodyJson,
@@ -277,12 +295,16 @@ export function Paper({
         status={storyStatus}
       />
 
-      {chapterTitle !== null && chapterTitle !== undefined ? (
+      {chapterTitle !== null && chapterTitle !== undefined && chapterId ? (
         <header
           data-testid="chapter-heading"
           className="chapter-heading mt-12 flex items-baseline gap-3 border-b border-line pt-2 pb-2"
         >
-          <ChapterTitleInput value={chapterTitle} onCommit={onChapterTitleChange} />
+          <ChapterTitleInput
+            chapterId={chapterId}
+            value={chapterTitle}
+            onCommit={onChapterTitleChange}
+          />
           {chapterLabel ? (
             <span
               data-testid="chapter-label"
