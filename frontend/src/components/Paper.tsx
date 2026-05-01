@@ -17,7 +17,7 @@ import { useActiveStoryStore } from '@/store/activeStory';
  * Mockup-fidelity document container that wraps a TipTap editor mount.
  * Reproduces the `.editor-paper` styling from
  * `mockups/frontend-prototype/design/styles.css`:
- *   - 720px max-width centered column
+ *   - centered column, grows from the mockup's 720px up to 1080px on wider screens
  *   - 48 / 80 / 240 page padding
  *   - serif 28/600 document title with an uppercase mono-feel sub-row
  *     (genre · draft · word count · status chip)
@@ -294,7 +294,7 @@ export function Paper({
     typeof chapterNumber === 'number' ? `§ ${String(chapterNumber).padStart(2, '0')}` : null;
 
   return (
-    <article className="paper mx-auto w-full max-w-[720px] px-20 pt-12 pb-60">
+    <article className="paper mx-auto w-full max-w-[1080px] px-20 pt-12 pb-60">
       <h1 className="paper-title font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink">
         {storyTitle || 'Untitled'}
       </h1>
