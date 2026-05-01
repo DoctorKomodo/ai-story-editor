@@ -515,6 +515,8 @@ export function EditorPage(): JSX.Element {
             storyTitle={story.title}
             totalWordCount={totalWordCount}
             goalWordCount={story.targetWords ?? undefined}
+            chaptersCount={chaptersQuery.data?.length ?? null}
+            castCount={charactersQuery.data?.length ?? null}
             onOpenStoryPicker={() => {
               setStoryPickerOpen(true);
             }}
@@ -523,6 +525,9 @@ export function EditorPage(): JSX.Element {
                 storyId={story.id}
                 activeChapterId={activeChapterId}
                 onSelectChapter={setActiveChapterId}
+                onChapterDeleted={(deletedId) => {
+                  if (deletedId === activeChapterId) setActiveChapterId(null);
+                }}
               />
             }
             castBody={
