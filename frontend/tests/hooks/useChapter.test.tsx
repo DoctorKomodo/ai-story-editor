@@ -4,8 +4,12 @@ import type { JSX, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   type Chapter,
+  type ChapterMeta,
+  chapterQueryKey,
   chaptersQueryKey,
+  computeChaptersAfterDelete,
   useChapterQuery,
+  useDeleteChapterMutation,
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
 import { resetApiClientForTests, setAccessToken } from '@/lib/api';
@@ -177,5 +181,109 @@ describe('useUpdateChapterMutation', () => {
     // the response before merging it in. If a future change drops the
     // destructure-and-spread, this assertion fails.
     expect(Object.keys(list[0] as Record<string, unknown>)).not.toContain('bodyJson');
+  });
+});
+
+function meta(id: string, orderIndex: number): ChapterMeta {
+  return {
+    id,
+    storyId: 's',
+    title: id,
+    wordCount: 0,
+    orderIndex,
+    status: 'draft',
+    createdAt: '2026-04-01T00:00:00Z',
+    updatedAt: '2026-04-01T00:00:00Z',
+  };
+}
+
+describe('computeChaptersAfterDelete', () => {
+  it('returns null when the chapter id is not present', () => {
+    const list = [meta('a', 0), meta('b', 1)];
+    expect(computeChaptersAfterDelete(list, 'zzz')).toBeNull();
+  });
+
+  it('removes the chapter and reassigns orderIndex 0..N-1', () => {
+    const list = [meta('a', 0), meta('b', 1), meta('c', 2), meta('d', 3)];
+    const next = computeChaptersAfterDelete(list, 'b');
+    expect(next).not.toBeNull();
+    expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
+      ['a', 0],
+      ['c', 1],
+      ['d', 2],
+    ]);
+  });
+
+  it('preserves existing orderIndex when no shift is needed', () => {
+    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const next = computeChaptersAfterDelete(list, 'c');
+    expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
+      ['a', 0],
+      ['b', 1],
+    ]);
+  });
+});
+
+describe('useDeleteChapterMutation', () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('tok-1');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
+
+  it('DELETEs the chapter, evicts the per-chapter cache, and reassigns the list cache optimistically', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(chaptersQueryKey('s1'), [meta('a', 0), meta('b', 1), meta('c', 2)]);
+    qc.setQueryData(chapterQueryKey('b'), { ...meta('b', 1), bodyJson: null });
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+
+    const { result } = renderHook(() => useDeleteChapterMutation('s1'), {
+      wrapper: makeWrapper(qc),
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({ chapterId: 'b' });
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(String(url)).toContain('/stories/s1/chapters/b');
+    expect((init as RequestInit).method).toBe('DELETE');
+
+    expect(qc.getQueryData(chapterQueryKey('b'))).toBeUndefined();
+
+    await waitFor(() => {
+      const list = qc.getQueryData<ChapterMeta[]>(chaptersQueryKey('s1'));
+      expect(list?.map((c) => c.id)).toEqual(['a', 'c']);
+    });
+  });
+
+  it('rolls back the cache on 500', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    qc.setQueryData(chaptersQueryKey('s1'), [meta('a', 0), meta('b', 1)]);
+
+    fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: { code: 'oops' } }));
+
+    const { result } = renderHook(() => useDeleteChapterMutation('s1'), {
+      wrapper: makeWrapper(qc),
+    });
+
+    await act(async () => {
+      await expect(result.current.mutateAsync({ chapterId: 'b' })).rejects.toBeDefined();
+    });
+
+    expect(qc.getQueryData<ChapterMeta[]>(chaptersQueryKey('s1'))?.map((c) => c.id)).toEqual([
+      'a',
+      'b',
+    ]);
   });
 });

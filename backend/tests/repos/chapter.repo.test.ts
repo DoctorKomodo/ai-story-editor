@@ -102,4 +102,59 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
     expect(updated?.bodyJson).toEqual({ type: 'doc', content: [{ type: 'paragraph' }] });
     expect(updated?.wordCount).toBe(42);
   });
+
+  describe('remove() — orderIndex reassignment', () => {
+    it('removes the chapter and reassigns sequential orderIndex 0..N-1 on the remainder', async () => {
+      const ctx = await makeUserContext('rm-reseq');
+      const story = await createStoryRepo(ctx.req).create({ title: 's' });
+      const repo = createChapterRepo(ctx.req);
+
+      const a = await repo.create({ storyId: story.id as string, title: 'a', orderIndex: 0 });
+      const b = await repo.create({ storyId: story.id as string, title: 'b', orderIndex: 1 });
+      const c = await repo.create({ storyId: story.id as string, title: 'c', orderIndex: 2 });
+      const d = await repo.create({ storyId: story.id as string, title: 'd', orderIndex: 3 });
+
+      const ok = await repo.remove(b.id as string);
+      expect(ok).toBe(true);
+
+      const list = await repo.findManyForStory(story.id as string);
+      expect(list.map((ch) => [ch.id, ch.orderIndex])).toEqual([
+        [a.id, 0],
+        [c.id, 1],
+        [d.id, 2],
+      ]);
+    });
+
+    it('returns false when the id does not exist and does not mutate other rows', async () => {
+      const ctx = await makeUserContext('rm-noop');
+      const story = await createStoryRepo(ctx.req).create({ title: 's' });
+      const repo = createChapterRepo(ctx.req);
+      await repo.create({ storyId: story.id as string, title: 'a', orderIndex: 0 });
+      await repo.create({ storyId: story.id as string, title: 'b', orderIndex: 1 });
+
+      const ok = await repo.remove('non-existent-id');
+      expect(ok).toBe(false);
+
+      const list = await repo.findManyForStory(story.id as string);
+      expect(list.map((ch) => ch.orderIndex)).toEqual([0, 1]);
+    });
+
+    it("refuses to remove another user's chapter and leaves their list intact", async () => {
+      const alice = await makeUserContext('rm-alice');
+      const bob = await makeUserContext('rm-bob');
+      const story = await createStoryRepo(alice.req).create({ title: 's' });
+      const ch = await createChapterRepo(alice.req).create({
+        storyId: story.id as string,
+        title: 't',
+        orderIndex: 0,
+      });
+
+      const ok = await createChapterRepo(bob.req).remove(ch.id as string);
+      expect(ok).toBe(false);
+
+      const list = await createChapterRepo(alice.req).findManyForStory(story.id as string);
+      expect(list).toHaveLength(1);
+      expect(list[0]?.id).toBe(ch.id);
+    });
+  });
 });

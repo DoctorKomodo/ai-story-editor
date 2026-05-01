@@ -573,4 +573,42 @@ describe('Chapter routes [B3]', () => {
     // Ownership middleware conflates missing with not-owned → 403.
     expect(get.status).toBe(403);
   });
+
+  it('DELETE /:chapterId reassigns sequential orderIndex 0..N-1 on the remaining list', async () => {
+    const accessToken = await registerAndLogin('chapters-delete-reseq');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'Reseq' });
+    const storyId = story.id as string;
+    const a = await createChapterRepo(req).create({ storyId, title: 'a', orderIndex: 0 });
+    const b = await createChapterRepo(req).create({ storyId, title: 'b', orderIndex: 1 });
+    const c = await createChapterRepo(req).create({ storyId, title: 'c', orderIndex: 2 });
+    const d = await createChapterRepo(req).create({ storyId, title: 'd', orderIndex: 3 });
+
+    // Sanity-check the seed.
+    const before = await request(app)
+      .get(`/api/stories/${storyId}/chapters`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(before.status).toBe(200);
+    expect(
+      (before.body.chapters as Array<{ id: string; orderIndex: number }>).map((c) => c.orderIndex),
+    ).toEqual([0, 1, 2, 3]);
+
+    // Delete the middle row.
+    const del = await request(app)
+      .delete(`/api/stories/${storyId}/chapters/${b.id as string}`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(del.status).toBe(204);
+
+    // Remaining list must be sequential 0..N-1, with `b` gone.
+    const after = await request(app)
+      .get(`/api/stories/${storyId}/chapters`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(after.status).toBe(200);
+    const remaining = after.body.chapters as Array<{ id: string; orderIndex: number }>;
+    expect(remaining).toHaveLength(3);
+    expect(remaining.map((ch) => ch.orderIndex)).toEqual([0, 1, 2]);
+    expect(remaining.find((ch) => ch.id === (b.id as string))).toBeUndefined();
+    // Verify the surviving order is preserved (a, c, d).
+    expect(remaining.map((ch) => ch.id)).toEqual([a.id, c.id, d.id]);
+  });
 });

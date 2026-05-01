@@ -16,8 +16,10 @@ export interface SidebarProps {
   totalWordCount?: number;
   goalWordCount?: number;
   onOpenStoryPicker?: () => void;
-  /** Plus button — parent targets the active tab. */
-  onAdd?: () => void;
+  /** Render `N` under the CHAPTERS label. `null` ⇒ count line hidden (loading). */
+  chaptersCount?: number | null;
+  /** Render `N` under the CAST label. `null` ⇒ count line hidden. */
+  castCount?: number | null;
   chaptersBody: ReactNode;
   castBody?: ReactNode;
   outlineBody?: ReactNode;
@@ -60,25 +62,6 @@ function ChevronDownIcon(): JSX.Element {
   );
 }
 
-function PlusIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
-
 interface TabSpec {
   id: SidebarTab;
   label: string;
@@ -107,7 +90,8 @@ export function Sidebar({
   totalWordCount,
   goalWordCount,
   onOpenStoryPicker,
-  onAdd,
+  chaptersCount = null,
+  castCount = null,
   chaptersBody,
   castBody = null,
   outlineBody = null,
@@ -152,16 +136,6 @@ export function Sidebar({
             <ChevronDownIcon />
           </span>
         </button>
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="Add"
-          title="Add"
-          onClick={onAdd}
-          data-testid="sidebar-add-button"
-        >
-          <PlusIcon />
-        </button>
       </div>
 
       {/* Tabs */}
@@ -172,6 +146,8 @@ export function Sidebar({
       >
         {TABS.map((t) => {
           const isActive = activeTab === t.id;
+          const count = t.id === 'chapters' ? chaptersCount : t.id === 'cast' ? castCount : null;
+          const ariaLabel = count !== null ? `${t.label} (${String(count)})` : undefined;
           return (
             <button
               key={t.id}
@@ -180,17 +156,28 @@ export function Sidebar({
               role="tab"
               aria-selected={isActive}
               aria-controls={t.panelId}
+              aria-label={ariaLabel}
               tabIndex={isActive ? 0 : -1}
               onClick={() => setSidebarTab(t.id)}
               className={[
-                'sidebar-tab relative px-2.5 py-2 font-sans text-[12px] tracking-[.02em] uppercase transition-colors',
+                'sidebar-tab relative flex flex-col items-center px-2.5 py-2 font-sans text-[12px] tracking-[.02em] uppercase transition-colors',
                 isActive
                   ? "text-ink after:absolute after:right-2.5 after:bottom-[-1px] after:left-2.5 after:h-px after:bg-ink after:content-['']"
                   : 'text-ink-4 hover:text-ink-2',
               ].join(' ')}
               data-testid={`sidebar-tab-${t.id}`}
             >
-              {t.label}
+              <span>{t.label}</span>
+              {count !== null ? (
+                <span
+                  className={[
+                    'font-mono text-[11px] tabular-nums',
+                    isActive ? 'text-ink-3' : 'text-ink-4',
+                  ].join(' ')}
+                >
+                  {String(count)}
+                </span>
+              ) : null}
             </button>
           );
         })}

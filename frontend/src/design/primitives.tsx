@@ -38,11 +38,13 @@ import type {
   InputHTMLAttributes,
   JSX,
   MouseEvent,
+  KeyboardEvent as ReactKeyboardEvent,
   ReactNode,
   Ref,
+  RefObject,
   TextareaHTMLAttributes,
 } from 'react';
-import { forwardRef, useEffect, useId, useRef } from 'react';
+import { forwardRef, useCallback, useEffect, useId, useRef, useState } from 'react';
 
 /* ---------- helpers --------------------------------------------------------- */
 
@@ -489,7 +491,7 @@ export function Spinner({ size = 12 }: { size?: number }): JSX.Element {
  * CloseIcon — used by ModalHeader's auto-close button
  * ========================================================================== */
 
-function CloseIcon(): JSX.Element {
+export function CloseIcon(): JSX.Element {
   return (
     <svg
       width="14"
@@ -504,6 +506,19 @@ function CloseIcon(): JSX.Element {
     >
       <path d="M18 6L6 18" />
       <path d="M6 6l12 12" />
+    </svg>
+  );
+}
+
+export function GripIcon(): JSX.Element {
+  return (
+    <svg width="12" height="14" viewBox="0 0 12 14" fill="currentColor" aria-hidden="true">
+      <circle cx="3" cy="3" r="1.2" />
+      <circle cx="9" cy="3" r="1.2" />
+      <circle cx="3" cy="7" r="1.2" />
+      <circle cx="9" cy="7" r="1.2" />
+      <circle cx="3" cy="11" r="1.2" />
+      <circle cx="9" cy="11" r="1.2" />
     </svg>
   );
 }
@@ -527,6 +542,126 @@ export function useAutofocus<T extends HTMLElement>(ref: Ref<T>, when: boolean):
       window.clearTimeout(id);
     };
   }, [ref, when]);
+}
+
+/* ============================================================================
+ * useInlineConfirm — controlled state for an inline Delete/Cancel pair.
+ *
+ * Owns the ephemeral concerns:
+ *   - Open / close.
+ *   - Escape dismisses.
+ *   - Outside-click on the host element dismisses (capture-phase mousedown
+ *     so a row-level handler doesn't swallow the event first).
+ * ========================================================================== */
+
+export interface UseInlineConfirmReturn {
+  open: boolean;
+  ask: () => void;
+  dismiss: () => void;
+  props: { onCancel: () => void };
+}
+
+export function useInlineConfirm(hostRef: RefObject<HTMLElement | null>): UseInlineConfirmReturn {
+  const [open, setOpen] = useState(false);
+
+  const ask = useCallback(() => {
+    setOpen(true);
+  }, []);
+  const dismiss = useCallback(() => {
+    setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        setOpen(false);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: globalThis.MouseEvent): void => {
+      const host = hostRef.current;
+      if (!host) return;
+      if (e.target instanceof Node && host.contains(e.target)) return;
+      setOpen(false);
+    };
+    window.addEventListener('mousedown', onDown, true);
+    return () => {
+      window.removeEventListener('mousedown', onDown, true);
+    };
+  }, [open, hostRef]);
+
+  return { open, ask, dismiss, props: { onCancel: dismiss } };
+}
+
+/* ============================================================================
+ * <InlineConfirm/> — destructive Delete/Cancel pair, autofocus on Delete.
+ * ========================================================================== */
+
+export interface InlineConfirmProps {
+  label: string;
+  onConfirm: () => void;
+  onCancel: () => void;
+  pending?: boolean;
+  testId?: string;
+}
+
+export function InlineConfirm({
+  label,
+  onConfirm,
+  onCancel,
+  pending,
+  testId,
+}: InlineConfirmProps): JSX.Element {
+  const deleteRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    deleteRef.current?.focus();
+  }, []);
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLFieldSetElement>): void => {
+    if (e.key === 'Escape') {
+      e.stopPropagation();
+      onCancel();
+    }
+  };
+
+  return (
+    <fieldset
+      aria-label={label}
+      data-testid={testId}
+      onKeyDown={onKeyDown}
+      className="flex items-center gap-1.5 border-0 p-0 m-0"
+    >
+      <Button
+        ref={deleteRef}
+        variant="danger"
+        size="sm"
+        loading={pending}
+        onClick={onConfirm}
+        data-testid={testId ? `${testId}-delete` : undefined}
+      >
+        Delete
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={onCancel}
+        disabled={pending}
+        data-testid={testId ? `${testId}-cancel` : undefined}
+      >
+        Cancel
+      </Button>
+    </fieldset>
+  );
 }
 
 /* Re-export useId so consumers don't need a second React import. */

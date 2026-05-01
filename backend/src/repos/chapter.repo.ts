@@ -156,8 +156,38 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
 
   async function remove(id: string) {
     const userId = resolveUserId(req);
-    const deleted = await client.chapter.deleteMany({ where: { id, story: { userId } } });
-    return deleted.count > 0;
+    return client.$transaction(async (tx) => {
+      const target = await tx.chapter.findFirst({
+        where: { id, story: { userId } },
+        select: { id: true, storyId: true },
+      });
+      if (!target) return false;
+
+      await tx.chapter.delete({ where: { id: target.id } });
+
+      // Re-pack remaining chapters into sequential orderIndex 0..N-1, ordered
+      // by their existing (orderIndex, createdAt) — same key as findManyForStory.
+      // Mirrors the [D16] two-phase swap (negative parking values dodge the
+      // @@unique([storyId, orderIndex]) constraint mid-transaction).
+      const remaining = await tx.chapter.findMany({
+        where: { storyId: target.storyId },
+        orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
+        select: { id: true },
+      });
+      for (let i = 0; i < remaining.length; i++) {
+        await tx.chapter.update({
+          where: { id: remaining[i]!.id },
+          data: { orderIndex: -(i + 1) },
+        });
+      }
+      for (let i = 0; i < remaining.length; i++) {
+        await tx.chapter.update({
+          where: { id: remaining[i]!.id },
+          data: { orderIndex: i },
+        });
+      }
+      return true;
+    });
   }
 
   async function reorder(

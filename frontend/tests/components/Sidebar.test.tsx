@@ -2,7 +2,7 @@
 // Tests the shell-only contract: slot wiring, story-picker callback, plus-
 // button callback, tab-switching wired to `useSidebarTabStore`, panel
 // `hidden` attribute, and progress-footer arithmetic / formatting.
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Sidebar, type SidebarProps } from '@/components/Sidebar';
 import { useSidebarTabStore } from '@/store/sidebarTab';
@@ -57,11 +57,9 @@ describe('Sidebar', () => {
     expect(onOpenStoryPicker).toHaveBeenCalledTimes(1);
   });
 
-  it('clicking the plus button fires onAdd', () => {
-    const onAdd = vi.fn();
-    renderSidebar({ onAdd });
-    fireEvent.click(screen.getByTestId('sidebar-add-button'));
-    expect(onAdd).toHaveBeenCalledTimes(1);
+  it('does not render a sidebar-level + button (chapters owns its own add)', () => {
+    renderSidebar();
+    expect(screen.queryByTestId('sidebar-add-button')).toBeNull();
   });
 
   it('renders three tabs in correct order', () => {
@@ -168,5 +166,33 @@ describe('Sidebar', () => {
     renderSidebar({ totalWordCount: 1234, goalWordCount: 0 });
     expect(screen.queryByTestId('sidebar-progress-bar')).not.toBeInTheDocument();
     expect(screen.getByTestId('sidebar-progress-text')).toHaveTextContent('1,234 words');
+  });
+
+  it('renders count line under CHAPTERS and CAST when counts are provided', () => {
+    renderSidebar({ chaptersCount: 9, castCount: 4 });
+    expect(within(screen.getByTestId('sidebar-tab-chapters')).getByText('9')).toBeInTheDocument();
+    expect(within(screen.getByTestId('sidebar-tab-cast')).getByText('4')).toBeInTheDocument();
+  });
+
+  it('OUTLINE never renders a count', () => {
+    renderSidebar({ chaptersCount: 5, castCount: 2 });
+    const outlineTab = screen.getByTestId('sidebar-tab-outline');
+    expect(outlineTab.textContent).toBe('Outline');
+  });
+
+  it('omits the count when null (loading)', () => {
+    renderSidebar({ chaptersCount: null, castCount: null });
+    expect(screen.getByTestId('sidebar-tab-chapters').textContent).toBe('Chapters');
+    expect(screen.getByTestId('sidebar-tab-cast').textContent).toBe('Cast');
+  });
+
+  it('tab aria-label includes the count for screen readers', () => {
+    renderSidebar({ chaptersCount: 9, castCount: 4 });
+    expect(screen.getByTestId('sidebar-tab-chapters')).toHaveAttribute(
+      'aria-label',
+      'Chapters (9)',
+    );
+    expect(screen.getByTestId('sidebar-tab-cast')).toHaveAttribute('aria-label', 'Cast (4)');
+    expect(screen.getByTestId('sidebar-tab-outline')).not.toHaveAttribute('aria-label');
   });
 });

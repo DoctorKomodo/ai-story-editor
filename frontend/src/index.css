@@ -290,7 +290,9 @@ body {
    Class names match the mockup so F26/F27/F38 can target them. */
 .app-shell {
   display: grid;
-  grid-template-columns: 260px 1fr 360px;
+  /* Sidebar scales with viewport: 260px floor (matches `min-w-[260px]` on the
+   * Sidebar root), grows ~22vw, capped at 390px (~50% larger) on wide screens. */
+  grid-template-columns: clamp(260px, 22vw, 390px) 1fr 360px;
   grid-template-rows: 44px 1fr;
   grid-template-areas:
     "topbar topbar topbar"
@@ -320,7 +322,7 @@ body {
 }
 
 .app-shell[data-layout="nochat"] {
-  grid-template-columns: 260px 1fr 0;
+  grid-template-columns: clamp(260px, 22vw, 390px) 1fr 0;
 }
 .app-shell[data-layout="nochat"] > .chat {
   display: none;
@@ -513,4 +515,27 @@ body {
 }
 .char-ref:hover {
   border-bottom-color: var(--ink-3);
+}
+
+/* ============================================================================
+ * Chapters UI — affordance visibility on active / drop-target rows + coarse
+ * pointer (touch) hit-target enlargement. Scoped to chapter rows by testId
+ * prefix to avoid collisions with unrelated `*-delete` testIds.
+ * ========================================================================== */
+[data-testid^="chapter-row-"][data-active="true"] [data-testid$="-grip"],
+[data-testid^="chapter-row-"][data-over="true"] [data-testid$="-grip"] {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  /* On touch devices, force grip + delete affordances visible and enlarge the
+   * hit targets to 32×32. Selector specificity (two attribute selectors)
+   * outranks Tailwind's single-class `opacity-0` so we don't need `!important`.
+   */
+  [data-testid^="chapter-row-"][data-testid$="-grip"],
+  [data-testid^="chapter-row-"][data-testid$="-delete"] {
+    opacity: 1;
+    min-width: 32px;
+    min-height: 32px;
+  }
 }
