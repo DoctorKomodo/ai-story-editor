@@ -644,13 +644,16 @@ export function EditorPage(): JSX.Element {
         }
       />
 
-      <CharacterSheet
-        storyId={story.id}
-        characterId={openCharacterId}
-        onClose={() => {
-          setOpenCharacterId(null);
-        }}
-      />
+      {openCharacterId !== null ? (
+        <CharacterSheet
+          storyId={story.id}
+          mode="edit"
+          characterId={openCharacterId}
+          onClose={() => {
+            setOpenCharacterId(null);
+          }}
+        />
+      ) : null}
 
       {/* [F54] Character popover — opened from charRef hover and Cast clicks.
           Edit footer routes back into the F19 character sheet. */}

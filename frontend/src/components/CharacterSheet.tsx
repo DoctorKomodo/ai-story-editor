@@ -36,12 +36,9 @@ import { ApiError } from '@/lib/api';
  * Field / Input / Textarea / Button). The nested confirm dialog uses a
  * second Modal so backdrop / escape / focus management is centralised.
  */
-export interface CharacterSheetProps {
-  storyId: string;
-  /** `null` closes the modal. */
-  characterId: string | null;
-  onClose: () => void;
-}
+export type CharacterSheetProps =
+  | { storyId: string; mode: 'edit'; characterId: string; onClose: () => void }
+  | { storyId: string; mode: 'create'; onClose: (createdId: string | null) => void };
 
 const NAME_MAX = 200;
 const ROLE_MAX = 200;
@@ -108,11 +105,12 @@ function diffPatch(original: Character, current: FieldState): UpdateCharacterPat
   return out;
 }
 
-export function CharacterSheet({
-  storyId,
-  characterId,
-  onClose,
-}: CharacterSheetProps): JSX.Element | null {
+export function CharacterSheet(props: CharacterSheetProps): JSX.Element | null {
+  if (props.mode === 'create') {
+    throw new Error('CharacterSheet create mode not yet implemented');
+  }
+  const { storyId, characterId, onClose } = props;
+
   const headingId = useId();
   const nameId = useId();
   const roleId = useId();
@@ -122,9 +120,7 @@ export function CharacterSheet({
   const arcId = useId();
   const personalityId = useId();
 
-  const open = characterId !== null;
-
-  const query = useCharacterQuery(open ? storyId : null, characterId);
+  const query = useCharacterQuery(storyId, characterId);
   const updateMutation = useUpdateCharacterMutation(storyId);
   const deleteMutation = useDeleteCharacterMutation(storyId);
 
@@ -141,29 +137,16 @@ export function CharacterSheet({
     }
   }, [query.data]);
 
-  useEffect(() => {
-    if (!open) {
-      setFields(null);
-      setFormError(null);
-      setConfirmOpen(false);
-      setDeleteError(null);
-      return;
-    }
-    setFormError(null);
-    setConfirmOpen(false);
-    setDeleteError(null);
-  }, [open]);
-
   // Focus the name input once fields are available.
   useEffect(() => {
-    if (!open || fields === null) return;
+    if (fields === null) return;
     const id = window.setTimeout(() => {
       nameInputRef.current?.focus();
     }, 0);
     return () => {
       window.clearTimeout(id);
     };
-  }, [open, fields]);
+  }, [fields]);
 
   const handleFieldChange = useCallback(
     (key: FieldKey) =>
@@ -204,8 +187,6 @@ export function CharacterSheet({
     }
   };
 
-  if (!open) return null;
-
   const savePending = updateMutation.isPending;
   const deletePending = deleteMutation.isPending;
   const nameTrimmed = fields?.name.trim() ?? '';
@@ -214,7 +195,7 @@ export function CharacterSheet({
 
   return (
     <Modal
-      open={open}
+      open
       onClose={onClose}
       labelledBy={headingId}
       size="lg"

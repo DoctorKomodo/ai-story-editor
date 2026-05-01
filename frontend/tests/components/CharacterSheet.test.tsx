@@ -59,7 +59,14 @@ function renderSheet(props: {
   const onClose = (props.onClose ?? vi.fn()) as ReturnType<typeof vi.fn>;
   render(
     <QueryClientProvider client={qc}>
-      <CharacterSheet storyId="story-1" characterId={props.characterId} onClose={onClose} />
+      {props.characterId !== null ? (
+        <CharacterSheet
+          storyId="story-1"
+          mode="edit"
+          characterId={props.characterId}
+          onClose={onClose}
+        />
+      ) : null}
     </QueryClientProvider>,
   );
   return { client: qc, onClose };

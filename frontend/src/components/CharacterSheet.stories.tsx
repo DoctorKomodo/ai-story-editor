@@ -45,11 +45,14 @@ function Demo() {
       <Button variant="ghost" onClick={() => setOpen(true)}>
         Reopen sheet
       </Button>
-      <CharacterSheet
-        storyId={STORY_ID}
-        characterId={open ? CHARACTER_ID : null}
-        onClose={() => setOpen(false)}
-      />
+      {open ? (
+        <CharacterSheet
+          storyId={STORY_ID}
+          mode="edit"
+          characterId={CHARACTER_ID}
+          onClose={() => setOpen(false)}
+        />
+      ) : null}
     </QueryClientProvider>
   );
 }
