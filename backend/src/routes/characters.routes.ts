@@ -70,8 +70,12 @@ export function createCharactersRouter() {
     const body = parsed.data;
 
     try {
-      const character = await createCharacterRepo(req).create({
+      const repo = createCharacterRepo(req);
+      const max = await repo.maxOrderIndex(storyId);
+      const orderIndex = max === null ? 0 : max + 1;
+      const character = await repo.create({
         storyId,
+        orderIndex,
         name: body.name,
         role: body.role,
         age: body.age,

@@ -16,6 +16,7 @@ describe('[E9] character.repo', () => {
     const created = await repo.create({
       storyId: story.id as string,
       name: 'Astra',
+      orderIndex: 0,
       role: 'deuteragonist',
       age: '27',
       appearance: 'tall, scar across left brow',
@@ -47,6 +48,7 @@ describe('[E9] character.repo', () => {
     const c = await repo.create({
       storyId: story.id as string,
       name: 'N',
+      orderIndex: 0,
       role: 'antagonist',
     });
     const before = await prisma.character.findUniqueOrThrow({ where: { id: c.id as string } });

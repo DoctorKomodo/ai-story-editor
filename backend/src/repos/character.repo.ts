@@ -19,6 +19,7 @@ const ENCRYPTED_FIELDS = [
 export interface CharacterCreateInput {
   storyId: string;
   name: string;
+  orderIndex: number;
   role?: string | null;
   age?: string | null;
   appearance?: string | null;
@@ -66,6 +67,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     const row = await client.character.create({
       data: {
         storyId: input.storyId,
+        orderIndex: input.orderIndex,
         color: input.color ?? null,
         initial: input.initial ?? null,
         // Post-[E11]: all narrative fields (name, role, age, appearance,
@@ -89,7 +91,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     await ensureStoryOwned(client, storyId, userId);
     const rows = await client.character.findMany({
       where: { storyId, story: { userId } },
-      orderBy: { createdAt: 'asc' },
+      orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
     });
     return rows.map((r) =>
       projectDecrypted(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
@@ -119,5 +121,14 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForStory, update, remove };
+  async function maxOrderIndex(storyId: string): Promise<number | null> {
+    const userId = resolveUserId(req);
+    const agg = await client.character.aggregate({
+      where: { storyId, story: { userId } },
+      _max: { orderIndex: true },
+    });
+    return agg._max.orderIndex ?? null;
+  }
+
+  return { create, findById, findManyForStory, update, remove, maxOrderIndex };
 }

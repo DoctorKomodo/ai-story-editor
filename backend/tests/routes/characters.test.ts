@@ -205,6 +205,7 @@ describe('Character routes [B5]', () => {
 
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Readable Char',
       role: 'mentor',
       notes: 'guides hero',
@@ -229,6 +230,7 @@ describe('Character routes [B5]', () => {
 
     const charA = await createCharacterRepo(req).create({
       storyId: storyA.id as string,
+      orderIndex: 0,
       name: 'Char in A',
     });
 
@@ -247,6 +249,7 @@ describe('Character routes [B5]', () => {
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
     const char = await createCharacterRepo(reqA).create({
       storyId: story.id as string,
+      orderIndex: 0,
       name: 'A char',
     });
 
@@ -264,12 +267,16 @@ describe('Character routes [B5]', () => {
     const story = await createStoryRepo(req).create({ title: 'Ordered' });
     const storyId = story.id as string;
 
-    const first = await createCharacterRepo(req).create({ storyId, name: 'First' });
+    const first = await createCharacterRepo(req).create({ storyId, orderIndex: 0, name: 'First' });
     // Ensure strictly increasing createdAt timestamps.
     await new Promise((r) => setTimeout(r, 5));
-    const second = await createCharacterRepo(req).create({ storyId, name: 'Second' });
+    const second = await createCharacterRepo(req).create({
+      storyId,
+      orderIndex: 1,
+      name: 'Second',
+    });
     await new Promise((r) => setTimeout(r, 5));
-    const third = await createCharacterRepo(req).create({ storyId, name: 'Third' });
+    const third = await createCharacterRepo(req).create({ storyId, orderIndex: 2, name: 'Third' });
 
     const res = await request(app)
       .get(`/api/stories/${storyId}/characters`)
@@ -314,6 +321,7 @@ describe('Character routes [B5]', () => {
 
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Original',
       role: 'sidekick',
       notes: 'keep me',
@@ -351,6 +359,7 @@ describe('Character routes [B5]', () => {
     const storyId = story.id as string;
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Char',
     });
 
@@ -369,6 +378,7 @@ describe('Character routes [B5]', () => {
     const storyId = story.id as string;
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Char',
     });
 
@@ -390,6 +400,7 @@ describe('Character routes [B5]', () => {
     const storyId = story.id as string;
     const created = await createCharacterRepo(req).create({
       storyId,
+      orderIndex: 0,
       name: 'Doomed',
     });
     const id = created.id as string;
