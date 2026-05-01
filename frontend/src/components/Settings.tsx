@@ -359,7 +359,7 @@ function VeniceTab(): JSX.Element {
               className={[
                 'mt-1 inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono',
                 verifyPill.kind === 'ok'
-                  ? 'bg-[color-mix(in_srgb,#6aa84f_16%,transparent)] text-[#3e6e2a]' /* lint:design-allow — one-off success-pill green; no --success token in the system yet. */
+                  ? 'bg-success-soft text-[color:var(--success)]'
                   : 'bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] text-[color:var(--danger)]',
               ].join(' ')}
             >
