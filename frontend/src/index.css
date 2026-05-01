@@ -371,7 +371,7 @@ body {
   pointer-events: none;
 }
 .outline-bullet-done {
-  background: #6aa84f;
+  background: var(--success);
 }
 .outline-bullet-active {
   background: var(--ink);
