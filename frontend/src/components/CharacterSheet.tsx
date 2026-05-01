@@ -330,6 +330,7 @@ function EditCharacterSheet({
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const nameInputRef = useRef<HTMLInputElement | null>(null);
+  const hasFocusedNameRef = useRef(false);
 
   useEffect(() => {
     if (query.data) {
@@ -337,9 +338,12 @@ function EditCharacterSheet({
     }
   }, [query.data]);
 
-  // Focus the name input once fields are available.
+  // Focus the name input once, when fields first become available.
+  // Re-running on every `fields` change yanks focus back from whichever
+  // field the user is typing in.
   useEffect(() => {
-    if (fields === null) return;
+    if (fields === null || hasFocusedNameRef.current) return;
+    hasFocusedNameRef.current = true;
     const id = window.setTimeout(() => {
       nameInputRef.current?.focus();
     }, 0);
