@@ -29,7 +29,7 @@ import { ApiError } from '@/lib/api';
 
 /**
  * F19 — Character sheet modal. Full "edit all fields" surface for a single
- * character; opened from the sidebar (F18's `<CharacterList>`).
+ * character; opened from the sidebar's Cast tab (F28's `<CastTab>`).
  *
  * Bundle-3 port: chrome and form fields are now composed from
  * `@/design/primitives` (Modal / ModalHeader / ModalBody / ModalFooter /

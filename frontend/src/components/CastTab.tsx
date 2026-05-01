@@ -43,10 +43,9 @@ function displayName(c: Character): string {
 }
 
 /**
- * Secondary line under the name. Mirrors `characterSecondary()` in
- * `CharacterList.tsx`: role and/or `Age N`, separated by " · ". Returns
- * the empty string when both fields are blank — the caller suppresses the
- * line entirely in that case.
+ * Secondary line under the name: role and/or `Age N`, separated by " · ".
+ * Returns the empty string when both fields are blank — the caller
+ * suppresses the line entirely in that case.
  */
 function characterSecondary(c: Character): string {
   const parts: string[] = [];
