@@ -16,7 +16,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ├── db/                        Prisma schema and migrations
 ├── scripts/                   Utility shell scripts (backup, seed, reset)
 ├── docs/                      Architecture documentation — data-model, api-contract, venice-integration, encryption
-├── mockups/frontend-prototype/ UI source of truth (design/*.jsx, styles.css, screenshots/)
+├── mockups/archive/v1-2025-11/ Read-only archive of the original HTML prototype (Storybook is the live design surface)
 ├── docker-compose.yml
 ├── docker-compose.override.yml  (local dev, hot reload)
 ├── .env.example
@@ -25,7 +25,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 └── SELF_HOSTING.md
 ```
 
-**UI source of truth:** `mockups/frontend-prototype/` — high-fidelity design prototype. `design/styles.css` defines the full token set (colors, typography, spacing, radii, shadows) for three themes (`paper` default, `sepia`, `dark`). `screenshots/` are the visual reference. `design/*.jsx` are component references, not production code — recreate faithfully in the real React app.
+**UI source of truth:** Storybook. Run `npm --prefix frontend run storybook` and browse `Primitives/`, `Tokens/`, and the component-namespaced stories before authoring new UI. New components and new feature mockups are written as `*.stories.tsx` files alongside the component source — there is no parallel HTML mockup universe. Theme tokens (`--ink-*`, `--bg-*`, theme blocks, radii, shadows) live in `frontend/src/index.css`; Tailwind references them via `theme.extend`. Themes (`paper` default, `sepia`, `dark`) switch via `data-theme` on `<html>`. The `lint:design` CI guard (`frontend/scripts/lint-design.mjs`) enforces token-only usage in `frontend/src/`. Historical mockups live read-only at `mockups/archive/v1-2025-11/`.
 
 ---
 
@@ -101,7 +101,7 @@ Work through tasks in this order unless instructed otherwise:
 | V | Venice.ai integration — **per-user OpenAI-compatible client**, prompt builder, SSE streaming, reasoning/web-search flags |
 | L | live Venice testing — opt-in, dev-only path (`backend/.env.live`, `npm run test:live`, `venice:probe` CLI). Never in the default test run or in CI. |
 | B | backend non-AI routes (stories / chapters / characters / outline / chats / user-settings) |
-| F | frontend — mockup-fidelity UI; source of truth is `mockups/frontend-prototype/` |
+| F | frontend — mockup-fidelity UI; source of truth is Storybook (`npm --prefix frontend run storybook`) |
 | I | infra (Dockerfiles, compose, backup, `SELF_HOSTING.md`) |
 | T | testing (integration + E2E) |
 | X | extras |
@@ -148,8 +148,8 @@ Hard gates (do not start until the prerequisite is complete):
 - **State management:** Zustand for client/UI state (`session`, `activeStoryId`, `activeChapterId`, `sidebarTab`, `selection`, `inlineAIResult`, `attachedSelection`, `model`, `params`, `tweaks`); TanStack Query for server state (`stories`, `story(id)`, `chapter(id)`, `characters(storyId)`, `outline(storyId)`, `chats(chapterId)`). No other stores, no React Context for app data.
 - All API calls go through `src/lib/api.ts` — never call `fetch` directly in components
 - Components do not contain business logic — use hooks in `src/hooks/`
-- **Styling:** TailwindCSS for layout + utilities. Theme-level design tokens (colors, typography, spacing, radii, shadows) live as CSS custom properties in `src/index.css`, mirroring `mockups/frontend-prototype/design/styles.css`. Tailwind's `theme.extend` references those vars. Themes (`paper` / `sepia` / `dark`) switch via `data-theme` on `<html>`. No inline styles; no per-component CSS files.
-- Recreate the mockup faithfully — exact hex values, type sizes, spacing, border radii, transition durations — see `mockups/frontend-prototype/README.md` for the spec and `screenshots/` for the visual truth.
+- **Styling:** TailwindCSS for layout + utilities. Theme-level design tokens (colors, typography, spacing, radii, shadows) live as CSS custom properties in `src/index.css`. Tailwind's `theme.extend` references those vars. Themes (`paper` / `sepia` / `dark`) switch via `data-theme` on `<html>`. No inline styles; no per-component CSS files.
+- Browse Storybook (`npm --prefix frontend run storybook`) before authoring new UI; the `Tokens/` story is authoritative for hex values, type scale, radii, and shadows. Historical reference at `mockups/archive/v1-2025-11/` (read-only).
 
 ### Database
 - **Narrative entities** (Story, Chapter, Character, OutlineItem, Chat, Message) are accessed **only through the repo layer** in `src/repos/` — controllers and services never call Prisma directly for these models. Repos encrypt on write and decrypt on read ([E9]). Raw Prisma access for these entities outside repos is a bug.

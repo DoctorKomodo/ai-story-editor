@@ -5,7 +5,7 @@
 **Goal:** Replace two thin / missing empty states with mockup-fidelity surfaces.
 
 1. **Dashboard zero-stories hero** — when the user has no stories, the embedded `<StoryPicker>` (F58) renders a centred brand-mark + copy ("Your stories live here") + supporting line, while the StoryPicker's own footer "New story" button remains the primary CTA. Today (post-F58) the empty-state body is a single mono "No stories yet" line at `StoryPicker.tsx:154`.
-2. **Editor empty-chapter hint strip** — when a chapter's TipTap document is empty, render a single mono row below the prose with three short hints: `select text → bubble · hover names → card · ⌥↵ → continue`. Sourced from `mockups/frontend-prototype/design/editor.jsx:85-108`.
+2. **Editor empty-chapter hint strip** — when a chapter's TipTap document is empty, render a single mono row below the prose with three short hints: `select text → bubble · hover names → card · ⌥↵ → continue`. Sourced from `mockups/archive/v1-2025-11/design/editor.jsx:85-108`.
 
 **Architecture:**
 - Both surfaces are pure render-time decisions — no new state, no new API calls.
@@ -26,16 +26,16 @@
 ### Task 1: Mockup the empty surfaces
 
 **Files:**
-- Create: `mockups/frontend-prototype/design/storypicker-empty.jsx`
-- Create: `mockups/frontend-prototype/design/editor-empty-hints.jsx`
-- Modify: `mockups/frontend-prototype/README.md` (add a row pointing at the two new files)
+- Create: `mockups/archive/v1-2025-11/design/storypicker-empty.jsx`
+- Create: `mockups/archive/v1-2025-11/design/editor-empty-hints.jsx`
+- Modify: `mockups/archive/v1-2025-11/README.md` (add a row pointing at the two new files)
 
-The mockups are HTML+inline-style React snippets following the convention of every other file under `mockups/frontend-prototype/design/*.jsx`. They're not built — they're the visual spec the React component is recreated against.
+The mockups are HTML+inline-style React snippets following the convention of every other file under `mockups/archive/v1-2025-11/design/*.jsx`. They're not built — they're the visual spec the React component is recreated against.
 
 - [ ] **Step 1: Storypicker empty hero**
 
 ```jsx
-// mockups/frontend-prototype/design/storypicker-empty.jsx
+// mockups/archive/v1-2025-11/design/storypicker-empty.jsx
 export function StoryPickerEmpty() {
   return (
     <div style={{
@@ -76,7 +76,7 @@ export function StoryPickerEmpty() {
 - [ ] **Step 2: Editor hint strip**
 
 ```jsx
-// mockups/frontend-prototype/design/editor-empty-hints.jsx
+// mockups/archive/v1-2025-11/design/editor-empty-hints.jsx
 export function EditorEmptyHints() {
   return (
     <div style={{
@@ -104,9 +104,9 @@ export function EditorEmptyHints() {
 - [ ] **Step 3: Commit the mockups**
 
 ```bash
-git add mockups/frontend-prototype/design/storypicker-empty.jsx \
-        mockups/frontend-prototype/design/editor-empty-hints.jsx \
-        mockups/frontend-prototype/README.md
+git add mockups/archive/v1-2025-11/design/storypicker-empty.jsx \
+        mockups/archive/v1-2025-11/design/editor-empty-hints.jsx \
+        mockups/archive/v1-2025-11/README.md
 git commit -m "[F64] mockups for storypicker empty hero + editor hint strip"
 ```
 

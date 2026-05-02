@@ -19,8 +19,8 @@
 
 ## Current focus
 
-- **In flight:** F74 / F75 (retire HTML mockups + README update — gated on F68–F73 + X24 done; all unblocked).
-- **Backlog (next):** F63 chat history, F65 terminal-401 redirect, M1–M3 maintenance.
+- **In flight:** F63 chat history, F65 terminal-401 redirect.
+- **Backlog (next):** M1–M3 maintenance, X25–X29 testing-found UI/settings polish.
 - **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X25, X26, X27, X28, X29, DS-* (none yet).
 - **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
 - **Live sections:** F (Phase 4 only), X, M, DS.
@@ -142,11 +142,11 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
   - plan: [docs/superpowers/plans/F73-storybook-component-backfill.md](docs/superpowers/plans/F73-storybook-component-backfill.md)
   - verify: `cd frontend && npm run build-storybook -- --quiet && npm run lint:design && for c in AutosaveIndicator BalanceDisplay UsageIndicator AIResult ChapterList CharacterList DarkModeToggle Editor Export CharacterSheet StoryModal; do test -f src/components/$c.stories.tsx || { echo "missing: $c.stories.tsx"; exit 1; }; done`
 
-- [ ] **[F74]** Retire the parallel HTML universe — multi-PR destructive cleanup gated on hard prerequisites. PR-A rewrites `CLAUDE.md`'s "UI source of truth" rule + sweeps repo references; PR-B `git mv`s `mockups/frontend-prototype/` and `docs/Design System Handoff.html` into `mockups/archive/v1-2025-11/`; F75 updates the README. Prerequisites gate ([F68]–[F73] merged + [X24] green on main + ≥1 feature shipped via the new workflow), full PR scripts in the plan.
+- [x] **[F74]** Retire the parallel HTML universe — multi-PR destructive cleanup gated on hard prerequisites. PR-A rewrites `CLAUDE.md`'s "UI source of truth" rule + sweeps repo references; PR-B `git mv`s `mockups/frontend-prototype/` and `docs/Design System Handoff.html` into `mockups/archive/v1-2025-11/`; F75 updates the README. Prerequisites gate ([F68]–[F73] merged + [X24] green on main + ≥1 feature shipped via the new workflow), full PR scripts in the plan. Bundled with [F75] in a single PR (small project — reviewability concern from the plan didn't apply).
   - plan: [docs/superpowers/plans/F74-retire-html-mockups.md](docs/superpowers/plans/F74-retire-html-mockups.md)
-  - verify: `! [ -d mockups/frontend-prototype ] && [ -d mockups/archive/v1-2025-11 ] && ! grep -rqE '(mockups/frontend-prototype|Design System Handoff)' CLAUDE.md docs/ .github/ README.md`
+  - verify: `! [ -d mockups/frontend-prototype ] && [ -d mockups/archive/v1-2025-11 ] && ! grep -rE '(mockups/frontend-prototype|docs/Design System Handoff)' CLAUDE.md docs/ .github/ README.md --exclude-dir=archive --exclude=F74-retire-html-mockups.md`
 
-- [ ] **[F75]** Update repo `README.md` "Design system" / "Contributing" section to point at Storybook + the `lint:design` guard. Use the copy block from [docs/HANDOFF.md](docs/HANDOFF.md) § Step 4 verbatim, adjusted to the project's existing tone. Land in the same PR as F74's Step 3 (archive) for atomicity, OR as a follow-up — operator's call. No design needed.
+- [x] **[F75]** Update repo `README.md` "Design system" / "Contributing" section to point at Storybook + the `lint:design` guard. Use the copy block from [docs/HANDOFF.md](docs/HANDOFF.md) § Step 4 verbatim, adjusted to the project's existing tone. Land in the same PR as F74's Step 3 (archive) for atomicity, OR as a follow-up — operator's call. No design needed.
   - verify: `grep -q -i 'storybook' README.md && grep -q 'lint:design' README.md`
 
 ---

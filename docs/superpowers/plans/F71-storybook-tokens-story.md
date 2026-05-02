@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Author `frontend/src/design/Tokens.stories.tsx` — a Storybook surface that renders every design token from [frontend/src/index.css](../../frontend/src/index.css) as a swatch, with a runtime hex/font readout populated by `useLayoutEffect`. Replaces the visual reference currently in [docs/Design System Handoff.html](../Design%20System%20Handoff.html) § Tokens. After this lands, the HTML doc can be retired ([F74]).
+**Goal:** Author `frontend/src/design/Tokens.stories.tsx` — a Storybook surface that renders every design token from [frontend/src/index.css](../../frontend/src/index.css) as a swatch, with a runtime hex/font readout populated by `useLayoutEffect`. Replaces the visual reference currently in [mockups/archive/v1-2025-11/Design System Handoff.html](../Design%20System%20Handoff.html) § Tokens. After this lands, the HTML doc can be retired ([F74]).
 
 **Architecture:**
 - Single `Tokens.stories.tsx` file under `frontend/src/design/`. Story title `Tokens/Swatches` (top-level group sibling to `Primitives/`).
@@ -23,7 +23,7 @@
 **Source-of-truth references:**
 - [frontend/src/index.css](../../frontend/src/index.css) — the `:root` + `[data-theme="..."]` blocks (lines 10–87) and the `@theme` block (lines 97–141). Audit both before populating the token arrays.
 - [docs/HANDOFF.md](../HANDOFF.md) § "A token swatch story" — the source snippet (with the `useLayoutEffect` hex/font readout).
-- [docs/Design System Handoff.html](../Design%20System%20Handoff.html) § Tokens — the visual reference this story replaces. Open it in a browser before authoring to confirm visual parity.
+- [mockups/archive/v1-2025-11/Design System Handoff.html](../Design%20System%20Handoff.html) § Tokens — the visual reference this story replaces. Open it in a browser before authoring to confirm visual parity.
 
 ---
 

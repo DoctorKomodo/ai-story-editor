@@ -17,8 +17,7 @@
       "!backend/prisma/migrations/**/*.sql",
       "!frontend/dist",
       "!backend/dist",
-      "!mockups/frontend-prototype/design",
-      "!docs/**/*.html",
+      "!mockups/archive",
       "!**/*.min.js",
       "!**/package-lock.json"
     ]

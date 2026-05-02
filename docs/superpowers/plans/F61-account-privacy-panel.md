@@ -49,8 +49,8 @@
 - `backend/tests/auth/sign-out-everywhere.test.ts` — new integration test.
 
 **Create (frontend):**
-- `mockups/frontend-prototype/design/account-privacy.jsx` — design-first mockup
-- `mockups/frontend-prototype/design/account-privacy.notes.md` — addendum
+- `mockups/archive/v1-2025-11/design/account-privacy.jsx` — design-first mockup
+- `mockups/archive/v1-2025-11/design/account-privacy.notes.md` — addendum
 - `frontend/src/components/AccountPrivacyModal.tsx` — modal shell + the four section components inside one file (each section is small enough that splitting would hurt readability)
 - `frontend/src/hooks/useAccount.ts` — three mutation hooks
 - `frontend/tests/components/AccountPrivacy.test.tsx` — the verify-command target
@@ -264,12 +264,12 @@ git commit -m "[B12] POST /auth/sign-out-everywhere endpoint"
 ## Task 2: Mockup the Account & Privacy panel
 
 **Files:**
-- Create: `mockups/frontend-prototype/design/account-privacy.jsx`
-- Create: `mockups/frontend-prototype/design/account-privacy.notes.md`
+- Create: `mockups/archive/v1-2025-11/design/account-privacy.jsx`
+- Create: `mockups/archive/v1-2025-11/design/account-privacy.notes.md`
 
 - [ ] **Step 1: Write the mockup JSX**
 
-Create `mockups/frontend-prototype/design/account-privacy.jsx`:
+Create `mockups/archive/v1-2025-11/design/account-privacy.jsx`:
 
 ```jsx
 // Account & Privacy modal — opened from the user menu's "Account & privacy" item.
@@ -318,7 +318,7 @@ function AccountPrivacyModal({ open, onClose, username }) {
 
 - [ ] **Step 2: Write the addendum**
 
-Create `mockups/frontend-prototype/design/account-privacy.notes.md`:
+Create `mockups/archive/v1-2025-11/design/account-privacy.notes.md`:
 
 ```markdown
 # Account & Privacy modal (addendum to modals.jsx)
@@ -387,8 +387,8 @@ exists in the layout so users know the option is real, just not yet shipped.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add mockups/frontend-prototype/design/account-privacy.jsx \
-       mockups/frontend-prototype/design/account-privacy.notes.md
+git add mockups/archive/v1-2025-11/design/account-privacy.jsx \
+       mockups/archive/v1-2025-11/design/account-privacy.notes.md
 git commit -m "[F61] mockup: Account & Privacy modal"
 ```
 

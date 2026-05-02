@@ -300,9 +300,9 @@ and is the active work.
 Storybook is what closes the parallel-universe problem permanently. Once
 it's live, the design system stops being a doc you reference and becomes a
 workspace you visit. New feature proposals can be TSX stories instead of
-HTML mockups, visual regression testing comes for free, and the
-`mockups/frontend-prototype/` folder + `docs/Design System Handoff.html`
-can be deleted.
+HTML mockups, visual regression testing comes for free, and the original
+HTML prototype + visual spec are archived (now read-only at
+`mockups/archive/v1-2025-11/`).
 
 ### Install
 
@@ -486,7 +486,7 @@ backdrop closes, Tab cycles within the modal), and `labelledBy` wiring
 "reopen" button outside the modal lets you re-trigger the open
 transition without refreshing the story.
 
-### A token swatch story (replaces `Design System Handoff.html` § Tokens)
+### A token swatch story (replaces the archived visual spec § Tokens)
 
 This story has to cover **every surface the HTML doc covered** — not just
 colours. That means colour swatches, type tokens (`--sans`, `--serif`,
@@ -672,109 +672,19 @@ low-risk and easier to review in aggregate.
 From this point forward, **every new component PR includes its story
 in the same diff** — no more backfill rounds.
 
-### Retire the parallel HTML universe
+### Retire the parallel HTML universe — completed 2026-05-02 ([F74])
 
-This is the final, **destructive** step of the migration. It touches more
-than the file system — it invalidates the `mockups/frontend-prototype/`
-"UI source of truth" rule that's currently encoded in `CLAUDE.md` (and
-likely referenced by team conventions, PR templates, and AI-session
-prompts). Order matters here.
+The original HTML prototype directory and the visual spec page are
+archived at `mockups/archive/v1-2025-11/` (read-only). `CLAUDE.md`'s
+"UI source of truth" rule now points at Storybook; the README's
+"Design system" section points at the same surface plus the
+`lint:design` guard. See [the F74 plan](superpowers/plans/F74-retire-html-mockups.md)
+for the recipe and the prerequisites that gated the move.
 
-**Required prerequisites** — do not delete anything until all four are
-true:
-
-- [ ] Phase 4 is green: every primitive has stories, the token swatch
-      story renders correctly, all three themes verified.
-- [ ] Backfill PR has merged: every previously-🔴 component has a story.
-- [ ] Visual regression ([X24] — Option B Playwright theme-sweep) has at
-      least one green run on `main`.
-- [ ] At least one new feature has shipped using the
-      "TSX story instead of HTML mockup" workflow — this proves the new
-      path actually works for the team's day-to-day, not just in theory.
-
-**Step 1 — rewrite `CLAUDE.md` first, in its own PR.**
-
-The existing rule probably reads something like "consult
-`mockups/frontend-prototype/` for UI source of truth before designing new
-features." That sentence becomes a lie the moment you delete the folder.
-Replace it with a Storybook pointer:
-
-```md
-## UI source of truth
-
-The Inkwell design system lives in Storybook. Run `npm --prefix frontend run
-storybook` and browse `Primitives/`, `Tokens/`, and any
-component-namespaced stories before authoring new UI. New components and
-new feature mockups are written as `*.stories.tsx` files alongside the
-component source — there is no parallel HTML mockup universe.
-
-If you need to reference the historical mockups, see
-`mockups/archive/v1-2025-11/` (read-only).
-```
-
-Adjust copy to match the codebase's existing tone. **Search the repo for
-other references** to `frontend-prototype` before assuming `CLAUDE.md` is
-the only one:
-
-```sh
-rg -i 'frontend-prototype|design system handoff' --type md
-rg -i 'frontend-prototype|design system handoff' .github/   # PR templates
-rg -i 'frontend-prototype|design system handoff' docs/      # contributor docs
-```
-
-Update every hit. Land this as a single docs PR — `docs: point UI
-source-of-truth at Storybook (pre-deletion)`.
-
-**Step 2 — archive, don't delete.**
-
-```sh
-mkdir -p mockups/archive
-git mv mockups/frontend-prototype mockups/archive/v1-2025-11
-git mv "docs/Design System Handoff.html" mockups/archive/v1-2025-11/
-# (The original Inkwell.html prototype lives inside mockups/frontend-prototype/
-# and is moved by the line above — no separate mv needed.)
-```
-
-Land this as `chore(mockups): archive v1 prototype after Storybook
-adoption`. Keeping the history under `archive/` means anyone who finds an
-old PR description referencing `mockups/frontend-prototype/Inkwell.html`
-can still navigate to it; the path just changed.
-
-**Step 3 — only now, if you're sure, delete.**
-
-If you decide later that even the archive is dead weight (e.g. six months
-on, nobody has needed it), delete it then with a separate PR:
-
-```sh
-git rm -r mockups/archive/v1-2025-11
-```
-
-But the safer steady state is to leave the archive in place indefinitely.
-It costs nothing to keep, and "where did the old mockups go?" is a real
-question new contributors will eventually ask.
-
-**Step 4 — update the project README.**
-
-The repo README's "Design system" or "Contributing" section probably
-mentions the old workflow. Replace with a short pointer:
-
-```md
-## Design system
-
-UI primitives and tokens live in Storybook:
-
-    npm --prefix frontend run storybook
-
-See `frontend/src/design/` for the source. The drift guard (`npm
---prefix frontend run lint:design`) runs in CI and blocks raw Tailwind
-palette colours, mid-tier shadows, and hex literals — see `MIGRATION.md`
-for the substitution table.
-```
-
-The migration is now complete in the cultural sense, not just the code
-sense: the design system has graduated from "a doc you reference" to
-"a workspace you visit," and every part of the repo that pointed at the
-old workflow now points at the new one.
+Hard-delete of the archive is not scheduled — it costs nothing to keep,
+and "where did the old mockups go?" is a real question new contributors
+will eventually ask. If the archive is ever pruned, do it as a separate
+PR with its own justification.
 
 ---
 
@@ -790,5 +700,4 @@ shipped (all repo-relative paths):
 | `frontend/src/design/primitives.tsx` | Token-aware primitives. Imported from every migrated component. |
 | `frontend/src/index.css` | Live design tokens (`--ink-*`, `--bg-*`, theme blocks). Source of truth. |
 | `frontend/scripts/lint-design.mjs` | Phase 3 CI guard. Wired in `frontend/package.json` as `lint:design` and in `.github/workflows/ci.yml`. |
-| `docs/Design System Handoff.html` | Visual spec — swatches, type scale, primitives, modal-on-modal demo, sticker-sheet. Excluded from biome via `biome.json`. Useful for cross-checking visuals during PR review; will be archived in Phase 4 § "Retire the parallel HTML universe". |
-| `mockups/frontend-prototype/` | Original HTML prototype (incl. `design/Inkwell.html`). Currently the "UI source of truth" per `CLAUDE.md`; will be archived to `mockups/archive/v1-2025-11/` once Phase 4 closes out. |
+| `mockups/archive/v1-2025-11/` | Read-only archive of the original HTML prototype (incl. `design/Inkwell.html`) and the visual spec (`Design System Handoff.html`). Retired in Phase 4 ([F74]) — Storybook is the live design surface. |
