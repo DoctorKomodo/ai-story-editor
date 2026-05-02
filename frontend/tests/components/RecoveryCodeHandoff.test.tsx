@@ -91,7 +91,8 @@ describe('<RecoveryCodeHandoff>', () => {
     expect(filename).toBe('inkwell-recovery-code-alice.txt');
     expect(content).toContain('horse-battery-staple');
     expect(content).toContain('Username: alice');
-    expect(content).toMatch(/without it and your password/i);
+    expect(content).toMatch(/either this code or your password/i);
+    expect(content).toMatch(/if you lose both/i);
   });
 
   it('does not respond to Escape (cannot dismiss)', async () => {
