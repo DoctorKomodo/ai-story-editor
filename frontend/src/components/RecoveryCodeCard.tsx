@@ -22,8 +22,9 @@ function buildDownloadBody(username: string, recoveryCode: string): string {
     `Username: ${username}`,
     `Recovery code: ${recoveryCode}`,
     '',
-    'Keep this somewhere safe. Without it AND your password, your encrypted',
-    'stories cannot be recovered.',
+    'Either this code or your password can unlock your stories. Keep this',
+    'somewhere safe — if you lose both, your encrypted stories cannot be',
+    'recovered.',
     '',
   ].join('\n');
 }
