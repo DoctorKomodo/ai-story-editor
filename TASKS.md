@@ -21,7 +21,7 @@
 
 - **In flight:** F74 / F75 (retire HTML mockups + README update — gated on F68–F73 + X24 done; all unblocked).
 - **Backlog (next):** F63 chat history, F65 terminal-401 redirect, M1–M3 maintenance.
-- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, DS-* (none yet).
+- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X25, X26, X27, X28, X29, DS-* (none yet).
 - **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
 - **Live sections:** F (Phase 4 only), X, M, DS.
 
@@ -169,6 +169,8 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 - [ ] **[X17]** Find / Replace UI in the editor. Wire `<FormatBar>`'s `onToggleFind` callback to a small inline find bar inside `<Paper>` that highlights matches, supports next/previous, and optionally Replace. Decision (capture in plan): inline strip vs floating popover. Match the prototype's mockup if one is added; otherwise design-first. F52 ships the FormatBar Find button as `disabled` with a `title="Find — coming in [X17]"` tooltip; X17 lifts the disabled state and wires the actual feature.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/EditorFind.test.tsx`
 
+- [ ] **[X25]** Modals open in an off-centre position (towards the upper-left) on first frame, then visibly snap to the centre of the viewport once mounted. Fix the `<Modal>` primitive (and any wrapper layout) so the dialog renders in its final centred position from frame one — likely a transform / measurement / focus-trap-mount race. Affects every modal across the app (Story picker, Settings, Account confirm, etc.).
+
 ### X — AI features
 
 - [ ] **[X4]** Image generation: "Generate image" button calls `POST /api/ai/image` which forwards to Venice's image generation endpoint. Result inserted as a TipTap image node.
@@ -176,6 +178,12 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 
 - [ ] **[X8]** Consistency check (character popover footer button): sends the character bible entry + the last N chapters (budget-aware via [V3]) to the selected model, returns an annotated list of discrepancies ("Eira's eye colour — grey in Ch.2 but hazel in Ch.5"). Renders as a scrollable list in the popover's expanded state.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/consistency-check.test.ts`
+
+- [ ] **[X27]** Settings → Models picker rework. The current dialog dumps the full model list inline and gets unwieldy. Mirror the chat-window pattern: the Settings panel shows only the currently selected model; clicking it opens a dedicated picker modal containing the full list. In the picker, surface the per-model description from Venice's `/models` endpoint and the per-token price alongside the model name.
+
+- [ ] **[X28]** Settings → Models generation-parameter revisit: (1) audit the UI defaults — confirm temperature / top_p / max_tokens etc. are sane for general writing use; (2) parameter changes must persist *per model* (today they're applied globally), so the saved settings shape becomes `{ [modelId]: { temperature, ... } }` keyed by Venice model ID; (3) add a per-model Reset button that clears the user's saved overrides for that model and falls back to the model's defaults; (4) some models expose default parameter values via Venice's `/models` endpoint (e.g. "Qwen 3.5 397B") — load those as the baseline defaults instead of a global hardcode where present.
+
+- [ ] **[X29]** Settings → Models system prompt is dead UI. Current copy reads "Per-story override for the default creative-writing prompt" with a "Pick a story to set a custom system prompt" hint, but no story selector exists in this surface. Repurpose the field as a *user-level* system prompt that applies to every AI call, used either alongside the Venice default system prompt (when the [X26] toggle is on) or on its own. Per-story `Story.systemPrompt` ([V13]) continues to override the user-level value when present.
 
 - [ ] **[X11]** (optional) Reconsider whether `/api/ai/complete` should keep `enable_web_search` on at all. Context: V7 wired web-search opt-in (`enableWebSearch?: boolean` on the `/api/ai/complete` body). V26 scoped citations to the chat panel only, so on the inline-AI surface users currently pay Venice web-search cost with zero user-visible benefit — citations are dropped silently. Decide one of: (a) turn web search OFF across all inline AI actions (simplest, removes the wasted spend); (b) keep it ON as a silent fact-grounding nudge for accuracy (tolerable but undocumented); (c) extend V26's delivery to inline AI (requires a new F-design for a sources UI on the inline card — the selection bubble / inline AI card has no mockup for this today). Write the decision + rationale into `docs/venice-integration.md` § Web Search. If (a), also remove `enableWebSearch` from `ai.routes.ts` body schema + update `docs/api-contract.md` § `/api/ai/complete`. If (c), spawn a follow-up F-task and a follow-up V-task.
   - verify: (design decision — no automated verify)
@@ -195,6 +203,8 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 
 - [ ] **[X3]** Remaining account-settings scope: edit display name — no editor exists today (`User.name` is set once at register time to the username and cannot be changed; backend has no `PATCH /api/users/me` for name/username). The (b) delete-account piece shipped 2026-05-02 via the F61 modal-takeover redesign — `DELETE /api/auth/delete-account` (auth + per-user rate-limit + timing-equalised wrong-password + cookie clear), `useDeleteAccountMutation` (clears session/cache + navigates to `/login` with `accountDeleted: true`), and the in-modal password + typed-`DELETE` confirm form. Change-password / rotate-recovery / sign-out-everywhere are not in this task's scope (already shipped under F61/B12/AU15/AU17).
   - verify: `cd backend && npm run test:backend -- --run tests/routes/account.test.ts && cd ../frontend && npm run test:frontend -- --run tests/pages/account.test.tsx`
+
+- [ ] **[X26]** Settings → Venice.ai polish pass: (a) the toggle currently labelled "Include Venice creative-writing prompt" should ask whether to include Venice's *default system prompt* — current copy is misleading about what the flag actually toggles; (b) once a key is stored, prefill the API-key input with a partially-masked value showing the last **6** characters (currently last 4) and remove the separate "Stored key" field above the Remove button — collapse into one field; (c) the Save button should validate against Venice in the same call (saves an extra click), keep the standalone Verify button for re-checking an existing stored key; (d) the Verify result text "Verified · — credits" leaves the credit count blank — fill it in from the verify response, and double-check Venice's API: their balance is denominated in $ (USD) on the dashboard, not "credits". Update the label accordingly.
 
 - [ ] **[X18]** Display name in the registration flow. Today `frontend/src/components/AuthForm.tsx` collects only `username` + `password`; `frontend/src/hooks/useAuth.ts:register()` defaults the backend-required `name` to the username so the schema's `nameSchema` (min 1) passes. Add a third `Display name` field to the register variant of `<AuthForm>` (login variant unchanged), validate min 1 / max 80 client-side to mirror `nameSchema`, and pass it through `register({ name, username, password })`. Update `Credentials` (or split into `LoginCredentials` / `RegisterCredentials`) so the type captures the register-only field. Sweep the existing register tests to assert `name` is sent in the body. Pairs with [X3]'s display-name editor — together they let users set + later edit a name distinct from the login handle.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/AuthForm.test.tsx tests/hooks/useAuth.test.tsx tests/pages/recovery-code-handoff.test.tsx`
