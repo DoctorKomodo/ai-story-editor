@@ -2,7 +2,7 @@
 // happy/sad/mismatch paths, rotate-recovery handoff and 401, the two-click
 // sign-out-everywhere flow, and the delete-account placeholder copy.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -329,7 +329,7 @@ describe('<AccountPrivacyModal>', () => {
       await screen.findByTestId('recovery-code-box');
 
       await user.keyboard('{Escape}');
-      fireEvent.click(screen.getByTestId('ap-backdrop'));
+      await user.pointer({ keys: '[MouseLeft>]', target: screen.getByTestId('ap-backdrop') });
       await user.click(screen.getByTestId('account-privacy-close'));
       expect(onClose).not.toHaveBeenCalled();
     });

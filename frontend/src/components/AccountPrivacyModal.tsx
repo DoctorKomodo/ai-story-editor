@@ -416,7 +416,7 @@ export function AccountPrivacyModal({
             closeDisabled
             closeTestId="account-privacy-close"
           />
-          <ModalBody className="flex-1 overflow-y-auto !py-6 px-[18px]">
+          <ModalBody className="!py-6 px-[18px]">
             <div className="recovery-code-card">
               <RecoveryCodeCard
                 recoveryCode={takeover.code}
@@ -441,7 +441,7 @@ export function AccountPrivacyModal({
             onClose={onClose}
             closeTestId="account-privacy-close"
           />
-          <ModalBody className="flex-1 overflow-y-auto !py-0 px-[18px]">
+          <ModalBody className="!py-0 px-[18px]">
             <Section
               title="Change password"
               hint="Use your current password to set a new one. Other sessions will be signed out."
