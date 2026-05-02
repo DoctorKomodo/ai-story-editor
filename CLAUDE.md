@@ -61,22 +61,23 @@ cd backend && npm run db:test:reset   # reset the test DB before a full suite
 
 For every task:
 1. Read the task and its `verify:` command before writing any code
-2. Write the implementation
-3. Write the test if one is required by the task
-4. Run the verify command exactly as written
-5. If it fails: fix the code — do not modify the test to make it pass
-6. Mark `[x]` only when the verify command exits cleanly
-7. Move to the next task immediately — do not refactor or add scope
+2. Confirm the task has a `plan:` link or a `trivial:` justification line. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
+3. Write the implementation
+4. Write the test if one is required by the task
+5. Run the verify command exactly as written
+6. If it fails: fix the code — do not modify the test to make it pass
+7. Mark `[x]` only when the verify command exits cleanly
+8. Move to the next task immediately — do not refactor or add scope
 
 If a task has no verify command, add one to `TASKS.md` before starting.
 
 ### Archived sections
 
-`TASKS.md` only lists **live** sections (open tasks or hot code surfaces). Sections that are fully closed AND have not been touched in the last 2 PRs are rotated into `docs/done/done-<section>.md` — one file per section letter. Each archive file is immutable; if a closed section is reopened, add a *new* task to `TASKS.md` rather than editing the archive.
+`TASKS.md` only lists **live** sections (open tasks or hot code surfaces). A **subsection** is rotated into `docs/done/done-<section>.md` as soon as all its tasks are `[x]`, in the same PR that closes the last task — not the whole section letter. (Earlier S/A/D/E/V/L archives waited for the entire letter to close; that left mostly-done letters live and noisy. AU/B/I/T were rotated under the new subsection rule on 2026-05-02.) Each archive file is immutable; if a closed section is reopened, add a *new* task to `TASKS.md` rather than editing the archive.
 
 To find a historical task ID, grep across both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. The `/task-verify` skill assumes `TASKS.md`; for an archived task, run `scripts/extract-verify.sh <ID> docs/done/done-<X>.md` directly (you almost never need to — archived tasks already passed their verify before they were ticked).
 
-Currently archived: **S, A, D, E, V, L**. Currently live in `TASKS.md`: **AU, B, F, I, T, X**.
+Currently archived: **S, A, D, AU, E, V, L, B, I, T**. Currently live in `TASKS.md`: **F (Phase 4 only), X, M, DS**.
 
 ### Local tooling
 - **`/task-verify <TASK_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that runs the `verify:` command exactly as written and reports the true exit code. Use this before manually ticking a task; it's stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
@@ -104,6 +105,8 @@ Work through tasks in this order unless instructed otherwise:
 | I | infra (Dockerfiles, compose, backup, `SELF_HOSTING.md`) |
 | T | testing (integration + E2E) |
 | X | extras |
+| M | maintenance & dependency upgrades — recurring work (Node major bumps, security advisories, lint cleanup) |
+| DS | design-system follow-ups — new primitives, token additions, lint:design rule changes, Storybook story patterns |
 
 Hard gates (do not start until the prerequisite is complete):
 - **B** requires **AU** — ownership middleware gates every non-auth route.
