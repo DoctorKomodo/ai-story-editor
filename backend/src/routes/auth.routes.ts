@@ -51,6 +51,10 @@ function buildRotateRecoveryCodeSchema() {
   return z.object({ password: z.string().min(1, 'password is required') });
 }
 
+function buildDeleteAccountSchema() {
+  return z.object({ password: z.string().min(1, 'password is required') });
+}
+
 // Per-user (not per-IP) rate limit for sensitive authenticated endpoints
 // (change-password and rotate-recovery-code). Scoped to authenticated
 // requests via requireAuth — the keyGenerator relies on req.user.id, which
@@ -73,15 +77,20 @@ const SENSITIVE_AUTH_LIMIT_OPTIONS = {
   // can't DOS a legitimate user's ability to change their own password,
   // and a compromised session can't burn someone else's quota.
   keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? 'unknown'),
-  // Don't draw from the limit pool when bodies are malformed / unauthed;
-  // the endpoint's protection target is the crypto-verify path, not the
-  // schema / auth rejection path.
+  // All requests count, including failed ones. These endpoints all run a
+  // password / recovery-code verify; the whole point of the limit is brute-
+  // force defence, so wrong-password 401s MUST consume from the pool.
+  // Setting this to `true` would let an attacker with a stolen access token
+  // make unlimited wrong-password attempts, which is the threat we're
+  // defending against. The cost is that a legitimate user who fat-fingers
+  // their password 10 times in a minute is briefly locked out — acceptable.
   skipFailedRequests: false,
 };
 
 const changePasswordLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 const rotateRecoveryCodeLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 const signOutEverywhereLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
+const deleteAccountLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 
 // Aggressive stacked rate limits for the unauthenticated reset-password
 // endpoint. Spec: "per-IP + per-username". Two limiters stack, so a single
@@ -333,6 +342,42 @@ export function createAuthRouter() {
       }
     },
   );
+
+  // [X3] Delete account — re-verifies the password, deletes the user (cascading
+  // to all narrative entities, refresh tokens, sessions, DEK wraps), and clears
+  // the caller's refresh cookie.
+  router.delete('/delete-account', requireAuth, deleteAccountLimiter, async (req, res, next) => {
+    try {
+      const authed = req.user;
+      if (!authed) {
+        res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
+        return;
+      }
+      const parsed = buildDeleteAccountSchema().parse(req.body);
+      await authService.deleteAccount({
+        userId: authed.id,
+        password: parsed.password,
+      });
+      // Clear the caller's refresh cookie. The user row is gone, but a
+      // browser that holds the cookie locally would otherwise send it on
+      // the next /api/auth/refresh call, where it would 401 with no
+      // Set-Cookie clearing it.
+      res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
+      res.status(204).send();
+    } catch (err) {
+      if (err instanceof ZodError) {
+        badRequestFromZod(res, err);
+        return;
+      }
+      if (err instanceof InvalidCredentialsError) {
+        res.status(401).json({
+          error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+        });
+        return;
+      }
+      next(err);
+    }
+  });
 
   router.get('/me', requireAuth, async (req, res, next) => {
     try {

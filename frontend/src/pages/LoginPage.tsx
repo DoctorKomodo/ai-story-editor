@@ -9,6 +9,10 @@ interface LoginLocationState {
   // distinct banner so the user knows their session was revoked deliberately
   // rather than expired.
   signedOutEverywhere?: boolean;
+  // [X3] Set when navigating from delete-account success; LoginPage shows a
+  // distinct banner so the user knows their account was removed and there is
+  // no "log back in" option for that identity.
+  accountDeleted?: boolean;
 }
 
 interface BannerProps {
@@ -27,6 +31,12 @@ function bannerProps(state: LoginLocationState | null): BannerProps | null {
     return {
       ariaLabel: 'Password reset',
       message: 'Password updated. Sign in with your new password to continue.',
+    };
+  }
+  if (state?.accountDeleted === true) {
+    return {
+      ariaLabel: 'Account deleted',
+      message: 'Your account has been deleted.',
     };
   }
   return null;

@@ -614,6 +614,36 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     closeSessionsForUser(input.userId);
   }
 
+  // [X3] Delete account — re-verifies the password (timing-equalised against
+  // the unknown-user path the same way login() does), then deletes the user
+  // row inside a single transaction. Schema cascade drops Story → Chapter →
+  // Chat → Message and Story → Character / OutlineItem along with the user's
+  // refresh tokens and sessions; the explicit deleteMany lines below are
+  // redundant under the current schema but keep the transaction
+  // self-documenting and survive a future schema change that drops cascade.
+  async function deleteAccount(input: { userId: string; password: string }): Promise<void> {
+    const user = await client.user.findUnique({ where: { id: input.userId } });
+
+    // Equalise wrong-password vs. unknown-user wall-clock time. Unknown-user
+    // shouldn't normally happen on an authenticated route — the access token
+    // wouldn't validate — but if it does (e.g. a token issued for a since-
+    // deleted user is still in its 15-minute window) we don't want to leak
+    // that via timing.
+    const hashForVerify = user?.passwordHash ?? (await getDummyPasswordHash());
+    const ok = await verifyPassword(hashForVerify, input.password);
+    if (!user || !ok) {
+      throw new InvalidCredentialsError();
+    }
+
+    await client.$transaction([
+      client.refreshToken.deleteMany({ where: { userId: user.id } }),
+      client.session.deleteMany({ where: { userId: user.id } }),
+      client.user.delete({ where: { id: user.id } }),
+    ]);
+
+    closeSessionsForUser(user.id);
+  }
+
   return {
     register,
     login,
@@ -624,6 +654,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     resetPassword,
     rotateRecoveryCode,
     signOutEverywhere,
+    deleteAccount,
   };
 }
 

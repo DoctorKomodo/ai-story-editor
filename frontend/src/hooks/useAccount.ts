@@ -3,6 +3,8 @@
 // - useChangePasswordMutation         → POST /api/auth/change-password   ([AU15])
 // - useRotateRecoveryCodeMutation     → POST /api/auth/rotate-recovery-code ([AU17])
 // - useSignOutEverywhereMutation      → POST /api/auth/sign-out-everywhere ([B12])
+// - useDeleteAccountMutation          → DELETE /api/auth/delete-account     ([X3])
+//   Clears local session + cache and navigates to /login on success.
 //
 // On success of sign-out-everywhere we clear the local session and
 // navigate('/login') with a non-sensitive `signedOutEverywhere` flag in
@@ -13,7 +15,7 @@
 // access token is short-lived and still valid until expiry, after which
 // the global setUnauthorizedHandler in `frontend/src/store/session.ts`
 // will redirect on the next failed refresh.
-import { type UseMutationResult, useMutation } from '@tanstack/react-query';
+import { type UseMutationResult, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { useSessionStore } from '@/store/session';
@@ -73,6 +75,36 @@ export function useSignOutEverywhereMutation(): UseMutationResult<void, Error, v
     onSuccess: () => {
       clearSession();
       navigate('/login', { replace: true, state: { signedOutEverywhere: true } });
+    },
+  });
+}
+
+export interface DeleteAccountInput {
+  password: string;
+}
+
+/**
+ * Delete-account clears the local session AND navigates to /login on success.
+ * Encapsulating the post-success steps in the hook keeps the takeover form
+ * free of router / store / cache wiring. Pattern matches
+ * useSignOutEverywhereMutation.
+ */
+export function useDeleteAccountMutation(): UseMutationResult<void, Error, DeleteAccountInput> {
+  const navigate = useNavigate();
+  const clearSession = useSessionStore((s) => s.clearSession);
+  const queryClient = useQueryClient();
+
+  return useMutation<void, Error, DeleteAccountInput>({
+    mutationFn: async (input: DeleteAccountInput): Promise<void> => {
+      await api<void>('/auth/delete-account', {
+        method: 'DELETE',
+        body: input,
+      });
+    },
+    onSuccess: () => {
+      queryClient.clear();
+      clearSession();
+      navigate('/login', { replace: true, state: { accountDeleted: true } });
     },
   });
 }

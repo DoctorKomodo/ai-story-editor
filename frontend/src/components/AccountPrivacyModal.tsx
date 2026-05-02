@@ -3,7 +3,8 @@
 // in vertical order:
 //   1. Change password               → POST /api/auth/change-password    [AU15]
 //   2. Rotate recovery code          → POST /api/auth/rotate-recovery-code [AU17]
-//      (re-uses <RecoveryCodeHandoff> from F59 verbatim for the result UI)
+//      (issues a code, then the modal swaps to a takeover shell using
+//      <RecoveryCodeCard> until the user confirms.)
 //   3. Sign out everywhere           → POST /api/auth/sign-out-everywhere [B12]
 //      (two-click confirm; success → clearSession + Navigate('/login'))
 //   4. Delete account placeholder    → disabled red button referencing [X3]
@@ -12,21 +13,28 @@
 // "Done" just closes the modal; it does not save anything.
 //
 // [X22] Ported onto the `<Modal>` primitive — backdrop, Escape, click-outside,
-// and focus management all live in the primitive now. The recovery-code-
-// handoff close gate uses `dismissable={!closeBlocked}` plus the close-X
-// `closeDisabled` to block all dismissal paths while a freshly issued
-// recovery code is on screen.
+// and focus management all live in the primitive now.
+//
+// Takeover model: when the rotate section issues a new recovery code, the
+// modal flips into a single-purpose takeover shell — title, subtitle, and
+// body all swap to a "Save your new recovery code" surface using
+// <RecoveryCodeCard>. While takeover !== null, the modal is non-dismissable
+// (Escape, backdrop, X all gated) and the footer's Done button isn't rendered
+// at all. The user's only exit is the card's checkbox-gated Done button,
+// which dismisses the takeover and remounts the rotate form (via formKey)
+// with a clean password input.
 import type { JSX, ReactNode } from 'react';
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import {
   type ChangePasswordInput,
   useChangePasswordMutation,
+  useDeleteAccountMutation,
   useRotateRecoveryCodeMutation,
   useSignOutEverywhereMutation,
 } from '@/hooks/useAccount';
 import { ApiError } from '@/lib/api';
-import { RecoveryCodeHandoff } from './RecoveryCodeHandoff';
+import { RecoveryCodeCard } from './RecoveryCodeCard';
 
 export interface AccountPrivacyModalProps {
   open: boolean;
@@ -41,6 +49,8 @@ const ERR_GENERIC = 'Something went wrong. Please try again.';
 const ERR_RATE = 'Too many attempts. Try again in a minute.';
 const ERR_PW_INCORRECT = 'Current password is incorrect.';
 const ERR_RECOVERY_PW_INCORRECT = 'Password is incorrect.';
+const ERR_DELETE_PW_INCORRECT = 'Password is incorrect.';
+const DELETE_CONFIRM_TEXT = 'DELETE';
 
 interface SectionProps {
   title: string;
@@ -221,34 +231,14 @@ function ChangePasswordSection(): JSX.Element {
 
 // ---------- Section 2: Rotate recovery code ----------
 interface RotateRecoverySectionProps {
-  username: string;
-  /**
-   * Called whenever a new recovery code is being shown (or the user has
-   * acknowledged it). The modal shell uses this to disable Escape and
-   * backdrop dismissal while the code is on screen — Escape-dismissing the
-   * modal would silently destroy the new code.
-   */
-  onShowRecoveryCode: (showing: boolean) => void;
+  onCodeIssued: (code: string) => void;
 }
 
-function RotateRecoverySection({
-  username,
-  onShowRecoveryCode,
-}: RotateRecoverySectionProps): JSX.Element {
+function RotateRecoverySection({ onCodeIssued }: RotateRecoverySectionProps): JSX.Element {
   const passwordId = useId();
   const [password, setPassword] = useState('');
   const [err, setErr] = useState<string | null>(null);
-  const [issuedCode, setIssuedCode] = useState<string | null>(null);
   const mutation = useRotateRecoveryCodeMutation();
-
-  useEffect(() => {
-    onShowRecoveryCode(issuedCode !== null);
-    return () => {
-      // If this section unmounts while a code is still on screen, the modal
-      // is being torn down; release the close gate so the user isn't stuck.
-      onShowRecoveryCode(false);
-    };
-  }, [issuedCode, onShowRecoveryCode]);
 
   const submitDisabled = password.length === 0 || mutation.isPending;
 
@@ -257,24 +247,11 @@ function RotateRecoverySection({
     if (password.length === 0) return;
     try {
       const res = await mutation.mutateAsync({ password });
-      setIssuedCode(res.recoveryCode);
+      onCodeIssued(res.recoveryCode);
     } catch (e) {
       setErr(mapApiError(e, ERR_RECOVERY_PW_INCORRECT));
     }
   };
-
-  if (issuedCode !== null) {
-    return (
-      <RecoveryCodeHandoff
-        recoveryCode={issuedCode}
-        username={username}
-        onContinue={() => {
-          setIssuedCode(null);
-          setPassword('');
-        }}
-      />
-    );
-  }
 
   return (
     <div className="flex flex-col gap-3">
@@ -383,15 +360,111 @@ function SignOutEverywhereSection(): JSX.Element {
   );
 }
 
-// ---------- Section 4: Delete account placeholder ----------
-function DeleteAccountSection(): JSX.Element {
+// ---------- Section 4: Delete account ----------
+interface DeleteAccountConfirmFormProps {
+  onCancel: () => void;
+}
+
+function DeleteAccountConfirmForm({ onCancel }: DeleteAccountConfirmFormProps): JSX.Element {
+  const passwordId = useId();
+  const confirmId = useId();
+  const [password, setPassword] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const mutation = useDeleteAccountMutation();
+
+  const submitDisabled =
+    password.length === 0 || confirmText !== DELETE_CONFIRM_TEXT || mutation.isPending;
+
+  const submit = async (): Promise<void> => {
+    setErr(null);
+    if (submitDisabled) return;
+    try {
+      await mutation.mutateAsync({ password });
+      // The mutation's onSuccess clears session + cache and navigates to
+      // /login. The modal will unmount as part of the route change; nothing
+      // more to do here.
+    } catch (e) {
+      setErr(mapApiError(e, ERR_DELETE_PW_INCORRECT));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <label htmlFor={passwordId} className="flex flex-col gap-1.5">
+        <span className="text-[12px] font-medium text-[var(--ink-2)]">Password</span>
+        <input
+          id={passwordId}
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (err) setErr(null);
+          }}
+          className={INPUT_CLASS}
+          data-testid="delete-account-password"
+        />
+      </label>
+
+      <label htmlFor={confirmId} className="flex flex-col gap-1.5">
+        <span className="text-[12px] font-medium text-[var(--ink-2)]">
+          Type <span className="font-mono">{DELETE_CONFIRM_TEXT}</span> to confirm
+        </span>
+        <input
+          id={confirmId}
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={confirmText}
+          onChange={(e) => {
+            setConfirmText(e.target.value);
+          }}
+          className={INPUT_CLASS}
+          data-testid="delete-account-confirm-text"
+        />
+      </label>
+
+      {err ? (
+        <div role="alert" className="auth-error">
+          {err}
+        </div>
+      ) : null}
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={mutation.isPending}
+          className={BTN_SECONDARY}
+          data-testid="delete-account-cancel"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void submit();
+          }}
+          disabled={submitDisabled}
+          className={BTN_DANGER}
+          data-testid="delete-account-confirm"
+        >
+          {mutation.isPending ? 'Deleting…' : 'Permanently delete account'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface DeleteAccountSectionProps {
+  onTrigger: () => void;
+}
+function DeleteAccountSection({ onTrigger }: DeleteAccountSectionProps): JSX.Element {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[12.5px] text-[var(--ink-3)] m-0">
-        Coming with [X3]. This will require typing your password and the word DELETE.
-      </p>
       <div className="flex justify-end">
-        <button type="button" disabled className={BTN_DANGER}>
+        <button type="button" onClick={onTrigger} className={BTN_DANGER}>
           Delete account…
         </button>
       </div>
@@ -400,20 +473,30 @@ function DeleteAccountSection(): JSX.Element {
 }
 
 // ---------- Modal shell ----------
+type Takeover = { kind: 'recovery-code'; code: string } | { kind: 'delete-account' } | null;
+
+const RECOVERY_TAKEOVER_SUBTITLE =
+  'Show once. Inkwell does not store this anywhere it can read. Lose your password and this code, and your stories are gone for good.';
+
+const DELETE_TAKEOVER_SUBTITLE =
+  'This permanently deletes your account, all stories, chapters, characters, and chats. This cannot be undone.';
+
 export function AccountPrivacyModal({
   open,
   onClose,
   username,
 }: AccountPrivacyModalProps): JSX.Element | null {
   const titleId = useId();
-  // True while RotateRecoverySection is showing a freshly-issued recovery
-  // code via <RecoveryCodeHandoff>. The new code replaces the old one on
-  // the backend the moment AU17 returns, so dismissing the modal before the
-  // user has copied / acknowledged it would silently destroy the only copy.
-  // We disable Escape, backdrop click, and the X / Done buttons in that
-  // window; the user's only exit is RecoveryCodeHandoff's own checkbox-
-  // gated Continue button.
-  const [closeBlocked, setCloseBlocked] = useState(false);
+  const [takeover, setTakeover] = useState<Takeover>(null);
+  // Bumped on every takeover dismissal so RotateRecoverySection remounts
+  // with a clean password input (no effect / ref dance).
+  const [formKey, setFormKey] = useState(0);
+  const closeBlocked = takeover !== null;
+
+  const dismissTakeover = (): void => {
+    setTakeover(null);
+    setFormKey((k) => k + 1);
+  };
 
   return (
     <Modal
@@ -425,58 +508,98 @@ export function AccountPrivacyModal({
       testId="account-privacy-modal"
       backdropTestId="ap-backdrop"
     >
-      <ModalHeader
-        titleId={titleId}
-        title="Account & privacy"
-        subtitle={
-          <>
-            Manage credentials, recovery, and sessions for{' '}
-            <span className="font-mono text-ink-3">@{username}</span>.
-          </>
-        }
-        onClose={onClose}
-        closeDisabled={closeBlocked}
-        closeTestId="account-privacy-close"
-      />
-
-      <ModalBody className="flex-1 overflow-y-auto !py-0 px-[18px]">
-        <Section
-          title="Change password"
-          hint="Use your current password to set a new one. Other sessions will be signed out."
-        >
-          <ChangePasswordSection />
-        </Section>
-        <Section
-          title="Rotate recovery code"
-          hint="Generate a new recovery code. The old code becomes invalid the moment you confirm."
-        >
-          <RotateRecoverySection username={username} onShowRecoveryCode={setCloseBlocked} />
-        </Section>
-        <Section
-          title="Sign out everywhere"
-          hint="Revoke every active session, including this one. You'll need to sign in again."
-        >
-          <SignOutEverywhereSection />
-        </Section>
-        <Section
-          title="Delete account"
-          hint="Permanently remove your account and every story, chapter, character, and chat you've written."
-          danger
-        >
-          <DeleteAccountSection />
-        </Section>
-      </ModalBody>
-
-      <ModalFooter>
-        <Button
-          variant="ghost"
-          data-testid="account-privacy-done"
-          onClick={onClose}
-          disabled={closeBlocked}
-        >
-          Done
-        </Button>
-      </ModalFooter>
+      {takeover === null ? (
+        <>
+          <ModalHeader
+            titleId={titleId}
+            title="Account & privacy"
+            subtitle={
+              <>
+                Manage credentials, recovery, and sessions for{' '}
+                <span className="font-mono text-ink-3">@{username}</span>.
+              </>
+            }
+            onClose={onClose}
+            closeTestId="account-privacy-close"
+          />
+          <ModalBody className="!py-0 px-[18px]">
+            <Section
+              title="Change password"
+              hint="Use your current password to set a new one. Other sessions will be signed out."
+            >
+              <ChangePasswordSection />
+            </Section>
+            <Section
+              title="Rotate recovery code"
+              hint="Generate a new recovery code. The old code becomes invalid the moment you confirm."
+            >
+              <RotateRecoverySection
+                key={formKey}
+                onCodeIssued={(code) => {
+                  setTakeover({ kind: 'recovery-code', code });
+                }}
+              />
+            </Section>
+            <Section
+              title="Sign out everywhere"
+              hint="Revoke every active session, including this one. You'll need to sign in again."
+            >
+              <SignOutEverywhereSection />
+            </Section>
+            <Section
+              title="Delete account"
+              hint="Permanently remove your account and every story, chapter, character, and chat you've written."
+              danger
+            >
+              <DeleteAccountSection
+                onTrigger={() => {
+                  setTakeover({ kind: 'delete-account' });
+                }}
+              />
+            </Section>
+          </ModalBody>
+          <ModalFooter>
+            <Button variant="ghost" data-testid="account-privacy-done" onClick={onClose}>
+              Done
+            </Button>
+          </ModalFooter>
+        </>
+      ) : takeover.kind === 'recovery-code' ? (
+        <>
+          <ModalHeader
+            titleId={titleId}
+            title="Save your new recovery code"
+            subtitle={RECOVERY_TAKEOVER_SUBTITLE}
+            onClose={onClose}
+            closeDisabled
+            closeTestId="account-privacy-close"
+          />
+          <ModalBody className="!py-6 px-[18px]">
+            <div className="recovery-code-card">
+              <RecoveryCodeCard
+                recoveryCode={takeover.code}
+                username={username}
+                primaryLabel="Done"
+                onConfirm={dismissTakeover}
+              />
+            </div>
+          </ModalBody>
+        </>
+      ) : (
+        <>
+          <ModalHeader
+            titleId={titleId}
+            title="Delete your account"
+            subtitle={DELETE_TAKEOVER_SUBTITLE}
+            onClose={onClose}
+            closeDisabled
+            closeTestId="account-privacy-close"
+          />
+          <ModalBody className="!py-6 px-[18px]">
+            <DeleteAccountConfirmForm onCancel={dismissTakeover} />
+          </ModalBody>
+        </>
+      )}
     </Modal>
   );
 }
