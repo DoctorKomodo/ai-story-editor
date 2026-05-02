@@ -275,12 +275,116 @@ describe('<AccountPrivacyModal>', () => {
     });
   });
 
-  it('delete-account section renders an explanatory copy + a disabled red button referencing [X3]', () => {
-    renderModal();
-    const section = screen.getByRole('region', { name: /delete account/i });
-    expect(within(section).getByText(/x3/i)).toBeInTheDocument();
-    const btn = within(section).getByRole('button', { name: /delete account/i });
-    expect(btn).toBeDisabled();
+  // Takeover-mode tests for [X3] delete-account redesign — the placeholder
+  // disabled-button + "Coming with [X3]" copy is replaced by an enabled
+  // trigger that swaps the modal into a takeover with a confirm form.
+  describe('[X3] delete-account takeover', () => {
+    it('section renders an enabled trigger button (placeholder no longer disabled)', () => {
+      renderModal();
+      const section = screen.getByRole('region', { name: /delete account/i });
+      const trigger = within(section).getByRole('button', { name: /delete account/i });
+      expect(trigger).toBeEnabled();
+    });
+
+    it('clicking the trigger swaps the modal to delete-account takeover and hides the section list', async () => {
+      const user = userEvent.setup();
+      renderModal();
+      const section = screen.getByRole('region', { name: /delete account/i });
+      await user.click(within(section).getByRole('button', { name: /delete account/i }));
+      expect(
+        await screen.findByRole('heading', { name: /delete your account/i }),
+      ).toBeInTheDocument();
+      expect(screen.getByText(/this permanently deletes your account/i)).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /change password/i })).not.toBeInTheDocument();
+    });
+
+    it('destructive button is disabled until password is non-empty AND confirm text === DELETE', async () => {
+      const user = userEvent.setup();
+      renderModal();
+      const section = screen.getByRole('region', { name: /delete account/i });
+      await user.click(within(section).getByRole('button', { name: /delete account/i }));
+
+      const submit = screen.getByTestId('delete-account-confirm');
+      expect(submit).toBeDisabled();
+
+      await user.type(screen.getByTestId('delete-account-password'), 'pw');
+      expect(submit).toBeDisabled();
+
+      await user.type(screen.getByTestId('delete-account-confirm-text'), 'delete');
+      expect(submit).toBeDisabled(); // case-sensitive
+
+      await user.clear(screen.getByTestId('delete-account-confirm-text'));
+      await user.type(screen.getByTestId('delete-account-confirm-text'), 'DELETE');
+      expect(submit).toBeEnabled();
+    });
+
+    it('Escape, backdrop, and X are all no-ops while the takeover is on', async () => {
+      const user = userEvent.setup();
+      const { onClose } = renderModal();
+      const section = screen.getByRole('region', { name: /delete account/i });
+      await user.click(within(section).getByRole('button', { name: /delete account/i }));
+
+      await user.keyboard('{Escape}');
+      await user.pointer({ keys: '[MouseLeft>]', target: screen.getByTestId('ap-backdrop') });
+      await user.pointer({ keys: '[/MouseLeft]' });
+      await user.click(screen.getByTestId('account-privacy-close'));
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('Cancel returns to normal shell with sections visible again', async () => {
+      const user = userEvent.setup();
+      renderModal();
+      const section = screen.getByRole('region', { name: /delete account/i });
+      await user.click(within(section).getByRole('button', { name: /delete account/i }));
+      await screen.findByRole('heading', { name: /delete your account/i });
+      await user.click(screen.getByTestId('delete-account-cancel'));
+      expect(await screen.findByRole('heading', { name: /change password/i })).toBeInTheDocument();
+    });
+
+    it('successful submit calls the delete endpoint with the password', async () => {
+      fetchMock.mockResolvedValueOnce(emptyResponse(204));
+      const user = userEvent.setup();
+      renderModal();
+      const section = screen.getByRole('region', { name: /delete account/i });
+      await user.click(within(section).getByRole('button', { name: /delete account/i }));
+      await user.type(screen.getByTestId('delete-account-password'), 'pw');
+      await user.type(screen.getByTestId('delete-account-confirm-text'), 'DELETE');
+      await user.click(screen.getByTestId('delete-account-confirm'));
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          '/api/auth/delete-account',
+          expect.objectContaining({
+            method: 'DELETE',
+            body: expect.stringContaining('"password":"pw"'),
+          }),
+        );
+      });
+    });
+
+    it('401 wrong-password surfaces inline error and stays in takeover with values preserved', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(401, {
+          error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+        }),
+      );
+      // The api client does refresh-on-401 once; mock the refresh to fail so
+      // the original 401 surfaces back to the caller.
+      fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: { message: 'no' } }));
+      const user = userEvent.setup();
+      renderModal();
+      const section = screen.getByRole('region', { name: /delete account/i });
+      await user.click(within(section).getByRole('button', { name: /delete account/i }));
+      await user.type(screen.getByTestId('delete-account-password'), 'wrong');
+      await user.type(screen.getByTestId('delete-account-confirm-text'), 'DELETE');
+      await user.click(screen.getByTestId('delete-account-confirm'));
+
+      expect(await screen.findByRole('alert')).toHaveTextContent(/password is incorrect/i);
+      expect(screen.getByRole('heading', { name: /delete your account/i })).toBeInTheDocument();
+      expect((screen.getByTestId('delete-account-password') as HTMLInputElement).value).toBe(
+        'wrong',
+      );
+    });
   });
 
   // Takeover-mode tests for [F61] recovery-code redesign — the issued code

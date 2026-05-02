@@ -29,6 +29,7 @@ import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/pri
 import {
   type ChangePasswordInput,
   useChangePasswordMutation,
+  useDeleteAccountMutation,
   useRotateRecoveryCodeMutation,
   useSignOutEverywhereMutation,
 } from '@/hooks/useAccount';
@@ -48,6 +49,8 @@ const ERR_GENERIC = 'Something went wrong. Please try again.';
 const ERR_RATE = 'Too many attempts. Try again in a minute.';
 const ERR_PW_INCORRECT = 'Current password is incorrect.';
 const ERR_RECOVERY_PW_INCORRECT = 'Password is incorrect.';
+const ERR_DELETE_PW_INCORRECT = 'Password is incorrect.';
+const DELETE_CONFIRM_TEXT = 'DELETE';
 
 interface SectionProps {
   title: string;
@@ -357,15 +360,111 @@ function SignOutEverywhereSection(): JSX.Element {
   );
 }
 
-// ---------- Section 4: Delete account placeholder ----------
-function DeleteAccountSection(): JSX.Element {
+// ---------- Section 4: Delete account ----------
+interface DeleteAccountConfirmFormProps {
+  onCancel: () => void;
+}
+
+function DeleteAccountConfirmForm({ onCancel }: DeleteAccountConfirmFormProps): JSX.Element {
+  const passwordId = useId();
+  const confirmId = useId();
+  const [password, setPassword] = useState('');
+  const [confirmText, setConfirmText] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const mutation = useDeleteAccountMutation();
+
+  const submitDisabled =
+    password.length === 0 || confirmText !== DELETE_CONFIRM_TEXT || mutation.isPending;
+
+  const submit = async (): Promise<void> => {
+    setErr(null);
+    if (submitDisabled) return;
+    try {
+      await mutation.mutateAsync({ password });
+      // The mutation's onSuccess clears session + cache and navigates to
+      // /login. The modal will unmount as part of the route change; nothing
+      // more to do here.
+    } catch (e) {
+      setErr(mapApiError(e, ERR_DELETE_PW_INCORRECT));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-4">
+      <label htmlFor={passwordId} className="flex flex-col gap-1.5">
+        <span className="text-[12px] font-medium text-[var(--ink-2)]">Password</span>
+        <input
+          id={passwordId}
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(e) => {
+            setPassword(e.target.value);
+            if (err) setErr(null);
+          }}
+          className={INPUT_CLASS}
+          data-testid="delete-account-password"
+        />
+      </label>
+
+      <label htmlFor={confirmId} className="flex flex-col gap-1.5">
+        <span className="text-[12px] font-medium text-[var(--ink-2)]">
+          Type <span className="font-mono">{DELETE_CONFIRM_TEXT}</span> to confirm
+        </span>
+        <input
+          id={confirmId}
+          type="text"
+          autoComplete="off"
+          spellCheck={false}
+          value={confirmText}
+          onChange={(e) => {
+            setConfirmText(e.target.value);
+          }}
+          className={INPUT_CLASS}
+          data-testid="delete-account-confirm-text"
+        />
+      </label>
+
+      {err ? (
+        <div role="alert" className="auth-error">
+          {err}
+        </div>
+      ) : null}
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={mutation.isPending}
+          className={BTN_SECONDARY}
+          data-testid="delete-account-cancel"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            void submit();
+          }}
+          disabled={submitDisabled}
+          className={BTN_DANGER}
+          data-testid="delete-account-confirm"
+        >
+          {mutation.isPending ? 'Deleting…' : 'Permanently delete account'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface DeleteAccountSectionProps {
+  onTrigger: () => void;
+}
+function DeleteAccountSection({ onTrigger }: DeleteAccountSectionProps): JSX.Element {
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-[12.5px] text-[var(--ink-3)] m-0">
-        Coming with [X3]. This will require typing your password and the word DELETE.
-      </p>
       <div className="flex justify-end">
-        <button type="button" disabled className={BTN_DANGER}>
+        <button type="button" onClick={onTrigger} className={BTN_DANGER}>
           Delete account…
         </button>
       </div>
@@ -374,10 +473,13 @@ function DeleteAccountSection(): JSX.Element {
 }
 
 // ---------- Modal shell ----------
-type Takeover = { kind: 'recovery-code'; code: string } | null;
+type Takeover = { kind: 'recovery-code'; code: string } | { kind: 'delete-account' } | null;
 
 const RECOVERY_TAKEOVER_SUBTITLE =
   'Show once. Inkwell does not store this anywhere it can read. Lose your password and this code, and your stories are gone for good.';
+
+const DELETE_TAKEOVER_SUBTITLE =
+  'This permanently deletes your account, all stories, chapters, characters, and chats. This cannot be undone.';
 
 export function AccountPrivacyModal({
   open,
@@ -406,28 +508,7 @@ export function AccountPrivacyModal({
       testId="account-privacy-modal"
       backdropTestId="ap-backdrop"
     >
-      {takeover?.kind === 'recovery-code' ? (
-        <>
-          <ModalHeader
-            titleId={titleId}
-            title="Save your new recovery code"
-            subtitle={RECOVERY_TAKEOVER_SUBTITLE}
-            onClose={onClose}
-            closeDisabled
-            closeTestId="account-privacy-close"
-          />
-          <ModalBody className="!py-6 px-[18px]">
-            <div className="recovery-code-card">
-              <RecoveryCodeCard
-                recoveryCode={takeover.code}
-                username={username}
-                primaryLabel="Done"
-                onConfirm={dismissTakeover}
-              />
-            </div>
-          </ModalBody>
-        </>
-      ) : (
+      {takeover === null ? (
         <>
           <ModalHeader
             titleId={titleId}
@@ -470,7 +551,11 @@ export function AccountPrivacyModal({
               hint="Permanently remove your account and every story, chapter, character, and chat you've written."
               danger
             >
-              <DeleteAccountSection />
+              <DeleteAccountSection
+                onTrigger={() => {
+                  setTakeover({ kind: 'delete-account' });
+                }}
+              />
             </Section>
           </ModalBody>
           <ModalFooter>
@@ -478,6 +563,41 @@ export function AccountPrivacyModal({
               Done
             </Button>
           </ModalFooter>
+        </>
+      ) : takeover.kind === 'recovery-code' ? (
+        <>
+          <ModalHeader
+            titleId={titleId}
+            title="Save your new recovery code"
+            subtitle={RECOVERY_TAKEOVER_SUBTITLE}
+            onClose={onClose}
+            closeDisabled
+            closeTestId="account-privacy-close"
+          />
+          <ModalBody className="!py-6 px-[18px]">
+            <div className="recovery-code-card">
+              <RecoveryCodeCard
+                recoveryCode={takeover.code}
+                username={username}
+                primaryLabel="Done"
+                onConfirm={dismissTakeover}
+              />
+            </div>
+          </ModalBody>
+        </>
+      ) : (
+        <>
+          <ModalHeader
+            titleId={titleId}
+            title="Delete your account"
+            subtitle={DELETE_TAKEOVER_SUBTITLE}
+            onClose={onClose}
+            closeDisabled
+            closeTestId="account-privacy-close"
+          />
+          <ModalBody className="!py-6 px-[18px]">
+            <DeleteAccountConfirmForm onCancel={dismissTakeover} />
+          </ModalBody>
         </>
       )}
     </Modal>
