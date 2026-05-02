@@ -2,7 +2,7 @@
 // happy/sad/mismatch paths, rotate-recovery handoff and 401, the two-click
 // sign-out-everywhere flow, and the delete-account placeholder copy.
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ComponentProps } from 'react';
 import { MemoryRouter } from 'react-router-dom';
@@ -161,17 +161,21 @@ describe('<AccountPrivacyModal>', () => {
     await user.click(within(rotateSection).getByRole('button', { name: /generate new code/i }));
 
     expect(
-      await screen.findByRole('heading', { name: /save your recovery code/i }),
+      await screen.findByRole('heading', { name: /save your new recovery code/i }),
     ).toBeInTheDocument();
     expect(screen.getByText(/new-recovery-code-12345/)).toBeInTheDocument();
 
-    await user.click(screen.getByRole('checkbox', { name: /i have stored/i }));
-    await user.click(screen.getByRole('button', { name: /continue to inkwell/i }));
+    await user.click(screen.getByRole('checkbox', { name: /stored my recovery code/i }));
+    await user.click(screen.getByRole('button', { name: /^done$/i }));
 
-    // After handoff dismissal the section reverts to the password form,
-    // password input is empty, and the recovery code is no longer in the DOM.
+    // After takeover dismissal the modal reverts to the sectioned shell,
+    // the password input is empty (RotateRecoverySection remounted via
+    // formKey), and the recovery code is no longer in the DOM.
+    const refreshedRotateSection = await screen.findByRole('region', {
+      name: /rotate recovery code/i,
+    });
     await waitFor(() => {
-      expect(within(rotateSection).getByLabelText(/^password$/i)).toHaveValue('');
+      expect(within(refreshedRotateSection).getByLabelText(/^password$/i)).toHaveValue('');
     });
     expect(screen.queryByText(/new-recovery-code-12345/)).not.toBeInTheDocument();
   });
@@ -187,19 +191,22 @@ describe('<AccountPrivacyModal>', () => {
 
     // New code is on screen.
     expect(
-      await screen.findByRole('heading', { name: /save your recovery code/i }),
+      await screen.findByRole('heading', { name: /save your new recovery code/i }),
     ).toBeInTheDocument();
 
     // Escape — must NOT dismiss.
     await user.keyboard('{Escape}');
     expect(onClose).not.toHaveBeenCalled();
-    expect(screen.getByRole('heading', { name: /save your recovery code/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: /save your new recovery code/i }),
+    ).toBeInTheDocument();
 
-    // Close button — disabled.
+    // Close (X) button — disabled.
     expect(screen.getByTestId('account-privacy-close')).toBeDisabled();
 
-    // Done button — disabled.
-    expect(screen.getByTestId('account-privacy-done')).toBeDisabled();
+    // Footer "Done" button — not rendered at all during takeover (a stricter
+    // form of "not interactable" than the previous `disabled` assertion).
+    expect(screen.queryByTestId('account-privacy-done')).not.toBeInTheDocument();
 
     // Backdrop click — must NOT dismiss.
     const backdrop = screen.getByTestId('ap-backdrop');
@@ -207,9 +214,10 @@ describe('<AccountPrivacyModal>', () => {
     await user.pointer({ keys: '[/MouseLeft]' });
     expect(onClose).not.toHaveBeenCalled();
 
-    // Acknowledging the code releases the gate.
-    await user.click(screen.getByRole('checkbox', { name: /i have stored/i }));
-    await user.click(screen.getByRole('button', { name: /continue to inkwell/i }));
+    // Acknowledging the code releases the gate — the modal returns to its
+    // sectioned shell and the X button is enabled again.
+    await user.click(screen.getByRole('checkbox', { name: /stored my recovery code/i }));
+    await user.click(screen.getByRole('button', { name: /^done$/i }));
     await waitFor(() => {
       expect(screen.getByTestId('account-privacy-close')).not.toBeDisabled();
     });
@@ -273,5 +281,92 @@ describe('<AccountPrivacyModal>', () => {
     expect(within(section).getByText(/x3/i)).toBeInTheDocument();
     const btn = within(section).getByRole('button', { name: /delete account/i });
     expect(btn).toBeDisabled();
+  });
+
+  // Takeover-mode tests for [F61] recovery-code redesign — the issued code
+  // now takes over the entire modal shell (title + subtitle + body) instead
+  // of being embedded inside the section card.
+  describe('[F61] recovery-code takeover', () => {
+    // Resolve the rotate-section's password input via section scope. The
+    // plan-spec's `getAllByLabelText(/password/i).slice(-1)[0]` doesn't match
+    // here because change-password's labels read "Current password" / "New
+    // password" / "Confirm new password" — the regex is anchored on the
+    // span text, and only the rotate section has a label that's *exactly*
+    // "Password". Section-scoped lookup is the unambiguous way.
+    const rotatePassword = (): HTMLInputElement =>
+      within(screen.getByRole('region', { name: /rotate recovery code/i })).getByLabelText(
+        /^password$/i,
+      ) as HTMLInputElement;
+
+    it('issuing a code swaps the modal title, subtitle, and hides the section list', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          recoveryCode: 'TEST-CODE-1234',
+          warning: 'Save this recovery code now — it will not be shown again.',
+        }),
+      );
+      const user = userEvent.setup();
+      renderModal();
+
+      await user.type(rotatePassword(), 'pw');
+      await user.click(screen.getByRole('button', { name: /generate new code/i }));
+
+      expect(
+        await screen.findByRole('heading', { name: /save your new recovery code/i }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /change password/i })).not.toBeInTheDocument();
+      expect(screen.getByTestId('recovery-code-box')).toHaveTextContent('TEST-CODE-1234');
+      expect(screen.getByText(/show once/i)).toBeInTheDocument();
+    });
+
+    it('Escape, backdrop click, and X are all no-ops while a code is on screen', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { recoveryCode: 'X', warning: '' }));
+      const user = userEvent.setup();
+      const { onClose } = renderModal();
+
+      await user.type(rotatePassword(), 'pw');
+      await user.click(screen.getByRole('button', { name: /generate new code/i }));
+      await screen.findByTestId('recovery-code-box');
+
+      await user.keyboard('{Escape}');
+      fireEvent.click(screen.getByTestId('ap-backdrop'));
+      await user.click(screen.getByTestId('account-privacy-close'));
+      expect(onClose).not.toHaveBeenCalled();
+    });
+
+    it('Done after confirm dismisses the takeover and clears the rotate password field', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { recoveryCode: 'X', warning: '' }));
+      const user = userEvent.setup();
+      renderModal();
+
+      await user.type(rotatePassword(), 'pw');
+      await user.click(screen.getByRole('button', { name: /generate new code/i }));
+      await screen.findByTestId('recovery-code-box');
+      await user.click(screen.getByRole('checkbox', { name: /stored my recovery code/i }));
+      await user.click(screen.getByRole('button', { name: /^done$/i }));
+
+      // Sections are back, password input is empty.
+      expect(await screen.findByRole('heading', { name: /change password/i })).toBeInTheDocument();
+      expect(rotatePassword().value).toBe('');
+    });
+
+    it('issuing a code, dismissing, then issuing again works (formKey remount)', async () => {
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { recoveryCode: 'A', warning: '' }));
+      fetchMock.mockResolvedValueOnce(jsonResponse(200, { recoveryCode: 'B', warning: '' }));
+      const user = userEvent.setup();
+      renderModal();
+
+      await user.type(rotatePassword(), 'pw');
+      await user.click(screen.getByRole('button', { name: /generate new code/i }));
+      await screen.findByTestId('recovery-code-box');
+      await user.click(screen.getByRole('checkbox', { name: /stored my recovery code/i }));
+      await user.click(screen.getByRole('button', { name: /^done$/i }));
+
+      // Second rotation with a fresh password input
+      await screen.findByRole('region', { name: /rotate recovery code/i });
+      await user.type(rotatePassword(), 'pw');
+      await user.click(screen.getByRole('button', { name: /generate new code/i }));
+      expect(await screen.findByTestId('recovery-code-box')).toBeInTheDocument();
+    });
   });
 });
