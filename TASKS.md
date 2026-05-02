@@ -106,7 +106,15 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 
 ## 🎨 F — Frontend
 
-> All non-Phase-4 [F]-series tasks (F1–F67) complete — archived in [`docs/done/done-F.md`](docs/done/done-F.md). F63 and F65 remain open and are listed below under Phase 4 as live backlog items. Only the Phase 4 (Storybook) subsection remains live below.
+> Closed [F]-series tasks (F1–F62, F64, F66, F67) archived in [`docs/done/done-F.md`](docs/done/done-F.md). Two live subsections remain below: Core completion (F63, F65) and Phase 4 (Storybook).
+
+### F — Core completion
+
+- [ ] **[F63]** **[design-first]** Chat history pane content. `[F38]` mounts a History tab whose body is the placeholder string `"History — coming in a future task"`. Render the list of chats for the active chapter via `useChatsQuery(chapterId)` — each row showing title (or first user-message preview), relative timestamp, and message count. Click selects-and-loads the chat into the Chat tab. Define archive/pin/delete semantics in the design (recommended minimum: just delete + select; archive/pin punted). Decide what "New chat" does to the previous one.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/components/ChatHistory.test.tsx`
+
+- [ ] **[F65]** Terminal-401 redirect to login. `[F3]`'s api client retries refresh once; when the refresh itself returns 401, the user is left on a broken page. Wire the existing `setUnauthorizedHandler(...)` (already in `frontend/src/lib/api.ts`) so a terminal failure clears `useSessionStore` and navigates to `/login`. Confirm `useInitAuth()` correctly handles a hard 401 on app boot. Add a small "Your session expired — please sign in again" toast/banner on the login page when redirected from a terminal 401. No design needed — uses existing toast/error patterns.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/lib/api-401-terminal.test.ts tests/pages/auth.test.tsx`
 
 ### F — Phase 4 (Storybook)
 
@@ -140,14 +148,6 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 
 - [ ] **[F75]** Update repo `README.md` "Design system" / "Contributing" section to point at Storybook + the `lint:design` guard. Use the copy block from [docs/HANDOFF.md](docs/HANDOFF.md) § Step 4 verbatim, adjusted to the project's existing tone. Land in the same PR as F74's Step 3 (archive) for atomicity, OR as a follow-up — operator's call. No design needed.
   - verify: `grep -q -i 'storybook' README.md && grep -q 'lint:design' README.md`
-
-> **Open backlog (from core-completion subsection):** F63 and F65 are still unimplemented; archived copy in `docs/done/done-F.md` preserves their specs verbatim.
-
-- [ ] **[F63]** **[design-first]** Chat history pane content. `[F38]` mounts a History tab whose body is the placeholder string `"History — coming in a future task"`. Render the list of chats for the active chapter via `useChatsQuery(chapterId)` — each row showing title (or first user-message preview), relative timestamp, and message count. Click selects-and-loads the chat into the Chat tab. Define archive/pin/delete semantics in the design (recommended minimum: just delete + select; archive/pin punted). Decide what "New chat" does to the previous one.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/components/ChatHistory.test.tsx`
-
-- [ ] **[F65]** Terminal-401 redirect to login. `[F3]`'s api client retries refresh once; when the refresh itself returns 401, the user is left on a broken page. Wire the existing `setUnauthorizedHandler(...)` (already in `frontend/src/lib/api.ts`) so a terminal failure clears `useSessionStore` and navigates to `/login`. Confirm `useInitAuth()` correctly handles a hard 401 on app boot. Add a small "Your session expired — please sign in again" toast/banner on the login page when redirected from a terminal 401. No design needed — uses existing toast/error patterns.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/lib/api-401-terminal.test.ts tests/pages/auth.test.tsx`
 
 ---
 

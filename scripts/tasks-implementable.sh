@@ -6,10 +6,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 TASKS_FILE="${1:-$ROOT_DIR/TASKS.md}"
 awk '
-  /^- \[ \] \*\*\[/ {
+  /^- \[[x ]\] \*\*\[/ {
     if (id) emit()
-    id=$0; sub(/^- \[ \] \*\*\[/,"",id); sub(/\].*/,"",id)
-    desc=$0; sub(/^- \[ \] \*\*\[[^\]]+\]\*\* /,"",desc)
+    open = ($0 ~ /^- \[ \]/)
+    id=$0; sub(/^- \[[x ]\] \*\*\[/,"",id); sub(/\].*/,"",id)
+    desc=$0; sub(/^- \[[x ]\] \*\*\[[^\]]+\]\*\* /,"",desc)
     has_plan=0; has_trivial=0; has_verify=0
     next
   }
@@ -18,7 +19,7 @@ awk '
   /^  - verify:/  { has_verify=1 }
   END { if (id) emit() }
   function emit() {
-    if (has_verify && (has_plan || has_trivial)) {
+    if (open && has_verify && (has_plan || has_trivial)) {
       kind = has_plan ? "planned" : "trivial"
       printf "%-6s %-8s %s\n", id, kind, substr(desc, 1, 72)
     }
