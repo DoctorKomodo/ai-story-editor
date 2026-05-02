@@ -78,10 +78,11 @@ export function RecoveryCodeCard({
           onClick={() => {
             void copy();
           }}
-          aria-live="polite"
           className="inline-flex items-center justify-center px-3 py-2 text-[12.5px] font-medium font-sans bg-[var(--bg-elevated)] text-[var(--ink)] border border-[var(--line-2)] rounded-[var(--radius)] hover:bg-[var(--surface-hover)] transition-colors"
         >
-          {copied ? 'Copied' : 'Copy'}
+          <span aria-live="polite" aria-atomic="true">
+            {copied ? 'Copied' : 'Copy'}
+          </span>
         </button>
         <button
           type="button"

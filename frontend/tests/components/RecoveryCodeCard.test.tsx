@@ -1,13 +1,26 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RecoveryCodeCard } from '@/components/RecoveryCodeCard';
 
 const RECOVERY = 'XASBJ33Q-1HDKBA9X-DGRDS33D-0SNW7EXZ';
 const USERNAME = 'alice';
 
 describe('<RecoveryCodeCard>', () => {
+  let originalClipboard: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
+  });
+
   afterEach(() => {
+    if (originalClipboard) {
+      Object.defineProperty(navigator, 'clipboard', originalClipboard);
+    } else {
+      // jsdom default: no own `clipboard` property. Remove any value we set.
+      // `delete` works because each test's defineProperty used `configurable: true`.
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
