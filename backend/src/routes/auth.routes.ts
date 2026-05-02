@@ -77,9 +77,13 @@ const SENSITIVE_AUTH_LIMIT_OPTIONS = {
   // can't DOS a legitimate user's ability to change their own password,
   // and a compromised session can't burn someone else's quota.
   keyGenerator: (req: Request) => req.user?.id ?? ipKeyGenerator(req.ip ?? 'unknown'),
-  // Don't draw from the limit pool when bodies are malformed / unauthed;
-  // the endpoint's protection target is the crypto-verify path, not the
-  // schema / auth rejection path.
+  // All requests count, including failed ones. These endpoints all run a
+  // password / recovery-code verify; the whole point of the limit is brute-
+  // force defence, so wrong-password 401s MUST consume from the pool.
+  // Setting this to `true` would let an attacker with a stolen access token
+  // make unlimited wrong-password attempts, which is the threat we're
+  // defending against. The cost is that a legitimate user who fat-fingers
+  // their password 10 times in a minute is briefly locked out — acceptable.
   skipFailedRequests: false,
 };
 
