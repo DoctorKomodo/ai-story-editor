@@ -109,6 +109,16 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
       data: { userId: bob.userId },
     });
 
+    // Sanity: registerAndLogin creates a Session + RefreshToken; confirm before
+    // asserting the cascade dropped them, so the test fails loudly if the seed
+    // stops producing them in some future change.
+    const preAliceSessions = await prisma.session.count({ where: { userId: alice.userId } });
+    const preAliceRefreshTokens = await prisma.refreshToken.count({
+      where: { userId: alice.userId },
+    });
+    expect(preAliceSessions).toBeGreaterThan(0);
+    expect(preAliceRefreshTokens).toBeGreaterThan(0);
+
     const res = await request(app)
       .delete('/api/auth/delete-account')
       .set('Authorization', `Bearer ${alice.accessToken}`)
@@ -131,6 +141,8 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
     // Bob is untouched.
     expect(await prisma.user.count({ where: { id: bob.userId } })).toBe(1);
     expect(await prisma.story.count({ where: { id: bobStory.id } })).toBe(1);
+    expect(await prisma.session.count({ where: { userId: bob.userId } })).toBeGreaterThan(0);
+    expect(await prisma.refreshToken.count({ where: { userId: bob.userId } })).toBeGreaterThan(0);
 
     // Cookie cleared.
     const setCookie = res.headers['set-cookie'] as unknown as string[] | undefined;
