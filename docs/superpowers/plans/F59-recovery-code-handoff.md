@@ -5,7 +5,7 @@
 **Goal:** Surface the one-time `recoveryCode` returned by `POST /api/auth/register` as a dedicated post-signup interstitial that the user must explicitly acknowledge ("I have stored this — continue") before they reach the dashboard. Provide copy-to-clipboard and download-as-`.txt` actions. Persist nothing client-side.
 
 **Architecture:**
-- Three pieces: (1) a mockup committed to `mockups/frontend-prototype/design/` per the **[design-first]** rule; (2) a presentational `<RecoveryCodeHandoff>` component that is reused unchanged by F61 (rotate-recovery-code); (3) a small state machine inside `RegisterPage` (`idle → showingRecoveryCode → loggingIn → done`) that holds the `recoveryCode` and the credentials used at signup in component state only — never in localStorage, sessionStorage, the session store, or React Query cache.
+- Three pieces: (1) a mockup committed to `mockups/archive/v1-2025-11/design/` per the **[design-first]** rule; (2) a presentational `<RecoveryCodeHandoff>` component that is reused unchanged by F61 (rotate-recovery-code); (3) a small state machine inside `RegisterPage` (`idle → showingRecoveryCode → loggingIn → done`) that holds the `recoveryCode` and the credentials used at signup in component state only — never in localStorage, sessionStorage, the session store, or React Query cache.
 - The current backend contract is `POST /api/auth/register` → `201 { user, recoveryCode }` with **no** `accessToken` and **no** refresh cookie. The frontend currently destructures a non-existent `accessToken` and writes `undefined` into the session store — that path is broken and gets fixed as part of F59. After acknowledgement, the page calls `POST /api/auth/login` with the same credentials to obtain the access token + refresh cookie, then `setSession` and `Navigate('/')`.
 - The interstitial is rendered as a full-screen view inside `RegisterPage`, **not** as a modal over the auth form. Reason: the user is not yet authenticated and there is no app shell to overlay; a full-screen view also makes accidental dismissal (clicking the backdrop) impossible. Escape is intentionally not wired to dismiss.
 
@@ -16,7 +16,7 @@
 - Auth hook (currently broken on register): `frontend/src/hooks/useAuth.ts:84-94`
 - Auth form (`onSubmit` returns `Promise<unknown>`): `frontend/src/components/AuthForm.tsx:9-12`, `:182-197`
 - Existing register page (will be rewritten): `frontend/src/pages/RegisterPage.tsx`
-- Mockup styles + auth shell: `mockups/frontend-prototype/design/styles.css`, `mockups/frontend-prototype/design/auth.jsx`
+- Mockup styles + auth shell: `mockups/archive/v1-2025-11/design/styles.css`, `mockups/archive/v1-2025-11/design/auth.jsx`
 - Design tokens already wired into `frontend/src/index.css` (`--ink`, `--ink-2`, `--ink-3`, `--ink-4`, `--bg`, `--bg-elevated`, `--bg-sunken`, `--line`, `--line-2`, `--surface-hover`, `--radius`, `--danger`, `--success` if present)
 - TXT download utility (reused): `frontend/src/lib/downloadTxt.ts`
 
@@ -25,8 +25,8 @@
 ## File Structure
 
 **Create:**
-- `mockups/frontend-prototype/design/recovery-code-handoff.jsx` — JSX reference for the interstitial (not production code; matches the convention of `auth.jsx`, `editor.jsx`, etc.)
-- `mockups/frontend-prototype/design/recovery-code-handoff.notes.md` — short addendum describing the surface (per the F-series header rule about addenda for screens not in the original prototype)
+- `mockups/archive/v1-2025-11/design/recovery-code-handoff.jsx` — JSX reference for the interstitial (not production code; matches the convention of `auth.jsx`, `editor.jsx`, etc.)
+- `mockups/archive/v1-2025-11/design/recovery-code-handoff.notes.md` — short addendum describing the surface (per the F-series header rule about addenda for screens not in the original prototype)
 - `frontend/src/components/RecoveryCodeHandoff.tsx` — presentational component, no router awareness, no API awareness. Props in / events out.
 - `frontend/tests/components/RecoveryCodeHandoff.test.tsx` — unit tests for the component (rendering, copy, download, gating behaviour)
 - `frontend/tests/pages/recovery-code-handoff.test.tsx` — page-level test that drives the full register → interstitial → ack → login → dashboard flow (this is the verify-command target)
@@ -50,14 +50,14 @@
 ## Task 1: Mockup the recovery-code interstitial (design-first prerequisite)
 
 **Files:**
-- Create: `mockups/frontend-prototype/design/recovery-code-handoff.jsx`
-- Create: `mockups/frontend-prototype/design/recovery-code-handoff.notes.md`
+- Create: `mockups/archive/v1-2025-11/design/recovery-code-handoff.jsx`
+- Create: `mockups/archive/v1-2025-11/design/recovery-code-handoff.notes.md`
 
 The original prototype (`auth.jsx`) shows login/signup but not the recovery-code handoff. The F-series header requires a mockup for `[design-first]` tasks before the implementation plan starts coding.
 
 - [ ] **Step 1: Write the mockup JSX**
 
-Create `mockups/frontend-prototype/design/recovery-code-handoff.jsx` matching the existing prototype style (raw JSX, classnames from `styles.css`, no real React imports):
+Create `mockups/archive/v1-2025-11/design/recovery-code-handoff.jsx` matching the existing prototype style (raw JSX, classnames from `styles.css`, no real React imports):
 
 ```jsx
 // Recovery-code handoff — shown immediately after successful signup.
@@ -158,7 +158,7 @@ function RecoveryCodeHandoff({ recoveryCode, username, onContinue }) {
 
 - [ ] **Step 2: Write the addendum note**
 
-Create `mockups/frontend-prototype/design/recovery-code-handoff.notes.md`:
+Create `mockups/archive/v1-2025-11/design/recovery-code-handoff.notes.md`:
 
 ```markdown
 # Recovery-code handoff (addendum to auth.jsx)
@@ -210,8 +210,8 @@ addendum extends the auth screen rather than replacing it.
 - [ ] **Step 3: Commit the mockup**
 
 ```bash
-git add mockups/frontend-prototype/design/recovery-code-handoff.jsx \
-       mockups/frontend-prototype/design/recovery-code-handoff.notes.md
+git add mockups/archive/v1-2025-11/design/recovery-code-handoff.jsx \
+       mockups/archive/v1-2025-11/design/recovery-code-handoff.notes.md
 git commit -m "[F59] mockup: recovery-code handoff interstitial"
 ```
 
@@ -1284,7 +1284,7 @@ git commit -m "[F59] tick — recovery-code handoff complete"
   - "No nav until the user confirms" → checkbox-gated button, Escape no-op, no second URL.
   - "Persist nothing client-side" → Task 5 has explicit tests asserting no localStorage / sessionStorage / session-store leakage AND that a remount of `/register` returns to the form with no recovery-code text in the DOM.
   - "Required prerequisite for `[F60]`" → component is reusable; F60 will compose its own page that can hand the user back into login state directly. No extra work needed in F59.
-  - "Design must mock the interstitial first" → Task 1 commits a JSX mockup + an addendum `.notes.md` to `mockups/frontend-prototype/design/`.
+  - "Design must mock the interstitial first" → Task 1 commits a JSX mockup + an addendum `.notes.md` to `mockups/archive/v1-2025-11/design/`.
   - "verify: cd frontend && npm run test:frontend -- --run tests/pages/recovery-code-handoff.test.tsx" → Task 5 creates exactly that file.
 
 - **Implementation completeness check (no follow-up TBDs):**

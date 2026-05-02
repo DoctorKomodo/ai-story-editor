@@ -86,15 +86,19 @@ Single-task verify: `/task-verify <TASK_ID>` (project-local slash command, see `
 
 A `lint-staged` + Biome pre-commit hook runs automatically on `git commit` (see `Pre-commit hook` below).
 
-### Storybook
+### Design system
 
-Component stories for primitives, modals, and major components.
+Storybook is the live design surface — primitives (`Button`, `Field`, `Modal`, …), tokens (colour / type / radii / shadows), and component stories for every major UI surface. Browse it before authoring new UI; new components ship as `*.stories.tsx` files alongside their source.
 
 ```bash
 cd frontend
 npm run storybook              # http://localhost:6006
 npm run build-storybook        # static build to frontend/storybook-static
 ```
+
+The `lint:design` guard (`cd frontend && npm run lint:design`) enforces token-only usage in `frontend/src/` — raw Tailwind colour utilities, hardcoded hex values, and ad-hoc shadows are CI-blocked. Token sources live in `frontend/src/index.css`.
+
+Historical reference (the original HTML prototype + `Design System Handoff.html`) is preserved read-only at `mockups/archive/v1-2025-11/`; treat it as an archive, not a guide.
 
 ## Pre-commit hook
 

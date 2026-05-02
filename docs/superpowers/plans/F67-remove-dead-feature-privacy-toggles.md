@@ -22,7 +22,7 @@
 **Prerequisites:** None. F43 is shipped; F67 is purely a tidy.
 
 **Out of scope:**
-- Removing the toggles from `mockups/frontend-prototype/design/*.jsx`. The mockups are the design archive; they stay in case a future iteration wants to revisit per-user feature flags.
+- Removing the toggles from `mockups/archive/v1-2025-11/design/*.jsx`. The mockups are the design archive; they stay in case a future iteration wants to revisit per-user feature flags.
 - Backend changes — there's nothing to remove (the toggles never touched the backend).
 - The Venice tab's API key / endpoint / organization fields, the Verified pill, or the Include-Venice-system-prompt toggle. All untouched.
 
@@ -227,7 +227,7 @@ git commit -m "[F67] tick — dead Venice-tab feature/privacy toggles removed"
 
 - **Decision rationale recorded.** Delete; no per-user feature flags; safety-arg specifically against the Privacy/logging toggle.
 - **`Include Venice creative-writing prompt` survives** — it's the one Venice-tab toggle that's actually wired, and it stays in its own Behaviour section. Test selector unchanged (`data-testid="venice-include-system-prompt"`).
-- **Mockup files unchanged.** The mockup is the design archive; deleting from `mockups/frontend-prototype/design/*.jsx` would lose the breadcrumb if a future iteration wants to revisit per-user flags.
+- **Mockup files unchanged.** The mockup is the design archive; deleting from `mockups/archive/v1-2025-11/design/*.jsx` would lose the breadcrumb if a future iteration wants to revisit per-user flags.
 - **No backend change.** The toggles never made a network call.
 - **No data migration.** The toggles never persisted (per CLAUDE.md "Don't write data-migration branches").
 - **F43's `security-reviewer` gate** does not need re-running — F67 does not touch any security-critical surface (auth, session, key storage, rate limit, encryption). Skip the reviewer.

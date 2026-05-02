@@ -42,8 +42,8 @@
 ## File Structure
 
 **Create (frontend):**
-- `mockups/frontend-prototype/design/char-ref-authoring.jsx` — design-first mockup for the `@`-trigger menu
-- `mockups/frontend-prototype/design/char-ref-authoring.notes.md` — addendum
+- `mockups/archive/v1-2025-11/design/char-ref-authoring.jsx` — design-first mockup for the `@`-trigger menu
+- `mockups/archive/v1-2025-11/design/char-ref-authoring.notes.md` — addendum
 - `frontend/src/store/charRefSuggestion.ts` — zustand store + provider ref helper
 - `frontend/src/lib/charRefSuggestion.ts` — the TipTap extension
 - `frontend/src/components/CharRefMenu.tsx` — the popup
@@ -67,12 +67,12 @@
 ## Task 1: Mockup the @-trigger menu
 
 **Files:**
-- Create: `mockups/frontend-prototype/design/char-ref-authoring.jsx`
-- Create: `mockups/frontend-prototype/design/char-ref-authoring.notes.md`
+- Create: `mockups/archive/v1-2025-11/design/char-ref-authoring.jsx`
+- Create: `mockups/archive/v1-2025-11/design/char-ref-authoring.notes.md`
 
 - [ ] **Step 1: Write the mockup JSX**
 
-Create `mockups/frontend-prototype/design/char-ref-authoring.jsx`:
+Create `mockups/archive/v1-2025-11/design/char-ref-authoring.jsx`:
 
 ```jsx
 // CharRef @-trigger menu — appears below the caret when the user types `@`
@@ -122,7 +122,7 @@ function highlight(name, query) {
 
 - [ ] **Step 2: Write the addendum**
 
-Create `mockups/frontend-prototype/design/char-ref-authoring.notes.md`:
+Create `mockups/archive/v1-2025-11/design/char-ref-authoring.notes.md`:
 
 ```markdown
 # CharRef @-trigger menu (addendum)
@@ -189,8 +189,8 @@ with Escape or by typing more characters. Does not block the editor.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add mockups/frontend-prototype/design/char-ref-authoring.jsx \
-       mockups/frontend-prototype/design/char-ref-authoring.notes.md
+git add mockups/archive/v1-2025-11/design/char-ref-authoring.jsx \
+       mockups/archive/v1-2025-11/design/char-ref-authoring.notes.md
 git commit -m "[F62] mockup: charRef @-trigger menu"
 ```
 

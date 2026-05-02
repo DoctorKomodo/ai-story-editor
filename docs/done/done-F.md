@@ -70,12 +70,12 @@
 
 ### F — Mockup-fidelity implementation (Inkwell design)
 
-> Source of truth: `mockups/frontend-prototype/design/*.jsx` (component reference), `mockups/frontend-prototype/design/styles.css` (full token set), `mockups/frontend-prototype/screenshots/*.png` (visual reference). The README in that folder is the spec. F22–F49 recreate this faithfully; they do NOT replace F1–F21 — they build on top of them.
+> Source of truth: `mockups/archive/v1-2025-11/design/*.jsx` (component reference), `mockups/archive/v1-2025-11/design/styles.css` (full token set), `mockups/archive/v1-2025-11/screenshots/*.png` (visual reference). The README in that folder is the spec. F22–F49 recreate this faithfully; they do NOT replace F1–F21 — they build on top of them.
 
 - [x] **[F22]** Install Zustand + TanStack Query. Scaffold `src/store/` with typed slices: `session`, `activeStoryId`, `activeChapterId`, `sidebarTab`, `selection` (`{ text, range, rect } | null`), `inlineAIResult` (`{ action, text, status, output } | null`), `attachedSelection` (`{ text, chapter } | null`), `model`, `params` (temp/top_p/max/freqPenalty), `tweaks` (theme/layout/proseFont).
   - verify: `cd frontend && npm run test:frontend -- --run tests/store/`
 
-- [x] **[F23]** Port design tokens from `mockups/frontend-prototype/design/styles.css` into Tailwind theme: colors, spacing scale, radii (`--radius` 3px, `--radius-lg` 6px), shadows (`--shadow-card`, `--shadow-pop`), fonts (`--serif`, `--sans`, `--mono`). Implement three themes (`paper` default, `sepia`, `dark`) via `data-theme` attribute on `<html>`, exposed as CSS custom properties.
+- [x] **[F23]** Port design tokens from `mockups/archive/v1-2025-11/design/styles.css` into Tailwind theme: colors, spacing scale, radii (`--radius` 3px, `--radius-lg` 6px), shadows (`--shadow-card`, `--shadow-pop`), fonts (`--serif`, `--sans`, `--mono`). Implement three themes (`paper` default, `sepia`, `dark`) via `data-theme` attribute on `<html>`, exposed as CSS custom properties.
   - verify: `cd frontend && npm run test:frontend -- --run tests/theme.test.tsx`
 
 - [x] **[F24]** Auth screen mockup redesign (replaces plain form from [F4] visually; logic reused): two-column `1fr 1fr` grid. Left hero (bg `--bg-sunken`, 36/44 padding, radial gradient) — brand lockup (feather + italic "Inkwell" 22px) + serif italic pull quote (22/1.5, max-width 440px) + mono metadata footer. Right form (360px card) — serif 28/500 title, 13px `--ink-3` subtitle, `.auth-field` rows (label 12/500 + optional 11px hint + `.text-input` 8/10 padding 13.5px). Password field eye-toggle. Submit with 600ms spinner. Mode switch link. Shield-icon footer. Sub-720px: single column, hide hero.
@@ -191,7 +191,7 @@
 
 > Surfaced by the 2026-04-25 prototype-vs-tasks audit. These are the items remaining before "core up and running" — auth-loop closure, editor-flow completeness, empty/edge states, and Settings cleanup. **Each task below requires a detailed implementation plan written before code starts** — dispatch `superpowers:writing-plans` (or run `/plan`) to produce one under `docs/superpowers/plans/<task-id>-<slug>.md`, get sign-off, then execute.
 >
-> Tasks tagged **[design-first]** also need a mockup committed to `mockups/frontend-prototype/design/` (or an addendum file) before the implementation plan is written, since the original prototype does not show the screen.
+> Tasks tagged **[design-first]** also need a mockup committed to `mockups/archive/v1-2025-11/design/` (or an addendum file) before the implementation plan is written, since the original prototype does not show the screen.
 >
 > X-series extras are deliberately deferred — these tasks restrict scope to what's needed for end-to-end usability.
 

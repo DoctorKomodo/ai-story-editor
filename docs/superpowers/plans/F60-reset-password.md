@@ -24,15 +24,15 @@
 - Existing AuthForm pattern: `frontend/src/components/AuthForm.tsx` — validation rules to mirror (`USERNAME_PATTERN`, `PASSWORD_MIN`, error mapping via `ApiError`).
 - LoginPage: `frontend/src/pages/LoginPage.tsx` — minimal shell; we add a banner without rewriting it.
 - Router: `frontend/src/router.tsx` — adds `/reset-password` route alongside `/login` and `/register`.
-- Mockup convention: `mockups/frontend-prototype/design/auth.jsx` — design-first sibling.
+- Mockup convention: `mockups/archive/v1-2025-11/design/auth.jsx` — design-first sibling.
 
 ---
 
 ## File Structure
 
 **Create:**
-- `mockups/frontend-prototype/design/reset-password.jsx` — JSX reference for the reset page (matches `auth.jsx` style)
-- `mockups/frontend-prototype/design/reset-password.notes.md` — addendum spec
+- `mockups/archive/v1-2025-11/design/reset-password.jsx` — JSX reference for the reset page (matches `auth.jsx` style)
+- `mockups/archive/v1-2025-11/design/reset-password.notes.md` — addendum spec
 - `frontend/src/components/ResetPasswordForm.tsx` — presentational form (username, recovery-code textarea, new-password, confirm-password)
 - `frontend/src/pages/ResetPasswordPage.tsx` — page wiring (reads `useAuth.resetPassword`, navigates on success)
 - `frontend/tests/components/ResetPasswordForm.test.tsx` — unit tests for validation, error mapping, and submit
@@ -57,14 +57,14 @@
 ## Task 1: Mockup the reset-password screen (design-first prerequisite)
 
 **Files:**
-- Create: `mockups/frontend-prototype/design/reset-password.jsx`
-- Create: `mockups/frontend-prototype/design/reset-password.notes.md`
+- Create: `mockups/archive/v1-2025-11/design/reset-password.jsx`
+- Create: `mockups/archive/v1-2025-11/design/reset-password.notes.md`
 
 The original prototype's `auth.jsx` does not show a reset flow. Per the F-series header, mock first.
 
 - [ ] **Step 1: Write the mockup JSX**
 
-Create `mockups/frontend-prototype/design/reset-password.jsx`:
+Create `mockups/archive/v1-2025-11/design/reset-password.jsx`:
 
 ```jsx
 // Reset-password screen — reached via "Forgot password?" on the login page.
@@ -153,7 +153,7 @@ function ResetPasswordScreen({ onSubmit }) {
 
 - [ ] **Step 2: Write the addendum**
 
-Create `mockups/frontend-prototype/design/reset-password.notes.md`:
+Create `mockups/archive/v1-2025-11/design/reset-password.notes.md`:
 
 ```markdown
 # Reset password (addendum to auth.jsx)
@@ -209,8 +209,8 @@ to /login with a one-time success banner.
 - [ ] **Step 3: Commit**
 
 ```bash
-git add mockups/frontend-prototype/design/reset-password.jsx \
-       mockups/frontend-prototype/design/reset-password.notes.md
+git add mockups/archive/v1-2025-11/design/reset-password.jsx \
+       mockups/archive/v1-2025-11/design/reset-password.notes.md
 git commit -m "[F60] mockup: reset-password screen"
 ```
 

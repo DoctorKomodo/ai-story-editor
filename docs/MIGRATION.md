@@ -1,5 +1,7 @@
 # Inkwell Design System Migration
 
+> **Phase 4 retired the parallel HTML universe — see [F74](superpowers/plans/F74-retire-html-mockups.md).** UI source of truth is now Storybook (`npm --prefix frontend run storybook`); historical mockups archived at `mockups/archive/v1-2025-11/`. The Phases below are kept for historical context.
+
 **Goal:** every component in `frontend/src/components/` and `frontend/src/pages/` renders with design tokens (`var(--ink)`, `border-line`, `bg-bg-elevated`, `font-serif`/`font-mono`) and primitives (`<Modal>`, `<Button>`, `<Field>`) — no raw Tailwind color literals (`neutral-*`, `red-*`, `blue-*`, `gray-*`), no hardcoded hex codes, no ad-hoc `shadow-md`/`shadow-lg`.
 
 When this table is all green, the live UI matches the prototype and Claude Code can hand off new features without porting glue.
@@ -428,12 +430,12 @@ When porting a component, the PR must include:
 
 ---
 
-## What comes next
+## What came next (shipped)
 
-When the table is all green:
+The arc closed in Phase 4:
 
-1. **Delete `mockups/frontend-prototype/`** — the live components ARE the design system. The prototype HTML is no longer the source of truth.
-2. **Stand up Storybook** at `frontend/.storybook/` — colocate `*.stories.tsx` next to each component. Visual regression via `@storybook/test-runner` + Playwright.
-3. **New features mock in TSX, not HTML** — `mockups/proposals/<name>/mockup.tsx` imports from `@/design/primitives`. Claude Code's job becomes a copy-paste, not a port.
+1. **Storybook is live** at `frontend/.storybook/` with stories colocated next to each primitive and component. Browse: `npm --prefix frontend run storybook`.
+2. **Visual regression** via Playwright theme-sweep ([X24]) — see `tests/e2e/visual.spec.ts` and `playwright.visual.config.ts`.
+3. **Mockups archived** to `mockups/archive/v1-2025-11/` (read-only). New features author `*.stories.tsx` directly; there is no parallel HTML universe to keep in sync.
 
-That's the whole arc: stop maintaining a parallel HTML universe, make the codebase BE the design system.
+The codebase IS the design system.
