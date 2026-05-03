@@ -137,7 +137,13 @@ export function globalErrorHandler(
     : err instanceof Error
       ? err.message
       : 'Internal server error';
-  res.status(500).json({ error: { message, code: 'internal_error' } });
+  const body: { error: { message: string; code: string; stack?: string } } = {
+    error: { message, code: 'internal_error' },
+  };
+  if (!isProd && err instanceof Error && typeof err.stack === 'string') {
+    body.error.stack = err.stack;
+  }
+  res.status(500).json(body);
 }
 
 app.use(globalErrorHandler);
