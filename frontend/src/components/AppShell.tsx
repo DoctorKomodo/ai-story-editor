@@ -6,15 +6,16 @@
 // `.app-shell` because Tailwind's arbitrary-value utilities don't cover
 // `grid-template-areas` cleanly.
 //
-// Layout state lives on `useTweaksStore` ([F22]). The shell only reads it.
-// Slot props are rendered as-is; F26/F27/F38 fill them in.
+// Layout state lives on `useUiStore` (ephemeral session affordance — resets
+// on reload). The shell only reads it. Slot props are rendered as-is;
+// F26/F27/F38 fill them in.
 //
 // Keyboard shortcut: `Cmd/Ctrl+Shift+F` toggles focus mode. F47 will fold this
 // into the central `useKeyboardShortcuts` registry; for now it's a single
 // document-level listener mounted by the shell.
 import { type ReactElement, type ReactNode, useEffect } from 'react';
 import { useFocusToggle } from '@/hooks/useFocusToggle';
-import { useTweaksStore } from '@/store/tweaks';
+import { useUiStore } from '@/store/ui';
 
 export interface AppShellProps {
   topbar: ReactNode;
@@ -24,7 +25,7 @@ export interface AppShellProps {
 }
 
 export function AppShell({ topbar, sidebar, editor, chat }: AppShellProps): ReactElement {
-  const layout = useTweaksStore((s) => s.tweaks.layout);
+  const layout = useUiStore((s) => s.layout);
   const { toggleFocus } = useFocusToggle();
 
   // [F25] Cmd/Ctrl+Shift+F — focus-mode toggle. F47 owns the central registry;

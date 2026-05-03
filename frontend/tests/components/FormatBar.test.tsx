@@ -6,7 +6,7 @@ import { type JSX, useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { FormatBar } from '@/components/FormatBar';
 import { formatBarExtensions } from '@/lib/tiptap-extensions';
-import { useTweaksStore } from '@/store/tweaks';
+import { useUiStore } from '@/store/ui';
 
 /**
  * F31 tests.
@@ -63,9 +63,7 @@ async function renderAndGrab(
 
 describe('F31 · FormatBar', () => {
   afterEach(() => {
-    useTweaksStore.setState({
-      tweaks: { theme: 'paper', layout: 'three-col', proseFont: 'iowan' },
-    });
+    useUiStore.setState({ layout: 'three-col' });
     vi.clearAllMocks();
   });
 
@@ -349,12 +347,12 @@ describe('F31 · FormatBar', () => {
     unmount();
   });
 
-  it('Focus button flips useTweaksStore.layout to focus', async () => {
+  it('Focus button flips useUiStore.layout to focus', async () => {
     const user = userEvent.setup();
     const { unmount } = await renderAndGrab();
-    expect(useTweaksStore.getState().tweaks.layout).toBe('three-col');
+    expect(useUiStore.getState().layout).toBe('three-col');
     await user.click(screen.getByRole('button', { name: /focus mode/i }));
-    expect(useTweaksStore.getState().tweaks.layout).toBe('focus');
+    expect(useUiStore.getState().layout).toBe('focus');
     unmount();
   });
 
