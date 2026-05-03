@@ -2,11 +2,7 @@ import type { JSX } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { MessageCitations } from '@/components/MessageCitations';
 import { ThinkingDots } from '@/design/ThinkingDots';
-import {
-  type ChatMessage,
-  type ChatMessageAttachment,
-  useChatMessagesQuery,
-} from '@/hooks/useChat';
+import { type ChatMessage, useChatMessagesQuery } from '@/hooks/useChat';
 import { type ChatDraft, useChatDraftStore } from '@/store/chatDraft';
 
 /**
@@ -74,7 +70,7 @@ function getMessageText(contentJson: unknown): string {
 }
 
 function chapterCaption(
-  attachment: ChatMessageAttachment,
+  attachment: { chapterId?: string },
   chapterTitle: string | null | undefined,
 ): string {
   if (chapterTitle && chapterTitle.length > 0) return chapterTitle.toUpperCase();

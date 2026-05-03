@@ -240,13 +240,18 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
       }
     },
     onSuccess: (_void, vars) => {
+      // Clear the draft before invalidating so we never briefly show both
+      // the optimistic draft bubble and the persisted assistant message.
+      useChatDraftStore.getState().clear();
       void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
     },
     onSettled: () => {
+      // Safety net for any path that didn't clear in onSuccess (i.e. failed
+      // mutations land here after onError). Preserve error drafts so the
+      // error banner stays visible until the next send overwrites them.
       const currentStatus = useChatDraftStore.getState().draft?.status;
-      if (currentStatus !== 'error') {
-        useChatDraftStore.getState().clear();
-      }
+      if (currentStatus === 'error') return;
+      useChatDraftStore.getState().clear();
     },
   });
 }
