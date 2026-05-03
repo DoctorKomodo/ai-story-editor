@@ -354,25 +354,27 @@ function DraftPair({ draft, chapterTitle }: DraftPairProps): JSX.Element {
           {draft.userContent}
         </div>
       </li>
-      <li className="flex flex-col items-start" data-role="assistant" data-testid="draft-assistant">
-        {draft.status === 'error' && draft.error !== null ? (
-          <div className="w-full">
-            <InlineErrorBanner error={draft.error} />
-          </div>
-        ) : draft.status === 'thinking' ||
+      {draft.status === 'error' ? null : (
+        <li
+          className="flex flex-col items-start"
+          data-role="assistant"
+          data-testid="draft-assistant"
+        >
+          {draft.status === 'thinking' ||
           (draft.status === 'streaming' && draft.assistantText.length === 0) ? (
-          <div
-            className="assistant-bubble pl-3 border-l-2 border-[var(--ai)] py-1"
-            data-testid="draft-thinking"
-          >
-            <ThinkingDots />
-          </div>
-        ) : (
-          <div className="assistant-bubble pl-3 border-l-2 border-[var(--ai)] font-serif text-[13.5px] leading-[1.55] text-ink whitespace-pre-wrap max-w-full">
-            {draft.assistantText}
-          </div>
-        )}
-      </li>
+            <div
+              className="assistant-bubble pl-3 border-l-2 border-[var(--ai)] py-1"
+              data-testid="draft-thinking"
+            >
+              <ThinkingDots />
+            </div>
+          ) : (
+            <div className="assistant-bubble pl-3 border-l-2 border-[var(--ai)] font-serif text-[13.5px] leading-[1.55] text-ink whitespace-pre-wrap max-w-full">
+              {draft.assistantText}
+            </div>
+          )}
+        </li>
+      )}
     </>
   );
 }
