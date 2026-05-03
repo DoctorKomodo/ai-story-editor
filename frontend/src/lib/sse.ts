@@ -15,7 +15,10 @@
  *   - `error`     — a mid-stream error frame
  *                   (`data: {"error":"...","code":"..."}`). The caller should
  *                   flip to an error state; no further chunks will be
- *                   emitted.
+ *                   emitted. **Consumers must publish to `useErrorStore`
+ *                   so the error appears in the dev overlay** —
+ *                   `useAICompletion` does this for `/api/ai/complete`;
+ *                   the chat mutation relies on TanStack Query Devtools.
  *   - `done`      — the `[DONE]` terminator. Iteration completes immediately
  *                   after.
  *
