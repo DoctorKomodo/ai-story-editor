@@ -43,6 +43,9 @@ make stop                   # stop stack
 make logs                   # tail all services
 make migrate                # apply pending migrations (prisma migrate deploy)
 make reset-db               # DESTRUCTIVE — wipes pgdata volume and re-migrates
+make rebuild-frontend       # rebuild + restart after a frontend package.json change
+make rebuild-backend        # rebuild + restart after a backend package.json change
+make rebuild                # rebuild + restart both images
 
 # Testing (from repo root)
 make test                   # backend (vitest) + frontend (vitest) suites
