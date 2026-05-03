@@ -83,7 +83,7 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
         {text}
       </blockquote>
 
-      {status === 'thinking' && (
+      {(status === 'thinking' || (status === 'streaming' && output.length === 0)) && (
         <div className="mt-3">
           <ThinkingDots />
         </div>

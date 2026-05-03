@@ -93,6 +93,19 @@ describe('InlineAIResult (F34)', () => {
     expect(screen.queryByRole('button', { name: 'Replace' })).toBeNull();
   });
 
+  it('renders dots while status=streaming and output is still empty (race safety)', () => {
+    useInlineAIResultStore.setState({
+      inlineAIResult: {
+        action: 'rewrite',
+        text: 'A long sentence selected by the user.',
+        status: 'streaming',
+        output: '',
+      },
+    });
+    render(<InlineAIResult editor={null} />);
+    expect(screen.getByTestId('thinking-dots')).toBeInTheDocument();
+  });
+
   it('renders the action row with all four buttons when status is done', () => {
     useInlineAIResultStore.setState({
       inlineAIResult: {
