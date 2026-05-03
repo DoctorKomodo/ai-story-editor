@@ -1,11 +1,13 @@
 // [F44] Settings → Models tab.
 //
 // Covers:
-//   - Models render as <ModelCard>s with `aria-checked` reflecting the store.
-//   - Selecting a card writes both useModelStore AND PATCH /users/me/settings
-//     `{ chat: { model } }`.
-//   - All four sliders render, bound to `useParamsStore`.
-//   - Dragging a slider updates the store + (debounced) PATCH.
+//   - Models render as <ModelCard>s with `aria-checked` reflecting the
+//     selected model from useUserSettings().chat.model.
+//   - Selecting a card PATCHes /users/me/settings `{ chat: { model } }`
+//     (the multi-device fix); the optimistic cache update flips the radio
+//     immediately.
+//   - The three server-backed sliders render bound to settings.chat.
+//   - Dragging a slider PATCHes settings.
 //   - System prompt textarea is hidden when no active story is set, visible
 //     and seeded from the story query when one is, and PATCHes the story
 //     on blur.
@@ -18,8 +20,6 @@ import { SettingsModal } from '@/components/Settings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useActiveStoryStore } from '@/store/activeStory';
-import { useModelStore } from '@/store/model';
-import { useParamsStore } from '@/store/params';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -31,6 +31,19 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
+interface SettingsState {
+  theme: 'paper' | 'sepia' | 'dark';
+  prose: { font: string; size: number; lineHeight: number };
+  writing: {
+    spellcheck: boolean;
+    typewriterMode: boolean;
+    focusMode: boolean;
+    dailyWordGoal: number;
+  };
+  chat: { model: string | null; temperature: number; topP: number; maxTokens: number };
+  ai: { includeVeniceSystemPrompt: boolean };
+}
+
 interface DefaultSettingsOptions {
   model?: string | null;
   temperature?: number;
@@ -38,25 +51,23 @@ interface DefaultSettingsOptions {
   maxTokens?: number;
 }
 
-function defaultSettings(opts: DefaultSettingsOptions = {}): unknown {
+function makeSettings(opts: DefaultSettingsOptions = {}): SettingsState {
   return {
-    settings: {
-      theme: 'paper',
-      prose: { font: 'serif', size: 18, lineHeight: 1.7 },
-      writing: {
-        spellcheck: true,
-        typewriterMode: false,
-        focusMode: false,
-        dailyWordGoal: 500,
-      },
-      chat: {
-        model: opts.model ?? null,
-        temperature: opts.temperature ?? 0.7,
-        topP: opts.topP ?? 1,
-        maxTokens: opts.maxTokens ?? 1024,
-      },
-      ai: { includeVeniceSystemPrompt: true },
+    theme: 'paper',
+    prose: { font: 'iowan', size: 18, lineHeight: 1.7 },
+    writing: {
+      spellcheck: true,
+      typewriterMode: false,
+      focusMode: false,
+      dailyWordGoal: 500,
     },
+    chat: {
+      model: opts.model ?? null,
+      temperature: opts.temperature ?? 0.85,
+      topP: opts.topP ?? 0.95,
+      maxTokens: opts.maxTokens ?? 800,
+    },
+    ai: { includeVeniceSystemPrompt: true },
   };
 }
 
@@ -103,25 +114,35 @@ function storyResponse(systemPrompt: string | null): unknown {
 
 interface RouteOptions {
   modelsBody?: unknown;
-  settingsBody?: unknown;
+  initialSettings?: DefaultSettingsOptions;
   storySystemPrompt?: string | null;
   /** Override the systemPrompt persisted by the next PATCH /stories/:id. */
   storyPatchResponse?: (body: unknown) => unknown;
 }
 
+// State-tracking mock: PATCH bodies are merged into the in-memory settings
+// shape and echoed back, so the wrapper's onSuccess setQueryData reflects
+// the patched values rather than overwriting the optimistic update with
+// the seed.
 function buildFetch(opts: RouteOptions = {}): FetchMock {
   const modelsBody = opts.modelsBody ?? TWO_MODELS;
-  const settingsBody = opts.settingsBody ?? defaultSettings();
+  let settings = makeSettings(opts.initialSettings ?? {});
   const storyPrompt = opts.storySystemPrompt ?? null;
   return vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     if (url === '/api/users/me/settings') {
-      if (method === 'PATCH') {
-        // Echo back default settings on PATCH; the test asserts call args
-        // not the response body, so this can stay simple.
-        return Promise.resolve(jsonResponse(200, defaultSettings()));
+      if (method === 'PATCH' && typeof init?.body === 'string') {
+        const patch = JSON.parse(init.body) as Partial<SettingsState>;
+        settings = {
+          ...settings,
+          ...patch,
+          prose: { ...settings.prose, ...(patch.prose ?? {}) },
+          writing: { ...settings.writing, ...(patch.writing ?? {}) },
+          chat: { ...settings.chat, ...(patch.chat ?? {}) },
+          ai: { ...settings.ai, ...(patch.ai ?? {}) },
+        } as SettingsState;
       }
-      return Promise.resolve(jsonResponse(200, settingsBody));
+      return Promise.resolve(jsonResponse(200, { settings }));
     }
     if (url === '/api/users/me/venice-key' && method === 'GET') {
       return Promise.resolve(jsonResponse(200, veniceKeyStatus()));
@@ -171,10 +192,6 @@ describe('SettingsModal Models tab (F44)', () => {
       user: { id: 'u1', username: 'alice' },
       status: 'authenticated',
     });
-    useModelStore.setState({ modelId: null });
-    useParamsStore.setState({
-      params: { temperature: 0.85, topP: 0.95, maxTokens: 800, frequencyPenalty: 0 },
-    });
     useActiveStoryStore.setState({ activeStoryId: null });
     onClose = vi.fn();
   });
@@ -184,10 +201,6 @@ describe('SettingsModal Models tab (F44)', () => {
     setUnauthorizedHandler(null);
     resetApiClientForTests();
     useSessionStore.setState({ user: null, status: 'idle' });
-    useModelStore.setState({ modelId: null });
-    useParamsStore.setState({
-      params: { temperature: 0.85, topP: 0.95, maxTokens: 800, frequencyPenalty: 0 },
-    });
     useActiveStoryStore.setState({ activeStoryId: null });
   });
 
@@ -205,7 +218,7 @@ describe('SettingsModal Models tab (F44)', () => {
     expect(llama).toHaveAttribute('role', 'radio');
   });
 
-  it('selecting a model writes the store AND PATCHes /users/me/settings', async () => {
+  it('selecting a model PATCHes /users/me/settings (multi-device fix)', async () => {
     const fetchMock = buildFetch();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -215,8 +228,6 @@ describe('SettingsModal Models tab (F44)', () => {
 
     const card = await screen.findByTestId('model-card-llama-3.3-70b');
     await user.click(card);
-
-    expect(useModelStore.getState().modelId).toBe('llama-3.3-70b');
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
@@ -230,7 +241,7 @@ describe('SettingsModal Models tab (F44)', () => {
     });
   });
 
-  it('renders all four sliders with current store values', async () => {
+  it('renders the three sliders bound to settings.chat values', async () => {
     vi.stubGlobal('fetch', buildFetch());
     renderModal(<SettingsModal open onClose={onClose} />);
     await openModelsTab();
@@ -238,20 +249,19 @@ describe('SettingsModal Models tab (F44)', () => {
     const temp = await screen.findByTestId('param-temperature');
     const topP = await screen.findByTestId('param-top-p');
     const maxTokens = await screen.findByTestId('param-max-tokens');
-    const freq = await screen.findByTestId('param-frequency-penalty');
 
-    expect(temp).toHaveValue('0.85');
-    expect(topP).toHaveValue('0.95');
-    expect(maxTokens).toHaveValue('800');
-    expect(freq).toHaveValue('0');
+    await waitFor(() => {
+      expect(temp).toHaveValue('0.85');
+      expect(topP).toHaveValue('0.95');
+      expect(maxTokens).toHaveValue('800');
+    });
 
     expect(screen.getByTestId('param-temperature-value').textContent).toBe('0.85');
     expect(screen.getByTestId('param-top-p-value').textContent).toBe('0.95');
     expect(screen.getByTestId('param-max-tokens-value').textContent).toBe('800');
-    expect(screen.getByTestId('param-frequency-penalty-value').textContent).toBe('0.00');
   });
 
-  it('dragging temperature updates the store and (debounced) PATCHes settings', async () => {
+  it('dragging temperature PATCHes settings.chat.temperature', async () => {
     const fetchMock = buildFetch();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -260,8 +270,6 @@ describe('SettingsModal Models tab (F44)', () => {
 
     const temp = await screen.findByTestId('param-temperature');
     fireEvent.change(temp, { target: { value: '1.25' } });
-
-    expect(useParamsStore.getState().params.temperature).toBeCloseTo(1.25, 5);
 
     await waitFor(
       () => {
@@ -277,27 +285,6 @@ describe('SettingsModal Models tab (F44)', () => {
       },
       { timeout: 1000 },
     );
-  });
-
-  it('frequency penalty stays local (no PATCH on change)', async () => {
-    const fetchMock = buildFetch();
-    vi.stubGlobal('fetch', fetchMock);
-
-    renderModal(<SettingsModal open onClose={onClose} />);
-    await openModelsTab();
-
-    const freq = await screen.findByTestId('param-frequency-penalty');
-    fireEvent.change(freq, { target: { value: '0.5' } });
-
-    expect(useParamsStore.getState().params.frequencyPenalty).toBeCloseTo(0.5, 5);
-
-    // Wait past debounce window then assert no settings PATCH happened.
-    await new Promise((r) => setTimeout(r, 350));
-    const patch = fetchMock.mock.calls.find(
-      ([url, init]: [string, RequestInit | undefined]) =>
-        url === '/api/users/me/settings' && init?.method === 'PATCH',
-    );
-    expect(patch).toBeUndefined();
   });
 
   it('hides the system prompt textarea when no active story', async () => {
