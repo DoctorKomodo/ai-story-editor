@@ -73,8 +73,10 @@ import { useSelectedModel } from '@/hooks/useSelectedModel';
 import { useStoryQuery } from '@/hooks/useStories';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
+import { checkChatSendGuards } from '@/lib/chatSendGuards';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
+import { useErrorStore } from '@/store/errors';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
@@ -173,15 +175,35 @@ export function EditorPage(): JSX.Element {
     await createChat.mutateAsync({ chapterId: activeChapterId });
   }, [activeChapterId, createChat]);
 
+  const lastChatSendArgsRef = useRef<ChatSendArgs | null>(null);
+
   const handleChatSend = useCallback(
     async (args: ChatSendArgs): Promise<void> => {
-      if (!activeChapterId) return;
+      const guard = checkChatSendGuards({ activeChapterId, selectedModelId });
+      if (guard) {
+        useErrorStore.getState().push(guard);
+        return;
+      }
+      // After the guard, both fields are non-null. Narrow for TS.
+      const chapterId = activeChapterId as string;
+      const modelId = selectedModelId as string;
+
       let chatId = activeChatId;
       if (!chatId) {
-        const created = await createChat.mutateAsync({ chapterId: activeChapterId });
+        const created = await createChat.mutateAsync({ chapterId });
         chatId = created.id;
       }
-      if (selectedModelId === null) return;
+      if (!chatId) {
+        useErrorStore.getState().push({
+          severity: 'warn',
+          source: 'chat.send',
+          code: 'no_chat',
+          message: 'Could not create a chat — try again.',
+        });
+        return;
+      }
+
+      lastChatSendArgsRef.current = args;
       const attachment = args.attachment
         ? {
             selectionText: args.attachment.text,
@@ -191,7 +213,7 @@ export function EditorPage(): JSX.Element {
       const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
         chatId,
         content: args.content,
-        modelId: selectedModelId,
+        modelId,
         enableWebSearch: args.enableWebSearch,
       };
       if (attachment) sendArgs.attachment = attachment;
@@ -209,6 +231,12 @@ export function EditorPage(): JSX.Element {
       clearAttachedSelection,
     ],
   );
+
+  const handleRetryChatSend = useCallback((): void => {
+    const last = lastChatSendArgsRef.current;
+    if (!last) return;
+    void handleChatSend(last);
+  }, [handleChatSend]);
 
   const handleStoryPickerSelect = useCallback(
     (id: string): void => {
@@ -642,6 +670,8 @@ export function EditorPage(): JSX.Element {
                 chapterTitle={activeChapter?.title ?? null}
                 attachedCharacterCount={attachedSelection?.text.length ?? 0}
                 attachedTokenCount={Math.ceil((attachedSelection?.text.length ?? 0) / 4)}
+                sendError={sendChatMessage.error}
+                onRetrySend={handleRetryChatSend}
               />
             }
             composer={<ChatComposer onSend={handleChatSend} disabled={sendChatMessage.isPending} />}
