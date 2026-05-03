@@ -18,7 +18,7 @@ export function checkChatSendGuards(input: {
       message: 'Open a chapter before sending a message.',
     };
   }
-  if (input.selectedModelId === null) {
+  if (!input.selectedModelId) {
     return {
       severity: 'warn',
       source: 'chat.send',
