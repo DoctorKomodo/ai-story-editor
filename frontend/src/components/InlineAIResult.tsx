@@ -11,18 +11,16 @@ import { useInlineAIResultStore } from '@/store/inlineAIResult';
  * selection as a serif-italic blockquote with a left border, then either:
  *   - three bouncing `.think-dot`s while `status === 'thinking'`,
  *   - the streaming/done output as serif 16px text, or
- *   - a friendly error message on `status === 'error'`.
+ *   - an `<InlineErrorBanner>` on `status === 'error'` showing the actual
+ *     `code · message` (with debug-mode raw payload).
  *
- * Action row (rendered when `status === 'done' | 'error'`):
- *   - **Replace** — diff-replaces the current TipTap selection with the
- *     output and clears the store.
- *   - **Insert after** — inserts the output at `editor.state.selection.to`
- *     and clears the store.
- *   - **Retry** — calls the parent's `onRetry` (which re-runs the AI request).
- *   - **Discard** — clears the store, dismissing the card.
+ * Action rows are split by status:
+ *   - `status === 'done'`: Replace · Insert after · Retry · Discard.
+ *   - `status === 'error'`: Discard only — the banner has its own Retry
+ *     button wired to `onRetry`.
  *
- * F34 owns the visual + the action wiring; the parent (later: F32 EditorPage)
- * is responsible for routing the SelectionBubble's `onAction` callback to a
+ * F34 owns the visual + the action wiring; the parent (EditorPage) is
+ * responsible for routing the SelectionBubble's `onAction` callback to a
  * handler that seeds the store and kicks off the F15 SSE stream. F34 itself
  * never calls `/api/ai/complete` — it just renders whatever the store says.
  *
