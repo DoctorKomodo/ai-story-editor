@@ -85,6 +85,7 @@ export function createAiRouter() {
       const models = await veniceModelsService.fetchModels(req.user!.id);
       res.status(200).json({ models });
     } catch (err) {
+      console.error('[ai.models]', err);
       if (mapVeniceError(err, res, req.user!.id)) return;
       next(err);
     }
@@ -106,6 +107,7 @@ export function createAiRouter() {
       const diem = rawDiem !== null ? parseFloat(rawDiem) : null;
       res.status(200).json({ credits, diem });
     } catch (err) {
+      console.error('[ai.balance]', err);
       if (mapVeniceError(err, res, req.user!.id)) return;
       next(err);
     }
@@ -324,6 +326,7 @@ export function createAiRouter() {
         // Stream errored after headers were flushed — write a terminal error
         // frame so the client knows something went wrong, then close cleanly.
         // Do NOT call next(err): headers are already committed.
+        console.error('[ai.complete:stream]', streamErr);
         if (!clientClosed) {
           // [V11] Map Venice API errors to structured SSE frames. Falls back to
           // generic stream_error for unknown errors.
@@ -340,6 +343,7 @@ export function createAiRouter() {
       }
     } catch (err) {
       // [V11] Map Venice API errors before the SSE headers are flushed.
+      console.error('[ai.complete]', err);
       if (mapVeniceError(err, res, userId)) return;
       next(err);
     }

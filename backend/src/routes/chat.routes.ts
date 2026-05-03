@@ -116,6 +116,7 @@ export function createChapterChatsRouter() {
 
       res.status(201).json({ chat });
     } catch (err) {
+      console.error('[chat.create]', err);
       next(err);
     }
   });
@@ -143,6 +144,7 @@ export function createChapterChatsRouter() {
 
       res.status(200).json({ chats: enriched });
     } catch (err) {
+      console.error('[chat.list]', err);
       next(err);
     }
   });
@@ -184,6 +186,7 @@ export function createChatMessagesRouter() {
       }));
       res.status(200).json({ messages });
     } catch (err) {
+      console.error('[chat.messages.list]', err);
       next(err);
     }
   });
@@ -508,6 +511,7 @@ export function createChatMessagesRouter() {
         }
       } catch (streamErr) {
         // Stream errored after headers flushed — write terminal SSE error frame.
+        console.error('[chat.messages.send:stream]', streamErr);
         if (!clientClosed) {
           const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), userId);
           if (!handled) {
@@ -522,6 +526,7 @@ export function createChatMessagesRouter() {
       }
     } catch (err) {
       // Pre-stream error — map Venice errors to JSON, let global handler deal with others.
+      console.error('[chat.messages.send]', err);
       if (mapVeniceError(err, res, userId)) return;
       next(err);
     }
