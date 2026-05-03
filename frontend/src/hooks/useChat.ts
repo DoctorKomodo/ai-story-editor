@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { api, apiStream } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
+import { useChatDraftStore } from '@/store/chatDraft';
 
 /**
  * [F39] Chat-related query hooks.
@@ -163,35 +164,94 @@ export interface SendChatMessageArgs {
 }
 
 /**
- * [F55] POST a chat message and consume the SSE assistant reply, then
- * invalidate the messages query so the UI refetches both rows. Streaming
- * tokens-into-cache is deferred — the simpler refetch path keeps the wiring
- * obvious and lets the existing GET path drive the final render.
+ * [F55] POST a chat message, seed the draft store immediately so the
+ * optimistic bubble and live-streaming text appear without waiting for the
+ * post-stream refetch, then invalidate the messages query on success so the
+ * persisted rows take over.
+ *
+ * `start()` is called synchronously inside the returned `mutateAsync` wrapper
+ * (before the TanStack Query scheduler defers the `mutationFn` body) so the
+ * optimistic user-message bubble is visible in the same React flush as the
+ * Send action.
  */
 export function useSendChatMessageMutation(): UseMutationResult<void, Error, SendChatMessageArgs> {
   const qc = useQueryClient();
-  return useMutation<void, Error, SendChatMessageArgs>({
+  const inner = useMutation<void, Error, SendChatMessageArgs>({
     mutationFn: async ({ chatId, content, modelId, attachment, enableWebSearch }) => {
       const body: Record<string, unknown> = { content, modelId };
       if (attachment) body.attachment = attachment;
       if (enableWebSearch === true) body.enableWebSearch = true;
-      const res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
-        method: 'POST',
-        body,
-      });
-      if (!res.body) return;
-      // Drain the SSE stream so the backend completes its writes before we
-      // refetch. We don't surface the live tokens — the GET refetch is the
-      // source of truth for the final message rows.
-      for await (const event of parseAiSseStream(res.body)) {
-        if (event.type === 'error') {
-          throw new Error(event.error.error || 'Chat send failed');
+
+      let res: Response;
+      try {
+        res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
+          method: 'POST',
+          body,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Chat send failed';
+        useChatDraftStore.getState().markError({ code: null, message });
+        throw err;
+      }
+
+      if (!res.body) {
+        const message = 'Empty response body';
+        useChatDraftStore.getState().markError({ code: null, message });
+        throw new Error(message);
+      }
+
+      let firstChunkSeen = false;
+      try {
+        for await (const event of parseAiSseStream(res.body)) {
+          if (event.type === 'chunk') {
+            const delta = event.chunk.choices?.[0]?.delta?.content;
+            if (typeof delta === 'string' && delta.length > 0) {
+              if (!firstChunkSeen) {
+                firstChunkSeen = true;
+                useChatDraftStore.getState().markStreaming();
+              }
+              useChatDraftStore.getState().appendDelta(delta);
+            }
+          } else if (event.type === 'error') {
+            const message = event.error.error || 'Chat send failed';
+            useChatDraftStore.getState().markError({
+              code: event.error.code ?? null,
+              message,
+            });
+            throw new Error(message);
+          } else if (event.type === 'done') {
+            useChatDraftStore.getState().markDone();
+            break;
+          }
+          // citations frame: ignored — refetched message carries citationsJson.
         }
-        if (event.type === 'done') break;
+      } catch (err) {
+        if (useChatDraftStore.getState().draft?.status !== 'error') {
+          const message = err instanceof Error ? err.message : 'Chat stream failed';
+          useChatDraftStore.getState().markError({ code: null, message });
+        }
+        throw err;
       }
     },
     onSuccess: (_void, vars) => {
       void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
     },
+    onSettled: () => {
+      useChatDraftStore.getState().clear();
+    },
   });
+
+  // Wrap mutateAsync so start() fires synchronously in the same React flush
+  // as the Send action, before TanStack Query defers the mutationFn body.
+  // Save the original before overwriting so the wrapper can still delegate.
+  const originalMutateAsync = inner.mutateAsync;
+  inner.mutateAsync = (vars, options) => {
+    useChatDraftStore.getState().start({
+      chatId: vars.chatId,
+      userContent: vars.content,
+      attachment: vars.attachment ?? null,
+    });
+    return originalMutateAsync(vars, options);
+  };
+  return inner;
 }
