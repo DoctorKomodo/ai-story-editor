@@ -24,12 +24,17 @@
 import type { ChangeEvent, JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
-
-// `Theme` and `ProseFont` used to live in `@/store/tweaks` but the store
-// went away in the settings consolidation refactor; this tab is the only
-// remaining consumer, so the type lives here.
-export type Theme = 'paper' | 'sepia' | 'dark';
-export type ProseFont = 'iowan' | 'palatino' | 'garamond' | 'plex-serif';
+import {
+  applyProseFont,
+  applyProseLineHeight,
+  applyProseSize,
+  applyTheme,
+  fontIdFromStored,
+  fontStackFor,
+  PROSE_FONTS,
+  type ProseFont,
+  type Theme,
+} from '@/lib/themeApply';
 
 // --- Theme tile data --------------------------------------------------------
 
@@ -50,69 +55,6 @@ const THEME_TILES: ReadonlyArray<ThemeTile> = [
   { id: 'sepia', label: 'Sepia', bg: '#f4ecd8', ink: '#2d230f' }, // lint:design-allow — theme-preview swatch data, not styling
   { id: 'dark', label: 'Dark', bg: '#14130f', ink: '#ebe7dc' }, // lint:design-allow — theme-preview swatch data, not styling
 ];
-
-// --- Prose font data --------------------------------------------------------
-
-interface ProseFontOption {
-  id: ProseFont;
-  label: string;
-  stack: string;
-}
-
-const PROSE_FONTS: ReadonlyArray<ProseFontOption> = [
-  {
-    id: 'iowan',
-    label: 'Iowan Old Style',
-    stack: '"Iowan Old Style", "Palatino Linotype", "Palatino", "Book Antiqua", Georgia, serif',
-  },
-  {
-    id: 'palatino',
-    label: 'Palatino',
-    stack: '"Palatino", "Palatino Linotype", "Book Antiqua", Georgia, serif',
-  },
-  {
-    id: 'garamond',
-    label: 'Garamond',
-    stack: '"EB Garamond", "Garamond", "Adobe Garamond Pro", Georgia, serif',
-  },
-  {
-    id: 'plex-serif',
-    label: 'IBM Plex Serif',
-    stack: '"IBM Plex Serif", Georgia, serif',
-  },
-];
-
-function fontStackFor(id: ProseFont): string {
-  const found = PROSE_FONTS.find((f) => f.id === id);
-  return found?.stack ?? PROSE_FONTS[0].stack;
-}
-
-function fontIdFromStored(font: string): ProseFont {
-  const known = PROSE_FONTS.find((f) => f.id === font);
-  return known?.id ?? 'iowan';
-}
-
-// --- DOM side-effects -------------------------------------------------------
-
-function applyTheme(theme: Theme): void {
-  if (typeof document === 'undefined') return;
-  document.documentElement.dataset.theme = theme;
-}
-
-function applyProseFont(stack: string): void {
-  if (typeof document === 'undefined') return;
-  document.documentElement.style.setProperty('--prose-font', stack);
-}
-
-function applyProseSize(px: number): void {
-  if (typeof document === 'undefined') return;
-  document.documentElement.style.setProperty('--prose-size', `${String(px)}px`);
-}
-
-function applyProseLineHeight(value: number): void {
-  if (typeof document === 'undefined') return;
-  document.documentElement.style.setProperty('--prose-line-height', String(value));
-}
 
 // --- Debounce hook (mirrors SettingsWritingTab) -----------------------------
 
@@ -202,16 +144,11 @@ export function SettingsAppearanceTab(): JSX.Element {
   const activeTheme = settings.theme;
   const activeFont = fontIdFromStored(settings.prose.font);
 
-  // Mirror server-driven prose tokens onto the document each time the
-  // settings query (re)resolves. The reads above are reactive; the DOM
-  // tokens aren't, so this effect closes that gap. Theme is set on the
-  // root via the dedicated effect below for symmetry.
-  useEffect(() => {
-    applyTheme(settings.theme);
-    applyProseFont(fontStackFor(fontIdFromStored(settings.prose.font)));
-    applyProseSize(settings.prose.size);
-    applyProseLineHeight(settings.prose.lineHeight);
-  }, [settings.theme, settings.prose.font, settings.prose.size, settings.prose.lineHeight]);
+  // The DOM tokens (data-theme, --prose-*) are mirrored from the settings
+  // cache by `<ThemeApply />` mounted at the app root, so no token-syncing
+  // effect is needed here. The handlers below still call apply* directly
+  // for instant feedback during slider drags / select changes — the
+  // optimistic cache update + ThemeApply re-render lands a tick later.
 
   // --- Theme picker ---------------------------------------------------------
 

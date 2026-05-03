@@ -2,6 +2,7 @@ import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { ThemeApply } from '@/components/ThemeApply';
 import { useInitAuth } from '@/hooks/useAuth';
 import { useUserSettingsQuery } from '@/hooks/useUserSettings';
 import { isDebugMode } from '@/lib/debug';
@@ -80,6 +81,7 @@ export function AppRouter({ queryClient: clientOverride }: AppRouterProps = {}):
   return (
     <QueryClientProvider client={client}>
       <SettingsWarmup />
+      <ThemeApply />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
