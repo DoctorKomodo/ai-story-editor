@@ -94,7 +94,7 @@ export function AppRouter({ queryClient: clientOverride }: AppRouterProps = {}):
       </Routes>
       {ReactQueryDevtoolsLazy && isDebugMode() ? (
         <Suspense fallback={null}>
-          <ReactQueryDevtoolsLazy initialIsOpen={false} />
+          <ReactQueryDevtoolsLazy initialIsOpen={false} buttonPosition="bottom-left" />
         </Suspense>
       ) : null}
     </QueryClientProvider>
