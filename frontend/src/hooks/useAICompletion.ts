@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, apiStream } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
+import { useErrorStore } from '@/store/errors';
 
 export type AICompletionStatus = 'idle' | 'streaming' | 'done' | 'error';
 
@@ -123,6 +124,17 @@ export function useAICompletion(): UseAICompletion {
         usage: prev.usage,
       }));
 
+      const publish = (err: ApiError): void => {
+        useErrorStore.getState().push({
+          severity: 'error',
+          source: 'ai.complete',
+          code: err.code ?? null,
+          message: err.message,
+          httpStatus: err.status,
+          detail: err,
+        });
+      };
+
       const body: Record<string, unknown> = {
         action: args.action,
         selectedText: args.selectedText,
@@ -157,6 +169,7 @@ export function useAICompletion(): UseAICompletion {
           error: apiErr,
           usage: prev.usage,
         }));
+        publish(apiErr);
         return;
       }
 
@@ -173,12 +186,14 @@ export function useAICompletion(): UseAICompletion {
       }
 
       if (!res.body) {
+        const apiErr = new ApiError(502, 'Empty response body');
         safeSetState((prev) => ({
           status: 'error',
           text: '',
-          error: new ApiError(502, 'Empty response body'),
+          error: apiErr,
           usage: prev.usage,
         }));
+        publish(apiErr);
         return;
       }
 
@@ -192,12 +207,14 @@ export function useAICompletion(): UseAICompletion {
             }
           } else if (event.type === 'error') {
             const code = event.error.code ?? 'stream_error';
+            const apiErr = new ApiError(502, event.error.error, code);
             safeSetState((prev) => ({
               status: 'error',
               text: prev.text,
-              error: new ApiError(502, event.error.error, code),
+              error: apiErr,
               usage: prev.usage,
             }));
+            publish(apiErr);
             return;
           } else if (event.type === 'citations') {
             // [V26][F50] Inline-AI completions don't render citations
@@ -224,6 +241,7 @@ export function useAICompletion(): UseAICompletion {
           error: apiErr,
           usage: prev.usage,
         }));
+        publish(apiErr);
       } finally {
         if (controllerRef.current === controller) {
           controllerRef.current = null;

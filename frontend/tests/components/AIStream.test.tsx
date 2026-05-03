@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAICompletion } from '@/hooks/useAICompletion';
 import { ApiError, resetApiClientForTests, setAccessToken } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
+import { useErrorStore } from '@/store/errors';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -330,6 +331,73 @@ describe('F15 · useAICompletion hook', () => {
     // Both headers fail the integer-only parse, so usage must stay null —
     // not silently truncate `"1.5"` to 1 or `"abc"` to NaN.
     expect(result.current.usage).toBeNull();
+  });
+
+  describe('publishes errors to useErrorStore', () => {
+    beforeEach(() => {
+      act(() => {
+        useErrorStore.getState().clear();
+      });
+    });
+
+    afterEach(() => {
+      act(() => {
+        useErrorStore.getState().clear();
+      });
+    });
+
+    it('publishes a single entry on a 500 from /api/ai/complete', async () => {
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(500, { error: { message: 'boom', code: 'internal_error' } }),
+      );
+
+      const { result } = renderHook(() => useAICompletion());
+
+      await act(async () => {
+        await result.current.run({
+          action: 'continue',
+          selectedText: 'sel',
+          chapterId: 'ch1',
+          storyId: 's1',
+          modelId: 'm1',
+        });
+      });
+
+      expect(result.current.status).toBe('error');
+      const entries = useErrorStore.getState().errors;
+      expect(entries).toHaveLength(1);
+      expect(entries[0].source).toBe('ai.complete');
+      expect(entries[0].code).toBe('internal_error');
+      expect(entries[0].httpStatus).toBe(500);
+      expect(entries[0].severity).toBe('error');
+    });
+
+    it('publishes on a mid-stream SSE error frame', async () => {
+      fetchMock.mockResolvedValueOnce(
+        streamResponse([
+          'data: {"error":"venice_key_invalid","code":"venice_key_invalid"}\n\n',
+          'data: [DONE]\n\n',
+        ]),
+      );
+
+      const { result } = renderHook(() => useAICompletion());
+
+      await act(async () => {
+        await result.current.run({
+          action: 'continue',
+          selectedText: 'sel',
+          chapterId: 'ch1',
+          storyId: 's1',
+          modelId: 'm1',
+        });
+      });
+
+      expect(result.current.status).toBe('error');
+      const entries = useErrorStore.getState().errors;
+      expect(entries).toHaveLength(1);
+      expect(entries[0].source).toBe('ai.complete');
+      expect(entries[0].code).toBe('venice_key_invalid');
+    });
   });
 });
 
