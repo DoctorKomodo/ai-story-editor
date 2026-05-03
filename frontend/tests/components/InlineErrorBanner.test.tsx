@@ -39,6 +39,25 @@ describe('<InlineErrorBanner>', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 
+  it('fires onDismiss when × is clicked', async () => {
+    const onDismiss = vi.fn();
+    render(<InlineErrorBanner error={{ code: 'x', message: 'y' }} onDismiss={onDismiss} />);
+    await userEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses showRaw when the error changes', async () => {
+    vi.stubEnv('DEV', true);
+    const { rerender } = render(
+      <InlineErrorBanner error={{ code: 'a', message: 'first', detail: { v: 1 } }} />,
+    );
+    await userEvent.click(screen.getByRole('button', { name: /show raw/i }));
+    expect(screen.getByTestId('inline-error-raw')).toBeInTheDocument();
+
+    rerender(<InlineErrorBanner error={{ code: 'b', message: 'second', detail: { v: 2 } }} />);
+    expect(screen.queryByTestId('inline-error-raw')).toBeNull();
+  });
+
   it('shows a Show raw toggle in debug mode that reveals detail', async () => {
     vi.stubEnv('DEV', true);
     setDebugMode(true);

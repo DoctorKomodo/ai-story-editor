@@ -1,4 +1,4 @@
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { isDebugMode } from '@/lib/debug';
 
 export interface InlineErrorBannerError {
@@ -20,6 +20,11 @@ export function InlineErrorBanner({
   onDismiss,
 }: InlineErrorBannerProps): JSX.Element | null {
   const [showRaw, setShowRaw] = useState(false);
+
+  useEffect(() => {
+    setShowRaw(false);
+  }, [error]);
+
   if (error === null) return null;
 
   const debug = isDebugMode();
