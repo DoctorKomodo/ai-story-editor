@@ -243,7 +243,10 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
       void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
     },
     onSettled: () => {
-      useChatDraftStore.getState().clear();
+      const currentStatus = useChatDraftStore.getState().draft?.status;
+      if (currentStatus !== 'error') {
+        useChatDraftStore.getState().clear();
+      }
     },
   });
 }

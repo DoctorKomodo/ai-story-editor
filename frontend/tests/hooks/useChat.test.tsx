@@ -26,7 +26,12 @@ function sseResponse(lines: ReadonlyArray<string>): Response {
 }
 
 function withClient(): { wrapper: (p: { children: ReactNode }) => JSX.Element; qc: QueryClient } {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const qc = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
   const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
@@ -141,9 +146,12 @@ describe('useSendChatMessageMutation', () => {
       expect(result.current.isError).toBe(true);
     });
 
-    // Draft is cleared by onSettled regardless of success/error.
+    // On error, the draft is preserved so <ChatMessages /> can render the error banner.
     await waitFor(() => {
-      expect(useChatDraftStore.getState().draft).toBeNull();
+      const d = useChatDraftStore.getState().draft;
+      expect(d?.status).toBe('error');
+      expect(d?.error?.message).toBe('rate limited');
+      expect(d?.error?.code).toBe('rate_limited');
     });
   });
 
