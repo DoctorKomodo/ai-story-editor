@@ -1,11 +1,12 @@
 // [F25] Focus-mode toggle hook.
 //
 // Exposes `toggleFocus()` which flips the layout slice between `'focus'` and
-// `'three-col'`. Layout state lives on `useTweaksStore` (see [F22]). F26 will
-// wire this up to the top-bar button; F47 will fold the keyboard shortcut
-// (`Cmd/Ctrl+Shift+F`) into the central `useKeyboardShortcuts` registry.
+// `'three-col'`. Layout state lives on `useUiStore` (ephemeral; resets on
+// reload by design). F26 wires this up to the top-bar button; F47 will fold
+// the keyboard shortcut (`Cmd/Ctrl+Shift+F`) into the central
+// `useKeyboardShortcuts` registry.
 import { useCallback } from 'react';
-import { useTweaksStore } from '@/store/tweaks';
+import { useUiStore } from '@/store/ui';
 
 export interface UseFocusToggle {
   isFocus: boolean;
@@ -13,12 +14,12 @@ export interface UseFocusToggle {
 }
 
 export function useFocusToggle(): UseFocusToggle {
-  const layout = useTweaksStore((s) => s.tweaks.layout);
-  const setTweaks = useTweaksStore((s) => s.setTweaks);
+  const layout = useUiStore((s) => s.layout);
+  const setLayout = useUiStore((s) => s.setLayout);
 
   const toggleFocus = useCallback(() => {
-    setTweaks({ layout: layout === 'focus' ? 'three-col' : 'focus' });
-  }, [layout, setTweaks]);
+    setLayout(layout === 'focus' ? 'three-col' : 'focus');
+  }, [layout, setLayout]);
 
   return { isFocus: layout === 'focus', toggleFocus };
 }

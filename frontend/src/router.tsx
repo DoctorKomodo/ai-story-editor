@@ -2,7 +2,9 @@ import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
+import { ThemeApply } from '@/components/ThemeApply';
 import { useInitAuth } from '@/hooks/useAuth';
+import { useUserSettingsQuery } from '@/hooks/useUserSettings';
 import { isDebugMode } from '@/lib/debug';
 import { queryClient } from '@/lib/queryClient';
 import { DashboardPage } from '@/pages/DashboardPage';
@@ -27,6 +29,18 @@ const ReactQueryDevtoolsLazy = import.meta.env.PROD
         default: m.ReactQueryDevtools,
       })),
     );
+
+/**
+ * Side-effect-only component that triggers the user-settings query as soon
+ * as the user is authenticated, so the first render of editor / settings
+ * surfaces uses backend data instead of `DEFAULT_SETTINGS`. Mounted as a
+ * sibling of `<Routes>` inside the `<QueryClientProvider>`.
+ */
+function SettingsWarmup(): null {
+  const status = useSessionStore((s) => s.status);
+  useUserSettingsQuery({ enabled: status === 'authenticated' });
+  return null;
+}
 
 function RequireAuth(): JSX.Element {
   const status = useSessionStore((s) => s.status);
@@ -66,6 +80,8 @@ export function AppRouter({ queryClient: clientOverride }: AppRouterProps = {}):
   const client = clientOverride ?? queryClient;
   return (
     <QueryClientProvider client={client}>
+      <SettingsWarmup />
+      <ThemeApply />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />

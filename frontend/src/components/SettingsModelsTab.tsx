@@ -2,30 +2,25 @@
 //
 // Composition (top → bottom):
 //   1. Model list — `<ModelCard>` (from [F42]) inside a `radiogroup`.
-//      Click sets `useModelStore` AND PATCHes `/api/users/me/settings`
-//      `{ chat: { model } }` so the choice survives across sessions ([B11]).
-//   2. Generation parameters — four sliders bound to `useParamsStore`
-//      ([F22]). Three of them (temperature, topP, maxTokens) also persist
-//      to user settings; `frequencyPenalty` stays local because the backend
-//      settings shape ([B11]) doesn't carry it yet.
+//      Click PATCHes `/api/users/me/settings` `{ chat: { model } }` via
+//      useUpdateUserSetting; the wrapper handles the optimistic cache
+//      update so the radio reflects the choice immediately ([B11]).
+//   2. Generation parameters — three sliders (temperature, topP, maxTokens)
+//      bound to `settings.chat`. Each tick PATCHes; the optimistic update
+//      keeps the slider responsive. The old frequencyPenalty slider was
+//      dropped — the backend chat shape ([B11]) doesn't carry it, and the
+//      UI was a no-op write to a Zustand-only field.
 //   3. System prompt — per-story textarea, only rendered when an
 //      `activeStoryId` is set. Reads via `useStoryQuery`, writes via
 //      `useUpdateStoryMutation` on blur (the existing PATCH that [V13] +
 //      [B2] already accept `systemPrompt` on).
-//
-// Slider PATCHes are debounced (200ms) so a drag doesn't fire dozens of
-// requests; the textarea writes on blur (no debounce needed). Both store
-// updates are immediate so the UI stays responsive while the network
-// catches up.
 import type { ChangeEvent, JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { ModelCard } from '@/components/ModelCard';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useStoryQuery, useUpdateStoryMutation } from '@/hooks/useStories';
-import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
+import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 import { useActiveStoryStore } from '@/store/activeStory';
-import { useModelStore } from '@/store/model';
-import { useParamsStore } from '@/store/params';
 
 interface SliderRowProps {
   id: string;
@@ -84,97 +79,40 @@ function SliderRow({
   );
 }
 
-// Tiny ref-based debouncer. Keeping it inline (rather than a shared hook)
-// because the only consumer in the tree is this tab and the contract is
-// trivial. Cancels in-flight timers on unmount so a closing modal doesn't
-// fire a stray PATCH.
-function useDebouncedCallback<A extends unknown[]>(
-  fn: (...args: A) => void,
-  delayMs: number,
-): (...args: A) => void {
-  const fnRef = useRef(fn);
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    fnRef.current = fn;
-  }, [fn]);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current != null) clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  return (...args: A): void => {
-    if (timerRef.current != null) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      fnRef.current(...args);
-    }, delayMs);
-  };
-}
-
 export function SettingsModelsTab(): JSX.Element {
   const tempId = useId();
   const topPId = useId();
   const maxTokensId = useId();
-  const freqId = useId();
   const promptId = useId();
+
+  const settings = useUserSettings();
+  const updateSetting = useUpdateUserSetting();
+  const modelsQuery = useModelsQuery();
 
   // --- Model list -------------------------------------------------------
 
-  const modelId = useModelStore((s) => s.modelId);
-  const setModelId = useModelStore((s) => s.setModelId);
-
-  const modelsQuery = useModelsQuery();
-  const settingsQuery = useUserSettingsQuery();
-  const updateSettings = useUpdateUserSettingsMutation();
-
+  const modelId = settings.chat.model;
   const handleSelectModel = (id: string): void => {
-    setModelId(id);
-    updateSettings.mutate({ chat: { model: id } });
+    updateSetting.mutate({ chat: { model: id } });
   };
 
   // --- Generation parameters -------------------------------------------
 
-  const params = useParamsStore((s) => s.params);
-  const setParams = useParamsStore((s) => s.setParams);
-
-  // Debounced PATCH for the three server-backed slider params. Refs (not
-  // closures over `params`) are read inside the timer so a fast drag
-  // sends the *latest* values, not whatever was current when the first
-  // change fired.
-  const paramsRef = useRef(params);
-  useEffect(() => {
-    paramsRef.current = params;
-  }, [params]);
-
-  const flushParams = useDebouncedCallback((): void => {
-    const p = paramsRef.current;
-    updateSettings.mutate({
-      chat: {
-        temperature: p.temperature,
-        topP: p.topP,
-        maxTokens: p.maxTokens,
-      },
-    });
-  }, 200);
-
+  // Each slider tick PATCHes synchronously. The optimistic cache update
+  // inside useUpdateUserSetting keeps the slider responsive (re-renders
+  // immediately from the new cache value); only the network call is per-tick.
+  // Acceptable for the local-server dev case; if PATCH frequency becomes an
+  // issue in production, add a `mutateDebounced` variant to
+  // useUpdateUserSetting and wrap these calls.
+  const params = settings.chat;
   const onTemperature = (v: number): void => {
-    setParams({ temperature: v });
-    flushParams();
+    updateSetting.mutate({ chat: { temperature: v } });
   };
   const onTopP = (v: number): void => {
-    setParams({ topP: v });
-    flushParams();
+    updateSetting.mutate({ chat: { topP: v } });
   };
   const onMaxTokens = (v: number): void => {
-    setParams({ maxTokens: Math.round(v) });
-    flushParams();
-  };
-  // TODO: backend `chat` settings ([B11]) doesn't yet carry frequencyPenalty.
-  // Keep it client-only until the schema lands; no PATCH on change.
-  const onFrequencyPenalty = (v: number): void => {
-    setParams({ frequencyPenalty: v });
+    updateSetting.mutate({ chat: { maxTokens: Math.round(v) } });
   };
 
   // --- System prompt (per-story) ---------------------------------------
@@ -212,7 +150,6 @@ export function SettingsModelsTab(): JSX.Element {
   // --- Render -----------------------------------------------------------
 
   const models = modelsQuery.data;
-  const settingsLoading = !settingsQuery.data;
 
   return (
     <div className="flex flex-col gap-6">
@@ -302,24 +239,6 @@ export function SettingsModelsTab(): JSX.Element {
           testId="param-max-tokens"
           onChange={onMaxTokens}
         />
-        <SliderRow
-          id={freqId}
-          label="Frequency penalty"
-          hint="Reduce repetition"
-          min={0}
-          max={2}
-          step={0.05}
-          value={params.frequencyPenalty}
-          decimals={2}
-          testId="param-frequency-penalty"
-          onChange={onFrequencyPenalty}
-        />
-
-        {settingsLoading ? (
-          <span className="font-mono text-[11px] text-ink-4" data-testid="params-loading">
-            Loading saved values…
-          </span>
-        ) : null}
       </section>
 
       <section className="flex flex-col gap-3" data-testid="models-section-system-prompt">

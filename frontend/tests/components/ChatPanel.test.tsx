@@ -4,10 +4,9 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from '@/components/ChatPanel';
+import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
-import { useModelStore } from '@/store/model';
-import { useParamsStore } from '@/store/params';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -46,15 +45,14 @@ const SAMPLE_MODELS = {
   ],
 };
 
-const DEFAULT_PARAMS = {
-  temperature: 0.85,
-  topP: 0.95,
-  maxTokens: 800,
-  frequencyPenalty: 0,
-};
-
 describe('ChatPanel (F38)', () => {
   let fetchMock: FetchMock;
+
+  function seedSettings(partial?: Partial<typeof DEFAULT_SETTINGS>): QueryClient {
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, { ...DEFAULT_SETTINGS, ...partial });
+    return qc;
+  }
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -68,8 +66,6 @@ describe('ChatPanel (F38)', () => {
     });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    useModelStore.setState({ modelId: null });
-    useParamsStore.setState({ params: { ...DEFAULT_PARAMS } });
   });
 
   afterEach(() => {
@@ -77,8 +73,6 @@ describe('ChatPanel (F38)', () => {
     setUnauthorizedHandler(null);
     resetApiClientForTests();
     useSessionStore.setState({ user: null, status: 'idle' });
-    useModelStore.setState({ modelId: null });
-    useParamsStore.setState({ params: { ...DEFAULT_PARAMS } });
   });
 
   function mockModels(body: unknown = SAMPLE_MODELS): void {
@@ -169,11 +163,13 @@ describe('ChatPanel (F38)', () => {
     expect(onOpenModelPicker).toHaveBeenCalledTimes(1);
   });
 
-  it('renders model name and ctx chip from the store + models query', async () => {
+  it('renders model name and ctx chip from settings + models query', async () => {
     mockModels();
-    useModelStore.setState({ modelId: 'venice-uncensored-1.5' });
+    const qc = seedSettings({
+      chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-uncensored-1.5' },
+    });
 
-    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />);
+    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />, qc);
 
     // Wait for the query to resolve and the picker to render the model name.
     await waitFor(() => {
@@ -198,13 +194,13 @@ describe('ChatPanel (F38)', () => {
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('—');
   });
 
-  it('renders the params row from current store values', () => {
+  it('renders the params row from current settings values', () => {
     mockModels();
-    useParamsStore.setState({
-      params: { temperature: 0.7, topP: 0.9, maxTokens: 1200, frequencyPenalty: 0 },
+    const qc = seedSettings({
+      chat: { ...DEFAULT_SETTINGS.chat, temperature: 0.7, topP: 0.9, maxTokens: 1200 },
     });
 
-    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />);
+    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />, qc);
 
     const params = screen.getByTestId('model-params');
     expect(params.textContent ?? '').toContain('temp 0.7');

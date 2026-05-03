@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button } from '@/design/primitives';
 import type { Model } from '@/hooks/useModels';
 import { modelsQueryKey } from '@/hooks/useModels';
-import { useModelStore } from '@/store/model';
+import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import { ModelPicker } from './ModelPicker';
 
 const SAMPLE_MODELS: Model[] = [
@@ -34,7 +34,7 @@ const SAMPLE_MODELS: Model[] = [
   },
 ];
 
-function makeClient(models: Model[]): QueryClient {
+function makeClient(models: Model[], selectedId: string | null): QueryClient {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -45,19 +45,18 @@ function makeClient(models: Model[]): QueryClient {
     },
   });
   client.setQueryData(modelsQueryKey, models);
+  // Seed the user-settings cache so one card renders as aria-checked=true.
+  client.setQueryData(userSettingsQueryKey, {
+    ...DEFAULT_SETTINGS,
+    chat: { ...DEFAULT_SETTINGS.chat, model: selectedId },
+  });
   return client;
 }
 
 function Demo({ models, selectedId }: { models: Model[]; selectedId: string | null }) {
   const [open, setOpen] = useState(true);
-  // Seed the selection so one card renders as `aria-checked=true`. Effect,
-  // not render-phase: setState during render violates React's rules and
-  // double-fires under Strict Mode.
-  useEffect(() => {
-    useModelStore.setState({ modelId: selectedId });
-  }, [selectedId]);
   return (
-    <QueryClientProvider client={makeClient(models)}>
+    <QueryClientProvider client={makeClient(models, selectedId)}>
       <Button variant="ghost" onClick={() => setOpen(true)}>
         Reopen picker
       </Button>

@@ -1,16 +1,16 @@
 // [F42] Model Picker modal — covers visibility, dialog accessibility,
 // radio-card list rendering from `useModelsQuery`, the selected-card
-// `aria-checked` state, click → `useModelStore.setModelId` + onClose
+// `aria-checked` state, click → useUpdateUserSetting PATCH + onClose
 // wiring, and modal-close behaviour (X button, Escape, backdrop).
-import { QueryClientProvider } from '@tanstack/react-query';
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ModelPicker } from '@/components/ModelPicker';
+import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
-import { useModelStore } from '@/store/model';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -51,9 +51,17 @@ const THREE_MODELS = {
   ],
 };
 
-function renderPicker(ui: ReactElement): ReturnType<typeof render> {
+function renderPicker(
+  ui: ReactElement,
+  opts: { modelId?: string | null } = {},
+): { client: QueryClient } {
   const client = createQueryClient();
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  client.setQueryData(userSettingsQueryKey, {
+    ...DEFAULT_SETTINGS,
+    chat: { ...DEFAULT_SETTINGS.chat, model: opts.modelId ?? null },
+  });
+  render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return { client };
 }
 
 describe('ModelPicker (F42)', () => {
@@ -70,7 +78,6 @@ describe('ModelPicker (F42)', () => {
       user: { id: 'u1', username: 'alice' },
       status: 'authenticated',
     });
-    useModelStore.setState({ modelId: null });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     onClose = vi.fn();
@@ -81,7 +88,6 @@ describe('ModelPicker (F42)', () => {
     setUnauthorizedHandler(null);
     resetApiClientForTests();
     useSessionStore.setState({ user: null, status: 'idle' });
-    useModelStore.setState({ modelId: null });
   });
 
   it('does not render when open=false', () => {
@@ -114,9 +120,8 @@ describe('ModelPicker (F42)', () => {
   });
 
   it('marks the currently-selected card with aria-checked=true', async () => {
-    useModelStore.setState({ modelId: 'llama-3.3-70b' });
     fetchMock.mockResolvedValue(jsonResponse(200, THREE_MODELS));
-    renderPicker(<ModelPicker open onClose={onClose} />);
+    renderPicker(<ModelPicker open onClose={onClose} />, { modelId: 'llama-3.3-70b' });
 
     const selected = await screen.findByTestId('model-card-llama-3.3-70b');
     expect(selected).toHaveAttribute('aria-checked', 'true');
@@ -128,15 +133,42 @@ describe('ModelPicker (F42)', () => {
     expect(screen.getByTestId('model-card-deepseek-r1')).toHaveAttribute('aria-checked', 'false');
   });
 
-  it('clicking a card sets useModelStore.modelId and calls onClose', async () => {
-    fetchMock.mockResolvedValue(jsonResponse(200, THREE_MODELS));
+  it('clicking a card PATCHes /users/me/settings and calls onClose (multi-device fix)', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/ai/models')) {
+        return Promise.resolve(jsonResponse(200, THREE_MODELS));
+      }
+      if (url.endsWith('/users/me/settings') && init?.method === 'PATCH') {
+        return Promise.resolve(
+          jsonResponse(200, {
+            settings: {
+              ...DEFAULT_SETTINGS,
+              chat: { ...DEFAULT_SETTINGS.chat, model: 'deepseek-r1' },
+            },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
     const user = userEvent.setup();
-    renderPicker(<ModelPicker open onClose={onClose} />);
+    const { client } = renderPicker(<ModelPicker open onClose={onClose} />);
 
     const card = await screen.findByTestId('model-card-deepseek-r1');
     await user.click(card);
 
-    expect(useModelStore.getState().modelId).toBe('deepseek-r1');
+    // Optimistic cache update is synchronous; PATCH fires after.
+    expect(client.getQueryData<typeof DEFAULT_SETTINGS>(userSettingsQueryKey)?.chat.model).toBe(
+      'deepseek-r1',
+    );
+    await waitFor(() => {
+      expect(
+        fetchMock.mock.calls.some(
+          ([url, init]) =>
+            String(url).endsWith('/users/me/settings') &&
+            (init as RequestInit | undefined)?.method === 'PATCH',
+        ),
+      ).toBe(true);
+    });
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

@@ -9,7 +9,7 @@ import { createQueryClient } from '@/lib/queryClient';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useComposerDraftStore } from '@/store/composerDraft';
 import { useSelectionStore } from '@/store/selection';
-import { useTweaksStore } from '@/store/tweaks';
+import { useUiStore } from '@/store/ui';
 
 function renderWithQuery(ui: ReactNode): void {
   const qc = createQueryClient();
@@ -19,9 +19,7 @@ function renderWithQuery(ui: ReactNode): void {
 afterEach(() => {
   act(() => {
     useAttachedSelectionStore.setState({ attachedSelection: null });
-    useTweaksStore.setState({
-      tweaks: { theme: 'paper', layout: 'three-col', proseFont: 'iowan' },
-    });
+    useUiStore.setState({ layout: 'three-col' });
     useSelectionStore.setState({ selection: null });
     useComposerDraftStore.setState({ draft: null, focusToken: 0 });
   });
@@ -30,9 +28,7 @@ afterEach(() => {
 describe('triggerAskAI flow (F41)', () => {
   it('attaches selection, opens chat, pre-fills draft, focuses composer, clears prose selection', async () => {
     act(() => {
-      useTweaksStore.setState({
-        tweaks: { theme: 'paper', layout: 'nochat', proseFont: 'iowan' },
-      });
+      useUiStore.setState({ layout: 'nochat' });
       useSelectionStore.setState({
         selection: { text: 'A passage', range: null, rect: null },
       });
@@ -58,7 +54,7 @@ describe('triggerAskAI flow (F41)', () => {
       text: 'A passage',
       chapter: { id: 'ch-1', number: 3, title: 'Storm' },
     });
-    expect(useTweaksStore.getState().tweaks.layout).toBe('three-col');
+    expect(useUiStore.getState().layout).toBe('three-col');
     expect(useSelectionStore.getState().selection).toBeNull();
     expect(removeAllRanges).toHaveBeenCalled();
 
@@ -82,9 +78,7 @@ describe('triggerAskAI flow (F41)', () => {
 
   it('switches from focus layout to three-col', () => {
     act(() => {
-      useTweaksStore.setState({
-        tweaks: { theme: 'paper', layout: 'focus', proseFont: 'iowan' },
-      });
+      useUiStore.setState({ layout: 'focus' });
     });
     renderWithQuery(<ChatComposer onSend={vi.fn()} />);
 
@@ -95,11 +89,11 @@ describe('triggerAskAI flow (F41)', () => {
       });
     });
 
-    expect(useTweaksStore.getState().tweaks.layout).toBe('three-col');
+    expect(useUiStore.getState().layout).toBe('three-col');
   });
 
   it('keeps three-col layout if already three-col', () => {
-    const setTweaksSpy = vi.spyOn(useTweaksStore.getState(), 'setTweaks');
+    const setLayoutSpy = vi.spyOn(useUiStore.getState(), 'setLayout');
     renderWithQuery(<ChatComposer onSend={vi.fn()} />);
 
     act(() => {
@@ -109,7 +103,7 @@ describe('triggerAskAI flow (F41)', () => {
       });
     });
 
-    expect(setTweaksSpy).not.toHaveBeenCalled();
-    setTweaksSpy.mockRestore();
+    expect(setLayoutSpy).not.toHaveBeenCalled();
+    setLayoutSpy.mockRestore();
   });
 });

@@ -7,12 +7,10 @@ import { act, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { AppShell } from '@/components/AppShell';
 import { useFocusToggle } from '@/hooks/useFocusToggle';
-import { useTweaksStore } from '@/store/tweaks';
+import { useUiStore } from '@/store/ui';
 
 function resetTweaks(): void {
-  useTweaksStore.setState({
-    tweaks: { theme: 'paper', layout: 'three-col', proseFont: 'iowan' },
-  });
+  useUiStore.setState({ layout: 'three-col' });
 }
 
 function renderShell(): void {
@@ -47,7 +45,7 @@ describe('AppShell', () => {
   it('reflects layout="nochat" from the tweaks store', () => {
     renderShell();
     act(() => {
-      useTweaksStore.getState().setTweaks({ layout: 'nochat' });
+      useUiStore.getState().setLayout('nochat');
     });
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-layout', 'nochat');
   });
@@ -55,7 +53,7 @@ describe('AppShell', () => {
   it('reflects layout="focus" from the tweaks store', () => {
     renderShell();
     act(() => {
-      useTweaksStore.getState().setTweaks({ layout: 'focus' });
+      useUiStore.getState().setLayout('focus');
     });
     expect(screen.getByTestId('app-shell')).toHaveAttribute('data-layout', 'focus');
   });
@@ -82,32 +80,32 @@ describe('useFocusToggle', () => {
     act(() => {
       result.current.toggleFocus();
     });
-    expect(useTweaksStore.getState().tweaks.layout).toBe('focus');
+    expect(useUiStore.getState().layout).toBe('focus');
     expect(result.current.isFocus).toBe(true);
 
     act(() => {
       result.current.toggleFocus();
     });
-    expect(useTweaksStore.getState().tweaks.layout).toBe('three-col');
+    expect(useUiStore.getState().layout).toBe('three-col');
     expect(result.current.isFocus).toBe(false);
   });
 
   it('switches from nochat to focus on toggle (not back to three-col)', () => {
     act(() => {
-      useTweaksStore.getState().setTweaks({ layout: 'nochat' });
+      useUiStore.getState().setLayout('nochat');
     });
     const { result } = renderHook(() => useFocusToggle());
 
     act(() => {
       result.current.toggleFocus();
     });
-    expect(useTweaksStore.getState().tweaks.layout).toBe('focus');
+    expect(useUiStore.getState().layout).toBe('focus');
 
     act(() => {
       result.current.toggleFocus();
     });
     // From focus, toggle restores to the canonical three-col, per spec.
-    expect(useTweaksStore.getState().tweaks.layout).toBe('three-col');
+    expect(useUiStore.getState().layout).toBe('three-col');
   });
 
   it('Cmd/Ctrl+Shift+F keyboard shortcut toggles focus mode', () => {

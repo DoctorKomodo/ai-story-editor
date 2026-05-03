@@ -4,8 +4,8 @@
 //   - Three theme tiles render in order Paper / Sepia / Dark with the
 //     active one carrying aria-checked="true".
 //   - Clicking a tile flips aria-checked, mirrors onto
-//     document.documentElement.dataset.theme, updates `useTweaksStore`,
-//     and PATCHes /api/users/me/settings with `{ theme }`.
+//     document.documentElement.dataset.theme, and PATCHes
+//     /api/users/me/settings with `{ theme }`.
 //   - Prose font select renders all four options and PATCHes on change.
 //   - Prose size slider renders, reflects the server value, and (debounced)
 //     PATCHes the new size.
@@ -19,7 +19,6 @@ import { SettingsModal } from '@/components/Settings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
-import { useTweaksStore } from '@/store/tweaks';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -30,6 +29,19 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
+interface SettingsState {
+  theme: 'paper' | 'sepia' | 'dark';
+  prose: { font: string; size: number; lineHeight: number };
+  writing: {
+    spellcheck: boolean;
+    typewriterMode: boolean;
+    focusMode: boolean;
+    dailyWordGoal: number;
+  };
+  chat: { model: string | null; temperature: number; topP: number; maxTokens: number };
+  ai: { includeVeniceSystemPrompt: boolean };
+}
+
 interface SettingsOverrides {
   theme?: 'paper' | 'sepia' | 'dark';
   proseFont?: string;
@@ -37,24 +49,22 @@ interface SettingsOverrides {
   proseLineHeight?: number;
 }
 
-function settingsBody(overrides: SettingsOverrides = {}): unknown {
+function makeSettings(overrides: SettingsOverrides = {}): SettingsState {
   return {
-    settings: {
-      theme: overrides.theme ?? 'paper',
-      prose: {
-        font: overrides.proseFont ?? 'iowan',
-        size: overrides.proseSize ?? 18,
-        lineHeight: overrides.proseLineHeight ?? 1.7,
-      },
-      writing: {
-        spellcheck: true,
-        typewriterMode: false,
-        focusMode: false,
-        dailyWordGoal: 500,
-      },
-      chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
-      ai: { includeVeniceSystemPrompt: true },
+    theme: overrides.theme ?? 'paper',
+    prose: {
+      font: overrides.proseFont ?? 'iowan',
+      size: overrides.proseSize ?? 18,
+      lineHeight: overrides.proseLineHeight ?? 1.7,
     },
+    writing: {
+      spellcheck: true,
+      typewriterMode: false,
+      focusMode: false,
+      dailyWordGoal: 500,
+    },
+    chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
+    ai: { includeVeniceSystemPrompt: true },
   };
 }
 
@@ -66,14 +76,26 @@ interface BuildFetchOpts {
   initial?: SettingsOverrides;
 }
 
+// State-tracking mock: PATCH bodies are merged into the in-memory shape and
+// echoed back, so the wrapper's onSuccess setQueryData reflects the patched
+// values rather than overwriting the optimistic update with the seed.
 function buildFetch(opts: BuildFetchOpts = {}): FetchMock {
-  const initial = opts.initial ?? {};
+  let state = makeSettings(opts.initial ?? {});
   return vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     if (url === '/api/users/me/settings') {
-      // Echo the seeded settings back on both GET and PATCH; tests assert on
-      // PATCH call args, not the response body.
-      return Promise.resolve(jsonResponse(200, settingsBody(initial)));
+      if (method === 'PATCH' && typeof init?.body === 'string') {
+        const patch = JSON.parse(init.body) as Partial<SettingsState>;
+        state = {
+          ...state,
+          ...patch,
+          prose: { ...state.prose, ...(patch.prose ?? {}) },
+          writing: { ...state.writing, ...(patch.writing ?? {}) },
+          chat: { ...state.chat, ...(patch.chat ?? {}) },
+          ai: { ...state.ai, ...(patch.ai ?? {}) },
+        } as SettingsState;
+      }
+      return Promise.resolve(jsonResponse(200, { settings: state }));
     }
     if (url === '/api/users/me/venice-key' && method === 'GET') {
       return Promise.resolve(jsonResponse(200, veniceKeyStatus()));
@@ -121,9 +143,6 @@ function resetThemeArtifacts(): void {
   document.documentElement.style.removeProperty('--prose-font');
   document.documentElement.style.removeProperty('--prose-size');
   document.documentElement.style.removeProperty('--prose-line-height');
-  useTweaksStore.setState({
-    tweaks: { theme: 'paper', layout: 'three-col', proseFont: 'iowan' },
-  });
 }
 
 describe('SettingsModal Appearance tab (F46)', () => {
@@ -187,7 +206,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
     expect((screen.getByTestId('appearance-theme-dark') as HTMLInputElement).checked).toBe(false);
   });
 
-  it('clicking Sepia flips checked, sets data-theme, updates store, and PATCHes', async () => {
+  it('clicking Sepia flips checked, sets data-theme, and PATCHes', async () => {
     const fetchMock = buildFetch();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -203,7 +222,6 @@ describe('SettingsModal Appearance tab (F46)', () => {
     });
     expect((screen.getByTestId('appearance-theme-paper') as HTMLInputElement).checked).toBe(false);
     expect(document.documentElement.dataset.theme).toBe('sepia');
-    expect(useTweaksStore.getState().tweaks.theme).toBe('sepia');
 
     await waitFor(() => {
       const body = findLastSettingsPatchBody(fetchMock);
@@ -226,7 +244,6 @@ describe('SettingsModal Appearance tab (F46)', () => {
       expect(dark.checked).toBe(true);
     });
     expect(document.documentElement.dataset.theme).toBe('dark');
-    expect(useTweaksStore.getState().tweaks.theme).toBe('dark');
 
     await waitFor(() => {
       const body = findLastSettingsPatchBody(fetchMock);
@@ -252,7 +269,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
     ]);
   });
 
-  it('selecting Palatino updates the --prose-font CSS var, the store, and PATCHes', async () => {
+  it('selecting Palatino updates the --prose-font CSS var and PATCHes', async () => {
     const fetchMock = buildFetch();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -263,7 +280,6 @@ describe('SettingsModal Appearance tab (F46)', () => {
     const select = (await screen.findByTestId('appearance-prose-font')) as HTMLSelectElement;
     await user.selectOptions(select, 'palatino');
 
-    expect(useTweaksStore.getState().tweaks.proseFont).toBe('palatino');
     expect(document.documentElement.style.getPropertyValue('--prose-font')).toMatch(/Palatino/);
 
     await waitFor(() => {

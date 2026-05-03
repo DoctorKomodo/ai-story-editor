@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { TopBar } from '@/components/TopBar';
-import { useTweaksStore } from '@/store/tweaks';
+import { useUiStore } from '@/store/ui';
 
 const baseProps = {
   username: 'alice',
@@ -13,9 +13,7 @@ describe('F26 · TopBar component', () => {
   beforeEach(() => {
     // Reset layout to the default before every test so the Focus button
     // assertion exercises a real flip from `three-col` -> `focus`.
-    useTweaksStore.setState({
-      tweaks: { theme: 'paper', layout: 'three-col', proseFont: 'iowan' },
-    });
+    useUiStore.setState({ layout: 'three-col' });
   });
 
   afterEach(() => {
@@ -106,18 +104,16 @@ describe('F26 · TopBar component', () => {
 
   it('clicking the Focus icon flips the layout slice via useFocusToggle', async () => {
     render(<TopBar {...baseProps} />);
-    expect(useTweaksStore.getState().tweaks.layout).toBe('three-col');
+    expect(useUiStore.getState().layout).toBe('three-col');
     await userEvent.click(screen.getByRole('button', { name: 'Focus' }));
-    expect(useTweaksStore.getState().tweaks.layout).toBe('focus');
+    expect(useUiStore.getState().layout).toBe('focus');
     // Toggling again returns to three-col.
     await userEvent.click(screen.getByRole('button', { name: 'Focus' }));
-    expect(useTweaksStore.getState().tweaks.layout).toBe('three-col');
+    expect(useUiStore.getState().layout).toBe('three-col');
   });
 
   it('marks the Focus button as pressed/active when layout is focus', () => {
-    useTweaksStore.setState({
-      tweaks: { theme: 'paper', layout: 'focus', proseFont: 'iowan' },
-    });
+    useUiStore.setState({ layout: 'focus' });
     render(<TopBar {...baseProps} />);
     const focusBtn = screen.getByRole('button', { name: 'Focus' });
     expect(focusBtn).toHaveAttribute('aria-pressed', 'true');

@@ -1,7 +1,7 @@
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useComposerDraftStore } from '@/store/composerDraft';
 import { useSelectionStore } from '@/store/selection';
-import { useTweaksStore } from '@/store/tweaks';
+import { useUiStore } from '@/store/ui';
 
 /**
  * [F41] Ask-AI flow.
@@ -43,9 +43,9 @@ export function triggerAskAI(args: AskAIArgs): void {
   });
 
   // 2. Ensure chat panel is visible.
-  const { tweaks, setTweaks } = useTweaksStore.getState();
-  if (tweaks.layout !== 'three-col') {
-    setTweaks({ layout: 'three-col' });
+  const ui = useUiStore.getState();
+  if (ui.layout !== 'three-col') {
+    ui.setLayout('three-col');
   }
 
   // 3. Pre-fill the composer + request focus.

@@ -5,9 +5,9 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatComposer, type SendArgs } from '@/components/ChatComposer';
 import type { Model } from '@/hooks/useModels';
+import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import { createQueryClient } from '@/lib/queryClient';
 import { type AttachedSelectionValue, useAttachedSelectionStore } from '@/store/attachedSelection';
-import { useModelStore } from '@/store/model';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -247,9 +247,17 @@ describe('ChatComposer (F40)', () => {
 });
 
 describe('ChatComposer web-search toggle (F50)', () => {
+  function clientWithModel(modelId: string | null): QueryClient {
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, {
+      ...DEFAULT_SETTINGS,
+      chat: { ...DEFAULT_SETTINGS.chat, model: modelId },
+    });
+    return qc;
+  }
+
   beforeEach(() => {
     useAttachedSelectionStore.setState({ attachedSelection: null });
-    useModelStore.setState({ modelId: null });
     vi.spyOn(globalThis, 'fetch').mockImplementation(((url: string | URL | Request) => {
       const u = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url;
       if (u.includes('/api/ai/models')) {
@@ -268,28 +276,24 @@ describe('ChatComposer web-search toggle (F50)', () => {
 
   afterEach(() => {
     useAttachedSelectionStore.setState({ attachedSelection: null });
-    useModelStore.setState({ modelId: null });
     vi.restoreAllMocks();
   });
 
   it('shows the toggle when the selected model supports web search', async () => {
-    useModelStore.setState({ modelId: 'm-search' });
-    renderWithQuery(<ChatComposer onSend={vi.fn()} />);
+    renderWithQuery(<ChatComposer onSend={vi.fn()} />, clientWithModel('m-search'));
     expect(await screen.findByLabelText(/web search/i)).toBeInTheDocument();
   });
 
   it('hides the toggle when the selected model does not support web search', async () => {
-    useModelStore.setState({ modelId: 'm-no-search' });
-    renderWithQuery(<ChatComposer onSend={vi.fn()} />);
+    renderWithQuery(<ChatComposer onSend={vi.fn()} />, clientWithModel('m-no-search'));
     // wait for query to settle, then assert absence
     await screen.findByPlaceholderText('Ask, rewrite, describe…');
     expect(screen.queryByLabelText(/web search/i)).toBeNull();
   });
 
   it('passes enableWebSearch=true to onSend when checked, then resets', async () => {
-    useModelStore.setState({ modelId: 'm-search' });
     const onSend = vi.fn();
-    renderWithQuery(<ChatComposer onSend={onSend} />);
+    renderWithQuery(<ChatComposer onSend={onSend} />, clientWithModel('m-search'));
     const checkbox = (await screen.findByLabelText(/web search/i)) as HTMLInputElement;
     await userEvent.click(checkbox);
     expect(checkbox.checked).toBe(true);
