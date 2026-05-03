@@ -15,7 +15,7 @@ import { useId } from 'react';
 import { ModelCard } from '@/components/ModelCard';
 import { Modal, ModalBody, ModalHeader } from '@/design/primitives';
 import { useModelsQuery } from '@/hooks/useModels';
-import { useModelStore } from '@/store/model';
+import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 
 export interface ModelPickerProps {
   open: boolean;
@@ -25,13 +25,15 @@ export interface ModelPickerProps {
 export function ModelPicker({ open, onClose }: ModelPickerProps): JSX.Element | null {
   const headingId = useId();
 
-  const modelId = useModelStore((s) => s.modelId);
-  const setModelId = useModelStore((s) => s.setModelId);
+  const modelId = useUserSettings().chat.model;
+  const updateSetting = useUpdateUserSetting();
 
   const { data: models, isLoading, isError, error } = useModelsQuery();
 
+  // Writing through useUpdateUserSetting PATCHes the backend, so a model
+  // pick syncs across devices instead of staying in browser-local state.
   const handleSelect = (id: string): void => {
-    setModelId(id);
+    updateSetting.mutate({ chat: { model: id } });
     onClose();
   };
 
