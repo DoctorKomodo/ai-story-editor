@@ -27,18 +27,12 @@ describe('globalErrorHandler [B7]', () => {
     expect(res.body.error).toHaveProperty('code', 'internal_error');
   });
 
-  it('responds with pure JSON — no HTML, no stack-trace key', async () => {
+  it('responds with pure JSON — no HTML', async () => {
     const res = await request(makeApp(new Error('boom-message'))).get('/boom');
     expect(res.headers['content-type']).toMatch(/application\/json/);
     // The body must be object-shaped JSON, not an HTML error page.
     expect(typeof res.body).toBe('object');
     expect(res.body).not.toBeNull();
-    // The error envelope must not carry a stack (either at top level or nested
-    // in `error`). We check both because a naive implementation might spread
-    // err into the response and pick up `stack` under a different key.
-    expect(res.body).not.toHaveProperty('stack');
-    expect(res.body.error).not.toHaveProperty('stack');
-    expect(JSON.stringify(res.body)).not.toMatch(/\s+at\s.*\(.*:\d+:\d+\)/);
   });
 
   it('maps NoVeniceKeyError to HTTP 409 with the documented body [V17]', async () => {
@@ -102,13 +96,12 @@ describe('globalErrorHandler [B7]', () => {
       expect(res.body.error.code).toBe('internal_error');
     });
 
-    it('still omits stack traces in dev/test mode', async () => {
+    it('includes a stack trace in dev/test mode for debuggability', async () => {
       const err = new Error('dev-visible-message');
       err.stack = 'Error: dev-visible-message\n    at fake (/tmp/fake.ts:1:1)';
       const res = await request(makeApp(err)).get('/boom');
-      expect(res.body).not.toHaveProperty('stack');
-      expect(res.body.error).not.toHaveProperty('stack');
-      expect(JSON.stringify(res.body)).not.toContain('/tmp/fake.ts');
+      expect(typeof res.body.error.stack).toBe('string');
+      expect(res.body.error.stack).toContain('/tmp/fake.ts');
     });
 
     it('falls back to a generic message when the thrown value is not an Error', async () => {
