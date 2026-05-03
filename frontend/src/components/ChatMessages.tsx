@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { MessageCitations } from '@/components/MessageCitations';
 import {
   type ChatMessage,
@@ -44,6 +45,10 @@ export interface ChatMessagesProps {
   onCopyMessage?: (id: string) => void;
   onRegenerateMessage?: (id: string) => void;
   onPickSuggestion?: (kind: SuggestionKind) => void;
+  /** When set, renders an InlineErrorBanner at the end of the message list. */
+  sendError?: Error | null;
+  /** Wired to the banner's Retry button. */
+  onRetrySend?: () => void;
 }
 
 /**
@@ -335,6 +340,8 @@ export function ChatMessages({
   onCopyMessage,
   onRegenerateMessage,
   onPickSuggestion,
+  sendError,
+  onRetrySend,
 }: ChatMessagesProps): JSX.Element {
   const query = useChatMessagesQuery(chatId);
 
@@ -387,6 +394,8 @@ export function ChatMessages({
   const messages = query.data ?? [];
   const visible = messages.filter((m) => m.role !== 'system');
 
+  const bannerError = sendError != null ? { code: null, message: sendError.message } : null;
+
   return (
     <div className="flex flex-col">
       <ol className="flex flex-col gap-3 p-3" role="log" aria-label="Chat messages">
@@ -409,6 +418,11 @@ export function ChatMessages({
         attachedCharacterCount={attachedCharacterCount}
         attachedTokenCount={attachedTokenCount}
       />
+      {bannerError ? (
+        <div className="px-3 pb-3">
+          <InlineErrorBanner error={bannerError} onRetry={onRetrySend} />
+        </div>
+      ) : null}
     </div>
   );
 }

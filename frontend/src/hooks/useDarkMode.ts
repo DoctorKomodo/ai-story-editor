@@ -1,9 +1,9 @@
 /**
  * [F21] Dark-mode state backed by localStorage.
  *
- * Mirrors the shape of `useSelectedModel` (F13): lazy-init from storage,
- * try/catch around every storage call so private-mode Safari / disabled
- * storage still produces a working in-memory value.
+ * Lazy-init from storage with a try/catch around every storage call so
+ * private-mode Safari / disabled storage still produces a working
+ * in-memory value.
  *
  * Side effect: when `enabled` changes, sets `data-theme="dark"` on
  * `document.documentElement` (or removes the attribute when off) so the

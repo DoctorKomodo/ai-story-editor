@@ -51,8 +51,13 @@ Re-running `make seed` is idempotent: it deletes the demo user (cascade wipes th
 | `make migrate` | apply pending migrations (`prisma migrate deploy`) |
 | `make seed` | seed the demo user + content (dev only) |
 | `make reset-db` | **destructive** — wipes the `pgdata` volume and re-migrates |
+| `make rebuild-frontend` | rebuild + restart after a frontend `package.json` change |
+| `make rebuild-backend` | rebuild + restart after a backend `package.json` change |
+| `make rebuild` | rebuild + restart both images |
 
 Need a clean dev environment from scratch? `make reset-db && make dev && make seed` will give you a fresh DB with a freshly-registered demo user.
+
+After adding or upgrading an npm dependency, run `make rebuild-frontend` (or `make rebuild-backend`). The dev compose mounts source via bind-mount but keeps `node_modules` inside the container image, so a host-side `npm install` doesn't reach the running stack until the image is rebuilt.
 
 ## Tests and lint
 

@@ -216,14 +216,16 @@ export function mapVeniceErrorToSse(
   if (!(err instanceof APIError)) return false;
 
   let code: string;
+  let message: string;
   let retryAfterSeconds: number | null | undefined;
-  let message: string | undefined;
 
   if (err instanceof AuthenticationError) {
     console.error('[V11] Venice rejected key for user (SSE)', userId ?? '(unknown)');
     code = 'venice_key_invalid';
+    message = 'Your Venice API key was rejected. Please update it in Settings.';
   } else if (err instanceof RateLimitError) {
     code = 'venice_rate_limited';
+    message = 'Venice is rate limiting this request. Try again shortly.';
     retryAfterSeconds = parseRetryAfter(err.headers);
   } else if (err.status === 402) {
     // [V24] 402 — Venice account is out of credits (INSUFFICIENT_BALANCE).
@@ -234,6 +236,7 @@ export function mapVeniceErrorToSse(
       'Your Venice account is out of credits. Top up at https://venice.ai/settings/api to continue.';
   } else if (err.status === 502 || err.status === 503 || err.status === 504) {
     code = 'venice_unavailable';
+    message = 'Venice is temporarily unavailable. Try again shortly.';
   } else {
     console.error(
       '[V11] Venice unexpected status (SSE)',
@@ -242,11 +245,11 @@ export function mapVeniceErrorToSse(
       userId ?? '(unknown)',
     );
     code = 'venice_error';
+    message = 'Venice returned an unexpected error.';
   }
 
-  const payload: Record<string, unknown> = { error: code };
+  const payload: Record<string, unknown> = { error: message, code, message };
   if (retryAfterSeconds !== undefined) payload.retryAfterSeconds = retryAfterSeconds;
-  if (message !== undefined) payload.message = message;
   write(`data: ${JSON.stringify(payload)}\n\n`);
   write('data: [DONE]\n\n');
   return true;

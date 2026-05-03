@@ -1,7 +1,9 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { JSX } from 'react';
+import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useInitAuth } from '@/hooks/useAuth';
+import { isDebugMode } from '@/lib/debug';
 import { queryClient } from '@/lib/queryClient';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EditorPage } from '@/pages/EditorPage';
@@ -9,6 +11,22 @@ import { LoginPage } from '@/pages/LoginPage';
 import { RegisterPage } from '@/pages/RegisterPage';
 import { ResetPasswordPage } from '@/pages/ResetPasswordPage';
 import { useSessionStore } from '@/store/session';
+
+// Build-time gate: in prod builds (`vite build`), `import.meta.env.PROD` is
+// the literal `true`, so this expression dead-code-eliminates the dynamic
+// import entirely and the Devtools package is excluded from the bundle.
+// In dev builds it resolves to a lazy component; runtime `isDebugMode()`
+// decides whether to mount it. Trade-off: this disables the localStorage
+// opt-in for *prod* builds (you can no longer flip Devtools on in a deployed
+// prod build via `localStorage['inkwell:debug']='1'`). That feature was
+// speculative; correct prod-bundle exclusion is non-speculative.
+const ReactQueryDevtoolsLazy = import.meta.env.PROD
+  ? null
+  : lazy(() =>
+      import('@tanstack/react-query-devtools').then((m) => ({
+        default: m.ReactQueryDevtools,
+      })),
+    );
 
 function RequireAuth(): JSX.Element {
   const status = useSessionStore((s) => s.status);
@@ -58,6 +76,11 @@ export function AppRouter({ queryClient: clientOverride }: AppRouterProps = {}):
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {ReactQueryDevtoolsLazy && isDebugMode() ? (
+        <Suspense fallback={null}>
+          <ReactQueryDevtoolsLazy initialIsOpen={false} />
+        </Suspense>
+      ) : null}
     </QueryClientProvider>
   );
 }

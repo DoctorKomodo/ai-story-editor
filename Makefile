@@ -1,4 +1,4 @@
-.PHONY: dev stop migrate seed reset-db test test-e2e logs
+.PHONY: dev stop rebuild rebuild-frontend rebuild-backend migrate seed reset-db test test-e2e logs
 
 dev:
 	docker compose up -d
@@ -7,6 +7,23 @@ dev:
 
 stop:
 	docker compose down
+
+# Rebuild a service image after a dependency change (e.g. new npm package),
+# then bring the stack back up. Use this whenever package.json changes —
+# the dev compose mounts source via bind-mount but keeps node_modules
+# inside the image (anonymous volume), so a fresh `npm install` only takes
+# effect after the image is rebuilt.
+rebuild: stop
+	docker compose build
+	$(MAKE) dev
+
+rebuild-frontend: stop
+	docker compose build frontend
+	$(MAKE) dev
+
+rebuild-backend: stop
+	docker compose build backend
+	$(MAKE) dev
 
 migrate:
 	cd backend && npx prisma migrate deploy

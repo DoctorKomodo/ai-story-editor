@@ -1,5 +1,6 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
+import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 
@@ -10,18 +11,16 @@ import { useInlineAIResultStore } from '@/store/inlineAIResult';
  * selection as a serif-italic blockquote with a left border, then either:
  *   - three bouncing `.think-dot`s while `status === 'thinking'`,
  *   - the streaming/done output as serif 16px text, or
- *   - a friendly error message on `status === 'error'`.
+ *   - an `<InlineErrorBanner>` on `status === 'error'` showing the actual
+ *     `code · message` (with debug-mode raw payload).
  *
- * Action row (rendered when `status === 'done' | 'error'`):
- *   - **Replace** — diff-replaces the current TipTap selection with the
- *     output and clears the store.
- *   - **Insert after** — inserts the output at `editor.state.selection.to`
- *     and clears the store.
- *   - **Retry** — calls the parent's `onRetry` (which re-runs the AI request).
- *   - **Discard** — clears the store, dismissing the card.
+ * Action rows are split by status:
+ *   - `status === 'done'`: Replace · Insert after · Retry · Discard.
+ *   - `status === 'error'`: Discard only — the banner has its own Retry
+ *     button wired to `onRetry`.
  *
- * F34 owns the visual + the action wiring; the parent (later: F32 EditorPage)
- * is responsible for routing the SelectionBubble's `onAction` callback to a
+ * F34 owns the visual + the action wiring; the parent (EditorPage) is
+ * responsible for routing the SelectionBubble's `onAction` callback to a
  * handler that seeds the store and kicks off the F15 SSE stream. F34 itself
  * never calls `/api/ai/complete` — it just renders whatever the store says.
  *
@@ -52,7 +51,6 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
   if (!inlineAIResult) return null;
 
   const { text, status, output } = inlineAIResult;
-  const showActions = status === 'done' || status === 'error';
   const canMutate = editor !== null && output.length > 0;
 
   const handleReplace = (): void => {
@@ -106,12 +104,15 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
       )}
 
       {status === 'error' && (
-        <div role="alert" className="text-danger text-[13px] mt-3">
-          Couldn&apos;t generate. Try again?
+        <div className="mt-3">
+          <InlineErrorBanner
+            error={inlineAIResult.error ?? { code: null, message: "Couldn't generate." }}
+            onRetry={onRetry}
+          />
         </div>
       )}
 
-      {showActions && (
+      {status === 'done' && (
         <div className="flex items-center gap-2 mt-4 text-[12px]">
           <button
             type="button"
@@ -132,6 +133,14 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
           <button type="button" onClick={handleRetry} className={buttonClass}>
             Retry
           </button>
+          <span className="flex-1" aria-hidden="true" />
+          <button type="button" onClick={handleDiscard} className={discardClass}>
+            Discard
+          </button>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="flex items-center gap-2 mt-4 text-[12px]">
           <span className="flex-1" aria-hidden="true" />
           <button type="button" onClick={handleDiscard} className={discardClass}>
             Discard
