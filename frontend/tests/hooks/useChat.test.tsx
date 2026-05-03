@@ -67,12 +67,14 @@ describe('useSendChatMessageMutation', () => {
       });
     });
 
-    // Synchronous side effect of mutateAsync: draft starts in 'thinking'.
-    expect(useChatDraftStore.getState().draft).toMatchObject({
-      chatId: 'c1',
-      userContent: 'hello',
-      assistantText: '',
-      status: 'thinking',
+    // onMutate fires before mutationFn; draft starts in 'thinking'.
+    await waitFor(() => {
+      expect(useChatDraftStore.getState().draft).toMatchObject({
+        chatId: 'c1',
+        userContent: 'hello',
+        assistantText: '',
+        status: 'thinking',
+      });
     });
 
     await act(async () => {
@@ -102,9 +104,11 @@ describe('useSendChatMessageMutation', () => {
       });
     });
 
-    expect(useChatDraftStore.getState().draft?.attachment).toEqual({
-      selectionText: 'sel',
-      chapterId: 'ch1',
+    await waitFor(() => {
+      expect(useChatDraftStore.getState().draft?.attachment).toEqual({
+        selectionText: 'sel',
+        chapterId: 'ch1',
+      });
     });
 
     await act(async () => {

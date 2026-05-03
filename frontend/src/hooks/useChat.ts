@@ -169,14 +169,20 @@ export interface SendChatMessageArgs {
  * post-stream refetch, then invalidate the messages query on success so the
  * persisted rows take over.
  *
- * `start()` is called synchronously inside the returned `mutateAsync` wrapper
- * (before the TanStack Query scheduler defers the `mutationFn` body) so the
- * optimistic user-message bubble is visible in the same React flush as the
- * Send action.
+ * `start()` runs in `onMutate` (before `mutationFn`), driven by React Query's
+ * standard optimistic-update hook. This fires for both `mutate()` and
+ * `mutateAsync()` callers without any manual wrapping.
  */
 export function useSendChatMessageMutation(): UseMutationResult<void, Error, SendChatMessageArgs> {
   const qc = useQueryClient();
-  const inner = useMutation<void, Error, SendChatMessageArgs>({
+  return useMutation<void, Error, SendChatMessageArgs>({
+    onMutate: ({ chatId, content, attachment }) => {
+      useChatDraftStore.getState().start({
+        chatId,
+        userContent: content,
+        attachment: attachment ?? null,
+      });
+    },
     mutationFn: async ({ chatId, content, modelId, attachment, enableWebSearch }) => {
       const body: Record<string, unknown> = { content, modelId };
       if (attachment) body.attachment = attachment;
@@ -240,18 +246,4 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
       useChatDraftStore.getState().clear();
     },
   });
-
-  // Wrap mutateAsync so start() fires synchronously in the same React flush
-  // as the Send action, before TanStack Query defers the mutationFn body.
-  // Save the original before overwriting so the wrapper can still delegate.
-  const originalMutateAsync = inner.mutateAsync;
-  inner.mutateAsync = (vars, options) => {
-    useChatDraftStore.getState().start({
-      chatId: vars.chatId,
-      userContent: vars.content,
-      attachment: vars.attachment ?? null,
-    });
-    return originalMutateAsync(vars, options);
-  };
-  return inner;
 }
