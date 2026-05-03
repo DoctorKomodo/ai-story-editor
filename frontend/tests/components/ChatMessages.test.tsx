@@ -301,4 +301,39 @@ describe('ChatMessages (F39)', () => {
     });
     expect(screen.queryByText('SYSTEM PROMPT')).not.toBeInTheDocument();
   });
+
+  describe('sendError', () => {
+    it('renders InlineErrorBanner at the end when sendError is set; Retry fires onRetrySend', async () => {
+      mockMessages([
+        makeMessage({ id: 'm1', role: 'user', contentJson: 'hello' }),
+        makeMessage({ id: 'm2', role: 'assistant', contentJson: 'hi' }),
+      ]);
+      const onRetry = vi.fn();
+      renderWithProviders(
+        <ChatMessages
+          chatId="c1"
+          sendError={new Error('venice_key_invalid · bad key')}
+          onRetrySend={onRetry}
+        />,
+      );
+
+      // Wait for the messages query to resolve so the banner sits at the
+      // bottom of a real list rather than during the loading state.
+      await screen.findByTestId('assistant-m2');
+
+      const banner = screen.getByTestId('inline-error-banner');
+      expect(banner).toBeInTheDocument();
+      expect(banner).toHaveTextContent(/venice_key_invalid · bad key/);
+
+      await userEvent.click(within(banner).getByRole('button', { name: 'Retry' }));
+      expect(onRetry).toHaveBeenCalledTimes(1);
+    });
+
+    it('does not render the banner when sendError is null', async () => {
+      mockMessages([makeMessage({ id: 'm1', role: 'user', contentJson: 'hi' })]);
+      renderWithProviders(<ChatMessages chatId="c1" sendError={null} />);
+      await screen.findByText('hi');
+      expect(screen.queryByTestId('inline-error-banner')).toBeNull();
+    });
+  });
 });
