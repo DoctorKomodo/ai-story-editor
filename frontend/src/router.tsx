@@ -1,7 +1,9 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import type { JSX } from 'react';
 import { Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { useInitAuth } from '@/hooks/useAuth';
+import { isDebugMode } from '@/lib/debug';
 import { queryClient } from '@/lib/queryClient';
 import { DashboardPage } from '@/pages/DashboardPage';
 import { EditorPage } from '@/pages/EditorPage';
@@ -58,6 +60,7 @@ export function AppRouter({ queryClient: clientOverride }: AppRouterProps = {}):
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
+      {isDebugMode() ? <ReactQueryDevtools initialIsOpen={false} /> : null}
     </QueryClientProvider>
   );
 }
