@@ -5,7 +5,13 @@
 import type { Response } from 'express';
 import { APIError } from 'openai';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { mapVeniceError, mapVeniceErrorToSse, parseRetryAfter } from '../../src/lib/venice-errors';
+import {
+  AuthenticationError,
+  mapVeniceError,
+  mapVeniceErrorToSse,
+  parseRetryAfter,
+  RateLimitError,
+} from '../../src/lib/venice-errors';
 
 describe('parseRetryAfter', () => {
   afterEach(() => {
@@ -274,10 +280,12 @@ describe('mapVeniceError — 402 INSUFFICIENT_BALANCE', () => {
     expect(first.endsWith('\n\n')).toBe(true);
     const parsed = JSON.parse(first.slice('data: '.length).trimEnd()) as {
       error: string;
+      code: string;
       retryAfterSeconds: number | null;
       message: string;
     };
-    expect(parsed.error).toBe('venice_insufficient_balance');
+    expect(parsed.code).toBe('venice_insufficient_balance');
+    expect(parsed.error).toContain('venice.ai/settings/api');
     expect(parsed.retryAfterSeconds).toBeNull();
     expect(parsed.message).toContain('venice.ai/settings/api');
 
@@ -288,5 +296,55 @@ describe('mapVeniceError — 402 INSUFFICIENT_BALANCE', () => {
     for (const frame of frames) {
       expect(frame).not.toContain(KEY_SENTINEL);
     }
+  });
+});
+
+describe('mapVeniceErrorToSse — uniform { error, code, message } shape', () => {
+  function captureFrames(): { writes: string[]; write: (s: string) => void } {
+    const writes: string[] = [];
+    return {
+      writes,
+      write: (s) => {
+        writes.push(s);
+      },
+    };
+  }
+
+  function parseFirstFrame(writes: string[]): unknown {
+    const dataLine = writes[0]?.replace(/^data:\s*/, '').replace(/\n\n$/, '');
+    return JSON.parse(dataLine ?? '{}');
+  }
+
+  it('AuthenticationError → { error, code, message } all populated', () => {
+    const sink = captureFrames();
+    const err = new AuthenticationError(
+      401,
+      { error: { message: 'bad key' } },
+      'bad key',
+      new Headers(),
+    );
+    const handled = mapVeniceErrorToSse(err, sink.write);
+    expect(handled).toBe(true);
+    const frame = parseFirstFrame(sink.writes) as Record<string, unknown>;
+    expect(frame.code).toBe('venice_key_invalid');
+    expect(typeof frame.error).toBe('string');
+    expect(typeof frame.message).toBe('string');
+    expect(String(frame.message).length).toBeGreaterThan(0);
+  });
+
+  it('RateLimitError → carries retryAfterSeconds + message', () => {
+    const sink = captureFrames();
+    const err = new RateLimitError(
+      429,
+      { error: { message: 'rl' } },
+      'rl',
+      new Headers({ 'retry-after': '30' }),
+    );
+    const handled = mapVeniceErrorToSse(err, sink.write);
+    expect(handled).toBe(true);
+    const frame = parseFirstFrame(sink.writes) as Record<string, unknown>;
+    expect(frame.code).toBe('venice_rate_limited');
+    expect(typeof frame.message).toBe('string');
+    expect(frame.retryAfterSeconds).toBe(30);
   });
 });
