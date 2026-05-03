@@ -9,9 +9,9 @@ import {
   useState,
 } from 'react';
 import { useModelsQuery } from '@/hooks/useModels';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import { type AttachedSelectionValue, useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useComposerDraftStore } from '@/store/composerDraft';
-import { useModelStore } from '@/store/model';
 
 /**
  * [F40] Chat composer.
@@ -130,7 +130,7 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
   const pendingDraft = useComposerDraftStore((s) => s.draft);
   const clearDraft = useComposerDraftStore((s) => s.clearDraft);
   const focusToken = useComposerDraftStore((s) => s.focusToken);
-  const modelId = useModelStore((s) => s.modelId);
+  const modelId = useUserSettings().chat.model;
   const modelsQuery = useModelsQuery();
   const selectedModel = useMemo(() => {
     const list = modelsQuery.data ?? [];

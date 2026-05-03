@@ -20,8 +20,7 @@ import { type JSX, type ReactNode, useState } from 'react';
  * intended width without the shell.
  */
 import { type Model, useModelsQuery } from '@/hooks/useModels';
-import { useModelStore } from '@/store/model';
-import { useParamsStore } from '@/store/params';
+import { useUserSettings } from '@/hooks/useUserSettings';
 
 export interface ChatPanelProps {
   /** Slot for the message list ([F39]). Rendered when the Chat tab is active. */
@@ -161,9 +160,10 @@ export function ChatPanel({
 }: ChatPanelProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('chat');
 
-  const modelId = useModelStore((s) => s.modelId);
+  const settings = useUserSettings();
+  const modelId = settings.chat.model;
   const { data: models } = useModelsQuery();
-  const params = useParamsStore((s) => s.params);
+  const params = settings.chat;
 
   const selectedModel: Model | undefined = models?.find((m) => m.id === modelId);
   const modelName = selectedModel?.name ?? 'No model';

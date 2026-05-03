@@ -70,6 +70,7 @@ import {
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
 import { useStoryQuery } from '@/hooks/useStories';
+import { useUserSettings } from '@/hooks/useUserSettings';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -77,7 +78,6 @@ import { useActiveChapterStore } from '@/store/activeChapter';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useErrorStore } from '@/store/errors';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
-import { useModelStore } from '@/store/model';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
 
@@ -155,7 +155,7 @@ export function EditorPage(): JSX.Element {
   // [F61] Account & privacy modal state — same page-root convention.
   const [accountPrivacyOpen, setAccountPrivacyOpen] = useState(false);
 
-  const selectedModelId = useModelStore((s) => s.modelId);
+  const selectedModelId = useUserSettings().chat.model;
   const completion = useAICompletion();
 
   // [F55] Chat surface wiring. Active chat = first chat for the active chapter
