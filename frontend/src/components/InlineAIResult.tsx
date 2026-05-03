@@ -1,5 +1,6 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
+import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 
@@ -52,7 +53,6 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
   if (!inlineAIResult) return null;
 
   const { text, status, output } = inlineAIResult;
-  const showActions = status === 'done' || status === 'error';
   const canMutate = editor !== null && output.length > 0;
 
   const handleReplace = (): void => {
@@ -106,12 +106,15 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
       )}
 
       {status === 'error' && (
-        <div role="alert" className="text-danger text-[13px] mt-3">
-          Couldn&apos;t generate. Try again?
+        <div className="mt-3">
+          <InlineErrorBanner
+            error={inlineAIResult.error ?? { code: null, message: "Couldn't generate." }}
+            onRetry={onRetry}
+          />
         </div>
       )}
 
-      {showActions && (
+      {status === 'done' && (
         <div className="flex items-center gap-2 mt-4 text-[12px]">
           <button
             type="button"
@@ -132,6 +135,14 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
           <button type="button" onClick={handleRetry} className={buttonClass}>
             Retry
           </button>
+          <span className="flex-1" aria-hidden="true" />
+          <button type="button" onClick={handleDiscard} className={discardClass}>
+            Discard
+          </button>
+        </div>
+      )}
+      {status === 'error' && (
+        <div className="flex items-center gap-2 mt-4 text-[12px]">
           <span className="flex-1" aria-hidden="true" />
           <button type="button" onClick={handleDiscard} className={discardClass}>
             Discard

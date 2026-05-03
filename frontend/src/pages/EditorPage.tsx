@@ -396,7 +396,11 @@ export function EditorPage(): JSX.Element {
           action,
           text,
           status: 'error',
-          output: 'No model selected. Open the model picker to choose one.',
+          output: '',
+          error: {
+            code: 'no_model',
+            message: 'No model selected. Open the model picker to choose one.',
+          },
         });
         return;
       }
@@ -450,10 +454,14 @@ export function EditorPage(): JSX.Element {
     } else if (completion.status === 'done') {
       setInlineAIResult({ ...prev, status: 'done', output: completion.text });
     } else if (completion.status === 'error') {
+      const err = completion.error;
       setInlineAIResult({
         ...prev,
         status: 'error',
-        output: completion.error?.message ?? 'AI request failed.',
+        output: '',
+        error: err
+          ? { code: err.code ?? null, message: err.message, httpStatus: err.status }
+          : { code: null, message: 'AI request failed.' },
       });
     }
   }, [completion.status, completion.text, completion.error, setInlineAIResult]);

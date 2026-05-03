@@ -209,16 +209,42 @@ describe('InlineAIResult (F34)', () => {
     expect(screen.getByRole('button', { name: 'Insert after' })).toBeDisabled();
   });
 
-  it('renders the error message and Retry/Discard buttons on status=error', () => {
+  it('renders InlineErrorBanner with fallback copy when status=error and no error payload', () => {
     useInlineAIResultStore.setState({
       inlineAIResult: { action: 'rewrite', text: 'old', status: 'error', output: '' },
     });
     render(<InlineAIResult editor={null} />);
+    expect(screen.getByTestId('inline-error-banner')).toBeInTheDocument();
     expect(screen.getByRole('alert')).toHaveTextContent(/couldn.?t generate/i);
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    // Banner's Retry button is rendered via onRetry prop.
+    // Discard is in the error action row below the banner.
     expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument();
-    // Replace + Insert after still rendered but disabled (no output).
-    expect(screen.getByRole('button', { name: 'Replace' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Insert after' })).toBeDisabled();
+    // Replace + Insert after are NOT rendered on error (action row restructured).
+    expect(screen.queryByRole('button', { name: 'Replace' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Insert after' })).toBeNull();
+  });
+
+  it('renders InlineErrorBanner with code+message when status=error and error payload provided', () => {
+    useInlineAIResultStore.setState({
+      inlineAIResult: {
+        action: 'rewrite',
+        text: 'old',
+        status: 'error',
+        output: '',
+        error: { code: 'venice_key_invalid', message: 'Your Venice API key was rejected.' },
+      },
+    });
+    const onRetry = vi.fn();
+    render(<InlineAIResult editor={null} onRetry={onRetry} />);
+    expect(screen.getByTestId('inline-error-banner')).toBeInTheDocument();
+    expect(screen.getByRole('alert')).toHaveTextContent('venice_key_invalid');
+    expect(screen.getByRole('alert')).toHaveTextContent('Your Venice API key was rejected.');
+    // Banner's own Retry button (inside the banner).
+    const retryButtons = screen.getAllByRole('button', { name: 'Retry' });
+    expect(retryButtons).toHaveLength(1);
+    fireEvent.click(retryButtons[0]);
+    expect(onRetry).toHaveBeenCalledTimes(1);
+    // Discard still rendered in action row.
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument();
   });
 });
