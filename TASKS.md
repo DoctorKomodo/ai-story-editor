@@ -20,8 +20,8 @@
 ## Current focus
 
 - **In flight:** F63 chat history, F65 terminal-401 redirect.
-- **Backlog (next):** M1–M3 maintenance, X25–X29 testing-found UI/settings polish.
-- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X25, X26, X27, X28, X29, DS-* (none yet).
+- **Backlog (next):** M1–M3 maintenance, X25–X30 testing-found UI/settings polish.
+- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X25, X26, X27, X28, X29, X30, DS-* (none yet).
 - **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
 - **Live sections:** F (Phase 4 only), X, M, DS.
 
@@ -170,6 +170,9 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/EditorFind.test.tsx`
 
 - [ ] **[X25]** Modals open in an off-centre position (towards the upper-left) on first frame, then visibly snap to the centre of the viewport once mounted. Fix the `<Modal>` primitive (and any wrapper layout) so the dialog renders in its final centred position from frame one — likely a transform / measurement / focus-trap-mount race. Affects every modal across the app (Story picker, Settings, Account confirm, etc.).
+
+- [ ] **[X30]** `@`-mention character picker inside the editor always shows "No characters in this story yet." even when the story has characters. Suspected timing / provider-registration race in `frontend/src/lib/charRefSuggestion.ts` + `frontend/src/hooks/useCharRefSuggestionProvider.ts` + `frontend/src/components/Paper.tsx`: the `Suggestion` extension is created with a module-level `provider` callback, but `Paper` only registers its provider in a mount effect, and `useCharactersQuery(activeStoryId)` only resolves later. If the editor mounts (or the user types `@`) before the provider registers OR before the characters query resolves, `items()` returns `[]` and `<CharRefMenu>` renders the empty-state copy. Investigation should: (1) reproduce in a story with ≥1 character; (2) confirm `useCharactersQuery` actually resolves a non-empty list for the active story; (3) decide between waiting on the provider (defer suggestion init), passing characters through the TipTap extension config instead of a module singleton, or re-triggering the menu when the provider/data appears. Likely a small fix once reproduced.
+  - verify: (TBD — write a `tests/components/CharRefSuggestion.test.tsx` that mounts `Paper` with seeded characters and asserts the menu shows them on `@`)
 
 ### X — AI features
 
