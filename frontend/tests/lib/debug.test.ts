@@ -37,4 +37,13 @@ describe('isDebugMode / setDebugMode', () => {
     expect(isDebugMode()).toBe(false);
     expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
   });
+
+  it('exposes window.__inkwell.debug as a console toggle proxy', () => {
+    vi.stubEnv('DEV', false);
+    expect(window.__inkwell?.debug?.get()).toBe(false);
+    window.__inkwell!.debug!.set(true);
+    expect(isDebugMode()).toBe(true);
+    window.__inkwell!.debug!.set(false);
+    expect(isDebugMode()).toBe(false);
+  });
 });
