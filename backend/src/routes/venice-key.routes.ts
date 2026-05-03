@@ -73,7 +73,7 @@ export function createVeniceKeyRouter(options: VeniceKeyRouterOptions = {}) {
       const status = await veniceKeyService.store(req.user!.id, req.body);
       res.status(200).json({
         status: 'saved',
-        lastFour: status.lastFour,
+        lastSix: status.lastSix,
         endpoint: status.endpoint,
       });
     } catch (err) {
@@ -122,26 +122,30 @@ export function createVeniceKeyRouter(options: VeniceKeyRouterOptions = {}) {
       } catch (err) {
         // 401 from Venice — the stored key was rejected. Return verified:false
         // with the key metadata echoed back so the Settings pill can display
-        // "Not verified · last four: XXXX". Don't use mapVeniceError here
+        // "Not verified · last six: XXXXXX". Don't use mapVeniceError here
         // because that would return HTTP 400; we want 200 for this case.
         if (err instanceof AuthenticationError) {
-          // Fetch status to include endpoint/lastFour even on bad-key response.
+          // Fetch status to include endpoint/lastSix even on bad-key response.
           // We already called getStatus inside verify(), but verify throws
           // before we can read those values — fetch them here.
           try {
             const status = await veniceKeyService.getStatus(userId);
             res.status(200).json({
               verified: false,
-              credits: null,
+              balanceUsd: null,
               diem: null,
               endpoint: status.endpoint,
-              lastFour: status.lastFour,
+              lastSix: status.lastSix,
             });
           } catch {
             // If getStatus itself fails, return minimal verified:false response.
-            res
-              .status(200)
-              .json({ verified: false, credits: null, diem: null, endpoint: null, lastFour: null });
+            res.status(200).json({
+              verified: false,
+              balanceUsd: null,
+              diem: null,
+              endpoint: null,
+              lastSix: null,
+            });
           }
           return;
         }

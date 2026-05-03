@@ -15,6 +15,7 @@
 // ChatPanel / ChatComposer, not modals).
 import type { JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
+import { formatUsd } from '@/components/BalanceDisplay';
 import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
@@ -215,7 +216,22 @@ function VeniceTab(): JSX.Element {
   }, [statusQuery.data?.endpoint]);
 
   const status = statusQuery.data;
-  const lastFour = status?.lastFour ?? null;
+  const lastSix = status?.lastSix ?? null;
+
+  // [X26 (b)] Masked stored-key indicator — used as the API key input's
+  // placeholder when a key is already stored, replacing the separate
+  // "Stored: •••• xxxx" field above the Remove button.
+  const storedKeyPlaceholder = lastSix ? `••••••••••••${lastSix}` : 'vn_…';
+
+  function applyVerifyResult(res: VeniceKeyVerify): void {
+    if (res.verified) {
+      const usd = res.balanceUsd != null ? formatUsd(res.balanceUsd) : 'USD —';
+      setVerifyPill({ kind: 'ok', message: `Verified · ${usd}` });
+    } else {
+      const six = res.lastSix ?? lastSix ?? '??????';
+      setVerifyPill({ kind: 'err', message: `Not verified · last six ${six}` });
+    }
+  }
 
   const handleSave = async (): Promise<void> => {
     if (apiKeyDraft.trim().length === 0) return;
@@ -229,21 +245,25 @@ function VeniceTab(): JSX.Element {
       // Clear the plaintext draft immediately — never keep it sitting in
       // component state once the server has acknowledged storage.
       setApiKeyDraft('');
+      // [X26 (c)] Save chains a verify in the same flow so the user gets
+      // balance feedback without a second click. The standalone Verify
+      // button stays for re-checking an existing stored key later.
+      try {
+        const res = await verifyMutation.mutateAsync();
+        applyVerifyResult(res);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Verification failed';
+        setVerifyPill({ kind: 'err', message: msg });
+      }
     } catch {
-      // Mutation error state is rendered via `storeMutation.isError` below.
+      // store mutation error state is rendered via `storeMutation.isError` below.
     }
   };
 
   const handleVerify = async (): Promise<void> => {
     try {
-      const res: VeniceKeyVerify = await verifyMutation.mutateAsync();
-      if (res.verified) {
-        const credits = res.credits != null ? res.credits.toLocaleString() : '—';
-        setVerifyPill({ kind: 'ok', message: `Verified · ${credits} credits` });
-      } else {
-        const four = res.lastFour ?? lastFour ?? '????';
-        setVerifyPill({ kind: 'err', message: `Not verified · last four ${four}` });
-      }
+      const res = await verifyMutation.mutateAsync();
+      applyVerifyResult(res);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Verification failed';
       setVerifyPill({ kind: 'err', message: msg });
@@ -281,15 +301,7 @@ function VeniceTab(): JSX.Element {
         <div className="flex flex-col gap-1">
           <label htmlFor={apiKeyId} className="flex items-baseline justify-between text-[12px]">
             <span className="font-medium text-ink-2">API Key</span>
-            <span className="text-ink-4 font-sans">
-              {status?.hasKey && lastFour ? (
-                <span data-testid="venice-key-last-four">
-                  Stored: <span aria-hidden="true">••••</span> {lastFour}
-                </span>
-              ) : (
-                <>From venice.ai → Settings → API</>
-              )}
-            </span>
+            <span className="text-ink-4 font-sans">From venice.ai → Settings → API</span>
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -299,7 +311,10 @@ function VeniceTab(): JSX.Element {
               value={apiKeyDraft}
               autoComplete="off"
               spellCheck={false}
-              placeholder={status?.hasKey ? 'Enter a new key to replace' : 'vn_…'}
+              // [X26 (b)] When a key is stored, the placeholder shows it
+              // partially masked with the last six characters visible — a
+              // single field replaces the prior "Stored: •••• xxxx" label.
+              placeholder={storedKeyPlaceholder}
               onChange={(e) => {
                 setApiKeyDraft(e.target.value);
               }}
@@ -442,10 +457,12 @@ function VeniceTab(): JSX.Element {
             className="mt-1"
           />
           <span className="flex flex-col gap-[2px]">
-            <span className="font-medium text-ink-2">Include Venice creative-writing prompt</span>
+            <span className="font-medium text-ink-2">
+              Include Venice&apos;s default system prompt
+            </span>
             <span className="text-ink-4 font-sans">
-              Prepend Venice&apos;s built-in creative writing guidance on top of Inkwell&apos;s own
-              system prompt.
+              When on, Venice prepends its own default system prompt before Inkwell&apos;s. When
+              off, only Inkwell&apos;s system prompt is sent.
             </span>
           </span>
         </label>

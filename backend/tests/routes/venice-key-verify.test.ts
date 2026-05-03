@@ -133,10 +133,10 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       verified: false,
-      credits: null,
+      balanceUsd: null,
       diem: null,
       endpoint: null,
-      lastFour: null,
+      lastSix: null,
     });
     // No Venice call should have been made (there's no key to probe with).
     // The only fetch calls were in registerAndLogin (none) and storeKey (none).
@@ -145,7 +145,7 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
 
   // ── 3. Key present + both balance headers ─────────────────────────────────
 
-  it('returns verified:true with credits and diem when both headers are present', async () => {
+  it('returns verified:true with balanceUsd and diem when both headers are present', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
@@ -163,16 +163,16 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       verified: true,
-      credits: 2.25,
+      balanceUsd: 2.25,
       diem: 1800,
       endpoint: DEFAULT_VENICE_ENDPOINT,
-      lastFour: 'LAST',
+      lastSix: 'Y-LAST',
     });
   });
 
   // ── 4. One balance header missing ─────────────────────────────────────────
 
-  it('returns credits:null when x-venice-balance-usd header is absent', async () => {
+  it('returns balanceUsd:null when x-venice-balance-usd header is absent', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
@@ -184,7 +184,7 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
-    expect(res.body.credits).toBeNull();
+    expect(res.body.balanceUsd).toBeNull();
     expect(res.body.diem).toBe(500);
   });
 
@@ -200,13 +200,13 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
-    expect(res.body.credits).toBe(1.5);
+    expect(res.body.balanceUsd).toBe(1.5);
     expect(res.body.diem).toBeNull();
   });
 
   // ── 5. No balance headers at all ──────────────────────────────────────────
 
-  it('returns credits:null and diem:null when no balance headers are present', async () => {
+  it('returns balanceUsd:null and diem:null when no balance headers are present', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
@@ -218,13 +218,13 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
-    expect(res.body.credits).toBeNull();
+    expect(res.body.balanceUsd).toBeNull();
     expect(res.body.diem).toBeNull();
   });
 
   // ── 6. Venice returns 401 (stored key is bad) ─────────────────────────────
 
-  it('returns verified:false with endpoint/lastFour echoed when Venice returns 401', async () => {
+  it('returns verified:false with endpoint/lastSix echoed when Venice returns 401', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
@@ -243,10 +243,10 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       verified: false,
-      credits: null,
+      balanceUsd: null,
       diem: null,
       endpoint: DEFAULT_VENICE_ENDPOINT,
-      lastFour: 'LAST',
+      lastSix: 'Y-LAST',
     });
 
     const logged = [errSpy, warnSpy, logSpy, infoSpy]

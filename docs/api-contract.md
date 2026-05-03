@@ -11,7 +11,7 @@ All endpoints are served from the Express backend at `/api`. Content type is `ap
 - **Validation** — request bodies are Zod-validated ([AU / B series]); invalid payloads return `400 { error: { message, code: "validation_error", issues } }`.
 - **Errors** — global error handler returns `{ error: { message, code } }`. Never exposes stack traces in `NODE_ENV=production` ([B7]). Common codes: `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `venice_key_required`, `venice_key_invalid`, `internal_error`.
 - **Narrative fields** — responses for Story, Chapter, Character, OutlineItem, Chat, Message never include ciphertext siblings (`*Ciphertext`, `*Iv`, `*AuthTag`). The repo layer strips them ([E9]).
-- **Secrets** — `passwordHash` is never returned. The decrypted Venice API key is never returned; the "hasKey / lastFour / endpoint" shape is the only read surface ([AU12]).
+- **Secrets** — `passwordHash` is never returned. The decrypted Venice API key is never returned; the "hasKey / lastSix / endpoint" shape is the only read surface ([AU12]).
 
 ---
 
@@ -57,11 +57,11 @@ Read/write `User.settingsJson`. Zod enforces allowed keys: `theme`, `proseFont`,
 Response `200`: `{ "settings": { … } }`.
 
 ### `GET /api/users/me/venice-key` ([AU12])
-Response `200`: `{ "hasKey": true, "lastFour": "x9ab", "endpoint": "https://api.venice.ai/api/v1" }`. Never returns the key.
+Response `200`: `{ "hasKey": true, "lastSix": "abx9ab", "endpoint": "https://api.venice.ai/api/v1" }`. Never returns the key.
 
 ### `PUT /api/users/me/venice-key` ([AU12])
 Body: `{ "apiKey": "vn-…", "endpoint?": "https://…" }`. Validates by calling Venice `GET /v1/models` before storing; encrypts via the AU11 helper.
-Response `200`: `{ "status": "saved", "lastFour": "x9ab" }`.
+Response `200`: `{ "status": "saved", "lastSix": "abx9ab" }`.
 Errors: `400 { code: "venice_key_invalid" }` on 401 from Venice (key not stored).
 
 ### `DELETE /api/users/me/venice-key` ([AU12])
@@ -69,7 +69,7 @@ Nulls the four BYOK columns. Response `200`: `{ "status": "removed" }`.
 
 ### `POST /api/users/me/venice-key/verify` ([V18])
 Rate-limited 6 req/min/user.
-Response `200`: `{ "verified": true, "credits": 2200, "diem": 15.0, "endpoint": "…", "lastFour": "x9ab" }`.
+Response `200`: `{ "verified": true, "balanceUsd": 22.5, "diem": 15.0, "endpoint": "…", "lastSix": "abx9ab" }`. The `balanceUsd` value is read from Venice's `x-venice-balance-usd` response header (matches the figure on Venice's account dashboard) — denominated in USD, not arbitrary "credits". Either of `balanceUsd` / `diem` may be `null` when the corresponding header is absent.
 
 ---
 

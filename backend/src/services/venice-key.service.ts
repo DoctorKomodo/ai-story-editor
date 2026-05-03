@@ -9,16 +9,16 @@ export const DEFAULT_VENICE_ENDPOINT = 'https://api.venice.ai/api/v1';
 
 export interface VeniceKeyStatus {
   hasKey: boolean;
-  lastFour: string | null;
+  lastSix: string | null;
   endpoint: string | null;
 }
 
 export interface VeniceKeyVerifyResult {
   verified: boolean;
-  credits: number | null;
+  balanceUsd: number | null;
   diem: number | null;
   endpoint: string | null;
-  lastFour: string | null;
+  lastSix: string | null;
 }
 
 export class VeniceKeyInvalidError extends Error {
@@ -57,8 +57,8 @@ export interface VeniceKeyServiceDeps {
   getVeniceClientFn?: (userId: string) => Promise<OpenAI>;
 }
 
-function lastFourOf(apiKey: string): string {
-  return apiKey.slice(-4);
+function lastSixOf(apiKey: string): string {
+  return apiKey.slice(-6);
 }
 
 function resolveEndpoint(endpoint: string | null | undefined): string {
@@ -107,7 +107,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     });
 
     if (!row?.veniceApiKeyEnc || !row.veniceApiKeyIv || !row.veniceApiKeyAuthTag) {
-      return { hasKey: false, lastFour: null, endpoint: null };
+      return { hasKey: false, lastSix: null, endpoint: null };
     }
 
     const plaintext = decrypt({
@@ -117,7 +117,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     });
     return {
       hasKey: true,
-      lastFour: lastFourOf(plaintext),
+      lastSix: lastSixOf(plaintext),
       endpoint: row.veniceEndpoint ?? DEFAULT_VENICE_ENDPOINT,
     };
   }
@@ -142,7 +142,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
 
     return {
       hasKey: true,
-      lastFour: lastFourOf(input.apiKey),
+      lastSix: lastSixOf(input.apiKey),
       endpoint: input.endpoint ?? DEFAULT_VENICE_ENDPOINT,
     };
   }
@@ -166,7 +166,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     const status = await getStatus(userId);
 
     if (!status.hasKey) {
-      return { verified: false, credits: null, diem: null, endpoint: null, lastFour: null };
+      return { verified: false, balanceUsd: null, diem: null, endpoint: null, lastSix: null };
     }
 
     // Use the injected getter (or the default) so tests can stub the client
@@ -175,21 +175,23 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     const veniceClient = await getClientFn(userId);
 
     // .withResponse() gives us the raw HTTP response so we can read balance
-    // headers even though the openai SDK doesn't type them.
+    // headers even though the openai SDK doesn't type them. The
+    // x-venice-balance-usd header is denominated in USD (matches the figure
+    // shown on Venice's account dashboard) — not arbitrary "credits".
     const { response } = await veniceClient.models.list().withResponse();
 
     const rawUsd = response.headers.get('x-venice-balance-usd');
     const rawDiem = response.headers.get('x-venice-balance-diem');
 
-    const creditsVal = rawUsd !== null ? parseFloat(rawUsd) : null;
+    const usdVal = rawUsd !== null ? parseFloat(rawUsd) : null;
     const diemVal = rawDiem !== null ? parseFloat(rawDiem) : null;
 
     return {
       verified: true,
-      credits: creditsVal !== null && !Number.isNaN(creditsVal) ? creditsVal : null,
+      balanceUsd: usdVal !== null && !Number.isNaN(usdVal) ? usdVal : null,
       diem: diemVal !== null && !Number.isNaN(diemVal) ? diemVal : null,
       endpoint: status.endpoint,
-      lastFour: status.lastFour,
+      lastSix: status.lastSix,
     };
   }
 

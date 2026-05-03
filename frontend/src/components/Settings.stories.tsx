@@ -12,7 +12,7 @@ import { SettingsModal } from './Settings';
 
 const SAMPLE_VENICE_STATUS: VeniceKeyStatus = {
   hasKey: true,
-  lastFour: '4f9c',
+  lastSix: 'aB4f9c',
   endpoint: 'https://api.venice.ai/api/v1',
 };
 
