@@ -6,11 +6,8 @@ import type { JSX, ReactNode } from 'react';
  * Three named transitions matching the design tokens in `src/index.css`:
  *  - `backdrop` — fade-in 160ms ease-out (modal/dialog scrims).
  *  - `modal`    — translate-y 8→0 + scale .98→1 over 180ms with a soft cubic-bezier.
- *                 The keyframe sets `transform: translate(-50%, -50%)` for the final
- *                 state, so callers should NOT layer Tailwind's `-translate-x-1/2 -translate-y-1/2`
- *                 onto the same element — apply `t-modal-in` to a wrapper that owns
- *                 the centring transform itself, or to an element that handles centring
- *                 inline. (See note in TASKS.md F49 for migration guidance.)
+ *                 The keyframe animates `transform` only (translateY + scale); centring
+ *                 is the caller's responsibility (typically a flex-centered backdrop).
  *  - `popover`  — opacity 0 + translateY 4px → 1 over 140ms ease-out (hover popovers,
  *                 selection bubble, and other small floating UI).
  *

@@ -102,10 +102,11 @@ describe('shared transition CSS tokens', () => {
     expect(CSS).toMatch(
       /\.t-modal-in\s*\{[^}]*animation:\s*inkwell-modal-in\s+180ms\s+cubic-bezier\(\s*0?\.2\s*,\s*0?\.9\s*,\s*0?\.3\s*,\s*1\s*\)/,
     );
-    // Initial transform mixes translate(-50%, -50% + 8px) and scale(.98).
-    expect(CSS).toMatch(
-      /translate\(\s*-50%\s*,\s*calc\(\s*-50%\s*\+\s*8px\s*\)\s*\)\s*scale\(\s*0?\.98\s*\)/,
-    );
+    // Initial transform: translateY(8px) + scale(.98). The keyframe deliberately
+    // does NOT include translate(-50%, -50%) — centring is the caller's job, and
+    // composing it here conflicts with Tailwind v4's `translate` longhand utilities
+    // and produces a visible upper-left → centre snap when the animation ends (X25).
+    expect(CSS).toMatch(/translateY\(\s*8px\s*\)\s*scale\(\s*0?\.98\s*\)/);
   });
 
   it('defines the popover slide-in keyframe and class', () => {

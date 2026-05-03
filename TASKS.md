@@ -20,8 +20,8 @@
 ## Current focus
 
 - **In flight:** F63 chat history, F65 terminal-401 redirect.
-- **Backlog (next):** M1–M3 maintenance, X25–X29 testing-found UI/settings polish.
-- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X25, X26, X27, X28, X29, DS-* (none yet).
+- **Backlog (next):** M1–M3 maintenance, X26–X29 testing-found UI/settings polish.
+- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X26, X27, X28, X29, DS-* (none yet).
 - **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
 - **Live sections:** F (Phase 4 only), X, M, DS.
 
@@ -169,7 +169,9 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 - [ ] **[X17]** Find / Replace UI in the editor. Wire `<FormatBar>`'s `onToggleFind` callback to a small inline find bar inside `<Paper>` that highlights matches, supports next/previous, and optionally Replace. Decision (capture in plan): inline strip vs floating popover. Match the prototype's mockup if one is added; otherwise design-first. F52 ships the FormatBar Find button as `disabled` with a `title="Find — coming in [X17]"` tooltip; X17 lifts the disabled state and wires the actual feature.
   - verify: `cd frontend && npm run test:frontend -- --run tests/components/EditorFind.test.tsx`
 
-- [ ] **[X25]** Modals open in an off-centre position (towards the upper-left) on first frame, then visibly snap to the centre of the viewport once mounted. Fix the `<Modal>` primitive (and any wrapper layout) so the dialog renders in its final centred position from frame one — likely a transform / measurement / focus-trap-mount race. Affects every modal across the app (Story picker, Settings, Account confirm, etc.).
+- [x] **[X25]** Modals open in an off-centre position (towards the upper-left) on first frame, then visibly snap to the centre of the viewport once mounted. Fix the `<Modal>` primitive (and any wrapper layout) so the dialog renders in its final centred position from frame one — likely a transform / measurement / focus-trap-mount race. Affects every modal across the app (Story picker, Settings, Account confirm, etc.).
+  - trivial: Root cause was a Tailwind v4 `translate` longhand × `t-modal-in` keyframe `transform` collision — the two composed into a -100%/-100% double translate during the 180ms animation, then snapped back when the keyframe `transform` reverted. Fix: drop `fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2` from the Modal card (the backdrop's `flex items-center justify-center` already centres it), simplify the keyframe to `translateY(8px) scale(.98) → translateY(0) scale(1)`. Single primitive change, covers every modal.
+  - verify: `cd frontend && npm run test:frontend -- --run tests/design/ModalCentering.test.tsx tests/components/Animations.test.tsx`
 
 ### X — AI features
 
