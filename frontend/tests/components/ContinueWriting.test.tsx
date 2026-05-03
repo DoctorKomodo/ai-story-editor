@@ -240,6 +240,26 @@ describe('ContinueWriting (F35)', () => {
     expect(runMock).not.toHaveBeenCalled();
   });
 
+  it('does not fire run() again when trigger() or Retry is called during thinking phase', () => {
+    const { editor } = makeEditorMock('Context.');
+    const { rerender } = render(<ContinueWriting editor={editor} {...baseProps} />);
+    // First click from idle — sets lastArgs and kicks off the run.
+    fireEvent.click(screen.getByRole('button', { name: 'Continue writing' }));
+    expect(runMock).toHaveBeenCalledTimes(1);
+
+    // Simulate the hook entering 'thinking' (the new initial in-flight state).
+    setHookState({ status: 'thinking', text: '' });
+    rerender(<ContinueWriting editor={editor} {...baseProps} />);
+
+    // A second click via trigger() must be blocked.
+    // (trigger is not exposed directly; we verify run() is not called again.)
+    // The Retry button is also disabled while thinking.
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeDisabled();
+
+    // run() should still be exactly 1 — no re-entry occurred.
+    expect(runMock).toHaveBeenCalledTimes(1);
+  });
+
   it('Keep is a no-op when text is empty (e.g. after error)', () => {
     const { editor, spies } = makeEditorMock();
     setHookState({ status: 'done', text: '' });

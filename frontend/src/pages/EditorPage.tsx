@@ -477,6 +477,8 @@ export function EditorPage(): JSX.Element {
     if (completion.status === 'idle') return;
     const prev = useInlineAIResultStore.getState().inlineAIResult;
     if (!prev) return;
+    // 'thinking' is set directly by handleInlineAction / handleInlineRetry
+    // before run() is called; no mirror needed here.
     if (completion.status === 'streaming') {
       setInlineAIResult({ ...prev, status: 'streaming', output: completion.text });
     } else if (completion.status === 'done') {
