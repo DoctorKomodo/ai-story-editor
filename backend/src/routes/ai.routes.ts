@@ -333,7 +333,11 @@ export function createAiRouter() {
           const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), userId);
           if (!handled) {
             res.write(
-              `data: ${JSON.stringify({ error: 'stream_error', code: 'stream_error' })}\n\n`,
+              `data: ${JSON.stringify({
+                error: 'An internal stream error occurred.',
+                code: 'stream_error',
+                message: 'An internal stream error occurred.',
+              })}\n\n`,
             );
             res.write('data: [DONE]\n\n');
           }
