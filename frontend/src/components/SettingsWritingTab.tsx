@@ -20,7 +20,7 @@
 // single-event changes.
 import type { ChangeEvent, JSX, ReactNode } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
-import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
+import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 
 // --- localStorage helpers ----------------------------------------------------
 
@@ -137,59 +137,52 @@ export function SettingsWritingTab(): JSX.Element {
   const emDashId = useId();
   const dailyGoalId = useId();
 
-  const settingsQuery = useUserSettingsQuery();
-  const updateSettings = useUpdateUserSettingsMutation();
+  const settings = useUserSettings();
+  const updateSetting = useUpdateUserSetting();
 
   // localStorage-backed flag (auto-save is purely a frontend behaviour and
   // doesn't need server storage).
   const [autoSave, setAutoSave] = useLocalBool(LS_KEYS.autoSave, true);
 
-  // Backend-bound toggles read directly from the query — single source of
-  // truth, no local mirror. The PATCH mutation's onSuccess updates the cache
-  // so the toggle flips as soon as the server confirms.
-  const writing = settingsQuery.data?.writing;
-  const typewriter = writing?.typewriterMode ?? false;
-  const focusMode = writing?.focusMode ?? false;
+  // useUserSettings returns a definite-shape value (defaults fill in while
+  // the query is loading), so no nullish handling is needed for these reads.
+  const writing = settings.writing;
+  const typewriter = writing.typewriterMode;
+  const focusMode = writing.focusMode;
   // [F66] Smart quotes + em-dash expansion are now persisted via B11.
-  const smartQuotes = writing?.smartQuotes ?? false;
-  const emDashExpansion = writing?.emDashExpansion ?? false;
+  const smartQuotes = writing.smartQuotes;
+  const emDashExpansion = writing.emDashExpansion;
 
   const handleTypewriter = (next: boolean): void => {
-    if (writing == null) return;
-    updateSettings.mutate({ writing: { typewriterMode: next } });
+    updateSetting.mutate({ writing: { typewriterMode: next } });
   };
 
   const handleFocusMode = (next: boolean): void => {
-    if (writing == null) return;
-    updateSettings.mutate({ writing: { focusMode: next } });
+    updateSetting.mutate({ writing: { focusMode: next } });
   };
 
   const handleSmartQuotes = (next: boolean): void => {
-    if (writing == null) return;
-    updateSettings.mutate({ writing: { smartQuotes: next } });
+    updateSetting.mutate({ writing: { smartQuotes: next } });
   };
 
   const handleEmDashExpansion = (next: boolean): void => {
-    if (writing == null) return;
-    updateSettings.mutate({ writing: { emDashExpansion: next } });
+    updateSetting.mutate({ writing: { emDashExpansion: next } });
   };
 
   // --- Daily goal -----------------------------------------------------------
 
   // Local draft so typing feels responsive; PATCH is debounced. Re-seed
   // whenever the server-side value changes (e.g. settings refetch).
-  const serverGoal = writing?.dailyWordGoal ?? 0;
-  const [goalDraft, setGoalDraft] = useState<string>(String(serverGoal));
-  const lastSeededGoalRef = useRef<number | null>(null);
+  const [goalDraft, setGoalDraft] = useState<string>(String(writing.dailyWordGoal));
+  const lastSeededGoalRef = useRef<number>(writing.dailyWordGoal);
   useEffect(() => {
-    if (writing == null) return;
     if (lastSeededGoalRef.current === writing.dailyWordGoal) return;
     lastSeededGoalRef.current = writing.dailyWordGoal;
     setGoalDraft(String(writing.dailyWordGoal));
-  }, [writing]);
+  }, [writing.dailyWordGoal]);
 
   const flushGoal = useDebouncedCallback((value: number): void => {
-    updateSettings.mutate({ writing: { dailyWordGoal: value } });
+    updateSetting.mutate({ writing: { dailyWordGoal: value } });
   }, 400);
 
   const handleGoalChange = (raw: string): void => {
@@ -202,7 +195,8 @@ export function SettingsWritingTab(): JSX.Element {
 
   // --- Render ---------------------------------------------------------------
 
-  const settingsLoading = !settingsQuery.data;
+  // useUserSettings always returns a definite shape, so render is never
+  // gated on a loading state — controls are interactive immediately.
 
   return (
     <div className="flex flex-col gap-4">
@@ -212,7 +206,7 @@ export function SettingsWritingTab(): JSX.Element {
         hint="Keep the active line vertically centered while writing"
         testId="writing-typewriter-toggle"
         checked={typewriter}
-        disabled={settingsLoading || updateSettings.isPending}
+        disabled={updateSetting.isPending}
         onChange={handleTypewriter}
       />
       <ToggleRow
@@ -221,7 +215,7 @@ export function SettingsWritingTab(): JSX.Element {
         hint="Dim everything except the paragraph you're editing"
         testId="writing-focus-toggle"
         checked={focusMode}
-        disabled={settingsLoading || updateSettings.isPending}
+        disabled={updateSetting.isPending}
         onChange={handleFocusMode}
       />
       <ToggleRow
@@ -238,7 +232,7 @@ export function SettingsWritingTab(): JSX.Element {
         hint="Convert straight quotes into curly quotes as you type"
         testId="writing-smart-quotes-toggle"
         checked={smartQuotes}
-        disabled={settingsLoading || updateSettings.isPending}
+        disabled={updateSetting.isPending}
         onChange={handleSmartQuotes}
       />
       <ToggleRow
@@ -247,7 +241,7 @@ export function SettingsWritingTab(): JSX.Element {
         hint="Expand `--` into an em dash automatically"
         testId="writing-em-dash-toggle"
         checked={emDashExpansion}
-        disabled={settingsLoading || updateSettings.isPending}
+        disabled={updateSetting.isPending}
         onChange={handleEmDashExpansion}
       />
 
@@ -264,7 +258,6 @@ export function SettingsWritingTab(): JSX.Element {
           max={100000}
           step={100}
           value={goalDraft}
-          disabled={settingsLoading}
           onChange={(e) => {
             handleGoalChange(e.target.value);
           }}
