@@ -62,13 +62,16 @@ interface SettingsEnvelope {
 
 export const userSettingsQueryKey = ['user-settings'] as const;
 
-export function useUserSettingsQuery(): UseQueryResult<UserSettings, Error> {
+export function useUserSettingsQuery(
+  options: { enabled?: boolean } = {},
+): UseQueryResult<UserSettings, Error> {
   return useQuery({
     queryKey: userSettingsQueryKey,
     queryFn: async (): Promise<UserSettings> => {
       const res = await api<SettingsEnvelope>('/users/me/settings');
       return res.settings;
     },
+    enabled: options.enabled,
   });
 }
 
