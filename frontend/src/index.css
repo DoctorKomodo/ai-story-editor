@@ -450,6 +450,13 @@ body {
   animation-delay: 0.3s;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .think-dot {
+    animation: none;
+    opacity: 0.55;
+  }
+}
+
 /* [F49] Shared transitions — backdrop fade-in, modal pop-in, popover/bubble
    slide-in. Used via the `<Transition>` wrapper in `src/components/Transition.tsx`
    or by adding the `t-*` class directly to an element that mounts in its
