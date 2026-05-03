@@ -7,6 +7,7 @@ import { ChatMessages, formatTokens } from '@/components/ChatMessages';
 import type { ChatMessage } from '@/hooks/useChat';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
+import { useChatDraftStore } from '@/store/chatDraft';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -61,6 +62,7 @@ describe('ChatMessages (F39)', () => {
     setUnauthorizedHandler(null);
     resetApiClientForTests();
     useSessionStore.setState({ user: null, status: 'idle' });
+    useChatDraftStore.getState().clear();
   });
 
   function mockMessages(messages: ChatMessage[]): void {
@@ -300,6 +302,68 @@ describe('ChatMessages (F39)', () => {
       expect(screen.getByText('visible user msg')).toBeInTheDocument();
     });
     expect(screen.queryByText('SYSTEM PROMPT')).not.toBeInTheDocument();
+  });
+
+  it('renders an optimistic user bubble + thinking dots when a draft is in "thinking" state', async () => {
+    mockMessages([]);
+    useChatDraftStore.getState().start({
+      chatId: 'c1',
+      userContent: 'How does X work?',
+      attachment: null,
+    });
+
+    renderWithProviders(<ChatMessages chatId="c1" chapterTitle="Ch. 1" />);
+
+    // Optimistic user bubble visible.
+    expect(await screen.findByText('How does X work?')).toBeInTheDocument();
+    // Thinking dots visible in place of the assistant body.
+    expect(screen.getByTestId('thinking-dots')).toBeInTheDocument();
+  });
+
+  it('renders streaming assistantText in the optimistic assistant bubble (no dots)', async () => {
+    mockMessages([]);
+    useChatDraftStore.getState().start({
+      chatId: 'c1',
+      userContent: 'q',
+      attachment: null,
+    });
+    useChatDraftStore.getState().markStreaming();
+    useChatDraftStore.getState().appendDelta('Hello');
+
+    renderWithProviders(<ChatMessages chatId="c1" chapterTitle="Ch. 1" />);
+
+    expect(await screen.findByText('Hello')).toBeInTheDocument();
+    expect(screen.queryByTestId('thinking-dots')).not.toBeInTheDocument();
+  });
+
+  it('does NOT render the draft pair when draft.chatId differs from the active chatId', async () => {
+    mockMessages([]);
+    useChatDraftStore.getState().start({
+      chatId: 'c2', // different chat
+      userContent: 'wrong-chat message',
+      attachment: null,
+    });
+
+    renderWithProviders(<ChatMessages chatId="c1" chapterTitle="Ch. 1" />);
+
+    await waitFor(() => {
+      expect(screen.queryByText('wrong-chat message')).not.toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('thinking-dots')).not.toBeInTheDocument();
+  });
+
+  it('renders the draft user bubble with attachment preview when attachment is set', async () => {
+    mockMessages([]);
+    useChatDraftStore.getState().start({
+      chatId: 'c1',
+      userContent: 'expand this',
+      attachment: { selectionText: 'a passage of prose', chapterId: 'ch1' },
+    });
+
+    renderWithProviders(<ChatMessages chatId="c1" chapterTitle="Ch. 1" />);
+
+    expect(await screen.findByText('expand this')).toBeInTheDocument();
+    expect(screen.getByText('a passage of prose')).toBeInTheDocument();
   });
 
   describe('sendError', () => {

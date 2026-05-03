@@ -1,11 +1,9 @@
 import type { JSX } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { MessageCitations } from '@/components/MessageCitations';
-import {
-  type ChatMessage,
-  type ChatMessageAttachment,
-  useChatMessagesQuery,
-} from '@/hooks/useChat';
+import { ThinkingDots } from '@/design/ThinkingDots';
+import { type ChatMessage, useChatMessagesQuery } from '@/hooks/useChat';
+import { type ChatDraft, useChatDraftStore } from '@/store/chatDraft';
 
 /**
  * [F39] Chat messages list.
@@ -72,7 +70,7 @@ function getMessageText(contentJson: unknown): string {
 }
 
 function chapterCaption(
-  attachment: ChatMessageAttachment,
+  attachment: { chapterId?: string },
   chapterTitle: string | null | undefined,
 ): string {
   if (chapterTitle && chapterTitle.length > 0) return chapterTitle.toUpperCase();
@@ -332,6 +330,55 @@ function AssistantMessage({ message, onCopy, onRegenerate }: AssistantMessagePro
   );
 }
 
+interface DraftPairProps {
+  draft: ChatDraft;
+  chapterTitle: string | null | undefined;
+}
+
+function DraftPair({ draft, chapterTitle }: DraftPairProps): JSX.Element {
+  const hasAttachment = draft.attachment !== null && draft.attachment.selectionText.length > 0;
+  return (
+    <>
+      <li className="flex flex-col items-end" data-role="user" data-testid="draft-user">
+        {hasAttachment && draft.attachment !== null ? (
+          <div className="attachment-preview pl-3 border-l-2 border-line-2 mb-1 ml-auto max-w-[80%]">
+            <span className="text-[10px] uppercase tracking-[.08em] font-mono text-ink-4 block">
+              {`FROM CH. ${chapterCaption(draft.attachment, chapterTitle)}`}
+            </span>
+            <blockquote className="font-serif italic text-[13px] text-ink-3 line-clamp-2">
+              {draft.attachment.selectionText}
+            </blockquote>
+          </div>
+        ) : null}
+        <div className="user-bubble bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] font-sans ml-auto max-w-[80%] whitespace-pre-wrap">
+          {draft.userContent}
+        </div>
+      </li>
+      {draft.status === 'error' ? null : (
+        <li
+          className="flex flex-col items-start"
+          data-role="assistant"
+          data-testid="draft-assistant"
+        >
+          {draft.status === 'thinking' ||
+          (draft.status === 'streaming' && draft.assistantText.length === 0) ? (
+            <div
+              className="assistant-bubble pl-3 border-l-2 border-[var(--ai)] py-1"
+              data-testid="draft-thinking"
+            >
+              <ThinkingDots />
+            </div>
+          ) : (
+            <div className="assistant-bubble pl-3 border-l-2 border-[var(--ai)] font-serif text-[13.5px] leading-[1.55] text-ink whitespace-pre-wrap max-w-full">
+              {draft.assistantText}
+            </div>
+          )}
+        </li>
+      )}
+    </>
+  );
+}
+
 export function ChatMessages({
   chatId,
   chapterTitle,
@@ -344,6 +391,8 @@ export function ChatMessages({
   onRetrySend,
 }: ChatMessagesProps): JSX.Element {
   const query = useChatMessagesQuery(chatId);
+  const draft = useChatDraftStore((s) => s.draft);
+  const draftForThisChat = draft !== null && draft.chatId === chatId ? draft : null;
 
   if (chatId === null) {
     return (
@@ -412,6 +461,9 @@ export function ChatMessages({
             />
           );
         })}
+        {draftForThisChat ? (
+          <DraftPair draft={draftForThisChat} chapterTitle={chapterTitle} />
+        ) : null}
       </ol>
       <ContextChip
         chapterTitle={chapterTitle}

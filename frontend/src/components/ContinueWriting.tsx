@@ -69,12 +69,14 @@ export function ContinueWriting({
   const lastArgsRef = useRef<RunArgs | null>(null);
 
   const isIdle = status === 'idle';
+  const isThinking = status === 'thinking';
   const isStreaming = status === 'streaming';
+  const isInFlight = isThinking || isStreaming;
   const isError = status === 'error';
 
   const trigger = useCallback((): void => {
     if (!editor) return;
-    if (status === 'streaming') return;
+    if (status === 'streaming' || status === 'thinking') return;
     const cursorContext = readCursorContext(editor);
     const args: RunArgs = {
       action: 'continue',
@@ -119,7 +121,7 @@ export function ContinueWriting({
   const handleRetry = useCallback((): void => {
     const args = lastArgsRef.current ?? lastArgs;
     if (!args) return;
-    if (status === 'streaming') return;
+    if (status === 'streaming' || status === 'thinking') return;
     void run(args);
   }, [lastArgs, run, status]);
 
@@ -185,7 +187,7 @@ export function ContinueWriting({
         <button
           type="button"
           onClick={handleKeep}
-          disabled={isStreaming || isError || text.length === 0}
+          disabled={isInFlight || isError || text.length === 0}
           className={buttonClass}
         >
           Keep
@@ -193,7 +195,7 @@ export function ContinueWriting({
         <button
           type="button"
           onClick={handleRetry}
-          disabled={isStreaming || lastArgsRef.current === null}
+          disabled={isInFlight || lastArgsRef.current === null}
           className={buttonClass}
         >
           Retry
@@ -202,7 +204,7 @@ export function ContinueWriting({
         <button
           type="button"
           onClick={handleDiscard}
-          disabled={isStreaming}
+          disabled={isInFlight}
           className={discardClass}
         >
           Discard

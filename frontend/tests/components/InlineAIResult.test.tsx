@@ -68,11 +68,11 @@ describe('InlineAIResult (F34)', () => {
     render(<InlineAIResult editor={null} />);
     expect(screen.getByRole('complementary', { name: 'AI result' })).toBeInTheDocument();
     expect(screen.getByText('old')).toBeInTheDocument();
-    const dots = screen.getAllByTestId('think-dot');
+    const region = screen.getByTestId('thinking-dots');
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toHaveAttribute('aria-label', 'Thinking');
+    const dots = region.querySelectorAll('.think-dot');
     expect(dots).toHaveLength(3);
-    expect(dots[0]).toHaveStyle({ animationDelay: '0ms' });
-    expect(dots[1]).toHaveStyle({ animationDelay: '150ms' });
-    expect(dots[2]).toHaveStyle({ animationDelay: '300ms' });
     // No action row while thinking.
     expect(screen.queryByRole('button', { name: 'Replace' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();
@@ -91,6 +91,19 @@ describe('InlineAIResult (F34)', () => {
     expect(screen.getByText('new content')).toBeInTheDocument();
     expect(screen.queryAllByTestId('think-dot')).toHaveLength(0);
     expect(screen.queryByRole('button', { name: 'Replace' })).toBeNull();
+  });
+
+  it('renders dots while status=streaming and output is still empty (race safety)', () => {
+    useInlineAIResultStore.setState({
+      inlineAIResult: {
+        action: 'rewrite',
+        text: 'A long sentence selected by the user.',
+        status: 'streaming',
+        output: '',
+      },
+    });
+    render(<InlineAIResult editor={null} />);
+    expect(screen.getByTestId('thinking-dots')).toBeInTheDocument();
   });
 
   it('renders the action row with all four buttons when status is done', () => {

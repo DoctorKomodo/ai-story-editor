@@ -23,7 +23,7 @@ import { ApiError, apiStream } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
 import { useErrorStore } from '@/store/errors';
 
-export type AICompletionStatus = 'idle' | 'streaming' | 'done' | 'error';
+export type AICompletionStatus = 'idle' | 'thinking' | 'streaming' | 'done' | 'error';
 
 export interface UsageInfo {
   remainingRequests: number | null;
@@ -118,7 +118,7 @@ export function useAICompletion(): UseAICompletion {
       // Keep the prior `usage` snapshot on run-start — we only overwrite it
       // when the new response carries at least one header value.
       safeSetState((prev) => ({
-        status: 'streaming',
+        status: 'thinking',
         text: '',
         error: null,
         usage: prev.usage,
@@ -203,7 +203,11 @@ export function useAICompletion(): UseAICompletion {
           if (event.type === 'chunk') {
             const delta = event.chunk.choices?.[0]?.delta?.content;
             if (typeof delta === 'string' && delta.length > 0) {
-              safeSetState((prev) => ({ ...prev, text: prev.text + delta }));
+              safeSetState((prev) => ({
+                ...prev,
+                status: prev.status === 'thinking' ? 'streaming' : prev.status,
+                text: prev.text + delta,
+              }));
             }
           } else if (event.type === 'error') {
             const code = event.error.code ?? 'stream_error';

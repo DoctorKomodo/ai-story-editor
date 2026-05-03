@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-query';
 import { api, apiStream } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
+import { useChatDraftStore } from '@/store/chatDraft';
 
 /**
  * [F39] Chat-related query hooks.
@@ -163,35 +164,94 @@ export interface SendChatMessageArgs {
 }
 
 /**
- * [F55] POST a chat message and consume the SSE assistant reply, then
- * invalidate the messages query so the UI refetches both rows. Streaming
- * tokens-into-cache is deferred — the simpler refetch path keeps the wiring
- * obvious and lets the existing GET path drive the final render.
+ * [F55] POST a chat message, seed the draft store immediately so the
+ * optimistic bubble and live-streaming text appear without waiting for the
+ * post-stream refetch, then invalidate the messages query on success so the
+ * persisted rows take over.
+ *
+ * `start()` runs in `onMutate` (before `mutationFn`), driven by React Query's
+ * standard optimistic-update hook. This fires for both `mutate()` and
+ * `mutateAsync()` callers without any manual wrapping.
  */
 export function useSendChatMessageMutation(): UseMutationResult<void, Error, SendChatMessageArgs> {
   const qc = useQueryClient();
   return useMutation<void, Error, SendChatMessageArgs>({
+    onMutate: ({ chatId, content, attachment }) => {
+      useChatDraftStore.getState().start({
+        chatId,
+        userContent: content,
+        attachment: attachment ?? null,
+      });
+    },
     mutationFn: async ({ chatId, content, modelId, attachment, enableWebSearch }) => {
       const body: Record<string, unknown> = { content, modelId };
       if (attachment) body.attachment = attachment;
       if (enableWebSearch === true) body.enableWebSearch = true;
-      const res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
-        method: 'POST',
-        body,
-      });
-      if (!res.body) return;
-      // Drain the SSE stream so the backend completes its writes before we
-      // refetch. We don't surface the live tokens — the GET refetch is the
-      // source of truth for the final message rows.
-      for await (const event of parseAiSseStream(res.body)) {
-        if (event.type === 'error') {
-          throw new Error(event.error.error || 'Chat send failed');
+
+      let res: Response;
+      try {
+        res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
+          method: 'POST',
+          body,
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Chat send failed';
+        useChatDraftStore.getState().markError({ code: null, message });
+        throw err;
+      }
+
+      if (!res.body) {
+        const message = 'Empty response body';
+        useChatDraftStore.getState().markError({ code: null, message });
+        throw new Error(message);
+      }
+
+      let firstChunkSeen = false;
+      try {
+        for await (const event of parseAiSseStream(res.body)) {
+          if (event.type === 'chunk') {
+            const delta = event.chunk.choices?.[0]?.delta?.content;
+            if (typeof delta === 'string' && delta.length > 0) {
+              if (!firstChunkSeen) {
+                firstChunkSeen = true;
+                useChatDraftStore.getState().markStreaming();
+              }
+              useChatDraftStore.getState().appendDelta(delta);
+            }
+          } else if (event.type === 'error') {
+            const message = event.error.error || 'Chat send failed';
+            useChatDraftStore.getState().markError({
+              code: event.error.code ?? null,
+              message,
+            });
+            throw new Error(message);
+          } else if (event.type === 'done') {
+            useChatDraftStore.getState().markDone();
+            break;
+          }
+          // citations frame: ignored — refetched message carries citationsJson.
         }
-        if (event.type === 'done') break;
+      } catch (err) {
+        if (useChatDraftStore.getState().draft?.status !== 'error') {
+          const message = err instanceof Error ? err.message : 'Chat stream failed';
+          useChatDraftStore.getState().markError({ code: null, message });
+        }
+        throw err;
       }
     },
     onSuccess: (_void, vars) => {
+      // Clear the draft before invalidating so we never briefly show both
+      // the optimistic draft bubble and the persisted assistant message.
+      useChatDraftStore.getState().clear();
       void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
+    },
+    onSettled: () => {
+      // Safety net for any path that didn't clear in onSuccess (i.e. failed
+      // mutations land here after onError). Preserve error drafts so the
+      // error banner stays visible until the next send overwrites them.
+      const currentStatus = useChatDraftStore.getState().draft?.status;
+      if (currentStatus === 'error') return;
+      useChatDraftStore.getState().clear();
     },
   });
 }
