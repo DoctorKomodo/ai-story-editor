@@ -4,15 +4,15 @@
 // [B11] PATCH /api/users/me/settings:
 //
 //   1. Theme picker — three radio tiles (Paper / Sepia / Dark). Click flips
-//      `useTweaksStore.tweaks.theme`, mirrors the choice onto
+//      `settings.theme` via useUpdateUserSetting, mirrors the choice onto
 //      `document.documentElement.dataset.theme` so the F23 token system
-//      repaints, and PATCHes `{ theme }`.
+//      repaints, and the wrapper PATCHes the backend.
 //
-//   2. Prose font — `<select>` over the four mockup fonts, persisted as a
-//      stable token (`iowan` | `palatino` | `garamond` | `plex-serif`) on
-//      both `useTweaksStore.proseFont` and `prose.font`. Writes a font-stack
-//      to the `--prose-font` CSS variable on the document root so the
-//      `.paper-prose .ProseMirror` rule in `index.css` swaps faces live.
+//   2. Prose font — `<select>` over the four mockup fonts, persisted on
+//      `prose.font` as a stable token (`iowan` | `palatino` | `garamond` |
+//      `plex-serif`). Writes a font-stack to the `--prose-font` CSS variable
+//      on the document root so the `.paper-prose .ProseMirror` rule in
+//      `index.css` swaps faces live.
 //
 //   3. Prose size + line-height sliders — write to `--prose-size` /
 //      `--prose-line-height` CSS vars (live preview) and PATCH the matching
@@ -21,15 +21,15 @@
 //
 // Auto-save semantics match the rest of the modal — every change persists
 // immediately (or after debounce for the sliders); Cancel / Done just close.
-//
-// F46 supersedes the F21 dark-mode toggle for theme switching, but doesn't
-// delete `<DarkModeToggle>` — F21 tests still mount that component
-// directly, and removing it would break them. The toggle and this tab both
-// write to the same `data-theme` attribute, so the two are compatible.
 import type { ChangeEvent, JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
-import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
-import { type ProseFont, type Theme, useTweaksStore } from '@/store/tweaks';
+import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
+
+// `Theme` and `ProseFont` used to live in `@/store/tweaks` but the store
+// went away in the settings consolidation refactor; this tab is the only
+// remaining consumer, so the type lives here.
+export type Theme = 'paper' | 'sepia' | 'dark';
+export type ProseFont = 'iowan' | 'palatino' | 'garamond' | 'plex-serif';
 
 // --- Theme tile data --------------------------------------------------------
 
@@ -196,72 +196,50 @@ export function SettingsAppearanceTab(): JSX.Element {
   const lineHeightId = useId();
   const themeGroupName = useId();
 
-  const settingsQuery = useUserSettingsQuery();
-  const updateSettings = useUpdateUserSettingsMutation();
-  const tweaks = useTweaksStore((s) => s.tweaks);
-  const setTweaks = useTweaksStore((s) => s.setTweaks);
+  const settings = useUserSettings();
+  const updateSetting = useUpdateUserSetting();
 
-  const settings = settingsQuery.data;
-  const settingsLoading = settings == null;
+  const activeTheme = settings.theme;
+  const activeFont = fontIdFromStored(settings.prose.font);
 
-  // Mirror the server settings onto the tweaks store + DOM tokens once,
-  // when the settings query resolves. Subsequent changes go through the
-  // user-facing controls below — re-running the seed effect on store
-  // changes would clobber those.
-  const seededThemeRef = useRef(false);
+  // Mirror server-driven prose tokens onto the document each time the
+  // settings query (re)resolves. The reads above are reactive; the DOM
+  // tokens aren't, so this effect closes that gap. Theme is set on the
+  // root via the dedicated effect below for symmetry.
   useEffect(() => {
-    if (seededThemeRef.current) return;
-    if (settings == null) return;
-    seededThemeRef.current = true;
-    const tweaksState = useTweaksStore.getState();
-    const partial: Partial<{ theme: Theme; proseFont: ProseFont }> = {};
-    if (settings.theme !== tweaksState.tweaks.theme) {
-      partial.theme = settings.theme;
-    }
-    const fontId2 = fontIdFromStored(settings.prose.font);
-    if (fontId2 !== tweaksState.tweaks.proseFont) {
-      partial.proseFont = fontId2;
-    }
-    if (Object.keys(partial).length > 0) {
-      tweaksState.setTweaks(partial);
-    }
     applyTheme(settings.theme);
-    applyProseFont(fontStackFor(fontId2));
+    applyProseFont(fontStackFor(fontIdFromStored(settings.prose.font)));
     applyProseSize(settings.prose.size);
     applyProseLineHeight(settings.prose.lineHeight);
-  }, [settings]);
+  }, [settings.theme, settings.prose.font, settings.prose.size, settings.prose.lineHeight]);
 
   // --- Theme picker ---------------------------------------------------------
 
   const handleThemeSelect = (theme: Theme): void => {
-    setTweaks({ theme });
     applyTheme(theme);
-    updateSettings.mutate({ theme });
+    updateSetting.mutate({ theme });
   };
 
   // --- Prose font select ----------------------------------------------------
 
   const handleFontChange = (e: ChangeEvent<HTMLSelectElement>): void => {
     const next = e.target.value as ProseFont;
-    setTweaks({ proseFont: next });
     applyProseFont(fontStackFor(next));
-    updateSettings.mutate({ prose: { font: next } });
+    updateSetting.mutate({ prose: { font: next } });
   };
 
-  // --- Prose size slider ----------------------------------------------------
+  // --- Prose size slider (debounced PATCH, instant DOM token) ---------------
 
-  const serverSize = settings?.prose.size ?? 18;
-  const [sizeDraft, setSizeDraft] = useState<number>(serverSize);
-  const lastSeededSizeRef = useRef<number | null>(null);
+  const [sizeDraft, setSizeDraft] = useState<number>(settings.prose.size);
+  const lastSeededSizeRef = useRef<number>(settings.prose.size);
   useEffect(() => {
-    if (settings == null) return;
     if (lastSeededSizeRef.current === settings.prose.size) return;
     lastSeededSizeRef.current = settings.prose.size;
     setSizeDraft(settings.prose.size);
-  }, [settings]);
+  }, [settings.prose.size]);
 
   const flushSize = useDebouncedCallback((value: number): void => {
-    updateSettings.mutate({ prose: { size: value } });
+    updateSetting.mutate({ prose: { size: value } });
   }, 200);
 
   const handleSizeChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -274,18 +252,16 @@ export function SettingsAppearanceTab(): JSX.Element {
 
   // --- Line-height slider ---------------------------------------------------
 
-  const serverLineHeight = settings?.prose.lineHeight ?? 1.7;
-  const [lineHeightDraft, setLineHeightDraft] = useState<number>(serverLineHeight);
-  const lastSeededLhRef = useRef<number | null>(null);
+  const [lineHeightDraft, setLineHeightDraft] = useState<number>(settings.prose.lineHeight);
+  const lastSeededLhRef = useRef<number>(settings.prose.lineHeight);
   useEffect(() => {
-    if (settings == null) return;
     if (lastSeededLhRef.current === settings.prose.lineHeight) return;
     lastSeededLhRef.current = settings.prose.lineHeight;
     setLineHeightDraft(settings.prose.lineHeight);
-  }, [settings]);
+  }, [settings.prose.lineHeight]);
 
   const flushLineHeight = useDebouncedCallback((value: number): void => {
-    updateSettings.mutate({ prose: { lineHeight: value } });
+    updateSetting.mutate({ prose: { lineHeight: value } });
   }, 200);
 
   const handleLineHeightChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -297,8 +273,6 @@ export function SettingsAppearanceTab(): JSX.Element {
   };
 
   // --- Render ---------------------------------------------------------------
-
-  const activeFont = fontIdFromStored(settings?.prose.font ?? tweaks.proseFont);
 
   return (
     <div className="flex flex-col gap-6">
@@ -328,7 +302,7 @@ export function SettingsAppearanceTab(): JSX.Element {
             <ThemeTileButton
               key={tile.id}
               tile={tile}
-              active={tweaks.theme === tile.id}
+              active={activeTheme === tile.id}
               groupName={themeGroupName}
               onSelect={handleThemeSelect}
             />
@@ -352,7 +326,6 @@ export function SettingsAppearanceTab(): JSX.Element {
             id={fontId}
             data-testid="appearance-prose-font"
             value={activeFont}
-            disabled={settingsLoading}
             onChange={handleFontChange}
             className="w-full px-3 py-2 text-[13px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
           >
@@ -380,7 +353,6 @@ export function SettingsAppearanceTab(): JSX.Element {
             max={24}
             step={1}
             value={sizeDraft}
-            disabled={settingsLoading}
             onChange={handleSizeChange}
             className="w-full"
           />
@@ -404,7 +376,6 @@ export function SettingsAppearanceTab(): JSX.Element {
             max={2.0}
             step={0.05}
             value={lineHeightDraft}
-            disabled={settingsLoading}
             onChange={handleLineHeightChange}
             className="w-full"
           />
