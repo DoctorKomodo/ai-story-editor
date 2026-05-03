@@ -73,16 +73,16 @@ const SettingsSchema = z
 
 const DEFAULT_SETTINGS = {
   theme: 'paper' as const,
-  prose: { font: 'Lora', size: 18, lineHeight: 1.6 },
+  prose: { font: 'iowan', size: 18, lineHeight: 1.6 },
   writing: {
     spellcheck: true,
     typewriterMode: false,
     focusMode: false,
     dailyWordGoal: 0,
-    smartQuotes: false,
-    emDashExpansion: false,
+    smartQuotes: true,
+    emDashExpansion: true,
   },
-  chat: { model: null as string | null, temperature: 0.8, topP: 1, maxTokens: 2048 },
+  chat: { model: null as string | null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
   ai: { includeVeniceSystemPrompt: true },
 } satisfies Record<string, unknown>;
 

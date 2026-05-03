@@ -70,16 +70,16 @@ describe('User settings routes [B11]', () => {
     expect(res.body).toEqual({
       settings: {
         theme: 'paper',
-        prose: { font: 'Lora', size: 18, lineHeight: 1.6 },
+        prose: { font: 'iowan', size: 18, lineHeight: 1.6 },
         writing: {
           spellcheck: true,
           typewriterMode: false,
           focusMode: false,
           dailyWordGoal: 0,
-          smartQuotes: false,
-          emDashExpansion: false,
+          smartQuotes: true,
+          emDashExpansion: true,
         },
-        chat: { model: null, temperature: 0.8, topP: 1, maxTokens: 2048 },
+        chat: { model: null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
         ai: { includeVeniceSystemPrompt: true },
       },
     });
@@ -96,7 +96,7 @@ describe('User settings routes [B11]', () => {
 
     expect(res.status).toBe(200);
     // The stored prose.size overrides the default; other prose keys stay defaulted.
-    expect(res.body.settings.prose).toEqual({ font: 'Lora', size: 20, lineHeight: 1.6 });
+    expect(res.body.settings.prose).toEqual({ font: 'iowan', size: 20, lineHeight: 1.6 });
     expect(res.body.settings.theme).toBe('paper');
     expect(res.body.settings.ai.includeVeniceSystemPrompt).toBe(true);
   });
@@ -115,9 +115,9 @@ describe('User settings routes [B11]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.settings.theme).toBe('dark');
-    expect(res.body.settings.prose.font).toBe('Lora');
+    expect(res.body.settings.prose.font).toBe('iowan');
     expect(res.body.settings.writing.spellcheck).toBe(true);
-    expect(res.body.settings.chat.temperature).toBe(0.8);
+    expect(res.body.settings.chat.temperature).toBe(0.85);
     expect(res.body.settings.ai.includeVeniceSystemPrompt).toBe(true);
   });
 
