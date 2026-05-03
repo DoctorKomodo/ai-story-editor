@@ -130,7 +130,7 @@ export function Modal({
         SIZE_CLASS[size],
         'max-w-[94vw] max-h-[82vh] flex flex-col overflow-hidden',
         'rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop',
-        embedded ? '' : 't-modal-in fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2',
+        embedded ? '' : 't-modal-in',
       )}
     >
       {children}
