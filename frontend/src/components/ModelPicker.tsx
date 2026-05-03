@@ -3,7 +3,9 @@ import type { JSX } from 'react';
  * [F42] Model Picker modal.
  *
  * Opens from the chat panel model bar trigger ([F38] — `onOpenModelPicker`).
- * Selecting a card writes the choice to `useModelStore` and closes the modal.
+ * Selecting a card PATCHes `/users/me/settings` `{ chat: { model } }` via
+ * useUpdateUserSetting (so the choice survives across devices) and closes
+ * the modal.
  *
  * The radio-card itself is `<ModelCard>`, exported separately so the
  * Settings → Models tab ([F44]) can reuse it.
