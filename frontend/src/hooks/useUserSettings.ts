@@ -5,7 +5,9 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import { useMemo } from 'react';
 import { api } from '@/lib/api';
+import { useErrorStore } from '@/store/errors';
 
 /**
  * [F43] User-level settings — backed by `GET /api/users/me/settings` and
@@ -101,4 +103,91 @@ export function useUpdateUserSettingsMutation(): UseMutationResult<
       qc.setQueryData(userSettingsQueryKey, settings);
     },
   });
+}
+
+/**
+ * Single canonical default settings for the whole app. Backend defaults at
+ * `backend/src/routes/user-settings.routes.ts` are kept in sync with this
+ * constant; the round-trip GET tests catch any drift.
+ */
+export const DEFAULT_SETTINGS: UserSettings = {
+  theme: 'paper',
+  prose: { font: 'iowan', size: 18, lineHeight: 1.6 },
+  writing: {
+    spellcheck: true,
+    typewriterMode: false,
+    focusMode: false,
+    dailyWordGoal: 0,
+    smartQuotes: true,
+    emDashExpansion: true,
+  },
+  chat: { model: null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
+  ai: { includeVeniceSystemPrompt: true },
+};
+
+/**
+ * One-level-deep merge: top-level `theme` is overridden whole; nested groups
+ * (`prose`, `writing`, `chat`, `ai`) are merged field-by-field so a partial
+ * patch like `{ prose: { font: 'palatino' } }` doesn't clobber `prose.size`.
+ */
+export function mergeSettings(prev: UserSettings, patch: UserSettingsPatch): UserSettings {
+  return {
+    theme: patch.theme ?? prev.theme,
+    prose: { ...prev.prose, ...(patch.prose ?? {}) },
+    writing: { ...prev.writing, ...(patch.writing ?? {}) },
+    chat: { ...prev.chat, ...(patch.chat ?? {}) },
+    ai: { ...prev.ai, ...(patch.ai ?? {}) },
+  };
+}
+
+/**
+ * Read API for settings. Always returns a definite-shape `UserSettings` —
+ * defaults fill in while the query is loading or has errored. Consumers
+ * don't need to handle the loading state.
+ */
+export function useUserSettings(): UserSettings {
+  const { data } = useUserSettingsQuery();
+  return data ?? DEFAULT_SETTINGS;
+}
+
+export interface UseUpdateUserSettingResult {
+  mutate: (patch: UserSettingsPatch) => void;
+  isPending: boolean;
+}
+
+/**
+ * Write API for settings. Optimistic: snapshots the cache, applies the
+ * merged patch synchronously, then PATCHes. On error, restores the
+ * snapshot and pushes a `severity:'error'` entry to `useErrorStore` with
+ * `source: 'settings.update'` so the dev overlay surfaces the failure.
+ *
+ * Concurrent mutations: each call snapshots its own pre-state in onError,
+ * so a failed mutation rolls back to its own snapshot, not the latest
+ * cache value. Acceptable for the rapid-clicks case.
+ */
+export function useUpdateUserSetting(): UseUpdateUserSettingResult {
+  const qc = useQueryClient();
+  const mutation = useUpdateUserSettingsMutation();
+  return useMemo(
+    () => ({
+      mutate: (patch: UserSettingsPatch): void => {
+        const prev = qc.getQueryData<UserSettings>(userSettingsQueryKey) ?? DEFAULT_SETTINGS;
+        qc.setQueryData<UserSettings>(userSettingsQueryKey, mergeSettings(prev, patch));
+        mutation.mutate(patch, {
+          onError: (err) => {
+            qc.setQueryData<UserSettings>(userSettingsQueryKey, prev);
+            useErrorStore.getState().push({
+              severity: 'error',
+              source: 'settings.update',
+              code: null,
+              message: err instanceof Error ? err.message : 'Failed to save setting.',
+              detail: err,
+            });
+          },
+        });
+      },
+      isPending: mutation.isPending,
+    }),
+    [mutation, qc],
+  );
 }
