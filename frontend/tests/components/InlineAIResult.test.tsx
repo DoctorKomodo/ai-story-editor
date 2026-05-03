@@ -68,11 +68,11 @@ describe('InlineAIResult (F34)', () => {
     render(<InlineAIResult editor={null} />);
     expect(screen.getByRole('complementary', { name: 'AI result' })).toBeInTheDocument();
     expect(screen.getByText('old')).toBeInTheDocument();
-    const dots = screen.getAllByTestId('think-dot');
+    const region = screen.getByTestId('thinking-dots');
+    expect(region).toHaveAttribute('role', 'status');
+    expect(region).toHaveAttribute('aria-label', 'Thinking');
+    const dots = region.querySelectorAll('.think-dot');
     expect(dots).toHaveLength(3);
-    expect(dots[0]).toHaveStyle({ animationDelay: '0ms' });
-    expect(dots[1]).toHaveStyle({ animationDelay: '150ms' });
-    expect(dots[2]).toHaveStyle({ animationDelay: '300ms' });
     // No action row while thinking.
     expect(screen.queryByRole('button', { name: 'Replace' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Discard' })).toBeNull();

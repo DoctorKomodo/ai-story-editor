@@ -1,6 +1,7 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
+import { ThinkingDots } from '@/design/ThinkingDots';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 
@@ -33,8 +34,6 @@ export interface InlineAIResultProps {
   editor: TiptapEditor | null;
   onRetry?: () => void;
 }
-
-const THINK_DOT_DELAYS_MS: readonly number[] = [0, 150, 300];
 
 export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.Element | null {
   const inlineAIResult = useInlineAIResultStore((s) => s.inlineAIResult);
@@ -85,15 +84,8 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
       </blockquote>
 
       {status === 'thinking' && (
-        <div role="status" aria-label="Thinking" className="mt-3 flex items-center">
-          {THINK_DOT_DELAYS_MS.map((delay) => (
-            <span
-              key={delay}
-              data-testid="think-dot"
-              className="think-dot inline-block w-2 h-2 mx-0.5 rounded-full bg-[var(--ink-4)]"
-              style={{ animationDelay: `${delay}ms` }}
-            />
-          ))}
+        <div className="mt-3">
+          <ThinkingDots />
         </div>
       )}
 
