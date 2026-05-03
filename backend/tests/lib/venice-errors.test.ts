@@ -330,6 +330,7 @@ describe('mapVeniceErrorToSse — uniform { error, code, message } shape', () =>
     expect(typeof frame.error).toBe('string');
     expect(typeof frame.message).toBe('string');
     expect(String(frame.message).length).toBeGreaterThan(0);
+    expect(frame.error).toBe(frame.message);
   });
 
   it('RateLimitError → carries retryAfterSeconds + message', () => {
@@ -346,5 +347,6 @@ describe('mapVeniceErrorToSse — uniform { error, code, message } shape', () =>
     expect(frame.code).toBe('venice_rate_limited');
     expect(typeof frame.message).toBe('string');
     expect(frame.retryAfterSeconds).toBe(30);
+    expect(frame.error).toBe(frame.message);
   });
 });
