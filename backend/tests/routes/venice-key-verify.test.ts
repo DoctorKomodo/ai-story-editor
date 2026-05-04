@@ -1,14 +1,14 @@
 // [V18] POST /api/users/me/venice-key/verify — integration tests.
 //
 // Tests the verify endpoint that re-validates the stored Venice key by calling
-// GET /v1/models and reading x-venice-balance-usd / x-venice-balance-diem
-// headers from the response. Rate-limited at 6 req/min per user.
+// GET /api_keys/rate_limits and reading `data.balances.{USD,DIEM}` from the
+// JSON response body. Rate-limited at 6 req/min per user.
 //
-// Venice HTTP responses are simulated via vi.stubGlobal('fetch', …). The openai
-// SDK maps HTTP status codes to APIError subclasses (AuthenticationError,
-// RateLimitError, etc.) internally — so we return a Response object, not a
-// rejected promise. Rejecting fetch causes the SDK to produce APIConnectionError
-// (status: undefined), which bypasses the instanceof checks.
+// Venice HTTP responses are simulated via vi.stubGlobal('fetch', …). The
+// service uses globalThis.fetch directly for the verify probe, so Response
+// objects with a body and the right status code are sufficient — there's no
+// SDK wrapping the call (we used to call `/v1/models` through the openai SDK,
+// but Venice doesn't expose balance information on that endpoint).
 
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
@@ -37,8 +37,9 @@ const PASSWORD_B = 'venice-verify-password-b';
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 /**
- * Build a Response that includes optional balance headers.
- * Used to simulate a successful Venice models.list() call.
+ * Build a Response for the /v1/models probe used by validateAgainstVenice
+ * (PUT /venice-key). No balance information lives here — that comes from
+ * the verify path's /api_keys/rate_limits call below.
  */
 function modelsResponse(status: number, extraHeaders: Record<string, string> = {}): Response {
   return new Response(JSON.stringify({ object: 'list', data: [] }), {
@@ -46,6 +47,33 @@ function modelsResponse(status: number, extraHeaders: Record<string, string> = {
     statusText: status === 200 ? 'OK' : 'err',
     headers: { 'content-type': 'application/json', ...extraHeaders },
   });
+}
+
+/**
+ * Build a Response shaped like Venice's GET /api_keys/rate_limits payload.
+ * The service reads `data.balances.{USD,DIEM}` from the body. Pass null for
+ * either balance to omit it, simulating an account that hasn't been topped up
+ * in that currency.
+ */
+function rateLimitsResponse(opts: { usd?: number | null; diem?: number | null } = {}): Response {
+  const balances: Record<string, number> = {};
+  if (opts.usd !== undefined && opts.usd !== null) balances.USD = opts.usd;
+  if (opts.diem !== undefined && opts.diem !== null) balances.DIEM = opts.diem;
+  return new Response(
+    JSON.stringify({
+      data: {
+        balances,
+        accessPermitted: true,
+        apiTier: { id: 'paid', isCharged: true },
+        rateLimits: [],
+      },
+    }),
+    {
+      status: 200,
+      statusText: 'OK',
+      headers: { 'content-type': 'application/json' },
+    },
+  );
 }
 
 /**
@@ -133,28 +161,23 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       verified: false,
-      credits: null,
+      balanceUsd: null,
       diem: null,
       endpoint: null,
-      lastFour: null,
+      lastSix: null,
     });
     // No Venice call should have been made (there's no key to probe with).
     // The only fetch calls were in registerAndLogin (none) and storeKey (none).
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  // ── 3. Key present + both balance headers ─────────────────────────────────
+  // ── 3. Key present + both balances in body ────────────────────────────────
 
-  it('returns verified:true with credits and diem when both headers are present', async () => {
+  it('returns verified:true with balanceUsd and diem when both balances are present', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(
-      modelsResponse(200, {
-        'x-venice-balance-usd': '2.25',
-        'x-venice-balance-diem': '1800',
-      }),
-    );
+    fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 2.25, diem: 1800 }));
 
     const res = await request(app)
       .post('/api/users/me/venice-key/verify')
@@ -163,20 +186,20 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       verified: true,
-      credits: 2.25,
+      balanceUsd: 2.25,
       diem: 1800,
       endpoint: DEFAULT_VENICE_ENDPOINT,
-      lastFour: 'LAST',
+      lastSix: 'Y-LAST',
     });
   });
 
-  // ── 4. One balance header missing ─────────────────────────────────────────
+  // ── 4. One balance missing ────────────────────────────────────────────────
 
-  it('returns credits:null when x-venice-balance-usd header is absent', async () => {
+  it('returns balanceUsd:null when data.balances.USD is missing', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(modelsResponse(200, { 'x-venice-balance-diem': '500' }));
+    fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ diem: 500 }));
 
     const res = await request(app)
       .post('/api/users/me/venice-key/verify')
@@ -184,15 +207,15 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
-    expect(res.body.credits).toBeNull();
+    expect(res.body.balanceUsd).toBeNull();
     expect(res.body.diem).toBe(500);
   });
 
-  it('returns diem:null when x-venice-balance-diem header is absent', async () => {
+  it('returns diem:null when data.balances.DIEM is missing', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(modelsResponse(200, { 'x-venice-balance-usd': '1.50' }));
+    fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 1.5 }));
 
     const res = await request(app)
       .post('/api/users/me/venice-key/verify')
@@ -200,17 +223,17 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
-    expect(res.body.credits).toBe(1.5);
+    expect(res.body.balanceUsd).toBe(1.5);
     expect(res.body.diem).toBeNull();
   });
 
-  // ── 5. No balance headers at all ──────────────────────────────────────────
+  // ── 5. Empty balances object ──────────────────────────────────────────────
 
-  it('returns credits:null and diem:null when no balance headers are present', async () => {
+  it('returns balanceUsd:null and diem:null when data.balances is empty', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(modelsResponse(200));
+    fetchSpy.mockResolvedValueOnce(rateLimitsResponse({}));
 
     const res = await request(app)
       .post('/api/users/me/venice-key/verify')
@@ -218,13 +241,13 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
-    expect(res.body.credits).toBeNull();
+    expect(res.body.balanceUsd).toBeNull();
     expect(res.body.diem).toBeNull();
   });
 
   // ── 6. Venice returns 401 (stored key is bad) ─────────────────────────────
 
-  it('returns verified:false with endpoint/lastFour echoed when Venice returns 401', async () => {
+  it('returns verified:false with endpoint/lastSix echoed when Venice returns 401', async () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
@@ -243,10 +266,10 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       verified: false,
-      credits: null,
+      balanceUsd: null,
       diem: null,
       endpoint: DEFAULT_VENICE_ENDPOINT,
-      lastFour: 'LAST',
+      lastSix: 'Y-LAST',
     });
 
     const logged = [errSpy, warnSpy, logSpy, infoSpy]
@@ -298,12 +321,7 @@ describe('POST /api/users/me/venice-key/verify [V18]', () => {
     const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
     await storeKey(app, accessToken, fetchSpy);
 
-    fetchSpy.mockResolvedValueOnce(
-      modelsResponse(200, {
-        'x-venice-balance-usd': '5.00',
-        'x-venice-balance-diem': '2000',
-      }),
-    );
+    fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 5, diem: 2000 }));
 
     // Install console spies BEFORE the request.
     const errorSpy = vi.spyOn(console, 'error');

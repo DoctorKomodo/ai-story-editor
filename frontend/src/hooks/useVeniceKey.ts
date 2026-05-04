@@ -9,7 +9,9 @@ import { api } from '@/lib/api';
 
 /**
  * [F43] BYOK Venice key endpoints. The full plaintext key is never returned
- * by the backend — `GET` only echoes back `lastFour` + endpoint.
+ * by the backend — `GET` only echoes back the last six characters of the key
+ * (for an at-a-glance "yes that's the right key" check in the Settings UI)
+ * plus the endpoint.
  *
  * Endpoints:
  * - `GET    /api/users/me/venice-key`            → status
@@ -20,16 +22,18 @@ import { api } from '@/lib/api';
 
 export interface VeniceKeyStatus {
   hasKey: boolean;
-  lastFour: string | null;
+  lastSix: string | null;
   endpoint: string | null;
 }
 
 export interface VeniceKeyVerify {
   verified: boolean;
-  credits: number | null;
+  /** USD balance from Venice's `x-venice-balance-usd` header (matches the
+   *  account dashboard figure). Null when the header is absent. */
+  balanceUsd: number | null;
   diem: number | null;
   endpoint: string | null;
-  lastFour: string | null;
+  lastSix: string | null;
 }
 
 export interface StoreVeniceKeyInput {
@@ -40,7 +44,7 @@ export interface StoreVeniceKeyInput {
 
 export interface StoreVeniceKeyResponse {
   status: 'saved';
-  lastFour: string;
+  lastSix: string;
   endpoint: string;
 }
 
@@ -71,7 +75,7 @@ export function useStoreVeniceKeyMutation(): UseMutationResult<
     onSuccess: (res) => {
       qc.setQueryData<VeniceKeyStatus>(veniceKeyStatusQueryKey, {
         hasKey: true,
-        lastFour: res.lastFour,
+        lastSix: res.lastSix,
         endpoint: res.endpoint,
       });
     },
@@ -87,7 +91,7 @@ export function useDeleteVeniceKeyMutation(): UseMutationResult<void, Error, voi
     onSuccess: () => {
       qc.setQueryData<VeniceKeyStatus>(veniceKeyStatusQueryKey, {
         hasKey: false,
-        lastFour: null,
+        lastSix: null,
         endpoint: null,
       });
     },

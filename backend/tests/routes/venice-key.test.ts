@@ -7,7 +7,7 @@ import { prisma } from '../setup';
 const NAME = 'BYOK User';
 const USERNAME = 'byok-user';
 const PASSWORD = 'byok-password';
-const VALID_KEY = 'sk-venice-abcdefghijklmnopqrstuvwxyz-LAST';
+const VALID_KEY = 'sk-venice-abcdefghijklmnopqrstuvwxy-ZLAST6';
 
 async function registerAndLogin(): Promise<string> {
   await request(app)
@@ -62,7 +62,7 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
   });
 
-  describe('GET — returns only { hasKey, lastFour, endpoint } and never the key', () => {
+  describe('GET — returns only { hasKey, lastSix, endpoint } and never the key', () => {
     it('returns { hasKey: false } when no key is stored', async () => {
       const accessToken = await registerAndLogin();
 
@@ -71,10 +71,10 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
         .set('Authorization', `Bearer ${accessToken}`);
 
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ hasKey: false, lastFour: null, endpoint: null });
+      expect(res.body).toEqual({ hasKey: false, lastSix: null, endpoint: null });
     });
 
-    it('returns { hasKey: true, lastFour, endpoint } after storing, and never returns the key', async () => {
+    it('returns { hasKey: true, lastSix, endpoint } after storing, and never returns the key', async () => {
       const accessToken = await registerAndLogin();
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
@@ -89,7 +89,7 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.hasKey).toBe(true);
-      expect(res.body.lastFour).toBe('LAST');
+      expect(res.body.lastSix).toBe('ZLAST6');
       expect(res.body.endpoint).toBe(DEFAULT_VENICE_ENDPOINT);
 
       // Body must never expose the full key or any of the ciphertext fields.
@@ -114,7 +114,7 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({
         status: 'saved',
-        lastFour: 'LAST',
+        lastSix: 'ZLAST6',
         endpoint: DEFAULT_VENICE_ENDPOINT,
       });
 
