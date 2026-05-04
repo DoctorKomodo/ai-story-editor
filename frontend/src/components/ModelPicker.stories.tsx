@@ -15,8 +15,8 @@ const SAMPLE_MODELS: Model[] = [
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: false,
-    description: null,
-    pricing: null,
+    description: 'Uncensored Venice-tuned model for creative writing.',
+    pricing: { inputUsdPerMTok: 0.5, outputUsdPerMTok: 2.0 },
   },
   {
     id: 'llama-3.3-70b',
@@ -25,8 +25,8 @@ const SAMPLE_MODELS: Model[] = [
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: true,
-    description: null,
-    pricing: null,
+    description: 'General-purpose 70B model tuned for instruction-following.',
+    pricing: { inputUsdPerMTok: 0.6, outputUsdPerMTok: 2.4 },
   },
   {
     id: 'deepseek-r1',
@@ -35,10 +35,21 @@ const SAMPLE_MODELS: Model[] = [
     supportsReasoning: true,
     supportsVision: false,
     supportsWebSearch: false,
-    description: null,
-    pricing: null,
+    description: 'Reasoning-tuned model optimised for chain-of-thought.',
+    pricing: { inputUsdPerMTok: 0.5, outputUsdPerMTok: 1.5 },
   },
 ];
+
+const BARE_MODEL: Model = {
+  id: 'bare-text',
+  name: 'Bare Text',
+  contextLength: 16_000,
+  supportsReasoning: false,
+  supportsVision: false,
+  supportsWebSearch: false,
+  description: null,
+  pricing: null,
+};
 
 function makeClient(models: Model[], selectedId: string | null): QueryClient {
   const client = new QueryClient({
@@ -85,4 +96,8 @@ export const Open: Story = {
 
 export const Empty: Story = {
   args: { models: [], selectedId: null },
+};
+
+export const Mixed: Story = {
+  args: { models: [...SAMPLE_MODELS, BARE_MODEL], selectedId: 'llama-3.3-70b' },
 };
