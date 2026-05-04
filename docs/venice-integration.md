@@ -77,6 +77,31 @@ Each action has a system prompt that instructs the model to return **only** the 
 
 ---
 
+## Prompt resolution
+
+The prompt builder (`backend/src/services/prompt.service.ts`) resolves
+each prompt slot via `resolvePrompt(userPrompts, key)`:
+
+1. If `userPrompts[key]` is a non-empty trimmed string → use the override.
+2. Otherwise → use `DEFAULT_PROMPTS[key]`.
+
+Overridable keys (six): `system`, `continue`, `rewrite`, `expand`,
+`summarise`, `describe`. The `'rephrase'` action is collapsed onto the
+`'rewrite'` override key (both surfaces share one user-level override).
+
+The selection text is auto-appended as `\n\nSelection: «…»` *after* the
+resolved task block — users edit the instruction line only, never the
+selection injection.
+
+`freeform` and `ask` are not template-driven (the user-typed text *is*
+the prompt) and do not consult `userPrompts`.
+
+User overrides are stored in `User.settingsJson.prompts` (six
+`string | null` fields). The Settings → Prompts tab is the sole
+authoring surface; per-story overrides were removed in [X29].
+
+---
+
 ## Dynamic Context Budgeting ([V2] + [V3])
 
 **Token counts are never hardcoded.** The prompt builder always consults the current model's `context_length`:

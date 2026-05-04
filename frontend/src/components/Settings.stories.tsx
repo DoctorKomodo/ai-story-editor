@@ -29,6 +29,14 @@ const SAMPLE_SETTINGS: UserSettings = {
   },
   chat: { model: 'llama-3.3-70b', temperature: 0.7, topP: 1, maxTokens: 2048 },
   ai: { includeVeniceSystemPrompt: true },
+  prompts: {
+    system: null,
+    continue: null,
+    rewrite: null,
+    expand: null,
+    summarise: null,
+    describe: null,
+  },
 };
 
 const SAMPLE_MODELS: Model[] = [

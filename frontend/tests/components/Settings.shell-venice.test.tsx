@@ -139,7 +139,7 @@ describe('SettingsModal (F43)', () => {
     expect(screen.getByTestId('settings-close')).toBeInTheDocument();
   });
 
-  it('renders four tabs in order with Venice active by default', () => {
+  it('renders five tabs in order with Venice active by default', () => {
     vi.stubGlobal(
       'fetch',
       routeFetch({
@@ -153,6 +153,7 @@ describe('SettingsModal (F43)', () => {
     expect(tabs.map((t) => t.textContent)).toEqual([
       'Venice.ai',
       'Models',
+      'Prompts',
       'Writing',
       'Appearance',
     ]);

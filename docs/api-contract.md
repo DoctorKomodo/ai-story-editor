@@ -53,7 +53,23 @@ Response `200`: `{ "user": { "id", "username", "name", "createdAt" } }`.
 ## User — `/api/users/me`
 
 ### `GET /api/users/me/settings` · `PATCH /api/users/me/settings` ([B11])
-Read/write `User.settingsJson`. Zod enforces allowed keys: `theme`, `proseFont`, `proseSize`, `lineHeight`, `writing.{typewriter,focusParagraph,autosave,smartQuotes,emDashExpansion}`, `dailyGoal`, `chat.{model,temperature,top_p,max_tokens,frequency_penalty}`, `ai.includeVeniceSystemPrompt` (boolean, default `true` when absent — controls `venice_parameters.include_venice_system_prompt` on every `/api/ai/complete` call).
+Read/write `User.settingsJson`. Zod enforces allowed keys: `theme`, `proseFont`, `proseSize`, `lineHeight`, `writing.{typewriter,focusParagraph,autosave,smartQuotes,emDashExpansion}`, `dailyGoal`, `chat.{model,temperature,top_p,max_tokens,frequency_penalty}`, `ai.includeVeniceSystemPrompt` (boolean, default `true` when absent — controls `venice_parameters.include_venice_system_prompt` on every `/api/ai/complete` call), and `prompts` (user-level prompt overrides — see below).
+
+The `prompts` slice sits next to `ai`:
+
+```json
+"prompts": {
+  "system": "string | null",
+  "continue": "string | null",
+  "rewrite": "string | null",
+  "expand": "string | null",
+  "summarise": "string | null",
+  "describe": "string | null"
+}
+```
+
+`null` for any field means use the built-in default. The defaults are exposed read-only via `GET /api/ai/default-prompts`.
+
 Response `200`: `{ "settings": { … } }`.
 
 ### `GET /api/users/me/venice-key` ([AU12])
@@ -79,7 +95,7 @@ Response `200`: `{ "verified": true, "balanceUsd": 22.5, "diem": 15.0, "endpoint
 Response `200`: `{ "stories": [{ "id", "title", "genre", "synopsis", "targetWords", "chapterCount", "wordCount", "updatedAt" }] }`.
 
 ### `POST /api/stories` ([B1])
-Body: `{ "title": "…", "genre?", "synopsis?", "worldNotes?", "targetWords?", "systemPrompt?" }`.
+Body: `{ "title": "…", "genre?", "synopsis?", "worldNotes?", "targetWords?" }`.
 Response `201`: `{ "story": { … } }`.
 
 ### `GET /api/stories/:id` ([B2])
@@ -186,6 +202,26 @@ Errors: `409 { code: "venice_key_required" }` when the user has no stored key.
 
 ### `GET /api/ai/models` ([V1])
 Response `200`: `{ "models": [{ "id", "name", "contextLength", "supportsReasoning", "supportsVision" }] }`. Cached 10 min in memory.
+
+### `GET /api/ai/default-prompts`
+
+Returns the canonical default templates the prompt builder falls back to
+when a user has not overridden a given key. Auth-required. Constants
+change only on backend deploy — frontend caches with `staleTime: Infinity`.
+
+**Response 200**
+```json
+{
+  "defaults": {
+    "system": "string",
+    "continue": "string",
+    "rewrite": "string",
+    "expand": "string",
+    "summarise": "string",
+    "describe": "string"
+  }
+}
+```
 
 ### `GET /api/ai/balance` ([V10])
 Response `200`: `{ "usd": 15.0, "diem": 2200 }`.

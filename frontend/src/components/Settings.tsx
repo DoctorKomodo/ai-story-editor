@@ -18,6 +18,7 @@ import { useEffect, useId, useRef, useState } from 'react';
 import { formatUsd } from '@/components/BalanceDisplay';
 import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
+import { SettingsPromptsTab } from '@/components/SettingsPromptsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
@@ -34,11 +35,12 @@ export interface SettingsModalProps {
   onClose: () => void;
 }
 
-type SettingsTab = 'venice' | 'models' | 'writing' | 'appearance';
+type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'venice', label: 'Venice.ai' },
   { id: 'models', label: 'Models' },
+  { id: 'prompts', label: 'Prompts' },
   { id: 'writing', label: 'Writing' },
   { id: 'appearance', label: 'Appearance' },
 ];
@@ -153,6 +155,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
           <VeniceTab />
         ) : activeTab === 'models' ? (
           <SettingsModelsTab />
+        ) : activeTab === 'prompts' ? (
+          <SettingsPromptsTab />
         ) : activeTab === 'writing' ? (
           <SettingsWritingTab />
         ) : (

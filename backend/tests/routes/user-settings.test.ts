@@ -81,6 +81,14 @@ describe('User settings routes [B11]', () => {
         },
         chat: { model: null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
         ai: { includeVeniceSystemPrompt: true },
+        prompts: {
+          system: null,
+          continue: null,
+          rewrite: null,
+          expand: null,
+          summarise: null,
+          describe: null,
+        },
       },
     });
   });
@@ -242,5 +250,105 @@ describe('User settings routes [B11]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.settings.chat.temperature).toBe(0);
+  });
+});
+
+// ─── [X29] prompts slice ──────────────────────────────────────────────────────
+
+describe('[X29] settingsJson.prompts slice', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  afterEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('GET defaults: prompts.{key} = null for all keys when never written', async () => {
+    const token = await registerAndLogin('prompts-defaults-user');
+    const res = await request(app)
+      .get('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.settings.prompts).toEqual({
+      system: null,
+      continue: null,
+      rewrite: null,
+      expand: null,
+      summarise: null,
+      describe: null,
+    });
+  });
+
+  it('PATCH { prompts: { system: "X" } } round-trips', async () => {
+    const token = await registerAndLogin('prompts-roundtrip-user');
+    const patch = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { system: 'My system prompt.' } });
+    expect(patch.status).toBe(200);
+    expect(patch.body.settings.prompts.system).toBe('My system prompt.');
+
+    const get = await request(app)
+      .get('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`);
+    expect(get.body.settings.prompts.system).toBe('My system prompt.');
+    expect(get.body.settings.prompts.continue).toBeNull();
+  });
+
+  it('two PATCHes deep-merge: setting prompts.system then prompts.continue keeps both', async () => {
+    const token = await registerAndLogin('prompts-merge-user');
+    await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { system: 'A' } });
+    await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { continue: 'B' } });
+
+    const get = await request(app)
+      .get('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`);
+    expect(get.body.settings.prompts.system).toBe('A');
+    expect(get.body.settings.prompts.continue).toBe('B');
+  });
+
+  it('PATCH { prompts: { system: null } } clears the override', async () => {
+    const token = await registerAndLogin('prompts-clear-user');
+    await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { system: 'X' } });
+    await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { system: null } });
+
+    const get = await request(app)
+      .get('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`);
+    expect(get.body.settings.prompts.system).toBeNull();
+  });
+
+  it('rejects strings longer than 10 000 chars', async () => {
+    const token = await registerAndLogin('prompts-toolong-user');
+    const tooLong = 'x'.repeat(10_001);
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { system: tooLong } });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects unknown keys under prompts (.strict())', async () => {
+    const token = await registerAndLogin('prompts-unknown-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { unknownKey: 'x' } });
+    expect(res.status).toBe(400);
   });
 });

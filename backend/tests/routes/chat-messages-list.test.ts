@@ -64,7 +64,6 @@ async function setupStoryChapterChat(
   const story = await createStoryRepo(req).create({
     title: 'S',
     worldNotes: null,
-    systemPrompt: null,
   });
   const storyId = story.id as string;
   const chapter = await createChapterRepo(req).create({
