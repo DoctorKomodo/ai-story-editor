@@ -744,6 +744,9 @@ export function EditorPage(): JSX.Element {
         onClose={() => {
           setSettingsOpen(false);
         }}
+        onOpenModelPicker={() => {
+          setModelPickerOpen(true);
+        }}
       />
       <AccountPrivacyModal
         open={accountPrivacyOpen}

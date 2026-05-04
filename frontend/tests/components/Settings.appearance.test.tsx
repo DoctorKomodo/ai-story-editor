@@ -172,7 +172,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
 
   it('renders three theme tiles in order Paper / Sepia / Dark', async () => {
     vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const paper = await screen.findByTestId('appearance-theme-paper');
@@ -195,7 +195,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
 
   it('default-active tile is Paper (checked=true)', async () => {
     vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const paper = (await screen.findByTestId('appearance-theme-paper')) as HTMLInputElement;
@@ -211,7 +211,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const sepia = (await screen.findByTestId('appearance-theme-sepia')) as HTMLInputElement;
@@ -234,7 +234,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const dark = (await screen.findByTestId('appearance-theme-dark')) as HTMLInputElement;
@@ -253,7 +253,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
 
   it('renders four prose font options', async () => {
     vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const select = (await screen.findByTestId('appearance-prose-font')) as HTMLSelectElement;
@@ -274,7 +274,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const select = (await screen.findByTestId('appearance-prose-font')) as HTMLSelectElement;
@@ -292,7 +292,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
     const fetchMock = buildFetch({ initial: { proseSize: 20 } });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const slider = (await screen.findByTestId('appearance-prose-size')) as HTMLInputElement;
@@ -317,7 +317,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
     const fetchMock = buildFetch({ initial: { proseLineHeight: 1.5 } });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openAppearanceTab();
 
     const slider = (await screen.findByTestId('appearance-prose-line-height')) as HTMLInputElement;

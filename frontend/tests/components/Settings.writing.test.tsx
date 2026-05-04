@@ -141,7 +141,7 @@ describe('SettingsModal Writing tab (F45)', () => {
 
   it('renders all five toggles and the daily-goal input', async () => {
     vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     expect(await screen.findByTestId('writing-typewriter-toggle')).toBeInTheDocument();
@@ -157,7 +157,7 @@ describe('SettingsModal Writing tab (F45)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     const typewriter = (await screen.findByTestId('writing-typewriter-toggle')) as HTMLInputElement;
@@ -180,7 +180,7 @@ describe('SettingsModal Writing tab (F45)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     const focusToggle = (await screen.findByTestId('writing-focus-toggle')) as HTMLInputElement;
@@ -203,7 +203,7 @@ describe('SettingsModal Writing tab (F45)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     const autoSave = (await screen.findByTestId('writing-autosave-toggle')) as HTMLInputElement;
@@ -228,7 +228,7 @@ describe('SettingsModal Writing tab (F45)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     const sq = (await screen.findByTestId('writing-smart-quotes-toggle')) as HTMLInputElement;
@@ -249,7 +249,7 @@ describe('SettingsModal Writing tab (F45)', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     const em = (await screen.findByTestId('writing-em-dash-toggle')) as HTMLInputElement;
@@ -272,7 +272,7 @@ describe('SettingsModal Writing tab (F45)', () => {
       buildFetch({ initialWriting: { smartQuotes: true, emDashExpansion: true } }),
     );
 
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     const autoSave = (await screen.findByTestId('writing-autosave-toggle')) as HTMLInputElement;
@@ -289,7 +289,7 @@ describe('SettingsModal Writing tab (F45)', () => {
     const fetchMock = buildFetch({ initialWriting: { dailyWordGoal: 750 } });
     vi.stubGlobal('fetch', fetchMock);
 
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
     await openWritingTab();
 
     const goal = (await screen.findByTestId('writing-daily-goal-input')) as HTMLInputElement;

@@ -107,7 +107,7 @@ function Demo({ initialTab = 'venice' }: DemoProps) {
       <Button variant="ghost" onClick={() => setOpen(true)}>
         Reopen settings
       </Button>
-      <SettingsModal open={open} onClose={() => setOpen(false)} />
+      <SettingsModal open={open} onClose={() => setOpen(false)} onOpenModelPicker={() => {}} />
     </QueryClientProvider>
   );
 }
