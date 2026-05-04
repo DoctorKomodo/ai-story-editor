@@ -8,9 +8,9 @@
 //     immediately.
 //   - The three server-backed sliders render bound to settings.chat.
 //   - Dragging a slider PATCHes settings.
-//   - System prompt textarea is hidden when no active story is set, visible
-//     and seeded from the story query when one is, and PATCHes the story
-//     on blur.
+//
+// [X29] The per-story system-prompt section was removed from the Models
+// tab; corresponding test scenarios moved to Settings.prompts.test.tsx.
 import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -19,7 +19,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
-import { useActiveStoryStore } from '@/store/activeStory';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -96,28 +95,9 @@ function veniceKeyStatus(): unknown {
   return { hasKey: false, lastFour: null, endpoint: null };
 }
 
-function storyResponse(systemPrompt: string | null): unknown {
-  return {
-    story: {
-      id: 'story-1',
-      title: 'The Test Story',
-      genre: null,
-      synopsis: null,
-      worldNotes: null,
-      targetWords: null,
-      systemPrompt,
-      createdAt: '2026-01-01T00:00:00.000Z',
-      updatedAt: '2026-01-01T00:00:00.000Z',
-    },
-  };
-}
-
 interface RouteOptions {
   modelsBody?: unknown;
   initialSettings?: DefaultSettingsOptions;
-  storySystemPrompt?: string | null;
-  /** Override the systemPrompt persisted by the next PATCH /stories/:id. */
-  storyPatchResponse?: (body: unknown) => unknown;
 }
 
 // State-tracking mock: PATCH bodies are merged into the in-memory settings
@@ -127,7 +107,6 @@ interface RouteOptions {
 function buildFetch(opts: RouteOptions = {}): FetchMock {
   const modelsBody = opts.modelsBody ?? TWO_MODELS;
   let settings = makeSettings(opts.initialSettings ?? {});
-  const storyPrompt = opts.storySystemPrompt ?? null;
   return vi.fn((url: string, init?: RequestInit) => {
     const method = init?.method ?? 'GET';
     if (url === '/api/users/me/settings') {
@@ -149,17 +128,6 @@ function buildFetch(opts: RouteOptions = {}): FetchMock {
     }
     if (url === '/api/ai/models' && method === 'GET') {
       return Promise.resolve(jsonResponse(200, modelsBody));
-    }
-    if (url === '/api/stories/story-1' && method === 'GET') {
-      return Promise.resolve(jsonResponse(200, storyResponse(storyPrompt)));
-    }
-    if (url === '/api/stories/story-1' && method === 'PATCH') {
-      const body =
-        typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
-      const next = opts.storyPatchResponse
-        ? opts.storyPatchResponse(body)
-        : storyResponse(typeof body.systemPrompt === 'string' ? body.systemPrompt : null);
-      return Promise.resolve(jsonResponse(200, next));
     }
     if (url === '/api/stories' && method === 'GET') {
       return Promise.resolve(jsonResponse(200, { stories: [] }));
@@ -192,7 +160,6 @@ describe('SettingsModal Models tab (F44)', () => {
       user: { id: 'u1', username: 'alice' },
       status: 'authenticated',
     });
-    useActiveStoryStore.setState({ activeStoryId: null });
     onClose = vi.fn();
   });
 
@@ -201,7 +168,6 @@ describe('SettingsModal Models tab (F44)', () => {
     setUnauthorizedHandler(null);
     resetApiClientForTests();
     useSessionStore.setState({ user: null, status: 'idle' });
-    useActiveStoryStore.setState({ activeStoryId: null });
   });
 
   it('renders ModelCards in a radiogroup', async () => {
@@ -285,45 +251,5 @@ describe('SettingsModal Models tab (F44)', () => {
       },
       { timeout: 1000 },
     );
-  });
-
-  it('hides the system prompt textarea when no active story', async () => {
-    vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
-    await openModelsTab();
-
-    expect(screen.queryByTestId('system-prompt-textarea')).toBeNull();
-    expect(screen.getByTestId('system-prompt-empty')).toBeInTheDocument();
-  });
-
-  it('shows the system prompt seeded from the story when active, and PATCHes on blur', async () => {
-    useActiveStoryStore.setState({ activeStoryId: 'story-1' });
-    const fetchMock = buildFetch({ storySystemPrompt: 'My prompt' });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
-    await openModelsTab();
-
-    const textarea = (await screen.findByTestId('system-prompt-textarea')) as HTMLTextAreaElement;
-    await waitFor(() => {
-      expect(textarea.value).toBe('My prompt');
-    });
-
-    await user.clear(textarea);
-    await user.type(textarea, 'new value');
-    // Blur to trigger the PATCH.
-    textarea.blur();
-
-    await waitFor(() => {
-      const patch = fetchMock.mock.calls.find(
-        ([url, init]: [string, RequestInit | undefined]) =>
-          url === '/api/stories/story-1' && init?.method === 'PATCH',
-      );
-      expect(patch).toBeDefined();
-      const init = (patch as [string, RequestInit])[1];
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      expect(body).toEqual({ systemPrompt: 'new value' });
-    });
   });
 });

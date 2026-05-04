@@ -26,7 +26,6 @@ function makeStory(overrides: Partial<Record<string, unknown>> = {}): Record<str
     synopsis: 'A ship adrift.',
     worldNotes: null,
     targetWords: 80_000,
-    systemPrompt: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
     ...overrides,
