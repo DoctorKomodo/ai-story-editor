@@ -20,9 +20,7 @@ function badRequestFromZod(res: Response, err: ZodError): Response {
   });
 }
 
-export type VeniceKeyRouterOptions = {};
-
-export function createVeniceKeyRouter(_options: VeniceKeyRouterOptions = {}) {
+export function createVeniceKeyRouter() {
   const router = Router();
 
   // All endpoints in this router operate on the caller's own record only.
