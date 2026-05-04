@@ -86,8 +86,8 @@ Single-task verify: `/task-verify <TASK_ID>` (project-local slash command, see `
 | `npm run format` | Biome format with `--write` |
 | `npm run format:check` | Biome format dry-run |
 | `cd frontend && npm run lint:design` | design-token guard (forbids raw Tailwind colour utilities) |
-| `cd backend && npx tsc --noEmit` | backend typecheck |
-| `cd frontend && npx tsc --noEmit` | frontend typecheck |
+| `npm --prefix backend run typecheck` | backend typecheck (`tsc --noEmit`) |
+| `npm --prefix frontend run typecheck` | frontend typecheck (`tsc -b`, project references) |
 
 A `lint-staged` + Biome pre-commit hook runs automatically on `git commit` (see `Pre-commit hook` below).
 
