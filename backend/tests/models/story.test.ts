@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 
-// Post-[E11] the narrative columns (title, synopsis, worldNotes, systemPrompt)
-// are ciphertext-only. This file tests only model SHAPE + cascade behaviour —
+// Post-[E11] the narrative columns (title, synopsis, worldNotes) are
+// ciphertext-only. This file tests only model SHAPE + cascade behaviour —
 // repo-layer encrypt/decrypt is covered by tests/repos/story.repo.test.ts.
+// [X29] Story.systemPrompt removed entirely; user-level prompt overrides
+// live in User.settingsJson.prompts.
 
 async function makeUser(email = 'author@example.com') {
   const username = email
@@ -48,7 +50,6 @@ describe('Story model', () => {
     expect(story.titleCiphertext).toBeNull();
     expect(story.synopsisCiphertext).toBeNull();
     expect(story.worldNotesCiphertext).toBeNull();
-    expect(story.systemPromptCiphertext).toBeNull();
   });
 
   it('cascades chapter and character deletes when the story is deleted', async () => {

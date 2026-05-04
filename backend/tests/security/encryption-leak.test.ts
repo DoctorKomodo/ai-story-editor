@@ -76,7 +76,6 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       title: `story-title ${SENTINEL}`,
       synopsis: `synopsis ${SENTINEL}`,
       worldNotes: `world-notes ${SENTINEL}`,
-      systemPrompt: `system-prompt ${SENTINEL}`,
       genre: 'genre-plain-ok',
       targetWords: 10_000,
     });

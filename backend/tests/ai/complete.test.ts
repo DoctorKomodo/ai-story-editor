@@ -142,7 +142,6 @@ async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; ch
   const story = await createStoryRepo(req).create({
     title: 'Test Story',
     worldNotes: 'A magical world.',
-    systemPrompt: null,
   });
   const storyId = story.id as string;
 
