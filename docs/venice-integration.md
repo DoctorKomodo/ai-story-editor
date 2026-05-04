@@ -193,7 +193,7 @@ The editor's usage indicator ([F16]) reads those headers after each AI call.
 
 ### Balance ([V10])
 
-`GET /api/ai/balance` makes a lightweight Venice call and returns `x-venice-balance-usd` + `x-venice-balance-diem`. The frontend shows these in the user menu / settings → Venice tab ([F43]).
+`GET /api/users/me/venice-account` ([X32]) makes a lightweight Venice call to `GET /api_keys/rate_limits` and reads `data.balances.{USD,DIEM}` from the JSON body. Returns `{ verified, balanceUsd, diem, endpoint, lastSix }`. The frontend shows these in the user menu (header pill via `useVeniceAccountQuery`) and settings → Venice tab. Per-user rate-limited at 30 req/min. **Note:** the legacy `/api/ai/balance` endpoint was removed; it read non-existent `x-venice-balance-*` headers off `/v1/models` and always returned null balances.
 
 ---
 
@@ -313,7 +313,7 @@ This is the [V22] read-only compliance audit of the Story Editor Venice integrat
 - Venice (verbatim from docs.venice.ai/api-reference/endpoint/models/list example response): top-level `type: "text"`, `model_spec.availableContextTokens: 131072`, `model_spec.capabilities.supportsReasoning: false`, `model_spec.capabilities.supportsVision: false`. Field paths confirmed unchanged.
 
 **8. Rate-limit headers — MATCHES**
-- Our side: we forward `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` (`backend/src/routes/ai.routes.ts:241–248`, `backend/src/routes/chat.routes.ts:364–371`), and read `x-venice-balance-usd` + `x-venice-balance-diem` for `/balance` (`backend/src/routes/ai.routes.ts:90–93`).
+- Our side: we forward `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` (`backend/src/routes/ai.routes.ts:241–248`, `backend/src/routes/chat.routes.ts:364–371`), and read `data.balances.{USD,DIEM}` from `/api_keys/rate_limits` for `/api/users/me/venice-account` (`backend/src/services/venice-key.service.ts:getAccount`).
 - Venice: all four headers are documented verbatim on docs.venice.ai/api-reference → "Rate Limiting Information" and "Account Balance Information".
 - Note: Venice also publishes `x-ratelimit-limit-{requests,tokens}` and `x-ratelimit-reset-{requests,tokens}` — we don't forward these. Not drift; just an opportunity for a richer frontend usage display.
 
