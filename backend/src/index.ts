@@ -17,6 +17,7 @@ import { createChapterChatsRouter, createChatMessagesRouter } from './routes/cha
 import { createOutlineRouter } from './routes/outline.routes';
 import { createStoriesRouter } from './routes/stories.routes';
 import { createUserSettingsRouter } from './routes/user-settings.routes';
+import { createVeniceAccountRouter } from './routes/venice-account.routes';
 import { createVeniceKeyRouter } from './routes/venice-key.routes';
 
 // Fail fast if encryption env is misconfigured. Tests set a valid key in
@@ -85,6 +86,7 @@ app.use(
 
 app.use('/api/auth', cookieParser(), requireAllowedOrigin(allowedOrigin), createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
+app.use('/api/users/me/venice-account', createVeniceAccountRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());
 app.use('/api/ai', createAiDefaultsRouter());

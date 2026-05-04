@@ -69,8 +69,16 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
     if (url.endsWith('/stories/abc123/outline')) {
       return Promise.resolve(jsonResponse(200, { items: [] }));
     }
-    if (url.endsWith('/ai/balance')) {
-      return Promise.resolve(jsonResponse(200, { balance: { dollars: 1, vcu: 100 } }));
+    if (url.endsWith('/users/me/venice-account')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          verified: true,
+          balanceUsd: 1,
+          diem: 100,
+          endpoint: null,
+          lastSix: null,
+        }),
+      );
     }
     if (url.endsWith('/ai/models')) {
       return Promise.resolve(jsonResponse(200, { models: [] }));
@@ -214,8 +222,16 @@ describe('EditorPage paper integration (F52)', () => {
         return Promise.resolve(jsonResponse(200, { characters: [] }));
       if (url.endsWith('/stories/abc123/outline'))
         return Promise.resolve(jsonResponse(200, { items: [] }));
-      if (url.endsWith('/ai/balance'))
-        return Promise.resolve(jsonResponse(200, { balance: { dollars: 1, vcu: 100 } }));
+      if (url.endsWith('/users/me/venice-account'))
+        return Promise.resolve(
+          jsonResponse(200, {
+            verified: true,
+            balanceUsd: 1,
+            diem: 100,
+            endpoint: null,
+            lastSix: null,
+          }),
+        );
       if (url.endsWith('/ai/models')) return Promise.resolve(jsonResponse(200, { models: [] }));
       if (url.endsWith('/users/me/settings')) {
         return Promise.resolve(

@@ -13,6 +13,8 @@
 // extracted into a <ModalTabbed> primitive — Settings is the only multi-tab
 // modal in the app (the other role="tablist" usages live in Sidebar /
 // ChatPanel / ChatComposer, not modals).
+
+import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { formatUsd } from '@/components/BalanceDisplay';
@@ -22,13 +24,14 @@ import { SettingsPromptsTab } from '@/components/SettingsPromptsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
+import { useVeniceAccountQuery, veniceAccountQueryKey } from '@/hooks/useVeniceAccount';
 import {
   useDeleteVeniceKeyMutation,
   useStoreVeniceKeyMutation,
   useVeniceKeyStatusQuery,
-  useVerifyVeniceKeyMutation,
-  type VeniceKeyVerify,
 } from '@/hooks/useVeniceKey';
+import { ApiError } from '@/lib/api';
+import { useErrorStore } from '@/store/errors';
 
 export interface SettingsModalProps {
   open: boolean;
@@ -185,7 +188,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
 // --- Venice tab ---------------------------------------------------------
 
 interface VerifyPillState {
-  kind: 'idle' | 'ok' | 'err';
+  kind: 'idle' | 'pending' | 'ok' | 'err';
   message: string;
 }
 
@@ -198,14 +201,34 @@ function VeniceTab(): JSX.Element {
   const settingsQuery = useUserSettingsQuery();
   const storeMutation = useStoreVeniceKeyMutation();
   const deleteMutation = useDeleteVeniceKeyMutation();
-  const verifyMutation = useVerifyVeniceKeyMutation();
   const updateSettings = useUpdateUserSettingsMutation();
+
+  const status = statusQuery.data;
+  const lastSix = status?.lastSix ?? null;
+
+  const accountQuery = useVeniceAccountQuery(status?.hasKey ?? false);
+  const queryClient = useQueryClient();
+
+  // Push account query errors to the global error store.
+  useEffect(() => {
+    if (!accountQuery.error) return;
+    const err = accountQuery.error;
+    const body = err instanceof ApiError ? err.body : undefined;
+    const upstream = body?.error?.upstreamStatus ?? null;
+    useErrorStore.getState().push({
+      severity: 'error',
+      source: 'venice-account',
+      code: body?.error?.code ?? null,
+      message: err.message,
+      httpStatus: err instanceof ApiError ? err.status : undefined,
+      detail: { upstreamStatus: upstream },
+    });
+  }, [accountQuery.error]);
 
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [endpointDraft, setEndpointDraft] = useState('');
   const [organizationDraft, setOrganizationDraft] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [verifyPill, setVerifyPill] = useState<VerifyPillState>({ kind: 'idle', message: '' });
 
   // Seed the endpoint field from the latest server status — but only when
   // the user hasn't started editing it yet (don't trample drafts).
@@ -219,27 +242,33 @@ function VeniceTab(): JSX.Element {
     }
   }, [statusQuery.data?.endpoint]);
 
-  const status = statusQuery.data;
-  const lastSix = status?.lastSix ?? null;
-
   // [X26 (b)] Masked stored-key indicator — used as the API key input's
   // placeholder when a key is already stored, replacing the separate
   // "Stored: •••• xxxx" field above the Remove button.
   const storedKeyPlaceholder = lastSix ? `••••••••••••${lastSix}` : 'vn_…';
 
-  function applyVerifyResult(res: VeniceKeyVerify): void {
-    if (res.verified) {
-      const usd = res.balanceUsd != null ? formatUsd(res.balanceUsd) : 'USD —';
-      setVerifyPill({ kind: 'ok', message: `Verified · ${usd}` });
-    } else {
-      const six = res.lastSix ?? lastSix ?? '??????';
-      setVerifyPill({ kind: 'err', message: `Not verified · last six ${six}` });
+  // Derive verify pill state from accountQuery — no local setState for this.
+  let verifyPill: VerifyPillState = { kind: 'idle', message: '' };
+  if (status?.hasKey) {
+    if (accountQuery.isFetching) {
+      verifyPill = { kind: 'pending', message: 'Verifying…' };
+    } else if (accountQuery.error instanceof Error) {
+      const six = lastSix ?? '??????';
+      verifyPill = { kind: 'err', message: `Not verified · last six ${six}` };
+    } else if (accountQuery.data) {
+      if (accountQuery.data.verified) {
+        const usd =
+          accountQuery.data.balanceUsd != null ? formatUsd(accountQuery.data.balanceUsd) : 'USD —';
+        verifyPill = { kind: 'ok', message: `Verified · ${usd}` };
+      } else {
+        const six = accountQuery.data.lastSix ?? lastSix ?? '??????';
+        verifyPill = { kind: 'err', message: `Not verified · last six ${six}` };
+      }
     }
   }
 
   const handleSave = async (): Promise<void> => {
     if (apiKeyDraft.trim().length === 0) return;
-    setVerifyPill({ kind: 'idle', message: '' });
     try {
       await storeMutation.mutateAsync({
         apiKey: apiKeyDraft,
@@ -249,33 +278,19 @@ function VeniceTab(): JSX.Element {
       // Clear the plaintext draft immediately — never keep it sitting in
       // component state once the server has acknowledged storage.
       setApiKeyDraft('');
-      // [X26 (c)] Save chains a verify in the same flow so the user gets
-      // balance feedback without a second click. The standalone Verify
-      // button stays for re-checking an existing stored key later.
-      try {
-        const res = await verifyMutation.mutateAsync();
-        applyVerifyResult(res);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : 'Verification failed';
-        setVerifyPill({ kind: 'err', message: msg });
-      }
+      // [X32] Invalidate the account query instead of chaining a verify mutation.
+      // The query refetches automatically and the pill derives from its result.
+      void queryClient.invalidateQueries({ queryKey: veniceAccountQueryKey });
     } catch {
       // store mutation error state is rendered via `storeMutation.isError` below.
     }
   };
 
-  const handleVerify = async (): Promise<void> => {
-    try {
-      const res = await verifyMutation.mutateAsync();
-      applyVerifyResult(res);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Verification failed';
-      setVerifyPill({ kind: 'err', message: msg });
-    }
+  const handleVerify = (): void => {
+    void queryClient.invalidateQueries({ queryKey: veniceAccountQueryKey });
   };
 
   const handleRemove = async (): Promise<void> => {
-    setVerifyPill({ kind: 'idle', message: '' });
     try {
       await deleteMutation.mutateAsync();
       setApiKeyDraft('');
@@ -349,13 +364,13 @@ function VeniceTab(): JSX.Element {
             <button
               type="button"
               data-testid="venice-key-verify"
-              disabled={!status?.hasKey || verifyMutation.isPending}
+              disabled={!status?.hasKey || accountQuery.isFetching}
               onClick={() => {
-                void handleVerify();
+                handleVerify();
               }}
               className="px-3 py-1.5 text-[12px] border border-line rounded-[var(--radius)] text-ink-2 hover:bg-[var(--surface-hover)] hover:text-ink transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {verifyMutation.isPending ? 'Verifying…' : 'Verify'}
+              {accountQuery.isFetching ? 'Verifying…' : 'Verify'}
             </button>
             <button
               type="button"
@@ -379,7 +394,9 @@ function VeniceTab(): JSX.Element {
                 'mt-1 inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono',
                 verifyPill.kind === 'ok'
                   ? 'bg-success-soft text-[color:var(--success)]'
-                  : 'bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] text-[color:var(--danger)]',
+                  : verifyPill.kind === 'err'
+                    ? 'bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] text-[color:var(--danger)]'
+                    : 'bg-[color-mix(in_srgb,var(--ink)_8%,transparent)] text-ink-3',
               ].join(' ')}
             >
               {verifyPill.message}

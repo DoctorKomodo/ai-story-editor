@@ -6,7 +6,7 @@
 //   - useChapterQuery(activeChapterId)    → Paper bodyJson source (F52)
 //   - useUpdateChapterMutation            → autosave PATCH (F52)
 //   - useCharactersQuery(storyId)         → CastTab body
-//   - useBalanceQuery()                   → UserMenu balance
+//   - useVeniceAccountQuery()             → UserMenu balance
 //   - useSessionStore(user)               → UserMenu username
 //   - useAuth().logout + navigate         → sign out
 //   - useActiveChapterStore               → ChapterList selection
@@ -54,7 +54,6 @@ import { TopBar } from '@/components/TopBar';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
-import { useBalanceQuery } from '@/hooks/useBalance';
 import {
   type Chapter,
   chapterQueryKey,
@@ -71,6 +70,7 @@ import {
 } from '@/hooks/useChat';
 import { useStoryQuery } from '@/hooks/useStories';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -96,7 +96,7 @@ export function EditorPage(): JSX.Element {
   const story = storyQuery.data;
   const chaptersQuery = useChaptersQuery(story?.id);
   const charactersQuery = useCharactersQuery(story?.id);
-  const balanceQuery = useBalanceQuery();
+  const balanceQuery = useVeniceAccountQuery();
   const balanceErrorCode =
     balanceQuery.error instanceof ApiError ? (balanceQuery.error.code ?? null) : null;
 

@@ -11,7 +11,7 @@ All endpoints are served from the Express backend at `/api`. Content type is `ap
 - **Validation** — request bodies are Zod-validated ([AU / B series]); invalid payloads return `400 { error: { message, code: "validation_error", issues } }`.
 - **Errors** — global error handler returns `{ error: { message, code } }`. Never exposes stack traces in `NODE_ENV=production` ([B7]). Common codes: `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `venice_key_required`, `venice_key_invalid`, `internal_error`.
 - **Narrative fields** — responses for Story, Chapter, Character, OutlineItem, Chat, Message never include ciphertext siblings (`*Ciphertext`, `*Iv`, `*AuthTag`). The repo layer strips them ([E9]).
-- **Secrets** — `passwordHash` is never returned. The decrypted Venice API key is never returned; the "hasKey / lastSix / endpoint" shape is the only read surface ([AU12]).
+- **Secrets** — `passwordHash` is never returned. The decrypted Venice API key is never returned; the "hasKey / lastSix / endpoint" shape is the only read surface ([AU12]). Balance is exposed via `GET /api/users/me/venice-account` ([X32]) only.
 
 ---
 
@@ -83,9 +83,15 @@ Errors: `400 { code: "venice_key_invalid" }` on 401 from Venice (key not stored)
 ### `DELETE /api/users/me/venice-key` ([AU12])
 Nulls the four BYOK columns. Response `200`: `{ "status": "removed" }`.
 
-### `POST /api/users/me/venice-key/verify` ([V18])
-Rate-limited 6 req/min/user.
-Response `200`: `{ "verified": true, "balanceUsd": 22.5, "diem": 15.0, "endpoint": "…", "lastSix": "abx9ab" }`. The `balanceUsd` value is read from Venice's `x-venice-balance-usd` response header (matches the figure on Venice's account dashboard) — denominated in USD, not arbitrary "credits". Either of `balanceUsd` / `diem` may be `null` when the corresponding header is absent.
+### `GET /api/users/me/venice-account` ([X32])
+Per-user rate-limited 30 req/min. Probes Venice's `GET /api_keys/rate_limits` endpoint and reads `data.balances.{USD,DIEM}` from the body.
+Response `200`: `{ "verified": true, "balanceUsd": 22.5, "diem": 15.0, "endpoint": "https://api.venice.ai/api/v1", "lastSix": "abx9ab" }`. Either of `balanceUsd` / `diem` may be `null` when the corresponding currency isn't on the user's account. `verified: false` is returned (still HTTP 200) when no key is stored OR the stored key was rejected by Venice (401/403).
+Errors:
+- `429 { code: "venice_rate_limited", upstreamStatus: 429, retryAfterSeconds }` — Venice itself rate-limited our probe.
+- `429 { code: "account_rate_limited" }` — our own per-user limit (chatty client). Distinct from `venice_rate_limited` so the frontend can tell which side is the bottleneck.
+- `502 { code: "venice_unavailable", upstreamStatus: number | null }` — non-401/429 from Venice (5xx, 4xx other than auth) or transport failure (`upstreamStatus: null` in the latter case).
+
+Replaces the deleted `GET /api/ai/balance` (V10) and `POST /api/users/me/venice-key/verify` (V18).
 
 ---
 
@@ -223,9 +229,6 @@ change only on backend deploy — frontend caches with `staleTime: Infinity`.
 }
 ```
 
-### `GET /api/ai/balance` ([V10])
-Response `200`: `{ "usd": 15.0, "diem": 2200 }`.
-
 ### `POST /api/ai/complete` — SSE stream ([V5], [V7])
 Body: `{ "action": "continue" | "rewrite" | "describe" | "expand" | "summarise" | "ask" | "freeform", "selectedText?", "chapterContent?", "storyId", "modelId", "enableWebSearch?" }`.
 
@@ -247,4 +250,4 @@ Response `503`: `{ "status": "degraded", "db": "unreachable" }` when Prisma can'
 
 - Global: Helmet + a sensible default (TBD in [AU7]).
 - `/api/ai/*`: 20 req/min/IP ([AU7]).
-- `/api/users/me/venice-key/verify`: 6 req/min/user ([V18]).
+- `/api/users/me/venice-account`: 30 req/min/user ([X32]).

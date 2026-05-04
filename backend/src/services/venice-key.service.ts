@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import { z } from 'zod';
 import { prisma as defaultPrisma } from '../lib/prisma';
+import { parseRetryAfter } from '../lib/venice-errors';
 import { decrypt, encrypt } from './crypto.service';
 
 export const DEFAULT_VENICE_ENDPOINT = 'https://api.venice.ai/api/v1';
@@ -11,7 +12,7 @@ export interface VeniceKeyStatus {
   endpoint: string | null;
 }
 
-export interface VeniceKeyVerifyResult {
+export interface VeniceAccountResult {
   verified: boolean;
   balanceUsd: number | null;
   diem: number | null;
@@ -33,40 +34,21 @@ export class VeniceKeyCheckError extends Error {
   }
 }
 
-// Thrown by verify() when Venice returns 429 on the rate_limits probe. The
-// route maps it to HTTP 429 with code:'venice_rate_limited' so the existing
-// frontend handling continues to work.
-export class VeniceVerifyRateLimitedError extends Error {
-  constructor(public readonly retryAfterSeconds: number | null) {
-    super('Venice rate-limited the verify probe');
-    this.name = 'VeniceVerifyRateLimitedError';
+export class VeniceAccountRateLimitedError extends Error {
+  constructor(
+    public readonly retryAfterSeconds: number | null,
+    public readonly upstreamStatus: number,
+  ) {
+    super('Venice rate-limited the account-info probe');
+    this.name = 'VeniceAccountRateLimitedError';
   }
 }
 
-// Thrown by verify() for any non-success / non-401 / non-429 outcome
-// (network failure, 5xx, malformed JSON). The route maps it to HTTP 502 with
-// code:'venice_unavailable'.
-export class VeniceVerifyUnavailableError extends Error {
-  constructor() {
-    super('Venice verify probe failed');
-    this.name = 'VeniceVerifyUnavailableError';
+export class VeniceAccountUnavailableError extends Error {
+  constructor(public readonly upstreamStatus: number | null) {
+    super('Venice account-info probe failed');
+    this.name = 'VeniceAccountUnavailableError';
   }
-}
-
-// Parse `retry-after` (delta-seconds or HTTP-date). Local to the verify path
-// — lib/venice-errors.ts has the richer parser used by the streaming/openai
-// surface, but here we only need the simple form Venice actually returns.
-function parseRetryAfterSeconds(headers: Headers): number | null {
-  const raw = headers.get('retry-after');
-  if (!raw) return null;
-  const asInt = parseInt(raw, 10);
-  if (!Number.isNaN(asInt) && String(asInt) === raw.trim()) return asInt > 0 ? asInt : 0;
-  const date = Date.parse(raw);
-  if (!Number.isNaN(date)) {
-    const diff = Math.ceil((date - Date.now()) / 1000);
-    return diff > 0 ? diff : 0;
-  }
-  return null;
 }
 
 // Extract the USD / DIEM balances from the rate_limits response body. The
@@ -144,7 +126,14 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     }
   }
 
-  async function getStatus(userId: string): Promise<VeniceKeyStatus> {
+  interface StatusAndKey {
+    hasKey: boolean;
+    lastSix: string | null;
+    endpoint: string | null;
+    apiKey: string | null; // plaintext, request-scoped
+  }
+
+  async function getStatusAndKey(userId: string): Promise<StatusAndKey> {
     const row = await client.user.findUnique({
       where: { id: userId },
       select: {
@@ -156,19 +145,26 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     });
 
     if (!row?.veniceApiKeyEnc || !row.veniceApiKeyIv || !row.veniceApiKeyAuthTag) {
-      return { hasKey: false, lastSix: null, endpoint: null };
+      return { hasKey: false, lastSix: null, endpoint: null, apiKey: null };
     }
 
-    const plaintext = decrypt({
+    const apiKey = decrypt({
       ciphertext: row.veniceApiKeyEnc,
       iv: row.veniceApiKeyIv,
       authTag: row.veniceApiKeyAuthTag,
     });
+
     return {
       hasKey: true,
-      lastSix: lastSixOf(plaintext),
+      lastSix: lastSixOf(apiKey),
       endpoint: row.veniceEndpoint ?? DEFAULT_VENICE_ENDPOINT,
+      apiKey,
     };
+  }
+
+  async function getStatus(userId: string): Promise<VeniceKeyStatus> {
+    const { hasKey, lastSix, endpoint } = await getStatusAndKey(userId);
+    return { hasKey, lastSix, endpoint };
   }
 
   async function store(userId: string, rawInput: unknown): Promise<VeniceKeyStatus> {
@@ -208,51 +204,25 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     });
   }
 
-  // [V18] Re-validates the stored key by calling Venice
-  // (GET /api_keys/rate_limits) and reads `data.balances.{USD,DIEM}` from the
-  // response body. Never modifies stored rows — purely a read + probe
-  // operation. We chose this endpoint over `/v1/models` because Venice only
-  // exposes balance information on its account-info endpoints; `/v1/models`
-  // returns no `x-venice-balance-*` headers at all (verified empirically against
-  // a live key). On 401/403 we return verified:false rather than throwing —
-  // the Settings UI must show "Not verified" without treating it as a crash.
-  async function verify(userId: string): Promise<VeniceKeyVerifyResult> {
-    const status = await getStatus(userId);
+  // [X32] Unified Venice account-info probe. Calls GET /api_keys/rate_limits
+  // (Venice's account-info endpoint) and reads `data.balances.{USD,DIEM}` from
+  // the JSON body. Replaces the old `verify()` (V18) which read non-existent
+  // `x-venice-balance-*` headers off /v1/models.
+  //
+  // On 401/403, returns verified:false rather than throwing — the Settings UI
+  // must show "Not verified" without treating it as a crash. 429 / 5xx surface
+  // as typed errors with `upstreamStatus` carried through to the route's error
+  // body so the frontend's DevErrorOverlay can render it for triage.
+  async function getAccount(userId: string): Promise<VeniceAccountResult> {
+    const { hasKey, lastSix, endpoint, apiKey } = await getStatusAndKey(userId);
 
-    if (!status.hasKey) {
+    if (!hasKey || apiKey === null) {
       return { verified: false, balanceUsd: null, diem: null, endpoint: null, lastSix: null };
     }
 
-    // Re-read the user row to get the plaintext key. getStatus() intentionally
-    // does not return it; we decrypt it again here so the plaintext lives only
-    // for the lifetime of this function (and the in-flight HTTP call).
-    const row = await client.user.findUnique({
-      where: { id: userId },
-      select: {
-        veniceApiKeyEnc: true,
-        veniceApiKeyIv: true,
-        veniceApiKeyAuthTag: true,
-      },
-    });
-    if (!row?.veniceApiKeyEnc || !row.veniceApiKeyIv || !row.veniceApiKeyAuthTag) {
-      // Race: status.hasKey was true, but the key was deleted between calls.
-      return {
-        verified: false,
-        balanceUsd: null,
-        diem: null,
-        endpoint: status.endpoint,
-        lastSix: status.lastSix,
-      };
-    }
-    const apiKey = decrypt({
-      ciphertext: row.veniceApiKeyEnc,
-      iv: row.veniceApiKeyIv,
-      authTag: row.veniceApiKeyAuthTag,
-    });
-
     const fetchFn = deps.fetchFn ?? globalThis.fetch;
-    const endpoint = status.endpoint ?? DEFAULT_VENICE_ENDPOINT;
-    const url = `${endpoint.replace(/\/$/, '')}/api_keys/rate_limits`;
+    const baseEndpoint = endpoint ?? DEFAULT_VENICE_ENDPOINT;
+    const url = `${baseEndpoint.replace(/\/$/, '')}/api_keys/rate_limits`;
 
     let response: Response;
     try {
@@ -261,7 +231,8 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
         headers: { Authorization: `Bearer ${apiKey}` },
       });
     } catch {
-      throw new VeniceVerifyUnavailableError();
+      console.error('[X32] Venice rate_limits probe failed (transport) for user', userId);
+      throw new VeniceAccountUnavailableError(null);
     }
 
     if (response.status === 401 || response.status === 403) {
@@ -269,22 +240,27 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
         verified: false,
         balanceUsd: null,
         diem: null,
-        endpoint: status.endpoint,
-        lastSix: status.lastSix,
+        endpoint,
+        lastSix,
       };
     }
+
     if (response.status === 429) {
-      throw new VeniceVerifyRateLimitedError(parseRetryAfterSeconds(response.headers));
+      console.error('[X32] Venice rate_limits probe returned', response.status, 'for user', userId);
+      throw new VeniceAccountRateLimitedError(parseRetryAfter(response.headers), 429);
     }
+
     if (!response.ok) {
-      throw new VeniceVerifyUnavailableError();
+      console.error('[X32] Venice rate_limits probe returned', response.status, 'for user', userId);
+      throw new VeniceAccountUnavailableError(response.status);
     }
 
     let body: unknown;
     try {
       body = await response.json();
     } catch {
-      throw new VeniceVerifyUnavailableError();
+      console.error('[X32] Venice rate_limits probe failed (json parse) for user', userId);
+      throw new VeniceAccountUnavailableError(response.status);
     }
 
     const balances = readBalances(body);
@@ -292,12 +268,12 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
       verified: true,
       balanceUsd: balances.usd,
       diem: balances.diem,
-      endpoint: status.endpoint,
-      lastSix: status.lastSix,
+      endpoint,
+      lastSix,
     };
   }
 
-  return { getStatus, store, remove, validateAgainstVenice, verify };
+  return { getStatus, store, remove, validateAgainstVenice, getAccount };
 }
 
 export const veniceKeyService = createVeniceKeyService();
