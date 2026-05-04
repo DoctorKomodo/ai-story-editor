@@ -91,7 +91,7 @@ function VeniceMark(): JSX.Element {
         textAnchor="middle"
         fontFamily="var(--serif), Georgia, serif"
         fontSize="13"
-        fill="white"
+        fill="var(--bg)"
       >
         V
       </text>
