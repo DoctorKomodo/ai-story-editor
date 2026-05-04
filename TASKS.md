@@ -21,7 +21,7 @@
 
 - **In flight:** F63 chat history, F65 terminal-401 redirect.
 - **Backlog (next):** M1–M3 maintenance, X26–X29 testing-found UI/settings polish.
-- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X26, X27, X28, X29, DS-* (none yet).
+- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X26, X27, X28, DS-* (none yet).
 - **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
 - **Live sections:** F (Phase 4 only), X, M, DS.
 
@@ -185,7 +185,9 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 
 - [ ] **[X28]** Settings → Models generation-parameter revisit: (1) audit the UI defaults — confirm temperature / top_p / max_tokens etc. are sane for general writing use; (2) parameter changes must persist *per model* (today they're applied globally), so the saved settings shape becomes `{ [modelId]: { temperature, ... } }` keyed by Venice model ID; (3) add a per-model Reset button that clears the user's saved overrides for that model and falls back to the model's defaults; (4) some models expose default parameter values via Venice's `/models` endpoint (e.g. "Qwen 3.5 397B") — load those as the baseline defaults instead of a global hardcode where present.
 
-- [ ] **[X29]** Settings → Models system prompt is dead UI. Current copy reads "Per-story override for the default creative-writing prompt" with a "Pick a story to set a custom system prompt" hint, but no story selector exists in this surface. Repurpose the field as a *user-level* system prompt that applies to every AI call, used either alongside the Venice default system prompt (when the [X26] toggle is on) or on its own. Per-story `Story.systemPrompt` ([V13]) continues to override the user-level value when present.
+- [x] **[X29]** Settings → Models system prompt is dead UI. Repurposed as a Settings → Prompts tab with user-level overrides for the system prompt and five action templates (continue, rewrite/rephrase, expand, summarise, describe). Per-story `Story.systemPrompt` (column + repo path + dead Models-tab UI) removed entirely.
+  - plan: [docs/superpowers/plans/2026-05-04-x29-prompts-tab.md](docs/superpowers/plans/2026-05-04-x29-prompts-tab.md)
+  - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.user-prompts.test.ts tests/routes/user-settings.test.ts tests/routes/ai-defaults.test.ts tests/repos/story.repo.test.ts tests/routes/stories.test.ts && cd ../frontend && npm run test:frontend -- --run tests/components/Settings.prompts.test.tsx tests/components/Settings.models.test.tsx tests/hooks/useDefaultPrompts.test.tsx`
 
 - [ ] **[X11]** (optional) Reconsider whether `/api/ai/complete` should keep `enable_web_search` on at all. Context: V7 wired web-search opt-in (`enableWebSearch?: boolean` on the `/api/ai/complete` body). V26 scoped citations to the chat panel only, so on the inline-AI surface users currently pay Venice web-search cost with zero user-visible benefit — citations are dropped silently. Decide one of: (a) turn web search OFF across all inline AI actions (simplest, removes the wasted spend); (b) keep it ON as a silent fact-grounding nudge for accuracy (tolerable but undocumented); (c) extend V26's delivery to inline AI (requires a new F-design for a sources UI on the inline card — the selection bubble / inline AI card has no mockup for this today). Write the decision + rationale into `docs/venice-integration.md` § Web Search. If (a), also remove `enableWebSearch` from `ai.routes.ts` body schema + update `docs/api-contract.md` § `/api/ai/complete`. If (c), spawn a follow-up F-task and a follow-up V-task.
   - verify: (design decision — no automated verify)
