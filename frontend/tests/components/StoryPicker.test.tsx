@@ -29,7 +29,6 @@ function makeStory(id: string, overrides: Partial<Record<string, unknown>> = {})
     synopsis: null,
     worldNotes: null,
     targetWords: 80_000,
-    systemPrompt: null,
     chapterCount: 1,
     totalWordCount: 1234,
     createdAt: new Date().toISOString(),

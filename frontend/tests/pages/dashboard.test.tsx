@@ -66,7 +66,6 @@ function makeStory(
     synopsis: 'A boy on a desert planet.',
     worldNotes: null,
     targetWords: null,
-    systemPrompt: null,
     chapterCount: 3,
     totalWordCount: 4500,
     createdAt: '2026-04-24T00:00:00.000Z',

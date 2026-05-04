@@ -9,6 +9,7 @@ import { prisma } from './lib/prisma';
 import { NoVeniceKeyError } from './lib/venice';
 import { requireAllowedOrigin } from './middleware/origin-check.middleware';
 import { createAiRouter } from './routes/ai.routes';
+import { createAiDefaultsRouter } from './routes/ai-defaults.routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
@@ -86,6 +87,7 @@ app.use('/api/auth', cookieParser(), requireAllowedOrigin(allowedOrigin), create
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/ai', createAiRouter());
+app.use('/api/ai', createAiDefaultsRouter());
 app.use('/api/stories', createStoriesRouter());
 // [B3] Chapter CRUD nested under a parent story. mergeParams: true inside the
 // router exposes :storyId to its handlers.
