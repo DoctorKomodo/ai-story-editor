@@ -17,23 +17,12 @@ import { api } from '@/lib/api';
  * - `GET    /api/users/me/venice-key`            → status
  * - `PUT    /api/users/me/venice-key`            → store / replace
  * - `DELETE /api/users/me/venice-key`            → remove
- * - `POST   /api/users/me/venice-key/verify`     → check against Venice
  */
 
 export interface VeniceKeyStatus {
   hasKey: boolean;
   lastSix: string | null;
   endpoint: string | null;
-}
-
-export interface VeniceKeyVerify {
-  verified: boolean;
-  /** USD balance from Venice's `x-venice-balance-usd` header (matches the
-   *  account dashboard figure). Null when the header is absent. */
-  balanceUsd: number | null;
-  diem: number | null;
-  endpoint: string | null;
-  lastSix: string | null;
 }
 
 export interface StoreVeniceKeyInput {
@@ -94,14 +83,6 @@ export function useDeleteVeniceKeyMutation(): UseMutationResult<void, Error, voi
         lastSix: null,
         endpoint: null,
       });
-    },
-  });
-}
-
-export function useVerifyVeniceKeyMutation(): UseMutationResult<VeniceKeyVerify, Error, void> {
-  return useMutation({
-    mutationFn: async (): Promise<VeniceKeyVerify> => {
-      return api<VeniceKeyVerify>('/users/me/venice-key/verify', { method: 'POST' });
     },
   });
 }

@@ -295,34 +295,46 @@ describe('SettingsModal (F43)', () => {
       expect(screen.queryByTestId('venice-key-last-four')).toBeNull();
     });
 
-    it('Save calls PUT /api/users/me/venice-key with the entered key, then verifies in the same flow', async () => {
-      const fetchMock = routeFetch({
-        '/api/users/me/settings': () => jsonResponse(200, defaultSettings()),
-        '/api/users/me/venice-key': (init) => {
-          if (!init || init.method == null || init.method === 'GET') {
-            return jsonResponse(200, keyStatus());
+    it('Save calls PUT /api/users/me/venice-key with the entered key, then invalidates /venice-account', async () => {
+      let accountCalls = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, init?: RequestInit) => {
+          const method = init?.method ?? 'GET';
+          if (typeof url === 'string') {
+            if (url.endsWith('/api/users/me/settings') && method === 'GET') {
+              return Promise.resolve(jsonResponse(200, defaultSettings()));
+            }
+            if (url.endsWith('/api/users/me/venice-key')) {
+              if (method === 'GET') {
+                return Promise.resolve(jsonResponse(200, keyStatus()));
+              }
+              if (method === 'PUT') {
+                return Promise.resolve(
+                  jsonResponse(200, {
+                    status: 'saved',
+                    lastSix: 'abcdef',
+                    endpoint: 'https://api.venice.ai/api/v1',
+                  }),
+                );
+              }
+            }
+            if (url.endsWith('/api/users/me/venice-account') && method === 'GET') {
+              accountCalls++;
+              return Promise.resolve(
+                jsonResponse(200, {
+                  verified: true,
+                  balanceUsd: 12.5,
+                  diem: null,
+                  endpoint: 'https://api.venice.ai/api/v1',
+                  lastSix: 'abcdef',
+                }),
+              );
+            }
           }
-          if (init.method === 'PUT') {
-            return jsonResponse(200, {
-              status: 'saved',
-              lastSix: 'abcdef',
-              endpoint: 'https://api.venice.ai/api/v1',
-            });
-          }
-          return undefined;
-        },
-        // [X26 (c)] The Save flow chains a verify in the same click, so the
-        // mock has to answer both PUT (store) and POST /verify.
-        '/api/users/me/venice-key/verify': () =>
-          jsonResponse(200, {
-            verified: true,
-            balanceUsd: 12.5,
-            diem: null,
-            endpoint: 'https://api.venice.ai/api/v1',
-            lastSix: 'abcdef',
-          }),
-      });
-      vi.stubGlobal('fetch', fetchMock);
+          return Promise.resolve(jsonResponse(200, {}));
+        }),
+      );
 
       const user = userEvent.setup();
       renderModal(<SettingsModal open onClose={onClose} />);
@@ -332,119 +344,125 @@ describe('SettingsModal (F43)', () => {
       await screen.findByTestId('venice-key-input');
 
       await user.type(screen.getByTestId('venice-key-input'), 'abc');
+
+      const beforeClick = accountCalls;
       await user.click(screen.getByTestId('venice-key-save'));
 
+      // [X32] The Save flow invalidates /venice-account instead of POSTing /verify.
+      // Wait for PUT to have happened.
       await waitFor(() => {
+        const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
         const putCall = fetchMock.mock.calls.find(
-          ([url, init]: [string, RequestInit | undefined]) =>
-            url === '/api/users/me/venice-key' && init?.method === 'PUT',
+          ([furl, finit]: [string, RequestInit | undefined]) =>
+            furl.endsWith('/api/users/me/venice-key') && finit?.method === 'PUT',
         );
         expect(putCall).toBeDefined();
-        const init = (putCall as [string, RequestInit])[1];
-        const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+        const finit = (putCall as [string, RequestInit])[1];
+        const body = JSON.parse(String(finit.body)) as Record<string, unknown>;
         expect(body.apiKey).toBe('abc');
       });
 
-      // [X26 (c)] The chained verify fires immediately after store and
-      // surfaces the USD balance in the green pill — no extra click.
-      const pill = await screen.findByTestId('venice-key-pill');
-      expect(pill).toHaveAttribute('data-pill', 'ok');
-      expect(pill.textContent).toMatch(/Verified/);
-      expect(pill.textContent).toMatch(/\$12\.50/);
+      // The invalidation should trigger a refetch of /venice-account.
+      await waitFor(() => expect(accountCalls).toBeGreaterThan(beforeClick));
 
-      const verifyCall = fetchMock.mock.calls.find(
-        ([url, init]: [string, RequestInit | undefined]) =>
-          url === '/api/users/me/venice-key/verify' && init?.method === 'POST',
+      // The pill derives from the account query — verified + USD balance.
+      await waitFor(() => {
+        const pill = screen.getByTestId('venice-key-pill');
+        expect(pill.textContent ?? '').toMatch(/Verified.*\$12\.50/i);
+      });
+    });
+
+    it('Verify button refetches /venice-account and shows balance pill on success', async () => {
+      const accountResponse = {
+        verified: true,
+        balanceUsd: 22.5,
+        diem: 1000,
+        endpoint: 'https://api.venice.ai/api/v1',
+        lastSix: 'ABCDEF',
+      };
+      let accountCalls = 0;
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, init?: RequestInit) => {
+          const method = init?.method ?? 'GET';
+          if (typeof url === 'string') {
+            if (url.endsWith('/api/users/me/settings') && method === 'GET') {
+              return Promise.resolve(jsonResponse(200, defaultSettings()));
+            }
+            if (url.endsWith('/api/users/me/venice-key') && method === 'GET') {
+              return Promise.resolve(
+                jsonResponse(200, { hasKey: true, lastSix: 'ABCDEF', endpoint: null }),
+              );
+            }
+            if (url.endsWith('/api/users/me/venice-account') && method === 'GET') {
+              accountCalls++;
+              return Promise.resolve(jsonResponse(200, accountResponse));
+            }
+          }
+          return Promise.resolve(jsonResponse(200, {}));
+        }),
       );
-      expect(verifyCall).toBeDefined();
-    });
-
-    it('Verify success shows green pill with formatted USD balance', async () => {
-      const fetchMock = routeFetch({
-        '/api/users/me/settings': () => jsonResponse(200, defaultSettings()),
-        '/api/users/me/venice-key': (init) => {
-          if (!init || init.method == null || init.method === 'GET') {
-            return jsonResponse(
-              200,
-              keyStatus({
-                hasKey: true,
-                lastSix: 'aBRK7a',
-                endpoint: 'https://api.venice.ai/api/v1',
-              }),
-            );
-          }
-          return undefined;
-        },
-        '/api/users/me/venice-key/verify': () =>
-          jsonResponse(200, {
-            verified: true,
-            balanceUsd: 22.5,
-            diem: null,
-            endpoint: 'https://api.venice.ai/api/v1',
-            lastSix: 'aBRK7a',
-          }),
-      });
-      vi.stubGlobal('fetch', fetchMock);
 
       const user = userEvent.setup();
       renderModal(<SettingsModal open onClose={onClose} />);
 
-      // Wait for hasKey to flip so Verify is enabled.
-      await waitFor(() => {
-        expect(screen.getByTestId('venice-key-verify')).not.toBeDisabled();
-      });
+      // Wait for initial query.
+      await waitFor(() => expect(accountCalls).toBeGreaterThanOrEqual(1));
 
+      await waitFor(() => expect(screen.getByTestId('venice-key-verify')).not.toBeDisabled());
+
+      const beforeClick = accountCalls;
       await user.click(screen.getByTestId('venice-key-verify'));
 
-      const pill = await screen.findByTestId('venice-key-pill');
-      expect(pill).toHaveAttribute('data-pill', 'ok');
-      expect(pill.textContent).toMatch(/Verified/);
-      // [X26 (d)] Pill renders the USD balance using the same formatUsd
-      // helper as the header BalanceDisplay — never the misleading "credits".
-      expect(pill.textContent).toMatch(/\$22\.50/);
-      expect(pill.textContent).not.toMatch(/credits/i);
+      await waitFor(() => expect(accountCalls).toBeGreaterThan(beforeClick));
+
+      await waitFor(() => {
+        const pill = screen.getByTestId('venice-key-pill');
+        expect(pill.textContent ?? '').toMatch(/Verified.*\$22\.50/i);
+      });
     });
 
-    it('Verify failure shows red pill with last six', async () => {
-      const fetchMock = routeFetch({
-        '/api/users/me/settings': () => jsonResponse(200, defaultSettings()),
-        '/api/users/me/venice-key': (init) => {
-          if (!init || init.method == null || init.method === 'GET') {
-            return jsonResponse(
-              200,
-              keyStatus({
-                hasKey: true,
-                lastSix: 'aBRK7a',
-                endpoint: 'https://api.venice.ai/api/v1',
-              }),
-            );
+    it('Verify button shows "Not verified" pill when account responds verified:false', async () => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn((url: string, init?: RequestInit) => {
+          const method = init?.method ?? 'GET';
+          if (typeof url === 'string') {
+            if (url.endsWith('/api/users/me/settings') && method === 'GET') {
+              return Promise.resolve(jsonResponse(200, defaultSettings()));
+            }
+            if (url.endsWith('/api/users/me/venice-key') && method === 'GET') {
+              return Promise.resolve(
+                jsonResponse(200, { hasKey: true, lastSix: 'aBRK7a', endpoint: null }),
+              );
+            }
+            if (url.endsWith('/api/users/me/venice-account') && method === 'GET') {
+              return Promise.resolve(
+                jsonResponse(200, {
+                  verified: false,
+                  balanceUsd: null,
+                  diem: null,
+                  endpoint: null,
+                  lastSix: 'aBRK7a',
+                }),
+              );
+            }
           }
-          return undefined;
-        },
-        '/api/users/me/venice-key/verify': () =>
-          jsonResponse(200, {
-            verified: false,
-            balanceUsd: null,
-            diem: null,
-            endpoint: 'https://api.venice.ai/api/v1',
-            lastSix: 'aBRK7a',
-          }),
-      });
-      vi.stubGlobal('fetch', fetchMock);
+          return Promise.resolve(jsonResponse(200, {}));
+        }),
+      );
 
       const user = userEvent.setup();
       renderModal(<SettingsModal open onClose={onClose} />);
 
-      await waitFor(() => {
-        expect(screen.getByTestId('venice-key-verify')).not.toBeDisabled();
-      });
+      await waitFor(() => expect(screen.getByTestId('venice-key-verify')).not.toBeDisabled());
 
       await user.click(screen.getByTestId('venice-key-verify'));
 
-      const pill = await screen.findByTestId('venice-key-pill');
-      expect(pill).toHaveAttribute('data-pill', 'err');
-      expect(pill.textContent).toMatch(/Not verified/);
-      expect(pill.textContent).toMatch(/aBRK7a/);
+      await waitFor(() => {
+        const pill = screen.getByTestId('venice-key-pill');
+        expect(pill.textContent ?? '').toMatch(/Not verified.*aBRK7a/i);
+      });
     });
 
     it('Remove calls DELETE /api/users/me/venice-key', async () => {
