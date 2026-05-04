@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { BalanceDisplay, formatDiem, formatUsd } from '@/components/BalanceDisplay';
+import type { VeniceAccount } from '@/hooks/useVeniceAccount';
 
 describe('F17 · BalanceDisplay component', () => {
   it('renders role="status" with "Loading balance…" when isLoading', () => {
@@ -22,19 +23,37 @@ describe('F17 · BalanceDisplay component', () => {
   });
 
   it('renders formatted USD and Diem when balance is fully populated', () => {
-    render(<BalanceDisplay balance={{ credits: 2415.3, diem: 482193 }} />);
+    render(
+      <BalanceDisplay
+        balance={{
+          verified: true,
+          balanceUsd: 2415.3,
+          diem: 482193,
+          endpoint: null,
+          lastSix: null,
+        }}
+      />,
+    );
     expect(screen.getByText('USD: $2,415.30')).toBeInTheDocument();
     expect(screen.getByText('Diem: 482,193')).toBeInTheDocument();
   });
 
   it('renders "USD: —" when credits is null but diem is present', () => {
-    render(<BalanceDisplay balance={{ credits: null, diem: 482193 }} />);
+    render(
+      <BalanceDisplay
+        balance={{ verified: true, balanceUsd: null, diem: 482193, endpoint: null, lastSix: null }}
+      />,
+    );
     expect(screen.getByText('USD: —')).toBeInTheDocument();
     expect(screen.getByText('Diem: 482,193')).toBeInTheDocument();
   });
 
   it('renders zero values distinctly from null', () => {
-    render(<BalanceDisplay balance={{ credits: 0, diem: 0 }} />);
+    render(
+      <BalanceDisplay
+        balance={{ verified: true, balanceUsd: 0, diem: 0, endpoint: null, lastSix: null }}
+      />,
+    );
     expect(screen.getByText('USD: $0.00')).toBeInTheDocument();
     expect(screen.getByText('Diem: 0')).toBeInTheDocument();
   });
@@ -45,10 +64,15 @@ describe('F17 · BalanceDisplay component', () => {
   });
 
   it('treats undefined fields like null (never throws on partial responses)', () => {
-    // A backend response missing a field entirely (e.g. `{ credits: 2.5 }`
+    // A backend response missing a field entirely (e.g. `{ balanceUsd: 2.5 }`
     // with no `diem` key) arrives as undefined, not null. The guard must
     // coerce both to the em-dash placeholder.
-    const partial = { credits: 2.5 } as unknown as { credits: number | null; diem: number | null };
+    const partial = {
+      verified: true,
+      balanceUsd: 2.5,
+      endpoint: null,
+      lastSix: null,
+    } as unknown as VeniceAccount;
     render(<BalanceDisplay balance={partial} />);
     expect(screen.getByText('USD: $2.50')).toBeInTheDocument();
     expect(screen.getByText('Diem: —')).toBeInTheDocument();
@@ -71,7 +95,17 @@ describe('F17 · BalanceDisplay design tokens', () => {
   });
 
   it('populated state uses ink token classes', () => {
-    render(<BalanceDisplay balance={{ credits: 2415.3, diem: 482193 }} />);
+    render(
+      <BalanceDisplay
+        balance={{
+          verified: true,
+          balanceUsd: 2415.3,
+          diem: 482193,
+          endpoint: null,
+          lastSix: null,
+        }}
+      />,
+    );
     const node = screen.getByTestId('balance-display');
     expect(node).toHaveClass('text-ink-2');
     expect(node).toHaveClass('font-mono');

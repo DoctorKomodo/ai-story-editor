@@ -63,8 +63,16 @@ function mockImpl(
     if (url.endsWith('/stories/abc123/outline')) {
       return Promise.resolve(jsonResponse(200, { items: [] }));
     }
-    if (url.endsWith('/ai/balance')) {
-      return Promise.resolve(jsonResponse(200, { balance: { dollars: 1.23, vcu: 100 } }));
+    if (url.endsWith('/users/me/venice-account')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          verified: true,
+          balanceUsd: 1.23,
+          diem: 100,
+          endpoint: null,
+          lastSix: null,
+        }),
+      );
     }
     if (url.endsWith('/ai/models')) {
       return Promise.resolve(jsonResponse(200, { models: [] }));
