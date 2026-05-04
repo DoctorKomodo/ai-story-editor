@@ -66,6 +66,17 @@ const SettingsSchema = z
       })
       .strict()
       .optional(),
+    prompts: z
+      .object({
+        system: z.string().max(10_000).nullable().optional(),
+        continue: z.string().max(10_000).nullable().optional(),
+        rewrite: z.string().max(10_000).nullable().optional(),
+        expand: z.string().max(10_000).nullable().optional(),
+        summarise: z.string().max(10_000).nullable().optional(),
+        describe: z.string().max(10_000).nullable().optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -84,6 +95,14 @@ const DEFAULT_SETTINGS = {
   },
   chat: { model: null as string | null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
   ai: { includeVeniceSystemPrompt: true },
+  prompts: {
+    system: null as string | null,
+    continue: null as string | null,
+    rewrite: null as string | null,
+    expand: null as string | null,
+    summarise: null as string | null,
+    describe: null as string | null,
+  },
 } satisfies Record<string, unknown>;
 
 // ─── Router ───────────────────────────────────────────────────────────────────
