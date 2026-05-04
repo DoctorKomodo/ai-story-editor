@@ -21,6 +21,11 @@ type VeniceRawModel = {
       supportsVision?: boolean;
       supportsWebSearch?: boolean;
     };
+    description?: string;
+    pricing?: {
+      input?: { usd?: number; diem?: number };
+      output?: { usd?: number; diem?: number };
+    };
   };
 };
 
@@ -38,8 +43,13 @@ const LLAMA: VeniceRawModel = {
   type: 'text',
   model_spec: {
     name: 'Llama 3.3 70B',
+    description: 'A general-purpose 70B model tuned for instruction-following.',
     availableContextTokens: 65536,
     capabilities: { supportsReasoning: false, supportsVision: false },
+    pricing: {
+      input: { usd: 0.6, diem: 0.6 },
+      output: { usd: 2.4, diem: 2.4 },
+    },
   },
 };
 
@@ -105,6 +115,8 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: false,
           supportsVision: false,
           supportsWebSearch: false,
+          description: 'A general-purpose 70B model tuned for instruction-following.',
+          pricing: { inputUsdPerMTok: 0.6, outputUsdPerMTok: 2.4 },
         },
         {
           id: 'qwen-qwq-32b',
@@ -113,6 +125,8 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: true,
           supportsVision: false,
           supportsWebSearch: false,
+          description: null,
+          pricing: null,
         },
         {
           id: 'mistral-vision',
@@ -121,6 +135,8 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: false,
           supportsVision: true,
           supportsWebSearch: false,
+          description: null,
+          pricing: null,
         },
       ]);
     });
@@ -150,6 +166,60 @@ describe('venice.models.service [V2]', () => {
       expect(only.supportsReasoning).toBe(false);
       expect(only.supportsVision).toBe(false);
       expect(only.supportsWebSearch).toBe(false);
+      expect(only.description).toBeNull();
+      expect(only.pricing).toBeNull();
+    });
+
+    it('omits pricing when only the input side is present', async () => {
+      const halfPriced: VeniceRawModel = {
+        id: 'half-priced',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Half Priced',
+          pricing: { input: { usd: 0.15 } },
+        },
+      };
+      const { client } = makeListStub([halfPriced]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.pricing).toBeNull();
+    });
+
+    it('omits pricing when output.usd is non-numeric', async () => {
+      const bad: VeniceRawModel = {
+        id: 'bad-priced',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Bad Priced',
+          pricing: {
+            input: { usd: 0.15 },
+            // @ts-expect-error — intentional non-numeric to mirror upstream noise
+            output: { usd: 'free' },
+          },
+        },
+      };
+      const { client } = makeListStub([bad]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.pricing).toBeNull();
+    });
+
+    it('normalises blank description to null', async () => {
+      const blank: VeniceRawModel = {
+        id: 'blank-desc',
+        object: 'model',
+        type: 'text',
+        model_spec: { name: 'Blank Desc', description: '   ' },
+      };
+      const { client } = makeListStub([blank]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.description).toBeNull();
     });
 
     it('serves from cache within the 10-minute TTL without re-calling Venice', async () => {
