@@ -1,11 +1,12 @@
 import { type Request, type Response, Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ZodError } from 'zod';
-import { AuthenticationError, mapVeniceError } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
   VeniceKeyCheckError,
   VeniceKeyInvalidError,
+  VeniceVerifyRateLimitedError,
+  VeniceVerifyUnavailableError,
   veniceKeyService,
 } from '../services/venice-key.service';
 
@@ -108,9 +109,10 @@ export function createVeniceKeyRouter(options: VeniceKeyRouterOptions = {}) {
 
   // [V18] POST /verify — re-validates the stored key against Venice and returns
   // balance info. Rate-limited per user (6 req/min) to prevent Venice abuse.
-  // AuthenticationError from the SDK (stored key was revoked) is mapped to a
-  // successful 200 with verified:false — NOT an error response — because the
-  // Settings UI must show "Not verified" without treating it as a crash.
+  // The service returns verified:false for 401/403 (revoked key) directly —
+  // NOT as an exception — because the Settings UI must show "Not verified"
+  // without treating it as a crash. 429 / 5xx surface as typed errors mapped
+  // to HTTP 429 / 502 below.
   router.post(
     '/verify',
     createVerifyRateLimiter(options.verifyRateLimitWindowMs),
@@ -120,37 +122,25 @@ export function createVeniceKeyRouter(options: VeniceKeyRouterOptions = {}) {
         const result = await veniceKeyService.verify(userId);
         res.status(200).json(result);
       } catch (err) {
-        // 401 from Venice — the stored key was rejected. Return verified:false
-        // with the key metadata echoed back so the Settings pill can display
-        // "Not verified · last six: XXXXXX". Don't use mapVeniceError here
-        // because that would return HTTP 400; we want 200 for this case.
-        if (err instanceof AuthenticationError) {
-          // Fetch status to include endpoint/lastSix even on bad-key response.
-          // We already called getStatus inside verify(), but verify throws
-          // before we can read those values — fetch them here.
-          try {
-            const status = await veniceKeyService.getStatus(userId);
-            res.status(200).json({
-              verified: false,
-              balanceUsd: null,
-              diem: null,
-              endpoint: status.endpoint,
-              lastSix: status.lastSix,
-            });
-          } catch {
-            // If getStatus itself fails, return minimal verified:false response.
-            res.status(200).json({
-              verified: false,
-              balanceUsd: null,
-              diem: null,
-              endpoint: null,
-              lastSix: null,
-            });
-          }
+        if (err instanceof VeniceVerifyRateLimitedError) {
+          res.status(429).json({
+            error: {
+              code: 'venice_rate_limited',
+              message: 'Venice is rate limiting this request. Try again shortly.',
+              retryAfterSeconds: err.retryAfterSeconds,
+            },
+          });
           return;
         }
-        // RateLimitError, 5xx, etc. — delegate to mapVeniceError then global handler.
-        if (mapVeniceError(err, res, userId)) return;
+        if (err instanceof VeniceVerifyUnavailableError) {
+          res.status(502).json({
+            error: {
+              code: 'venice_unavailable',
+              message: 'Venice is temporarily unavailable. Try again shortly.',
+            },
+          });
+          return;
+        }
         next(err);
       }
     },
