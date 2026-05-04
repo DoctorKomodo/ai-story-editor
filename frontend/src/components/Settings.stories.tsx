@@ -62,7 +62,7 @@ const SAMPLE_MODELS: Model[] = [
   },
 ];
 
-function makeClient(): QueryClient {
+function makeClient(settings: UserSettings = SAMPLE_SETTINGS): QueryClient {
   const client = new QueryClient({
     defaultOptions: {
       queries: {
@@ -74,16 +74,17 @@ function makeClient(): QueryClient {
     },
   });
   client.setQueryData(veniceKeyStatusQueryKey, SAMPLE_VENICE_STATUS);
-  client.setQueryData(userSettingsQueryKey, SAMPLE_SETTINGS);
+  client.setQueryData(userSettingsQueryKey, settings);
   client.setQueryData(modelsQueryKey, SAMPLE_MODELS);
   return client;
 }
 
 interface DemoProps {
   initialTab?: 'venice' | 'models' | 'writing' | 'appearance';
+  settings?: UserSettings;
 }
 
-function Demo({ initialTab = 'venice' }: DemoProps) {
+function Demo({ initialTab = 'venice', settings = SAMPLE_SETTINGS }: DemoProps) {
   const [open, setOpen] = useState(true);
 
   // Settings always opens on the Venice tab. To preview a different tab
@@ -103,7 +104,7 @@ function Demo({ initialTab = 'venice' }: DemoProps) {
   }, [open, initialTab]);
 
   return (
-    <QueryClientProvider client={makeClient()}>
+    <QueryClientProvider client={makeClient(settings)}>
       <Button variant="ghost" onClick={() => setOpen(true)}>
         Reopen settings
       </Button>
@@ -126,6 +127,16 @@ export const Venice: Story = {
 
 export const Models: Story = {
   args: { initialTab: 'models' },
+};
+
+export const ModelsTabNoSelection: Story = {
+  args: {
+    initialTab: 'models',
+    settings: {
+      ...SAMPLE_SETTINGS,
+      chat: { ...SAMPLE_SETTINGS.chat, model: null },
+    },
+  },
 };
 
 export const Writing: Story = {
