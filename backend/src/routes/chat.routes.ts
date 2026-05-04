@@ -72,8 +72,18 @@ interface AiSettings {
   includeVeniceSystemPrompt?: boolean;
 }
 
+interface PromptsSettings {
+  system?: string | null;
+  continue?: string | null;
+  rewrite?: string | null;
+  expand?: string | null;
+  summarise?: string | null;
+  describe?: string | null;
+}
+
 interface UserSettings {
   ai?: AiSettings;
+  prompts?: PromptsSettings;
 }
 
 function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
@@ -82,6 +92,12 @@ function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
   const flag = (settings as UserSettings).ai?.includeVeniceSystemPrompt;
   if (typeof flag === 'boolean') return flag;
   return true;
+}
+
+function resolveUserPrompts(raw: unknown): PromptsSettings {
+  if (!raw || typeof raw !== 'object') return {};
+  const settings = raw as UserSettings;
+  return settings.prompts ?? {};
 }
 
 // ─── Router 1: chapter-scoped chat CRUD ──────────────────────────────────────
@@ -237,6 +253,7 @@ export function createChatMessagesRouter() {
       const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(
         userRow?.settingsJson ?? null,
       );
+      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
 
       // ── 4. Load chapter + story via repos ─────────────────────────────────
       const chapter = await createChapterRepo(req).findById(chatChapterId);
@@ -273,7 +290,6 @@ export function createChatMessagesRouter() {
       // ── 6. Build prompt from chapter + story context ──────────────────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
-      const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
       const {
         messages: baseMessages,
@@ -287,7 +303,7 @@ export function createChatMessagesRouter() {
         worldNotes,
         modelContextLength,
         includeVeniceSystemPrompt,
-        storySystemPrompt,
+        userPrompts,
         freeformInstruction: body.content,
       });
 

@@ -57,26 +57,9 @@ describe('buildPrompt — shape', () => {
     expect(result.messages[0]?.role).toBe('system');
   });
 
-  it('uses DEFAULT_SYSTEM_PROMPT when storySystemPrompt is null', () => {
-    const result = buildPrompt(baseInput({ storySystemPrompt: null }));
-    expect(result.messages[0]?.content).toBe(DEFAULT_SYSTEM_PROMPT);
-  });
-
-  it('uses storySystemPrompt when provided as a non-empty string', () => {
-    const customPrompt = 'You are a gothic horror novelist.';
-    const result = buildPrompt(baseInput({ storySystemPrompt: customPrompt }));
-    expect(result.messages[0]?.content).toBe(customPrompt);
-  });
-
-  it('falls back to DEFAULT_SYSTEM_PROMPT when storySystemPrompt is undefined', () => {
-    const result = buildPrompt(baseInput({ storySystemPrompt: undefined }));
-    expect(result.messages[0]?.content).toBe(DEFAULT_SYSTEM_PROMPT);
-  });
-
-  it('falls back to DEFAULT_SYSTEM_PROMPT when storySystemPrompt is empty string', () => {
-    const result = buildPrompt(baseInput({ storySystemPrompt: '' }));
-    expect(result.messages[0]?.content).toBe(DEFAULT_SYSTEM_PROMPT);
-  });
+  // [X29] System-prompt resolution moved to userPrompts.system; full coverage
+  // lives in prompt.user-prompts.test.ts. The storySystemPrompt input was
+  // removed when per-story overrides were dropped.
 
   it('has a user message following the system message', () => {
     const result = buildPrompt(baseInput());
@@ -118,9 +101,9 @@ describe('buildPrompt — action task block', () => {
     expect(content).toContain('She fled.');
   });
 
-  it('action=rephrase includes the selection and "rephrase" instruction', () => {
+  it('action=rephrase uses the rewrite template (collapsed under X29) and includes the selection', () => {
     const content = userContent(baseInput({ action: 'rephrase', selectedText: 'He said hello.' }));
-    expect(content.toLowerCase()).toContain('rephrase');
+    expect(content.toLowerCase()).toContain('rewrite');
     expect(content).toContain('He said hello.');
   });
 

@@ -58,8 +58,18 @@ interface AiSettings {
   includeVeniceSystemPrompt?: boolean;
 }
 
+interface PromptsSettings {
+  system?: string | null;
+  continue?: string | null;
+  rewrite?: string | null;
+  expand?: string | null;
+  summarise?: string | null;
+  describe?: string | null;
+}
+
 interface UserSettings {
   ai?: AiSettings;
+  prompts?: PromptsSettings;
 }
 
 function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
@@ -68,6 +78,12 @@ function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
   const flag = settings.ai?.includeVeniceSystemPrompt;
   if (typeof flag === 'boolean') return flag;
   return true;
+}
+
+function resolveUserPrompts(raw: unknown): PromptsSettings {
+  if (!raw || typeof raw !== 'object') return {};
+  const settings = raw as UserSettings;
+  return settings.prompts ?? {};
 }
 
 export function createAiRouter() {
@@ -151,6 +167,7 @@ export function createAiRouter() {
       const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(
         userRow?.settingsJson ?? null,
       );
+      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
 
       // ── 4. Load story via repo (ownership-scoped) ────────────────────────
       const story = await createStoryRepo(req).findById(body.storyId);
@@ -192,7 +209,6 @@ export function createAiRouter() {
 
       // ── 9. Build prompt ───────────────────────────────────────────────────
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
-      const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
       const {
         messages,
@@ -206,7 +222,7 @@ export function createAiRouter() {
         worldNotes,
         modelContextLength,
         includeVeniceSystemPrompt,
-        storySystemPrompt,
+        userPrompts,
         freeformInstruction: body.freeformInstruction,
       });
 
