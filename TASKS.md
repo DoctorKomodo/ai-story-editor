@@ -20,7 +20,7 @@
 ## Current focus
 
 - **In flight:** F63 chat history, F65 terminal-401 redirect.
-- **Backlog (next):** M1–M3 maintenance, X27, X28, X30 testing-found UI/settings polish, X32 venice-account endpoint.
+- **Backlog (next):** M1–M3 maintenance, X27, X28, X30 testing-found UI/settings polish.
 - **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X27, X28, X30, DS-* (none yet).
 - **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
 - **Live sections:** F (Phase 4 only), X, M, DS.
@@ -180,7 +180,7 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
   - superseded-by: X32 (the rename and the balance endpoint were consolidated into one unified `/api/users/me/venice-account` endpoint replacing both `/api/ai/balance` and the verify endpoint)
   - verify: `cd backend && npx vitest run tests/routes/venice-account.test.ts && cd ../frontend && npx vitest run tests/components/BalanceDisplay.test.tsx`
 
-- [ ] **[X32]** Unified Venice account-info endpoint. Replaces `GET /api/ai/balance` and `POST /api/users/me/venice-key/verify` with one `GET /api/users/me/venice-account` returning `{ verified, balanceUsd, diem, endpoint, lastSix }`. Fixes the BalanceDisplay header pill (was reading non-existent `x-venice-balance-*` headers off `/v1/models`). Per-user 30/min rate limit (distinct `account_rate_limited` code from `venice_rate_limited`). `upstreamStatus` carried in error body for the #54 diagnostics overlay. Internal `getStatusAndKey()` halves DB reads + decrypts. `parseRetryAfter` deduped via `lib/venice-errors`.
+- [x] **[X32]** Unified Venice account-info endpoint. Replaces `GET /api/ai/balance` and `POST /api/users/me/venice-key/verify` with one `GET /api/users/me/venice-account` returning `{ verified, balanceUsd, diem, endpoint, lastSix }`. Fixes the BalanceDisplay header pill (was reading non-existent `x-venice-balance-*` headers off `/v1/models`). Per-user 30/min rate limit (distinct `account_rate_limited` code from `venice_rate_limited`). `upstreamStatus` carried in error body for the #54 diagnostics overlay. Internal `getStatusAndKey()` halves DB reads + decrypts. `parseRetryAfter` deduped via `lib/venice-errors`.
   - spec: [docs/superpowers/specs/2026-05-04-x32-venice-account-endpoint-design.md](docs/superpowers/specs/2026-05-04-x32-venice-account-endpoint-design.md)
   - plan: [docs/superpowers/plans/2026-05-04-x32-venice-account-endpoint.md](docs/superpowers/plans/2026-05-04-x32-venice-account-endpoint.md)
   - verify: `cd backend && npx vitest run tests/routes/venice-account.test.ts && cd ../frontend && npx vitest run tests/hooks/useVeniceAccount.test.tsx tests/components/Settings.shell-venice.test.tsx tests/components/BalanceDisplay.test.tsx`
