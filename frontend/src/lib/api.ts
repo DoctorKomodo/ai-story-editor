@@ -60,18 +60,24 @@ export interface ApiErrorBody {
   error?: {
     message?: string;
     code?: string;
+    upstreamStatus?: number | null;
+    retryAfterSeconds?: number | null;
+    // Allow further fields without breaking existing callers.
+    [key: string]: unknown;
   };
 }
 
 export class ApiError extends Error {
   public readonly status: number;
   public readonly code?: string;
+  public readonly body?: ApiErrorBody;
 
-  constructor(status: number, message: string, code?: string) {
+  constructor(status: number, message: string, code?: string, body?: ApiErrorBody) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.code = code;
+    this.body = body;
   }
 }
 
@@ -141,14 +147,16 @@ function buildRequestInit(init: ApiRequestInit | undefined): RequestInit {
   return requestInit;
 }
 
-async function parseErrorBody(res: Response): Promise<{ message: string; code?: string }> {
+async function parseErrorBody(
+  res: Response,
+): Promise<{ message: string; code?: string; body?: ApiErrorBody }> {
   const contentType = res.headers.get('content-type') ?? '';
   if (contentType.includes('application/json')) {
     try {
       const data = (await res.json()) as ApiErrorBody;
       const message = data.error?.message ?? res.statusText ?? `HTTP ${res.status}`;
       const code = data.error?.code;
-      return { message, code };
+      return { message, code, body: data };
     } catch {
       // fall through
     }
@@ -230,8 +238,8 @@ async function doRequest(path: string, init?: ApiRequestInit): Promise<Response>
 
   if (firstRes.status !== 401) {
     if (!firstRes.ok) {
-      const { message, code } = await parseErrorBody(firstRes);
-      throw new ApiError(firstRes.status, message, code);
+      const { message, code, body } = await parseErrorBody(firstRes);
+      throw new ApiError(firstRes.status, message, code, body);
     }
     return firstRes;
   }
@@ -241,8 +249,8 @@ async function doRequest(path: string, init?: ApiRequestInit): Promise<Response>
   if (newToken === null) {
     setAccessToken(null);
     if (onUnauthorized) onUnauthorized();
-    const { message, code } = await parseErrorBody(firstRes);
-    throw new ApiError(401, message, code);
+    const { message, code, body } = await parseErrorBody(firstRes);
+    throw new ApiError(401, message, code, body);
   }
 
   setAccessToken(newToken);
@@ -250,12 +258,12 @@ async function doRequest(path: string, init?: ApiRequestInit): Promise<Response>
   const retryRes = await fetch(url, retryInit);
 
   if (!retryRes.ok) {
-    const { message, code } = await parseErrorBody(retryRes);
+    const { message, code, body } = await parseErrorBody(retryRes);
     if (retryRes.status === 401) {
       setAccessToken(null);
       if (onUnauthorized) onUnauthorized();
     }
-    throw new ApiError(retryRes.status, message, code);
+    throw new ApiError(retryRes.status, message, code, body);
   }
 
   return retryRes;
