@@ -1,16 +1,14 @@
-// [F44] Settings → Models tab.
+// [F44 / X27] Settings → Models tab.
 //
-// Covers:
-//   - Models render as <ModelCard>s with `aria-checked` reflecting the
-//     selected model from useUserSettings().chat.model.
-//   - Selecting a card PATCHes /users/me/settings `{ chat: { model } }`
-//     (the multi-device fix); the optimistic cache update flips the radio
-//     immediately.
-//   - The three server-backed sliders render bound to settings.chat.
-//   - Dragging a slider PATCHes settings.
+// Covers (post-X27):
+//   - The Models tab renders a single trigger button (not an inline radiogroup)
+//     showing the currently-selected model name + ctx chip.
+//   - Clicking the trigger fires the onOpenModelPicker prop exactly once.
+//   - When chat.model is null the trigger reads "Pick a model" with no ctx chip.
+//   - Sliders still render bound to settings.chat values and dragging PATCHes.
 //
-// [X29] The per-story system-prompt section was removed from the Models
-// tab; corresponding test scenarios moved to Settings.prompts.test.tsx.
+// The "selecting a model PATCHes settings.chat.model" scenario lives in
+// tests/components/ModelPicker.test.tsx (where the actual selection happens).
 import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -79,6 +77,8 @@ const TWO_MODELS = {
       supportsReasoning: false,
       supportsVision: false,
       supportsWebSearch: false,
+      description: null,
+      pricing: null,
     },
     {
       id: 'llama-3.3-70b',
@@ -87,6 +87,8 @@ const TWO_MODELS = {
       supportsReasoning: false,
       supportsVision: false,
       supportsWebSearch: false,
+      description: null,
+      pricing: null,
     },
   ],
 };
@@ -100,10 +102,6 @@ interface RouteOptions {
   initialSettings?: DefaultSettingsOptions;
 }
 
-// State-tracking mock: PATCH bodies are merged into the in-memory settings
-// shape and echoed back, so the wrapper's onSuccess setQueryData reflects
-// the patched values rather than overwriting the optimistic update with
-// the seed.
 function buildFetch(opts: RouteOptions = {}): FetchMock {
   const modelsBody = opts.modelsBody ?? TWO_MODELS;
   let settings = makeSettings(opts.initialSettings ?? {});
@@ -132,7 +130,6 @@ function buildFetch(opts: RouteOptions = {}): FetchMock {
     if (url === '/api/stories' && method === 'GET') {
       return Promise.resolve(jsonResponse(200, { stories: [] }));
     }
-    // Default no-op so an unmocked endpoint doesn't hang a query.
     return Promise.resolve(jsonResponse(200, {}));
   });
 }
@@ -147,8 +144,9 @@ async function openModelsTab(): Promise<void> {
   await user.click(screen.getByTestId('settings-tab-models'));
 }
 
-describe('SettingsModal Models tab (F44)', () => {
+describe('SettingsModal Models tab (F44 / X27)', () => {
   let onClose: ReturnType<typeof vi.fn>;
+  let onOpenModelPicker: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -161,6 +159,7 @@ describe('SettingsModal Models tab (F44)', () => {
       status: 'authenticated',
     });
     onClose = vi.fn();
+    onOpenModelPicker = vi.fn();
   });
 
   afterEach(() => {
@@ -170,46 +169,48 @@ describe('SettingsModal Models tab (F44)', () => {
     useSessionStore.setState({ user: null, status: 'idle' });
   });
 
-  it('renders ModelCards in a radiogroup', async () => {
-    vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
+  it('renders a trigger showing the selected model name + ctx chip', async () => {
+    vi.stubGlobal('fetch', buildFetch({ initialSettings: { model: 'llama-3.3-70b' } }));
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={onOpenModelPicker} />);
     await openModelsTab();
 
-    const group = await screen.findByTestId('models-radiogroup');
-    expect(group).toHaveAttribute('role', 'radiogroup');
-
-    const venice = await screen.findByTestId('model-card-venice-uncensored');
-    const llama = await screen.findByTestId('model-card-llama-3.3-70b');
-    expect(venice).toHaveAttribute('role', 'radio');
-    expect(llama).toHaveAttribute('role', 'radio');
+    const trigger = await screen.findByTestId('settings-model-trigger');
+    expect(trigger).toHaveTextContent('Llama 3.3 70B');
+    expect(await screen.findByTestId('settings-model-trigger-ctx')).toHaveTextContent(/128k/i);
   });
 
-  it('selecting a model PATCHes /users/me/settings (multi-device fix)', async () => {
-    const fetchMock = buildFetch();
-    vi.stubGlobal('fetch', fetchMock);
-
-    const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+  it('renders "Pick a model" with no ctx chip when chat.model is null', async () => {
+    vi.stubGlobal('fetch', buildFetch({ initialSettings: { model: null } }));
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={onOpenModelPicker} />);
     await openModelsTab();
 
-    const card = await screen.findByTestId('model-card-llama-3.3-70b');
-    await user.click(card);
+    const trigger = await screen.findByTestId('settings-model-trigger');
+    expect(trigger).toHaveTextContent(/pick a model/i);
+    expect(screen.queryByTestId('settings-model-trigger-ctx')).toBeNull();
+  });
 
-    await waitFor(() => {
-      const patch = fetchMock.mock.calls.find(
-        ([url, init]: [string, RequestInit | undefined]) =>
-          url === '/api/users/me/settings' && init?.method === 'PATCH',
-      );
-      expect(patch).toBeDefined();
-      const init = (patch as [string, RequestInit])[1];
-      const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      expect(body).toEqual({ chat: { model: 'llama-3.3-70b' } });
-    });
+  it('clicking the trigger fires onOpenModelPicker exactly once', async () => {
+    vi.stubGlobal('fetch', buildFetch({ initialSettings: { model: 'llama-3.3-70b' } }));
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={onOpenModelPicker} />);
+    await openModelsTab();
+
+    await user.click(await screen.findByTestId('settings-model-trigger'));
+    expect(onOpenModelPicker).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not render the inline radiogroup any more', async () => {
+    vi.stubGlobal('fetch', buildFetch());
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={onOpenModelPicker} />);
+    await openModelsTab();
+
+    await screen.findByTestId('settings-model-trigger');
+    expect(screen.queryByTestId('models-radiogroup')).toBeNull();
   });
 
   it('renders the three sliders bound to settings.chat values', async () => {
     vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={onOpenModelPicker} />);
     await openModelsTab();
 
     const temp = await screen.findByTestId('param-temperature');
@@ -231,7 +232,7 @@ describe('SettingsModal Models tab (F44)', () => {
     const fetchMock = buildFetch();
     vi.stubGlobal('fetch', fetchMock);
 
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={onOpenModelPicker} />);
     await openModelsTab();
 
     const temp = await screen.findByTestId('param-temperature');
