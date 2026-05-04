@@ -53,6 +53,12 @@ export function ModelPicker({ open, onClose }: ModelPickerProps): JSX.Element | 
         data-testid="model-picker-body"
         className="flex-1 overflow-y-auto p-3 flex flex-col gap-2"
       >
+        <p
+          data-testid="model-picker-price-hint"
+          className="text-[11px] text-ink-4 font-mono px-1 pb-1"
+        >
+          Prices are USD per 1M tokens.
+        </p>
         {isLoading ? (
           <div className="py-8 text-center font-mono text-[12px] text-ink-4">Loading models…</div>
         ) : isError ? (

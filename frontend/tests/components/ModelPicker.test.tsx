@@ -219,4 +219,12 @@ describe('ModelPicker (F42)', () => {
       expect(screen.getByText(/no models available/i)).toBeInTheDocument();
     });
   });
+
+  it('[X27] renders the price-units hint when open', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { models: [] }));
+    renderPicker(<ModelPicker open onClose={onClose} />);
+    expect(await screen.findByTestId('model-picker-price-hint')).toHaveTextContent(
+      /prices are usd per 1m tokens/i,
+    );
+  });
 });
