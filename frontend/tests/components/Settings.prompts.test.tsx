@@ -123,7 +123,7 @@ function renderModal(): { qc: ReturnType<typeof createQueryClient> } {
   const qc = createQueryClient();
   render(
     <QueryClientProvider client={qc}>
-      <SettingsModal open onClose={() => {}} />
+      <SettingsModal open onClose={() => {}} onOpenModelPicker={() => {}} />
     </QueryClientProvider>,
   );
   return { qc };

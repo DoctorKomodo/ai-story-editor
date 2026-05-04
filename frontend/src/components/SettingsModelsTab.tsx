@@ -1,23 +1,21 @@
-// [F44] Settings → Models tab.
+// [F44 / X27] Settings → Models tab.
 //
 // Composition (top → bottom):
-//   1. Model list — `<ModelCard>` (from [F42]) inside a `radiogroup`.
-//      Click PATCHes `/api/users/me/settings` `{ chat: { model } }` via
-//      useUpdateUserSetting; the wrapper handles the optimistic cache
-//      update so the radio reflects the choice immediately ([B11]).
+//   1. Model trigger — a single button showing the currently-selected model
+//      (Venice mark · name · ctx chip · chevron). Clicking fires
+//      `onOpenModelPicker`, which the parent (SettingsModal → EditorPage)
+//      wires into the same <ModelPicker /> the chat-panel model bar opens.
 //   2. Generation parameters — three sliders (temperature, topP, maxTokens)
 //      bound to `settings.chat`. Each tick PATCHes; the optimistic update
-//      keeps the slider responsive. The old frequencyPenalty slider was
-//      dropped — the backend chat shape ([B11]) doesn't carry it, and the
-//      UI was a no-op write to a Zustand-only field.
+//      keeps the slider responsive.
 //
-// [X29] The per-story system-prompt section moved out: prompts now live
-// on the dedicated Settings → Prompts tab as user-level overrides,
-// replacing the old per-story `Story.systemPrompt` field entirely.
+// [X27] The previous inline <ModelCard> radiogroup was retired so this tab
+// stays compact as the Venice model list grows. Selection now happens inside
+// the picker modal.
 import type { ChangeEvent, JSX } from 'react';
 import { useId } from 'react';
-import { ModelCard } from '@/components/ModelCard';
-import { useModelsQuery } from '@/hooks/useModels';
+import { formatCtxLabel } from '@/components/ChatPanel';
+import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 
 interface SliderRowProps {
@@ -77,7 +75,54 @@ function SliderRow({
   );
 }
 
-export function SettingsModelsTab(): JSX.Element {
+function VeniceMark(): JSX.Element {
+  return (
+    <svg
+      data-testid="settings-model-trigger-mark"
+      width="14"
+      height="14"
+      viewBox="0 0 18 18"
+      aria-hidden="true"
+    >
+      <rect x="0" y="0" width="18" height="18" fill="currentColor" />
+      <text
+        x="9"
+        y="14"
+        textAnchor="middle"
+        fontFamily="var(--serif), Georgia, serif"
+        fontSize="13"
+        fill="var(--bg)"
+      >
+        V
+      </text>
+    </svg>
+  );
+}
+
+function ChevronDownIcon(): JSX.Element {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="text-ink-4"
+    >
+      <polyline points="6 9 12 15 18 9" />
+    </svg>
+  );
+}
+
+export interface SettingsModelsTabProps {
+  onOpenModelPicker: () => void;
+}
+
+export function SettingsModelsTab({ onOpenModelPicker }: SettingsModelsTabProps): JSX.Element {
   const tempId = useId();
   const topPId = useId();
   const maxTokensId = useId();
@@ -86,21 +131,15 @@ export function SettingsModelsTab(): JSX.Element {
   const updateSetting = useUpdateUserSetting();
   const modelsQuery = useModelsQuery();
 
-  // --- Model list -------------------------------------------------------
+  // --- Model trigger ----------------------------------------------------
 
   const modelId = settings.chat.model;
-  const handleSelectModel = (id: string): void => {
-    updateSetting.mutate({ chat: { model: id } });
-  };
+  const selectedModel: Model | undefined = modelsQuery.data?.find((m) => m.id === modelId);
+  const triggerLabel = selectedModel?.name ?? selectedModel?.id ?? 'Pick a model';
+  const ctxLabel = selectedModel ? formatCtxLabel(selectedModel.contextLength) : '';
 
   // --- Generation parameters -------------------------------------------
 
-  // Each slider tick PATCHes synchronously. The optimistic cache update
-  // inside useUpdateUserSetting keeps the slider responsive (re-renders
-  // immediately from the new cache value); only the network call is per-tick.
-  // Acceptable for the local-server dev case; if PATCH frequency becomes an
-  // issue in production, add a `mutateDebounced` variant to
-  // useUpdateUserSetting and wrap these calls.
   const params = settings.chat;
   const onTemperature = (v: number): void => {
     updateSetting.mutate({ chat: { temperature: v } });
@@ -114,8 +153,6 @@ export function SettingsModelsTab(): JSX.Element {
 
   // --- Render -----------------------------------------------------------
 
-  const models = modelsQuery.data;
-
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3" data-testid="models-section-list">
@@ -126,38 +163,27 @@ export function SettingsModelsTab(): JSX.Element {
           </p>
         </header>
 
-        <div
-          role="radiogroup"
-          aria-label="Select model"
-          data-testid="models-radiogroup"
-          className="grid gap-2"
+        <button
+          type="button"
+          data-testid="settings-model-trigger"
+          onClick={onOpenModelPicker}
+          aria-label="Open model picker"
+          className="flex items-center gap-1.5 hover:bg-[var(--surface-hover)] px-2 py-1 rounded-[var(--radius)] bg-[var(--bg-sunken)] border border-line"
         >
-          {modelsQuery.isLoading ? (
-            <div className="py-6 text-center font-mono text-[12px] text-ink-4">Loading models…</div>
-          ) : modelsQuery.isError ? (
-            <div
-              role="alert"
-              className="py-6 text-center font-mono text-[12px] text-[color:var(--danger)]"
+          <VeniceMark />
+          <span className="font-mono text-[12px] text-ink truncate flex-1 min-w-0 text-left">
+            {triggerLabel}
+          </span>
+          {selectedModel && ctxLabel.length > 0 && ctxLabel !== '—' ? (
+            <span
+              data-testid="settings-model-trigger-ctx"
+              className="text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-bg border border-line text-ink-3"
             >
-              {modelsQuery.error instanceof Error
-                ? modelsQuery.error.message
-                : 'Failed to load models.'}
-            </div>
-          ) : !models || models.length === 0 ? (
-            <div className="py-6 text-center font-mono text-[12px] text-ink-4">
-              No models available
-            </div>
-          ) : (
-            models.map((m) => (
-              <ModelCard
-                key={m.id}
-                model={m}
-                selected={m.id === modelId}
-                onSelect={handleSelectModel}
-              />
-            ))
-          )}
-        </div>
+              {ctxLabel}
+            </span>
+          ) : null}
+          <ChevronDownIcon />
+        </button>
       </section>
 
       <section className="flex flex-col gap-3" data-testid="models-section-params">

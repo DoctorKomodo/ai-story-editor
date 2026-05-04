@@ -3,19 +3,19 @@ import type { JSX } from 'react';
  * [F42] Reusable radio-card for model picking.
  *
  * Used by:
- *   - [F42] ModelPicker modal — opened from the chat panel model bar ([F38]).
- *   - [F44] Settings → Models tab.
+ *   - [F42] ModelPicker modal — opened from the chat panel model bar ([F38])
+ *     and from the [X27] Settings → Models trigger.
  *
  * The card is rendered as a single `<button role="radio">` so the
  * surrounding container can mark itself with `role="radiogroup"`. Selection
  * state lives on `aria-checked`, with the visual treatment being the
  * `border-ink` ring (vs `border-line` when unchecked).
  *
- * The Model type comes straight from `useModelsQuery` ([F13]). Stat rows
- * (params, speed, notes) are not part of that shape today; the component
- * gracefully omits them when absent so the card still renders cleanly with
- * just `id` + context length, matching the live data path. When the backend
- * starts returning richer metadata, no caller has to change.
+ * [X27] Row 1 carries the display name, an optional price pill (USD per
+ * 1M tokens), and a context-length chip. Row 2 — when at least one of
+ * reasoning / web-search / description is present — carries the capability
+ * labels and the model description as prose. supportsVision is deliberately
+ * not surfaced; the app has no vision-capable surface.
  */
 import type { Model } from '@/hooks/useModels';
 
@@ -25,45 +25,39 @@ export interface ModelCardProps {
   onSelect: (id: string) => void;
 }
 
-/**
- * Optional metadata fields the mockup hints at but the live `Model` type
- * doesn't yet carry. Read defensively via this widened view so we can light
- * them up later without churn.
- */
-interface ModelExtras {
-  displayName?: string;
-  params?: string;
-  speed?: string;
-  notes?: string;
-}
-
 function formatContextLabel(n: number): string {
   if (n <= 0) return '';
   if (n >= 1000) {
-    // e.g. 32768 -> "32k", 128000 -> "128k". Round to nearest thousand.
     const k = Math.round(n / 1000);
     return `${String(k)}k`;
   }
   return String(n);
 }
 
-function readExtras(model: Model): ModelExtras {
-  // The live shape only has id/name/contextLength/supports*. Any future
-  // metadata (params/speed/notes) will flow through unchanged via a wider
-  // backend payload.
-  return model as Model & ModelExtras;
+function formatPriceShort(usdPerM: number): string {
+  return `$${usdPerM.toFixed(2)}`;
+}
+
+function formatPriceLong(usdPerM: number, side: 'input' | 'output'): string {
+  return `$${usdPerM.toFixed(2)} USD per 1M ${side} tokens`;
 }
 
 export function ModelCard({ model, selected, onSelect }: ModelCardProps): JSX.Element {
-  const extras = readExtras(model);
   const ctxLabel = formatContextLabel(model.contextLength);
-  const display = extras.displayName ?? model.id ?? model.name;
+  const display = model.id ?? model.name;
 
-  const statBits: string[] = [];
-  if (extras.params != null && extras.params.length > 0) statBits.push(extras.params);
-  if (extras.speed != null && extras.speed.length > 0) statBits.push(extras.speed);
-  const hasStats = statBits.length > 0;
-  const hasNotes = extras.notes != null && extras.notes.length > 0;
+  const capabilityLabels: string[] = [];
+  if (model.supportsReasoning) capabilityLabels.push('Reasoning');
+  if (model.supportsWebSearch) capabilityLabels.push('Web search');
+
+  const hasDescription = model.description != null && model.description.length > 0;
+  const hasCapabilities = capabilityLabels.length > 0;
+  const hasRow2 = hasCapabilities || hasDescription;
+
+  const row2Parts: string[] = [];
+  if (hasCapabilities) row2Parts.push(capabilityLabels.join(' · '));
+  if (hasDescription) row2Parts.push(model.description as string);
+  const row2Text = row2Parts.join(' · ');
 
   const className = [
     'flex flex-col items-stretch w-full text-left p-3 rounded-[var(--radius)] border',
@@ -86,29 +80,33 @@ export function ModelCard({ model, selected, onSelect }: ModelCardProps): JSX.El
     >
       <div className="flex items-baseline gap-2">
         <span className="font-mono text-[13px] text-ink">{display}</span>
+        {model.pricing != null ? (
+          <span
+            data-testid={`model-card-${model.id}-price`}
+            title={`${formatPriceLong(model.pricing.inputUsdPerMTok, 'input')} · ${formatPriceLong(model.pricing.outputUsdPerMTok, 'output')}`}
+            className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-bg border border-line text-ink-3 ml-auto"
+          >
+            {`${formatPriceShort(model.pricing.inputUsdPerMTok)} in · ${formatPriceShort(model.pricing.outputUsdPerMTok)} out`}
+          </span>
+        ) : null}
         {ctxLabel.length > 0 ? (
           <span
             data-testid={`model-card-${model.id}-ctx`}
-            className="text-[10px] uppercase tracking-[.08em] font-mono px-1.5 py-0.5 rounded bg-bg border border-line text-ink-3 ml-auto"
+            className={[
+              'text-[10px] uppercase tracking-[.08em] font-mono px-1.5 py-0.5 rounded bg-bg border border-line text-ink-3',
+              model.pricing != null ? '' : 'ml-auto',
+            ].join(' ')}
           >
             {ctxLabel}
           </span>
         ) : null}
       </div>
-      {hasStats ? (
+      {hasRow2 ? (
         <div
-          data-testid={`model-card-${model.id}-stats`}
-          className="mt-1 font-mono text-[11px] text-ink-4"
+          data-testid={`model-card-${model.id}-desc`}
+          className="mt-1 font-sans text-[11.5px] text-ink-3 line-clamp-2"
         >
-          {statBits.join(' · ')}
-        </div>
-      ) : null}
-      {hasNotes ? (
-        <div
-          data-testid={`model-card-${model.id}-notes`}
-          className="mt-1 font-sans text-[11.5px] text-ink-3"
-        >
-          {extras.notes}
+          {row2Text}
         </div>
       ) : null}
     </button>

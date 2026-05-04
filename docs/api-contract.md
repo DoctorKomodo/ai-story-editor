@@ -207,7 +207,28 @@ Errors: `409 { code: "venice_key_required" }` when the user has no stored key.
 ## AI — `/api/ai`
 
 ### `GET /api/ai/models` ([V1])
-Response `200`: `{ "models": [{ "id", "name", "contextLength", "supportsReasoning", "supportsVision" }] }`. Cached 10 min in memory.
+
+Response `200`:
+```jsonc
+{
+  "models": [
+    {
+      "id": "llama-3.3-70b",
+      "name": "Llama 3.3 70B",
+      "contextLength": 65536,
+      "supportsReasoning": false,
+      "supportsVision": false,
+      "supportsWebSearch": false,
+      "description": "A general-purpose 70B model tuned for instruction-following.",
+      "pricing": { "inputUsdPerMTok": 0.6, "outputUsdPerMTok": 2.4 }
+    }
+  ]
+}
+```
+
+`description` is `string | null`. `pricing` is atomic — either both `inputUsdPerMTok` and `outputUsdPerMTok` are present (numbers, USD per 1M tokens) or the whole `pricing` object is `null`. We never expose a partial price.
+
+Cached 10 min in memory.
 
 ### `GET /api/ai/default-prompts`
 

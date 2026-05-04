@@ -36,6 +36,7 @@ import { useErrorStore } from '@/store/errors';
 export interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  onOpenModelPicker: () => void;
 }
 
 type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance';
@@ -88,7 +89,11 @@ function EyeOffIcon(): JSX.Element {
   );
 }
 
-export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Element | null {
+export function SettingsModal({
+  open,
+  onClose,
+  onOpenModelPicker,
+}: SettingsModalProps): JSX.Element | null {
   const titleId = useId();
   const [activeTab, setActiveTab] = useState<SettingsTab>('venice');
 
@@ -157,7 +162,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
         {activeTab === 'venice' ? (
           <VeniceTab />
         ) : activeTab === 'models' ? (
-          <SettingsModelsTab />
+          <SettingsModelsTab onOpenModelPicker={onOpenModelPicker} />
         ) : activeTab === 'prompts' ? (
           <SettingsPromptsTab />
         ) : activeTab === 'writing' ? (

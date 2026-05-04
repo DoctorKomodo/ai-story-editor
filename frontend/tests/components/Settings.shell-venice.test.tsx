@@ -117,7 +117,7 @@ describe('SettingsModal (F43)', () => {
         '/api/users/me/venice-key': () => jsonResponse(200, keyStatus()),
       }),
     );
-    renderModal(<SettingsModal open={false} onClose={onClose} />);
+    renderModal(<SettingsModal open={false} onClose={onClose} onOpenModelPicker={() => {}} />);
     expect(screen.queryByRole('dialog')).toBeNull();
   });
 
@@ -129,7 +129,7 @@ describe('SettingsModal (F43)', () => {
         '/api/users/me/venice-key': () => jsonResponse(200, keyStatus()),
       }),
     );
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
     expect(screen.getByRole('dialog')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /^settings$/i })).toBeInTheDocument();
@@ -147,7 +147,7 @@ describe('SettingsModal (F43)', () => {
         '/api/users/me/venice-key': () => jsonResponse(200, keyStatus()),
       }),
     );
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs.map((t) => t.textContent)).toEqual([
@@ -171,7 +171,7 @@ describe('SettingsModal (F43)', () => {
       }),
     );
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
     await user.click(screen.getByTestId('settings-tab-models'));
     expect(screen.getByTestId('settings-tab-models')).toHaveAttribute('aria-selected', 'true');
@@ -189,7 +189,7 @@ describe('SettingsModal (F43)', () => {
       }),
     );
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
     await user.click(screen.getByTestId('settings-cancel'));
     expect(onClose).toHaveBeenCalledTimes(1);
@@ -207,7 +207,7 @@ describe('SettingsModal (F43)', () => {
       }),
     );
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
     await user.click(screen.getByTestId('settings-close'));
     expect(onClose).toHaveBeenCalled();
@@ -222,7 +222,7 @@ describe('SettingsModal (F43)', () => {
       }),
     );
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
     await user.keyboard('{Escape}');
     expect(onClose).toHaveBeenCalled();
@@ -237,7 +237,7 @@ describe('SettingsModal (F43)', () => {
       }),
     );
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
     const backdrop = screen.getByTestId('settings-backdrop');
     await user.click(backdrop);
@@ -254,7 +254,7 @@ describe('SettingsModal (F43)', () => {
         }),
       );
       const user = userEvent.setup();
-      renderModal(<SettingsModal open onClose={onClose} />);
+      renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
       const input = screen.getByTestId('venice-key-input');
       expect(input).toHaveAttribute('type', 'password');
@@ -282,7 +282,7 @@ describe('SettingsModal (F43)', () => {
             ),
         }),
       );
-      renderModal(<SettingsModal open onClose={onClose} />);
+      renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
       // [X26 (b)] The legacy "Stored: •••• xxxx" indicator above Remove is
       // gone — the masked value lives in the input's placeholder so a single
@@ -337,7 +337,7 @@ describe('SettingsModal (F43)', () => {
       );
 
       const user = userEvent.setup();
-      renderModal(<SettingsModal open onClose={onClose} />);
+      renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
       // Wait for status query to settle so the Save button reads enabled
       // state cleanly.
@@ -404,7 +404,7 @@ describe('SettingsModal (F43)', () => {
       );
 
       const user = userEvent.setup();
-      renderModal(<SettingsModal open onClose={onClose} />);
+      renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
       // Wait for initial query.
       await waitFor(() => expect(accountCalls).toBeGreaterThanOrEqual(1));
@@ -453,7 +453,7 @@ describe('SettingsModal (F43)', () => {
       );
 
       const user = userEvent.setup();
-      renderModal(<SettingsModal open onClose={onClose} />);
+      renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
       await waitFor(() => expect(screen.getByTestId('venice-key-verify')).not.toBeDisabled());
 
@@ -488,7 +488,7 @@ describe('SettingsModal (F43)', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       const user = userEvent.setup();
-      renderModal(<SettingsModal open onClose={onClose} />);
+      renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
       await waitFor(() => {
         expect(screen.getByTestId('venice-key-remove')).not.toBeDisabled();
@@ -521,7 +521,7 @@ describe('SettingsModal (F43)', () => {
       vi.stubGlobal('fetch', fetchMock);
 
       const user = userEvent.setup();
-      renderModal(<SettingsModal open onClose={onClose} />);
+      renderModal(<SettingsModal open onClose={onClose} onOpenModelPicker={() => {}} />);
 
       const checkbox = await screen.findByTestId('venice-include-system-prompt');
       // Wait for the settings query to enable the checkbox.

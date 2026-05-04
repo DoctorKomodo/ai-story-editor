@@ -52,6 +52,10 @@ make test                   # backend (vitest) + frontend (vitest) suites
 make test-e2e               # playwright against a running stack
 cd backend && npm run db:test:reset   # reset the test DB before a full suite
 
+# Typecheck (both subprojects expose a `typecheck` script)
+npm --prefix backend run typecheck    # tsc --noEmit (backend)
+npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
+
 # Running a single task's verify command
 /task-verify D9             # runs the `verify:` for [D9] and reports the true exit code
 ```

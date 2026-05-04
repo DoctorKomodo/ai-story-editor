@@ -10,6 +10,11 @@
 import type OpenAI from 'openai';
 import { getVeniceClient } from '../lib/venice';
 
+export interface ModelPricing {
+  inputUsdPerMTok: number;
+  outputUsdPerMTok: number;
+}
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -17,6 +22,8 @@ export interface ModelInfo {
   supportsReasoning: boolean;
   supportsVision: boolean;
   supportsWebSearch: boolean;
+  description: string | null;
+  pricing: ModelPricing | null;
 }
 
 export class UnknownModelError extends Error {
@@ -39,6 +46,11 @@ interface VeniceRawModelSpec {
   name?: string;
   availableContextTokens?: number;
   capabilities?: VeniceRawCapabilities;
+  description?: string;
+  pricing?: {
+    input?: { usd?: number };
+    output?: { usd?: number };
+  };
 }
 
 interface VeniceRawModel {
@@ -50,6 +62,17 @@ interface VeniceRawModel {
 function mapModel(raw: VeniceRawModel): ModelInfo {
   const spec = raw.model_spec ?? {};
   const caps = spec.capabilities ?? {};
+
+  const rawDesc = typeof spec.description === 'string' ? spec.description.trim() : '';
+  const description = rawDesc.length > 0 ? rawDesc : null;
+
+  const inUsd = spec.pricing?.input?.usd;
+  const outUsd = spec.pricing?.output?.usd;
+  const pricing =
+    typeof inUsd === 'number' && typeof outUsd === 'number'
+      ? { inputUsdPerMTok: inUsd, outputUsdPerMTok: outUsd }
+      : null;
+
   return {
     id: raw.id,
     name: spec.name ?? raw.id,
@@ -58,6 +81,8 @@ function mapModel(raw: VeniceRawModel): ModelInfo {
     supportsReasoning: Boolean(caps.supportsReasoning),
     supportsVision: Boolean(caps.supportsVision),
     supportsWebSearch: Boolean(caps.supportsWebSearch),
+    description,
+    pricing,
   };
 }
 

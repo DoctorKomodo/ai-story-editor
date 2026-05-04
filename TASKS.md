@@ -20,8 +20,8 @@
 ## Current focus
 
 - **In flight:** F63 chat history, F65 terminal-401 redirect.
-- **Backlog (next):** M1–M3 maintenance, X27, X28, X30 testing-found UI/settings polish, X32 venice-account endpoint.
-- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X27, X28, X30, DS-* (none yet).
+- **Backlog (next):** M1–M3 maintenance, X28, X30 testing-found UI/settings polish.
+- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X28, X30, DS-* (none yet).
 - **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
 - **Live sections:** F (Phase 4 only), X, M, DS.
 
@@ -180,7 +180,7 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
   - superseded-by: X32 (the rename and the balance endpoint were consolidated into one unified `/api/users/me/venice-account` endpoint replacing both `/api/ai/balance` and the verify endpoint)
   - verify: `cd backend && npx vitest run tests/routes/venice-account.test.ts && cd ../frontend && npx vitest run tests/components/BalanceDisplay.test.tsx`
 
-- [ ] **[X32]** Unified Venice account-info endpoint. Replaces `GET /api/ai/balance` and `POST /api/users/me/venice-key/verify` with one `GET /api/users/me/venice-account` returning `{ verified, balanceUsd, diem, endpoint, lastSix }`. Fixes the BalanceDisplay header pill (was reading non-existent `x-venice-balance-*` headers off `/v1/models`). Per-user 30/min rate limit (distinct `account_rate_limited` code from `venice_rate_limited`). `upstreamStatus` carried in error body for the #54 diagnostics overlay. Internal `getStatusAndKey()` halves DB reads + decrypts. `parseRetryAfter` deduped via `lib/venice-errors`.
+- [x] **[X32]** Unified Venice account-info endpoint. Replaces `GET /api/ai/balance` and `POST /api/users/me/venice-key/verify` with one `GET /api/users/me/venice-account` returning `{ verified, balanceUsd, diem, endpoint, lastSix }`. Fixes the BalanceDisplay header pill (was reading non-existent `x-venice-balance-*` headers off `/v1/models`). Per-user 30/min rate limit (distinct `account_rate_limited` code from `venice_rate_limited`). `upstreamStatus` carried in error body for the #54 diagnostics overlay. Internal `getStatusAndKey()` halves DB reads + decrypts. `parseRetryAfter` deduped via `lib/venice-errors`.
   - spec: [docs/superpowers/specs/2026-05-04-x32-venice-account-endpoint-design.md](docs/superpowers/specs/2026-05-04-x32-venice-account-endpoint-design.md)
   - plan: [docs/superpowers/plans/2026-05-04-x32-venice-account-endpoint.md](docs/superpowers/plans/2026-05-04-x32-venice-account-endpoint.md)
   - verify: `cd backend && npx vitest run tests/routes/venice-account.test.ts && cd ../frontend && npx vitest run tests/hooks/useVeniceAccount.test.tsx tests/components/Settings.shell-venice.test.tsx tests/components/BalanceDisplay.test.tsx`
@@ -193,7 +193,10 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 - [ ] **[X8]** Consistency check (character popover footer button): sends the character bible entry + the last N chapters (budget-aware via [V3]) to the selected model, returns an annotated list of discrepancies ("Eira's eye colour — grey in Ch.2 but hazel in Ch.5"). Renders as a scrollable list in the popover's expanded state.
   - verify: `cd backend && npm run test:backend -- --run tests/ai/consistency-check.test.ts`
 
-- [ ] **[X27]** Settings → Models picker rework. The current dialog dumps the full model list inline and gets unwieldy. Mirror the chat-window pattern: the Settings panel shows only the currently selected model; clicking it opens a dedicated picker modal containing the full list. In the picker, surface the per-model description from Venice's `/models` endpoint and the per-token price alongside the model name.
+- [x] **[X27]** Settings → Models picker rework. The current dialog dumps the full model list inline and gets unwieldy. Mirror the chat-window pattern: the Settings panel shows only the currently selected model; clicking it opens a dedicated picker modal containing the full list. In the picker, surface the per-model description from Venice's `/models` endpoint and the per-token price alongside the model name.
+  - spec: [docs/superpowers/specs/2026-05-04-x27-models-picker-rework-design.md](docs/superpowers/specs/2026-05-04-x27-models-picker-rework-design.md)
+  - plan: [docs/superpowers/plans/2026-05-04-x27-models-picker-rework.md](docs/superpowers/plans/2026-05-04-x27-models-picker-rework.md)
+  - verify: `npm --prefix backend run test -- venice.models.service.test.ts && npm --prefix frontend run test -- ModelCard ModelPicker Settings.models editor-shell.integration && npm --prefix frontend run typecheck && npm --prefix frontend run build-storybook`
 
 - [ ] **[X28]** Settings → Models generation-parameter revisit: (1) audit the UI defaults — confirm temperature / top_p / max_tokens etc. are sane for general writing use; (2) parameter changes must persist *per model* (today they're applied globally), so the saved settings shape becomes `{ [modelId]: { temperature, ... } }` keyed by Venice model ID; (3) add a per-model Reset button that clears the user's saved overrides for that model and falls back to the model's defaults; (4) some models expose default parameter values via Venice's `/models` endpoint (e.g. "Qwen 3.5 397B") — load those as the baseline defaults instead of a global hardcode where present.
 

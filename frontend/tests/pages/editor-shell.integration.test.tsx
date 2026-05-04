@@ -67,7 +67,25 @@ function defaultRouter(url: string): Promise<Response> {
     );
   }
   if (url.endsWith('/ai/models')) {
-    return Promise.resolve(jsonResponse(200, { models: [] }));
+    return Promise.resolve(
+      jsonResponse(200, {
+        models: [
+          {
+            id: 'llama-3.3-70b',
+            name: 'Llama 3.3 70B',
+            contextLength: 128000,
+            supportsReasoning: false,
+            supportsVision: false,
+            supportsWebSearch: false,
+            description: null,
+            pricing: null,
+          },
+        ],
+      }),
+    );
+  }
+  if (url.endsWith('/users/me/venice-key')) {
+    return Promise.resolve(jsonResponse(200, { hasKey: false, lastFour: null, endpoint: null }));
   }
   if (url.endsWith('/users/me/settings')) {
     return Promise.resolve(
@@ -187,5 +205,36 @@ describe('EditorPage shell integration (F51)', () => {
     }
 
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+
+  it('[X27] Settings → Models trigger opens the same ModelPicker the chat-bar opens', async () => {
+    const user = userEvent.setup();
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('topbar')).toBeInTheDocument();
+    });
+
+    // Open the SettingsModal via the topbar settings cog (first match — same
+    // pattern as the preceding "settings cog is wired" test).
+    const settingsButton = screen.getAllByLabelText(/settings/i)[0];
+    expect(settingsButton).toBeDefined();
+    if (!settingsButton) throw new Error('settings button missing');
+    await user.click(settingsButton);
+
+    // Navigate to the Models tab.
+    await user.click(await screen.findByTestId('settings-tab-models'));
+
+    // Click the model trigger — this is the F55 callback that lifts up to
+    // EditorPage and opens the page-root <ModelPicker /> mount (same one the
+    // chat-bar's model button opens).
+    await user.click(await screen.findByTestId('settings-model-trigger'));
+
+    // The shared ModelPicker is now in the DOM.
+    expect(await screen.findByTestId('model-picker')).toBeInTheDocument();
+
+    // Settings is still mounted underneath — its tab list is still present,
+    // so the picker did not close Settings on open.
+    expect(screen.getByTestId('settings-tab-models')).toBeInTheDocument();
   });
 });
