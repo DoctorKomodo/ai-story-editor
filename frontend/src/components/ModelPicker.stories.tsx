@@ -15,6 +15,8 @@ const SAMPLE_MODELS: Model[] = [
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: false,
+    description: null,
+    pricing: null,
   },
   {
     id: 'llama-3.3-70b',
@@ -23,6 +25,8 @@ const SAMPLE_MODELS: Model[] = [
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: true,
+    description: null,
+    pricing: null,
   },
   {
     id: 'deepseek-r1',
@@ -31,6 +35,8 @@ const SAMPLE_MODELS: Model[] = [
     supportsReasoning: true,
     supportsVision: false,
     supportsWebSearch: false,
+    description: null,
+    pricing: null,
   },
 ];
 
