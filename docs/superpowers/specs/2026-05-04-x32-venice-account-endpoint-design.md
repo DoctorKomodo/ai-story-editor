@@ -324,7 +324,7 @@ The 30/min test uses `accountRateLimitWindowMs: 200` to avoid long-running tests
 
 - **Risk:** the `lib/api.ts` fetch wrapper. The frontend error-surface plumbing depends on the wrapper exposing the parsed JSON body on the thrown `Error` (so the pill effect can read `err.body.error.upstreamStatus`). If the wrapper currently throws a bare `Error(message)`, the implementation plan needs a small task to attach `body` to the error. Will confirm against the current `lib/api.ts` during planning; if it's already there, that task drops out.
 - **Risk:** TanStack Query's invalidation semantics. `invalidateQueries({ queryKey: veniceAccountQueryKey })` marks stale + triggers a refetch only if the query is currently mounted (or `refetchType: 'all'` is passed). Since BalanceDisplay is mounted on EditorPage, and Settings only opens *over* EditorPage, the query is always mounted at the time Settings clicks Verify — invalidation always triggers a refetch. The Save → invalidate path works for the same reason. No need for `refetchType: 'all'`.
-- **Risk:** the OpenAI SDK is no longer touched on the verify path post-X26. X32 doesn't change that. `getVeniceClient(userId)` (used by `/api/ai/complete`, `/api/ai/models`, etc.) still exists and works as before.
+- **Note (not a risk):** the verify path no longer exercises the OpenAI SDK at all. That's fine — what verify needs to confirm is "Venice is reachable and the stored key is valid", and `GET /api_keys/rate_limits` answers both with one authenticated probe. SDK problems will surface independently via `/api/ai/complete` and `/api/ai/models` (which still go through `getVeniceClient`) and would block AI usage regardless of what verify reported.
 
 ## Out of scope (deliberate)
 
