@@ -107,28 +107,6 @@ export function createAiRouter() {
     }
   });
 
-  // [V10] GET /api/ai/balance — reads x-venice-balance-usd and x-venice-balance-diem
-  // from Venice response headers via a lightweight models.list() call.
-  // Does NOT use the models service cache (balance must be fresh).
-  // Returns { credits: number | null, diem: number | null }.
-  router.get('/balance', async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const client = await getVeniceClient(req.user!.id);
-      // .withResponse() gives us the raw HTTP response so we can read
-      // balance headers even though the openai SDK doesn't type them.
-      const { response } = await client.models.list().withResponse();
-      const rawUsd = response.headers.get('x-venice-balance-usd');
-      const rawDiem = response.headers.get('x-venice-balance-diem');
-      const credits = rawUsd !== null ? parseFloat(rawUsd) : null;
-      const diem = rawDiem !== null ? parseFloat(rawDiem) : null;
-      res.status(200).json({ credits, diem });
-    } catch (err) {
-      console.error('[ai.balance]', err);
-      if (mapVeniceError(err, res, req.user!.id)) return;
-      next(err);
-    }
-  });
-
   // [V5] POST /api/ai/complete — streams AI completions back as SSE.
   // [V6] reasoning flag — strip_thinking_response for supportsReasoning models.
   // [V7] web-search flag — enable_web_search + enable_web_citations.
