@@ -39,6 +39,14 @@ export interface BuildPromptInput {
   characters: CharacterContext[];
   worldNotes: string | null;
   modelContextLength: number;
+  /** Per-model output cap from Venice's /v1/models. Required. */
+  modelMaxCompletionTokens: number;
+  /**
+   * User's settings.chat.maxTokens. Required. Pass Number.POSITIVE_INFINITY
+   * when the user hasn't expressed a preference; the resolver in
+   * user-settings-resolvers.ts does this.
+   */
+  userMaxCompletionTokens: number;
   /** [V4] — default true when omitted */
   includeVeniceSystemPrompt?: boolean;
   /** [X29] User-level prompt overrides. Per key: non-empty trimmed string wins; null / undefined / whitespace falls back to DEFAULT_PROMPTS[key]. */
@@ -77,6 +85,12 @@ export const DEFAULT_PROMPTS = {
   describe:
     "Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
 } as const satisfies Record<UserPromptKey, string>;
+
+// Reserved tokens between the response budget and the prompt budget. Covers
+// SSE/tokenizer drift and Venice-side overhead so a request sized at exactly
+// (context - response) doesn't fail the upstream "prompt + completion >
+// max_tokens" check intermittently.
+export const SAFETY_MARGIN_TOKENS = 512;
 
 // ─── Token estimation ─────────────────────────────────────────────────────────
 
@@ -141,10 +155,11 @@ function buildTaskBlock(input: BuildPromptInput): string {
 // ─── Core builder ─────────────────────────────────────────────────────────────
 
 export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
-  const { modelContextLength } = input;
-
-  const responseBudgetTokens = Math.floor(modelContextLength * 0.2);
-  const promptBudgetTokens = Math.floor(modelContextLength * 0.8);
+  const responseTokens = Math.min(input.modelMaxCompletionTokens, input.userMaxCompletionTokens);
+  const promptBudgetTokens = Math.max(
+    0,
+    input.modelContextLength - responseTokens - SAFETY_MARGIN_TOKENS,
+  );
 
   const systemContent = resolvePrompt(input.userPrompts, 'system');
   const includeVeniceSystemPrompt = input.includeVeniceSystemPrompt ?? true;
@@ -202,6 +217,6 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     venice_parameters: {
       include_venice_system_prompt: includeVeniceSystemPrompt,
     },
-    max_completion_tokens: responseBudgetTokens,
+    max_completion_tokens: responseTokens,
   };
 }

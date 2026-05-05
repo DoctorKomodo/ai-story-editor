@@ -169,6 +169,8 @@ export function createAiRouter() {
         characters,
         worldNotes,
         modelContextLength,
+        modelMaxCompletionTokens: modelContextLength, // TEMP: replaced in next commit
+        userMaxCompletionTokens: Number.POSITIVE_INFINITY, // TEMP: replaced in next commit
         includeVeniceSystemPrompt,
         userPrompts,
         freeformInstruction: body.freeformInstruction,
