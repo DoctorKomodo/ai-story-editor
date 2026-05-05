@@ -1,22 +1,18 @@
-// [F44] Settings → Models tab.
+// [X33] Settings → Models tab.
 //
 // Composition (top → bottom):
-//   1. Model list — `<ModelCard>` (from [F42]) inside a `radiogroup`.
-//      Click PATCHes `/api/users/me/settings` `{ chat: { model } }` via
-//      useUpdateUserSetting; the wrapper handles the optimistic cache
-//      update so the radio reflects the choice immediately ([B11]).
+//   1. Inline master/detail model picker (<ModelPickerInline>) — selects the
+//      default model used for chat and continuations. The "Use this model"
+//      CTA in the detail pane PATCHes /users/me/settings { chat: { model } }.
 //   2. Generation parameters — three sliders (temperature, topP, maxTokens)
-//      bound to `settings.chat`. Each tick PATCHes; the optimistic update
-//      keeps the slider responsive. The old frequencyPenalty slider was
-//      dropped — the backend chat shape ([B11]) doesn't carry it, and the
-//      UI was a no-op write to a Zustand-only field.
+//      bound to settings.chat. Each tick PATCHes; the optimistic update
+//      keeps the slider responsive.
 //
-// [X29] The per-story system-prompt section moved out: prompts now live
-// on the dedicated Settings → Prompts tab as user-level overrides,
-// replacing the old per-story `Story.systemPrompt` field entirely.
+// [X33] Replaces the X27 trigger-button + modal flow with an inline picker
+// living inside the tab.
 import type { ChangeEvent, JSX } from 'react';
 import { useId } from 'react';
-import { ModelCard } from '@/components/ModelCard';
+import { ModelPickerInline } from '@/components/ModelPickerInline';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 
@@ -86,21 +82,6 @@ export function SettingsModelsTab(): JSX.Element {
   const updateSetting = useUpdateUserSetting();
   const modelsQuery = useModelsQuery();
 
-  // --- Model list -------------------------------------------------------
-
-  const modelId = settings.chat.model;
-  const handleSelectModel = (id: string): void => {
-    updateSetting.mutate({ chat: { model: id } });
-  };
-
-  // --- Generation parameters -------------------------------------------
-
-  // Each slider tick PATCHes synchronously. The optimistic cache update
-  // inside useUpdateUserSetting keeps the slider responsive (re-renders
-  // immediately from the new cache value); only the network call is per-tick.
-  // Acceptable for the local-server dev case; if PATCH frequency becomes an
-  // issue in production, add a `mutateDebounced` variant to
-  // useUpdateUserSetting and wrap these calls.
   const params = settings.chat;
   const onTemperature = (v: number): void => {
     updateSetting.mutate({ chat: { temperature: v } });
@@ -112,10 +93,6 @@ export function SettingsModelsTab(): JSX.Element {
     updateSetting.mutate({ chat: { maxTokens: Math.round(v) } });
   };
 
-  // --- Render -----------------------------------------------------------
-
-  const models = modelsQuery.data;
-
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3" data-testid="models-section-list">
@@ -126,38 +103,15 @@ export function SettingsModelsTab(): JSX.Element {
           </p>
         </header>
 
-        <div
-          role="radiogroup"
-          aria-label="Select model"
-          data-testid="models-radiogroup"
-          className="grid gap-2"
-        >
-          {modelsQuery.isLoading ? (
-            <div className="py-6 text-center font-mono text-[12px] text-ink-4">Loading models…</div>
-          ) : modelsQuery.isError ? (
-            <div
-              role="alert"
-              className="py-6 text-center font-mono text-[12px] text-[color:var(--danger)]"
-            >
-              {modelsQuery.error instanceof Error
-                ? modelsQuery.error.message
-                : 'Failed to load models.'}
-            </div>
-          ) : !models || models.length === 0 ? (
-            <div className="py-6 text-center font-mono text-[12px] text-ink-4">
-              No models available
-            </div>
-          ) : (
-            models.map((m) => (
-              <ModelCard
-                key={m.id}
-                model={m}
-                selected={m.id === modelId}
-                onSelect={handleSelectModel}
-              />
-            ))
-          )}
-        </div>
+        <ModelPickerInline
+          models={modelsQuery.data ?? []}
+          activeId={settings.chat.model}
+          loading={modelsQuery.isLoading}
+          error={modelsQuery.isError}
+          onUseModel={(id) => {
+            updateSetting.mutate({ chat: { model: id } });
+          }}
+        />
       </section>
 
       <section className="flex flex-col gap-3" data-testid="models-section-params">

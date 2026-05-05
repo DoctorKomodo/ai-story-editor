@@ -22,7 +22,7 @@ import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsPromptsTab } from '@/components/SettingsPromptsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
-import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
+import { Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
 import { useVeniceAccountQuery, veniceAccountQueryKey } from '@/hooks/useVeniceAccount';
 import {
@@ -36,9 +36,11 @@ import { useErrorStore } from '@/store/errors';
 export interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  /** When provided, the modal opens on this tab instead of the default ('venice'). */
+  initialTab?: SettingsTab;
 }
 
-type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance';
+export type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'venice', label: 'Venice.ai' },
@@ -88,15 +90,19 @@ function EyeOffIcon(): JSX.Element {
   );
 }
 
-export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Element | null {
+export function SettingsModal({
+  open,
+  onClose,
+  initialTab,
+}: SettingsModalProps): JSX.Element | null {
   const titleId = useId();
   const [activeTab, setActiveTab] = useState<SettingsTab>('venice');
 
-  // Reset to Venice tab whenever the modal re-opens — avoids stale tab
-  // state bleeding across opens.
+  // Reset to the requested tab (or Venice) whenever the modal re-opens —
+  // avoids stale tab state bleeding across opens.
   useEffect(() => {
-    if (open) setActiveTab('venice');
-  }, [open]);
+    if (open) setActiveTab(initialTab ?? 'venice');
+  }, [open, initialTab]);
 
   return (
     <Modal
@@ -170,17 +176,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
       <ModalFooter
         leading={
           <span data-testid="settings-autosave-hint">
-            Changes save automatically to your local vault
+            Changes save automatically &middot; tap outside or press Esc to close
           </span>
         }
-      >
-        <Button variant="ghost" data-testid="settings-cancel" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button variant="primary" data-testid="settings-done" onClick={onClose}>
-          Done
-        </Button>
-      </ModalFooter>
+      />
     </Modal>
   );
 }

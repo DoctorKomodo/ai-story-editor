@@ -170,21 +170,21 @@ describe('SettingsModal Models tab (F44)', () => {
     useSessionStore.setState({ user: null, status: 'idle' });
   });
 
-  it('renders ModelCards in a radiogroup', async () => {
+  it('[X33] renders ModelPickerInline rail with one row per model', async () => {
     vi.stubGlobal('fetch', buildFetch());
     renderModal(<SettingsModal open onClose={onClose} />);
     await openModelsTab();
 
-    const group = await screen.findByTestId('models-radiogroup');
-    expect(group).toHaveAttribute('role', 'radiogroup');
+    const rail = await screen.findByTestId('model-rail');
+    expect(rail).toBeInTheDocument();
 
-    const venice = await screen.findByTestId('model-card-venice-uncensored');
-    const llama = await screen.findByTestId('model-card-llama-3.3-70b');
-    expect(venice).toHaveAttribute('role', 'radio');
-    expect(llama).toHaveAttribute('role', 'radio');
+    const veniceRow = await screen.findByTestId('model-rail-venice-uncensored');
+    const llamaRow = await screen.findByTestId('model-rail-llama-3.3-70b');
+    expect(veniceRow).toBeInTheDocument();
+    expect(llamaRow).toBeInTheDocument();
   });
 
-  it('selecting a model PATCHes /users/me/settings (multi-device fix)', async () => {
+  it('[X33] clicking a rail row then "Use this model" PATCHes /users/me/settings', async () => {
     const fetchMock = buildFetch();
     vi.stubGlobal('fetch', fetchMock);
 
@@ -192,8 +192,12 @@ describe('SettingsModal Models tab (F44)', () => {
     renderModal(<SettingsModal open onClose={onClose} />);
     await openModelsTab();
 
-    const card = await screen.findByTestId('model-card-llama-3.3-70b');
-    await user.click(card);
+    // Preview llama in the detail pane, then confirm via the CTA.
+    const railRow = await screen.findByTestId('model-rail-llama-3.3-70b');
+    await user.click(railRow);
+
+    const cta = await screen.findByTestId('model-detail-cta');
+    await user.click(cta);
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
