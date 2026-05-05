@@ -96,12 +96,9 @@ export function SettingsModelsTab(): JSX.Element {
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3" data-testid="models-section-list">
-        <header>
-          <h3 className="m-0 font-serif text-[14px] font-medium text-ink">Model</h3>
-          <p className="mt-[2px] text-[12px] text-ink-4 font-sans">
-            Pick the default model used for chat and continuations.
-          </p>
-        </header>
+        <p className="text-[12px] text-ink-4 font-sans">
+          Pick the default model used for chat and continuations.
+        </p>
 
         <ModelPickerInline
           models={modelsQuery.data ?? []}
