@@ -180,7 +180,7 @@ describe('SettingsModal (F43)', () => {
     expect(screen.getByTestId('settings-panel-models')).toBeInTheDocument();
   });
 
-  it('Cancel and Done both call onClose', async () => {
+  it('footer shows autosave hint (no Cancel / Done buttons)', async () => {
     vi.stubGlobal(
       'fetch',
       routeFetch({
@@ -188,14 +188,12 @@ describe('SettingsModal (F43)', () => {
         '/api/users/me/venice-key': () => jsonResponse(200, keyStatus()),
       }),
     );
-    const user = userEvent.setup();
     renderModal(<SettingsModal open onClose={onClose} />);
 
-    await user.click(screen.getByTestId('settings-cancel'));
-    expect(onClose).toHaveBeenCalledTimes(1);
-
-    await user.click(screen.getByTestId('settings-done'));
-    expect(onClose).toHaveBeenCalledTimes(2);
+    const hint = await screen.findByTestId('settings-autosave-hint');
+    expect(hint).toBeInTheDocument();
+    expect(screen.queryByTestId('settings-cancel')).toBeNull();
+    expect(screen.queryByTestId('settings-done')).toBeNull();
   });
 
   it('close X calls onClose', async () => {

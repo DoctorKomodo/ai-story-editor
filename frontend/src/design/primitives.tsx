@@ -204,8 +204,9 @@ export function ModalHeader({
             disabled={closeDisabled}
             ariaLabel="Close"
             testId={closeTestId ?? 'modal-close'}
+            size="lg"
           >
-            <CloseIcon />
+            <CloseIcon size="lg" />
           </IconButton>
         ) : null}
       </div>
@@ -309,10 +310,20 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   ariaLabel: string;
   active?: boolean;
   testId?: string;
+  /**
+   * Hit-target size. Default `'md'` = 28×28 (the historical IconButton size).
+   * `'lg'` = 44×44, used by ModalHeader's close button to meet WCAG 2.5.5.
+   */
+  size?: 'md' | 'lg';
 }
 
+const ICON_BUTTON_SIZE: Record<NonNullable<IconButtonProps['size']>, string> = {
+  md: 'w-7 h-7',
+  lg: 'w-11 h-11',
+};
+
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { ariaLabel, active, testId, className, children, ...rest },
+  { ariaLabel, active, testId, size = 'md', className, children, ...rest },
   ref,
 ): JSX.Element {
   return (
@@ -321,8 +332,10 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={rest.type ?? 'button'}
       aria-label={ariaLabel}
       data-testid={testId}
+      data-size={size}
       className={cx(
-        'grid place-items-center w-7 h-7 rounded-[var(--radius)] transition-colors',
+        'grid place-items-center rounded-[var(--radius)] transition-colors',
+        ICON_BUTTON_SIZE[size],
         active
           ? 'bg-[var(--accent-soft)] text-ink'
           : 'text-ink-3 hover:bg-[var(--surface-hover)] hover:text-ink',
@@ -491,11 +504,17 @@ export function Spinner({ size = 12 }: { size?: number }): JSX.Element {
  * CloseIcon — used by ModalHeader's auto-close button
  * ========================================================================== */
 
-export function CloseIcon(): JSX.Element {
+export interface CloseIconProps {
+  /** `'md'` (default) = 14×14; `'lg'` = 20×20 to pair with `<IconButton size="lg">`. */
+  size?: 'md' | 'lg';
+}
+
+export function CloseIcon({ size = 'md' }: CloseIconProps = {}): JSX.Element {
+  const px = size === 'lg' ? 20 : 14;
   return (
     <svg
-      width="14"
-      height="14"
+      width={px}
+      height={px}
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
