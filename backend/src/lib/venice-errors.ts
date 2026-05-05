@@ -113,11 +113,46 @@ export function parseRetryAfter(headers: SdkHeaders | null | undefined): number 
   return Math.min(...candidates);
 }
 
+// [V11+] Scrub any sk-prefixed token (defensive — Venice doesn't intentionally
+// echo keys but error formatting upstream can include the bearer fragment).
+// 16+ char alphanumeric body matches all current Venice + OpenAI key shapes.
+const SK_KEY_RE = /sk-[A-Za-z0-9_-]{16,}/g;
+
+function sanitiseVeniceMessage(raw: string): string {
+  return raw.replace(SK_KEY_RE, '[redacted]');
+}
+
+/**
+ * Extract a human-readable message string from an APIError.
+ *
+ * The openai SDK sets `err.message` to a stringified combination of the status
+ * code and the raw response body (e.g. `"418 {\"error\":{\"message\":\"I am a
+ * teapot\"}}"`). The actual Venice error text is in `err.error.error.message`.
+ * We prefer that inner field; fall back to `err.message` only when unavailable.
+ */
+function extractVeniceMessage(err: APIError): string | undefined {
+  const body = err.error as unknown;
+  if (
+    body !== null &&
+    typeof body === 'object' &&
+    'error' in body &&
+    body.error !== null &&
+    typeof body.error === 'object' &&
+    'message' in body.error &&
+    typeof (body.error as { message: unknown }).message === 'string'
+  ) {
+    return (body.error as { message: string }).message;
+  }
+  // Fallback: use err.message (contains the full SDK-formatted string).
+  return typeof err.message === 'string' ? err.message : undefined;
+}
+
 export interface VeniceErrorBody {
   error: {
     code: string;
     message: string;
     retryAfterSeconds?: number | null;
+    details?: { veniceMessage?: string };
   };
 }
 
@@ -185,7 +220,27 @@ export function mapVeniceError(err: unknown, res: Response, userId?: string): bo
     return true;
   }
 
-  // Any other non-2xx from Venice
+  // Compute the sanitised raw message once; reused across both branches.
+  const rawMessage = extractVeniceMessage(err);
+  const veniceMessage = rawMessage ? sanitiseVeniceMessage(rawMessage) : undefined;
+
+  // 400 / 404 / 422 — request-shape errors that the client could in principle
+  // correct. Forward Venice's status verbatim and surface the raw message in
+  // details.veniceMessage so the dev overlay can render it.
+  if (err.status === 400 || err.status === 404 || err.status === 422) {
+    console.error('[V11] Venice forwarded status', err.status, 'for user', userId ?? '(unknown)');
+    res.status(err.status).json({
+      error: {
+        code: 'venice_error',
+        message: 'Venice rejected the request.',
+        ...(veniceMessage ? { details: { veniceMessage } } : {}),
+      },
+    } satisfies VeniceErrorBody);
+    return true;
+  }
+
+  // Any other non-2xx — preserve the existing 502 fallback but include the
+  // sanitised raw message so the dev overlay isn't blind.
   console.error(
     '[V11] Venice returned unexpected status',
     err.status,
@@ -196,6 +251,7 @@ export function mapVeniceError(err: unknown, res: Response, userId?: string): bo
     error: {
       code: 'venice_error',
       message: 'Venice returned an unexpected error.',
+      ...(veniceMessage ? { details: { veniceMessage } } : {}),
     },
   } satisfies VeniceErrorBody);
   return true;
@@ -248,8 +304,13 @@ export function mapVeniceErrorToSse(
     message = 'Venice returned an unexpected error.';
   }
 
+  const rawSseMessage = extractVeniceMessage(err);
+  const veniceMessage =
+    code === 'venice_error' && rawSseMessage ? sanitiseVeniceMessage(rawSseMessage) : undefined;
+
   const payload: Record<string, unknown> = { error: message, code, message };
   if (retryAfterSeconds !== undefined) payload.retryAfterSeconds = retryAfterSeconds;
+  if (veniceMessage) payload.details = { veniceMessage };
   write(`data: ${JSON.stringify(payload)}\n\n`);
   write('data: [DONE]\n\n');
   return true;
