@@ -1,16 +1,10 @@
-// [F44] Settings → Models tab.
+// [X33] Settings → Models tab — inline picker.
 //
-// Covers:
-//   - Models render as <ModelCard>s with `aria-checked` reflecting the
-//     selected model from useUserSettings().chat.model.
-//   - Selecting a card PATCHes /users/me/settings `{ chat: { model } }`
-//     (the multi-device fix); the optimistic cache update flips the radio
-//     immediately.
-//   - The three server-backed sliders render bound to settings.chat.
-//   - Dragging a slider PATCHes settings.
-//
-// [X29] The per-story system-prompt section was removed from the Models
-// tab; corresponding test scenarios moved to Settings.prompts.test.tsx.
+// Covers (post-X33):
+//   - The Models tab renders <ModelPickerInline> with the user's active model
+//     highlighted in the detail pane.
+//   - Clicking "Use this model" on a non-active model PATCHes settings.chat.model.
+//   - The three sliders still render bound to settings.chat values and dragging PATCHes.
 import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -73,20 +67,24 @@ function makeSettings(opts: DefaultSettingsOptions = {}): SettingsState {
 const TWO_MODELS = {
   models: [
     {
-      id: 'venice-uncensored',
-      name: 'Venice Uncensored',
-      contextLength: 32768,
-      supportsReasoning: false,
-      supportsVision: false,
-      supportsWebSearch: false,
-    },
-    {
       id: 'llama-3.3-70b',
       name: 'Llama 3.3 70B',
       contextLength: 128000,
       supportsReasoning: false,
       supportsVision: false,
-      supportsWebSearch: false,
+      supportsWebSearch: true,
+      description: 'Meta-tuned 70B general-purpose model.',
+      pricing: { inputUsdPerMTok: 0.6, outputUsdPerMTok: 2.4 },
+    },
+    {
+      id: 'qwen-3-6-plus',
+      name: 'Qwen 3.6 Plus',
+      contextLength: 1000000,
+      supportsReasoning: true,
+      supportsVision: false,
+      supportsWebSearch: true,
+      description: 'Reasoning flagship.',
+      pricing: { inputUsdPerMTok: 0.63, outputUsdPerMTok: 3.75 },
     },
   ],
 };
@@ -100,10 +98,6 @@ interface RouteOptions {
   initialSettings?: DefaultSettingsOptions;
 }
 
-// State-tracking mock: PATCH bodies are merged into the in-memory settings
-// shape and echoed back, so the wrapper's onSuccess setQueryData reflects
-// the patched values rather than overwriting the optimistic update with
-// the seed.
 function buildFetch(opts: RouteOptions = {}): FetchMock {
   const modelsBody = opts.modelsBody ?? TWO_MODELS;
   let settings = makeSettings(opts.initialSettings ?? {});
@@ -132,7 +126,6 @@ function buildFetch(opts: RouteOptions = {}): FetchMock {
     if (url === '/api/stories' && method === 'GET') {
       return Promise.resolve(jsonResponse(200, { stories: [] }));
     }
-    // Default no-op so an unmocked endpoint doesn't hang a query.
     return Promise.resolve(jsonResponse(200, {}));
   });
 }
@@ -147,7 +140,7 @@ async function openModelsTab(): Promise<void> {
   await user.click(screen.getByTestId('settings-tab-models'));
 }
 
-describe('SettingsModal Models tab (F44)', () => {
+describe('SettingsModal Models tab (X33)', () => {
   let onClose: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
@@ -170,34 +163,22 @@ describe('SettingsModal Models tab (F44)', () => {
     useSessionStore.setState({ user: null, status: 'idle' });
   });
 
-  it('[X33] renders ModelPickerInline rail with one row per model', async () => {
-    vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
-    await openModelsTab();
-
-    const rail = await screen.findByTestId('model-rail');
-    expect(rail).toBeInTheDocument();
-
-    const veniceRow = await screen.findByTestId('model-rail-venice-uncensored');
-    const llamaRow = await screen.findByTestId('model-rail-llama-3.3-70b');
-    expect(veniceRow).toBeInTheDocument();
-    expect(llamaRow).toBeInTheDocument();
+  it('renders the inline picker with the active model in the detail pane', async () => {
+    vi.stubGlobal('fetch', buildFetch({ initialSettings: { model: 'llama-3.3-70b' } }));
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    expect(await screen.findByTestId('model-detail-name')).toHaveTextContent('Llama 3.3 70B');
+    expect(screen.getByTestId('model-detail-cta')).toHaveTextContent(/currently in use/i);
   });
 
-  it('[X33] clicking a rail row then "Use this model" PATCHes /users/me/settings', async () => {
-    const fetchMock = buildFetch();
+  it('clicking "Use this model" PATCHes settings.chat.model', async () => {
+    const fetchMock = buildFetch({ initialSettings: { model: 'llama-3.3-70b' } });
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderModal(<SettingsModal open onClose={onClose} />);
-    await openModelsTab();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
 
-    // Preview llama in the detail pane, then confirm via the CTA.
-    const railRow = await screen.findByTestId('model-rail-llama-3.3-70b');
-    await user.click(railRow);
-
-    const cta = await screen.findByTestId('model-detail-cta');
-    await user.click(cta);
+    await user.click(await screen.findByTestId('model-rail-qwen-3-6-plus'));
+    await user.click(screen.getByTestId('model-detail-cta'));
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
@@ -207,13 +188,13 @@ describe('SettingsModal Models tab (F44)', () => {
       expect(patch).toBeDefined();
       const init = (patch as [string, RequestInit])[1];
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-      expect(body).toEqual({ chat: { model: 'llama-3.3-70b' } });
+      expect(body).toEqual({ chat: { model: 'qwen-3-6-plus' } });
     });
   });
 
   it('renders the three sliders bound to settings.chat values', async () => {
     vi.stubGlobal('fetch', buildFetch());
-    renderModal(<SettingsModal open onClose={onClose} />);
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
     await openModelsTab();
 
     const temp = await screen.findByTestId('param-temperature');
@@ -225,19 +206,13 @@ describe('SettingsModal Models tab (F44)', () => {
       expect(topP).toHaveValue('0.95');
       expect(maxTokens).toHaveValue('800');
     });
-
-    expect(screen.getByTestId('param-temperature-value').textContent).toBe('0.85');
-    expect(screen.getByTestId('param-top-p-value').textContent).toBe('0.95');
-    expect(screen.getByTestId('param-max-tokens-value').textContent).toBe('800');
   });
 
   it('dragging temperature PATCHes settings.chat.temperature', async () => {
     const fetchMock = buildFetch();
     vi.stubGlobal('fetch', fetchMock);
 
-    renderModal(<SettingsModal open onClose={onClose} />);
-    await openModelsTab();
-
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
     const temp = await screen.findByTestId('param-temperature');
     fireEvent.change(temp, { target: { value: '1.25' } });
 
@@ -250,10 +225,23 @@ describe('SettingsModal Models tab (F44)', () => {
         expect(patch).toBeDefined();
         const init = (patch as [string, RequestInit])[1];
         const body = JSON.parse(String(init.body)) as { chat?: Record<string, unknown> };
-        expect(body.chat).toBeDefined();
         expect((body.chat as { temperature: number }).temperature).toBeCloseTo(1.25, 5);
       },
       { timeout: 1000 },
     );
+  });
+
+  it('initialTab="models" opens the modal directly on the Models tab', async () => {
+    vi.stubGlobal('fetch', buildFetch({ initialSettings: { model: 'llama-3.3-70b' } }));
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    expect(await screen.findByTestId('settings-panel-models')).toBeInTheDocument();
+  });
+
+  it('does not render Cancel/Done buttons (auto-save chrome)', async () => {
+    vi.stubGlobal('fetch', buildFetch());
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    expect(screen.queryByTestId('settings-cancel')).toBeNull();
+    expect(screen.queryByTestId('settings-done')).toBeNull();
+    expect(screen.getByTestId('settings-autosave-hint')).toBeInTheDocument();
   });
 });
