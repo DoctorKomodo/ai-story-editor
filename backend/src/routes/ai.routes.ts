@@ -10,6 +10,10 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createStoryRepo } from '../repos/story.repo';
 import { buildPrompt, type CharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
+import {
+  resolveIncludeVeniceSystemPrompt,
+  resolveUserPrompts,
+} from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
@@ -50,40 +54,6 @@ const CompleteBody = z
 // 32 chars so it stays readable in Venice's telemetry without leaking content.
 function promptCacheKey(storyId: string, modelId: string): string {
   return createHash('sha256').update(`${storyId}:${modelId}`).digest('hex').slice(0, 32);
-}
-
-// ─── settingsJson type helper ────────────────────────────────────────────────
-
-interface AiSettings {
-  includeVeniceSystemPrompt?: boolean;
-}
-
-interface PromptsSettings {
-  system?: string | null;
-  continue?: string | null;
-  rewrite?: string | null;
-  expand?: string | null;
-  summarise?: string | null;
-  describe?: string | null;
-}
-
-interface UserSettings {
-  ai?: AiSettings;
-  prompts?: PromptsSettings;
-}
-
-function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
-  if (!raw || typeof raw !== 'object') return true;
-  const settings = raw as UserSettings;
-  const flag = settings.ai?.includeVeniceSystemPrompt;
-  if (typeof flag === 'boolean') return flag;
-  return true;
-}
-
-function resolveUserPrompts(raw: unknown): PromptsSettings {
-  if (!raw || typeof raw !== 'object') return {};
-  const settings = raw as UserSettings;
-  return settings.prompts ?? {};
 }
 
 export function createAiRouter() {
