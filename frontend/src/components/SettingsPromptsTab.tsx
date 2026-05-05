@@ -62,13 +62,10 @@ export function SettingsPromptsTab(): JSX.Element {
 
   return (
     <div className="flex flex-col gap-6" data-testid="settings-prompts-tab">
-      <header>
-        <h3 className="m-0 font-serif text-[14px] font-medium text-ink">Prompts</h3>
-        <p className="mt-[2px] text-[12px] text-ink-4 font-sans">
-          Override the default system prompt and action templates. Unchecked rows use the built-in
-          default shown.
-        </p>
-      </header>
+      <p className="text-[12px] text-ink-4 font-sans">
+        Override the default system prompt and action templates. Unchecked rows use the built-in
+        default shown.
+      </p>
 
       {!defaults ? (
         <div className="py-6 text-center font-mono text-[12px] text-ink-4">Loading prompts…</div>
