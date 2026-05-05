@@ -13,14 +13,15 @@
 //   - useSidebarTabStore                  → active tab
 //   - <CharacterSheet> modal              → page-root, id-driven
 //   - <FormatBar> + <Paper>               → editor slot (F52 — replaces F8)
-//   - <ChatPanel> (ChatMessages + ChatComposer + ModelPicker) → chat slot (F55)
+//   - <ChatPanel> (ChatMessages + ChatComposer + model trigger) → chat slot (F55)
 //   - <Export>                            → rendered below Paper (until F52 promote)
 //
 // Modal-mount convention (locked in F51 for the rest of the F-series):
 //   page-level useState per modal; callback prop down via TopBar / Sidebar /
 //   ChatPanel; <Modal /> rendered at the bottom of the component, NOT inside
-//   AppShell. F55 mounts <SettingsModal>, <StoryPicker>, <ModelPicker> here;
-//   F61 mounts <AccountPrivacyModal>.
+//   AppShell. F55 mounts <SettingsModal>, <StoryPicker> here; F61 mounts
+//   <AccountPrivacyModal>. (X33 retired the standalone <ModelPicker> — model
+//   selection lives inside <SettingsModal initialTab="models">.)
 
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
@@ -43,11 +44,10 @@ import { ContinueWriting } from '@/components/ContinueWriting';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
 import { InlineAIResult } from '@/components/InlineAIResult';
-import { ModelPicker } from '@/components/ModelPicker';
 import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
 import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
-import { SettingsModal } from '@/components/Settings';
+import { SettingsModal, type SettingsTab } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
 import { StoryPicker } from '@/components/StoryPicker';
 import { TopBar } from '@/components/TopBar';
@@ -151,7 +151,7 @@ export function EditorPage(): JSX.Element {
   // of its JSX; TopBar / Sidebar / ChatPanel callbacks flip these flags.
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
   // [F61] Account & privacy modal state — same page-root convention.
   const [accountPrivacyOpen, setAccountPrivacyOpen] = useState(false);
 
@@ -678,7 +678,8 @@ export function EditorPage(): JSX.Element {
             }
             composer={<ChatComposer onSend={handleChatSend} disabled={sendChatMessage.isPending} />}
             onOpenModelPicker={() => {
-              setModelPickerOpen(true);
+              setSettingsInitialTab('models');
+              setSettingsOpen(true);
             }}
             onNewChat={handleNewChat}
             onOpenSettings={() => {
@@ -733,16 +734,12 @@ export function EditorPage(): JSX.Element {
         activeStoryId={story.id}
         onSelectStory={handleStoryPickerSelect}
       />
-      <ModelPicker
-        open={modelPickerOpen}
-        onClose={() => {
-          setModelPickerOpen(false);
-        }}
-      />
       <SettingsModal
         open={settingsOpen}
+        initialTab={settingsInitialTab}
         onClose={() => {
           setSettingsOpen(false);
+          setSettingsInitialTab(undefined);
         }}
       />
       <AccountPrivacyModal
