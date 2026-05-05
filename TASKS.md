@@ -196,7 +196,13 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 - [x] **[X27]** Settings → Models picker rework. The current dialog dumps the full model list inline and gets unwieldy. Mirror the chat-window pattern: the Settings panel shows only the currently selected model; clicking it opens a dedicated picker modal containing the full list. In the picker, surface the per-model description from Venice's `/models` endpoint and the per-token price alongside the model name.
   - spec: [docs/superpowers/specs/2026-05-04-x27-models-picker-rework-design.md](docs/superpowers/specs/2026-05-04-x27-models-picker-rework-design.md)
   - plan: [docs/superpowers/plans/2026-05-04-x27-models-picker-rework.md](docs/superpowers/plans/2026-05-04-x27-models-picker-rework.md)
-  - verify: `npm --prefix backend run test -- venice.models.service.test.ts && npm --prefix frontend run test -- ModelCard ModelPicker Settings.models editor-shell.integration && npm --prefix frontend run typecheck && npm --prefix frontend run build-storybook`
+  - superseded-by: [X33] (modal-trigger pattern replaced by inline master/detail picker; the backend mapper + frontend Model type from X27 survive in X33)
+  - verify: `npm --prefix backend run test -- venice.models.service.test.ts && npm --prefix frontend run typecheck`
+
+- [x] **[X33]** Settings → Models tab inline picker. Supersedes X27's modal trigger pattern with an inline master/detail picker living inside the Settings → Models tab. Chat-bar model trigger reroutes to Settings → Models. Drops Cancel/Done from Settings (auto-save). Bumps modal close-X to 44×44 across the app.
+  - spec: [docs/superpowers/specs/2026-05-05-x33-models-tab-inline-picker-design.md](docs/superpowers/specs/2026-05-05-x33-models-tab-inline-picker-design.md)
+  - plan: [docs/superpowers/plans/2026-05-05-x33-models-tab-inline-picker.md](docs/superpowers/plans/2026-05-05-x33-models-tab-inline-picker.md)
+  - verify: `npm --prefix backend run test -- venice.models.service.test.ts && npm --prefix frontend run test -- ModelPickerInline Settings.models editor-shell.integration && npm --prefix frontend run typecheck && npm --prefix frontend run build-storybook`
 
 - [ ] **[X28]** Settings → Models generation-parameter revisit: (1) audit the UI defaults — confirm temperature / top_p / max_tokens etc. are sane for general writing use; (2) parameter changes must persist *per model* (today they're applied globally), so the saved settings shape becomes `{ [modelId]: { temperature, ... } }` keyed by Venice model ID; (3) add a per-model Reset button that clears the user's saved overrides for that model and falls back to the model's defaults; (4) some models expose default parameter values via Venice's `/models` endpoint (e.g. "Qwen 3.5 397B") — load those as the baseline defaults instead of a global hardcode where present.
 
