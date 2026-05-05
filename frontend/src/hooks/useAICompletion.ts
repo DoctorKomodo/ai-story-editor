@@ -38,7 +38,7 @@ export interface AICompletionState {
 }
 
 export interface RunArgs {
-  action: 'continue' | 'rephrase' | 'expand' | 'summarise' | 'freeform';
+  action: 'continue' | 'rephrase' | 'expand' | 'summarise' | 'freeform' | 'rewrite' | 'describe';
   selectedText: string;
   chapterId: string;
   storyId: string;
