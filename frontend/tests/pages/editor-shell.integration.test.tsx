@@ -67,7 +67,22 @@ function defaultRouter(url: string): Promise<Response> {
     );
   }
   if (url.endsWith('/ai/models')) {
-    return Promise.resolve(jsonResponse(200, { models: [] }));
+    return Promise.resolve(
+      jsonResponse(200, {
+        models: [
+          {
+            id: 'llama-3.3-70b',
+            name: 'Llama 3.3 70B',
+            contextLength: 128000,
+            supportsReasoning: false,
+            supportsVision: false,
+            supportsWebSearch: true,
+            description: null,
+            pricing: null,
+          },
+        ],
+      }),
+    );
   }
   if (url.endsWith('/users/me/settings')) {
     return Promise.resolve(
@@ -187,5 +202,20 @@ describe('EditorPage shell integration (F51)', () => {
     }
 
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+
+  it('[X33] chat-bar model trigger opens Settings on the Models tab', async () => {
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-bar')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByLabelText('Open model picker');
+    await userEvent.setup().click(trigger);
+
+    // Settings opens on the Models tab — the inline picker rail is present.
+    expect(await screen.findByTestId('settings-panel-models')).toBeInTheDocument();
+    expect(await screen.findByTestId('model-rail')).toBeInTheDocument();
   });
 });
