@@ -40,3 +40,18 @@ export function resolveUserPrompts(raw: unknown): PromptsSettings {
   if (!settings) return {};
   return settings.prompts ?? {};
 }
+
+/**
+ * Resolves settings.chat.maxTokens to a number suitable for `Math.min` against
+ * the model's per-model cap. Unset / non-numeric / non-positive values
+ * collapse to Number.POSITIVE_INFINITY so the model cap wins by default.
+ */
+export function resolveUserMaxCompletionTokens(raw: unknown): number {
+  const settings = asSettingsObject(raw);
+  if (!settings) return Number.POSITIVE_INFINITY;
+  const v = settings.chat?.maxTokens;
+  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return v;
+}

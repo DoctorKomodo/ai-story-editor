@@ -30,6 +30,7 @@ import {
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
+  resolveUserMaxCompletionTokens,
   resolveUserPrompts,
 } from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
@@ -226,6 +227,10 @@ export function createChatMessagesRouter() {
         userRow?.settingsJson ?? null,
       );
       const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
+      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
+        body.modelId,
+      );
 
       // ── 4. Load chapter + story via repos ─────────────────────────────────
       const chapter = await createChapterRepo(req).findById(chatChapterId);
@@ -274,8 +279,8 @@ export function createChatMessagesRouter() {
         characters,
         worldNotes,
         modelContextLength,
-        modelMaxCompletionTokens: modelContextLength, // TEMP: replaced in next commit
-        userMaxCompletionTokens: Number.POSITIVE_INFINITY, // TEMP: replaced in next commit
+        modelMaxCompletionTokens,
+        userMaxCompletionTokens,
         includeVeniceSystemPrompt,
         userPrompts,
         freeformInstruction: body.content,

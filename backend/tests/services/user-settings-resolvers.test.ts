@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   resolveIncludeVeniceSystemPrompt,
+  resolveUserMaxCompletionTokens,
   resolveUserPrompts,
 } from '../../src/services/user-settings-resolvers';
 
@@ -46,5 +47,34 @@ describe('resolveUserPrompts', () => {
       system: 'Hi',
       continue: null,
     });
+  });
+});
+
+describe('resolveUserMaxCompletionTokens', () => {
+  it('returns POSITIVE_INFINITY when raw is null', () => {
+    expect(resolveUserMaxCompletionTokens(null)).toBe(Number.POSITIVE_INFINITY);
+  });
+  it('returns POSITIVE_INFINITY when raw is not an object', () => {
+    expect(resolveUserMaxCompletionTokens('nope')).toBe(Number.POSITIVE_INFINITY);
+    expect(resolveUserMaxCompletionTokens(42)).toBe(Number.POSITIVE_INFINITY);
+  });
+  it('returns POSITIVE_INFINITY when chat.maxTokens is absent', () => {
+    expect(resolveUserMaxCompletionTokens({})).toBe(Number.POSITIVE_INFINITY);
+    expect(resolveUserMaxCompletionTokens({ chat: {} })).toBe(Number.POSITIVE_INFINITY);
+  });
+  it('returns POSITIVE_INFINITY when chat.maxTokens is non-numeric or non-positive', () => {
+    expect(
+      resolveUserMaxCompletionTokens({ chat: { maxTokens: 'lots' as unknown as number } }),
+    ).toBe(Number.POSITIVE_INFINITY);
+    expect(resolveUserMaxCompletionTokens({ chat: { maxTokens: 0 } })).toBe(
+      Number.POSITIVE_INFINITY,
+    );
+    expect(resolveUserMaxCompletionTokens({ chat: { maxTokens: -100 } })).toBe(
+      Number.POSITIVE_INFINITY,
+    );
+  });
+  it('returns the explicit positive value when set', () => {
+    expect(resolveUserMaxCompletionTokens({ chat: { maxTokens: 800 } })).toBe(800);
+    expect(resolveUserMaxCompletionTokens({ chat: { maxTokens: 32_768 } })).toBe(32_768);
   });
 });

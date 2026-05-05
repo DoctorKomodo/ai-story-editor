@@ -12,6 +12,7 @@ import { buildPrompt, type CharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
+  resolveUserMaxCompletionTokens,
   resolveUserPrompts,
 } from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
@@ -116,6 +117,10 @@ export function createAiRouter() {
         userRow?.settingsJson ?? null,
       );
       const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
+      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
+        body.modelId,
+      );
 
       // ── 4. Load story via repo (ownership-scoped) ────────────────────────
       const story = await createStoryRepo(req).findById(body.storyId);
@@ -169,8 +174,8 @@ export function createAiRouter() {
         characters,
         worldNotes,
         modelContextLength,
-        modelMaxCompletionTokens: modelContextLength, // TEMP: replaced in next commit
-        userMaxCompletionTokens: Number.POSITIVE_INFINITY, // TEMP: replaced in next commit
+        modelMaxCompletionTokens,
+        userMaxCompletionTokens,
         includeVeniceSystemPrompt,
         userPrompts,
         freeformInstruction: body.freeformInstruction,
