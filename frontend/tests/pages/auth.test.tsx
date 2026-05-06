@@ -151,7 +151,10 @@ describe('auth pages (F4)', () => {
     primeUnauthenticatedInit(fetchMock);
     // Then the login call.
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { user: { id: 'u1', username: 'alice' }, accessToken: 'tok-1' }),
+      jsonResponse(200, {
+        user: { id: 'u1', username: 'alice', name: 'Alice' },
+        accessToken: 'tok-1',
+      }),
     );
 
     const user = userEvent.setup();
@@ -208,7 +211,7 @@ describe('auth pages (F4)', () => {
     // no refresh cookie. The page is responsible for the post-ack login.
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct-glow-mint-velvet-pearl-orbit-quiet-amber-crisp',
       }),
     );

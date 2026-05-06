@@ -47,7 +47,7 @@ describe('<AccountPrivacyModal>', () => {
     vi.stubGlobal('fetch', fetchMock);
     setUnauthorizedHandler(null);
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
   });

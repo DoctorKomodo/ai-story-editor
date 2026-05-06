@@ -155,7 +155,7 @@ describe('SettingsModal Appearance tab (F46)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     resetThemeArtifacts();

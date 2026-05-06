@@ -55,7 +55,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -90,13 +90,13 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         accessToken: 'tok-2',
         accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
       }),
@@ -134,7 +134,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -167,7 +167,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -199,7 +199,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
