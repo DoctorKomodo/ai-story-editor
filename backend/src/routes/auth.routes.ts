@@ -8,6 +8,7 @@ import {
   authService,
   InvalidCredentialsError,
   InvalidRefreshTokenError,
+  nameSchema,
   REFRESH_TOKEN_TTL_SECONDS,
   UsernameUnavailableError,
 } from '../services/auth.service';
@@ -55,6 +56,10 @@ function buildDeleteAccountSchema() {
   return z.object({ password: z.string().min(1, 'password is required') });
 }
 
+function buildUpdateProfileSchema() {
+  return z.object({ name: nameSchema });
+}
+
 // Per-user (not per-IP) rate limit for sensitive authenticated endpoints
 // (change-password and rotate-recovery-code). Scoped to authenticated
 // requests via requireAuth — the keyGenerator relies on req.user.id, which
@@ -91,6 +96,7 @@ const changePasswordLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 const rotateRecoveryCodeLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 const signOutEverywhereLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 const deleteAccountLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
+const updateProfileLimiter = rateLimit(SENSITIVE_AUTH_LIMIT_OPTIONS);
 
 // Aggressive stacked rate limits for the unauthenticated reset-password
 // endpoint. Spec: "per-IP + per-username". Two limiters stack, so a single
@@ -278,6 +284,30 @@ export function createAuthRouter() {
         res.status(401).json({
           error: { message: 'Invalid credentials', code: 'invalid_credentials' },
         });
+        return;
+      }
+      next(err);
+    }
+  });
+
+  // [X3] / [story-editor-3xj] Update display name. Authenticated, validated,
+  // per-user rate limited. Returns the same `user` shape as GET /me.
+  router.post('/update-profile', requireAuth, updateProfileLimiter, async (req, res, next) => {
+    try {
+      const authed = req.user;
+      if (!authed) {
+        res.status(401).json({ error: { message: 'Unauthorized', code: 'unauthorized' } });
+        return;
+      }
+      const parsed = buildUpdateProfileSchema().parse(req.body);
+      const user = await authService.updateProfile({
+        userId: authed.id,
+        name: parsed.name,
+      });
+      res.status(200).json({ user });
+    } catch (err) {
+      if (err instanceof ZodError) {
+        badRequestFromZod(res, err);
         return;
       }
       next(err);
