@@ -606,10 +606,7 @@ export function AccountPrivacyModal({
             closeTestId="account-privacy-close"
           />
           <ModalBody className="!py-0 px-[18px]">
-            <Section
-              title="Display name"
-              hint="Shown in your account menu and the AI prompt header. Visible only to you."
-            >
+            <Section title="Display name" hint="Shown in your account menu. Visible only to you.">
               <DisplayNameSection />
             </Section>
             <Section

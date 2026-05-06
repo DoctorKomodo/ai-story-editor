@@ -255,7 +255,7 @@ export function AuthForm({ mode, onSubmit }: AuthFormProps): JSX.Element {
           {mode === 'register' ? (
             <Field
               label="Display name"
-              hint="Shown in your account menu and AI-prompt header."
+              hint="Shown in your account menu."
               htmlFor="auth-display-name"
             >
               <input
