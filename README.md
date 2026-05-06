@@ -14,7 +14,7 @@ A self-hosted, web-based story and text editor with Venice.ai AI integration. Us
 └── docker-compose.yml
 ```
 
-Source of truth for development work is [TASKS.md](TASKS.md). Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md). Production deployment notes are in [SELF_HOSTING.md](SELF_HOSTING.md).
+Working task tracker is [**bd** (beads)](https://gastownhall.github.io/beads/) — run `bd ready` to find available work, `bd show <id>` for details. Historical task journal and per-task `verify:` commands live in [TASKS.md](TASKS.md) (still authoritative for closed-task history and the `/task-verify` skill). Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md). Production deployment notes are in [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Quick start
 
