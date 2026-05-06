@@ -43,6 +43,8 @@ Read `docs/agent-rules/index.md`. For each path in the touch-set, walk the mappi
 
 Read each matched digest file under `docs/agent-rules/` into memory. They are the **`<RULES_BLOCK>`** that gets injected into every dispatch.
 
+If a digest filename listed in `index.md` doesn't resolve to a readable file (typo in the index, file moved without index update, etc.): print a one-line warning that names the missing digest and proceed with the digests that *did* resolve. Do not stall the loop — fail visible, not silent. Surface the warning in your end-of-task summary so the user can fix the index.
+
 If the touch-set is empty or doesn't match any glob, dispatch with no `<RULES_BLOCK>` and surface that as a concern in your end-of-task summary — usually it means the plan's file map is missing or the index needs an entry.
 
 ### 3. Read superpowers' templates
@@ -54,6 +56,10 @@ Read these files fresh (the bridge does not fork them — plugin upgrades roll f
 - `~/.claude/plugins/cache/claude-plugins-official/superpowers/<version>/skills/subagent-driven-development/code-quality-reviewer-prompt.md`
 
 Discover `<version>` via `ls ~/.claude/plugins/cache/claude-plugins-official/superpowers/` (usually one entry, e.g. `5.1.0`).
+
+**Plugin path fallback.** If the `~/.claude/plugins/cache/claude-plugins-official/superpowers/` directory doesn't exist (different install method — user-config plugin, project-vendored, or a future plugin manager that picks a different location), do **not** guess or fork. Stop and ask the user where superpowers is installed; record the answer in this skill so the next dispatch finds it. The bridge depends on these templates being readable; bypassing them by inlining a copy is forbidden (see Forbidden list below).
+
+**Placeholder-name validation.** Once the templates are read, confirm that the placeholder strings you intend to substitute (e.g. `[FULL TEXT of task from plan - paste it here]`, `[Scene-setting...]`, `Work from: [directory]`) actually appear in the templates verbatim. If a plugin upgrade has renamed them, the substitution would silently produce malformed prompts — stop and surface the rename to the user instead.
 
 ### 4. Claim the issue
 
@@ -84,9 +90,18 @@ Construct the implementer prompt by composing:
 - Work from: [directory] → the repo root absolute path
 ```
 
-Dispatch via the Agent tool, `subagent_type: general-purpose`, with the composed prompt. (Do not pass the plan file path to the subagent — give them the extracted text directly. Subagents do not read the plan file.)
+Dispatch via the Agent tool, `subagent_type: general-purpose`, with the composed prompt. (Do not pass the plan file path to the subagent — give them the extracted text directly. Subagents do not read the plan file. Reading the plan file would re-cost the entire plan tokens per dispatch and pull in tasks the subagent shouldn't be touching.)
 
-Handle the implementer's status per superpowers' rules (DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED).
+#### Implementer status protocol
+
+The implementer's final summary will declare one of four statuses (per superpowers' `subagent-driven-development` SKILL.md). Handle each:
+
+- **`DONE`** — implementation complete, all assertions / TDD steps passed. Proceed to step 7 (spec reviewer).
+- **`DONE_WITH_CONCERNS`** — implementation complete but the implementer flagged something for human review (e.g. a public API ambiguity, a follow-up they noticed but didn't fix). Read the concerns. If they are tractable adjustments to *this* task: re-dispatch the implementer with the fix asked for. If they are out-of-scope follow-ups: capture them as TODOs in your end-of-loop summary and proceed to step 7. Do not silently drop concerns.
+- **`NEEDS_CONTEXT`** — implementer couldn't proceed without additional information (e.g. an undocumented API shape, a missing fixture). Treat this as your problem, not the implementer's: gather the context (read the relevant files, query Context7 MCP for docs, check sibling code) and re-dispatch with the additional context appended to the original prompt. Do **not** ask the user unless the context truly isn't recoverable from the repo.
+- **`BLOCKED`** — implementer hit a hard stop (e.g. an environmental issue, a contradiction in the plan, a missing dependency). Stop the loop, surface the blocker to the user with the full implementer summary, and do **not** call `bd close` or proceed to the next task. The bd issue stays claimed until you (or the user) resolve the blocker and resume.
+
+If you're unsure which status the implementer reported, re-read superpowers' `subagent-driven-development/SKILL.md` once for the canonical definitions — the bridge defers to it.
 
 ### 7. For each task: dispatch spec reviewer
 
