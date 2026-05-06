@@ -76,7 +76,7 @@ describe('useAuth', () => {
     // register; the page is responsible for the post-ack login. See [F59].
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob', name: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'Display Name' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -88,17 +88,23 @@ describe('useAuth', () => {
     } | null = null;
     await act(async () => {
       registerResult = await result.current.register({
+        name: 'Display Name',
         username: 'bob',
         password: 'hunter2hunter2',
       });
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/auth/register');
+    // The body must forward the user-supplied display name distinctly from the
+    // username — register no longer defaults `name = username`.
+    expect(init.body).toBe(
+      JSON.stringify({ name: 'Display Name', username: 'bob', password: 'hunter2hunter2' }),
+    );
 
     expect(registerResult).toEqual({
-      user: { id: 'u2', username: 'bob', name: 'bob' },
+      user: { id: 'u2', username: 'bob', name: 'Display Name' },
       recoveryCode: 'horse-battery-staple-correct',
     });
 
