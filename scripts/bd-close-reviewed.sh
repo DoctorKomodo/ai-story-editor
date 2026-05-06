@@ -99,6 +99,11 @@ case "$PHASE" in
     if echo "$diff_files" | grep -qE '^backend/src/routes/venice-key\.routes\.ts$'; then
       fired="$fired security-reviewer"
     fi
+    # backend/src/index.ts hosts the cookie / cors / helmet / rate-limit / encryption-key bootstrap
+    # (see CLAUDE.md "Security Review"). Treat any change to it as in-lane.
+    if echo "$diff_files" | grep -qE '^backend/src/index\.ts$'; then
+      fired="$fired security-reviewer"
+    fi
 
     # repo-boundary-reviewer: narrative repos / routes / content-crypto / prompt-service / narrative migrations
     if echo "$diff_files" | grep -qE '^backend/src/repos/'; then
@@ -111,9 +116,10 @@ case "$PHASE" in
       fired="$fired repo-boundary-reviewer"
     fi
     if echo "$diff_files" | grep -qE '^backend/prisma/(migrations/.*|schema\.prisma)$'; then
-      # Heuristic: if any narrative model name appears in the migration / schema diff, include it.
+      # Heuristic: fire repo-boundary-reviewer when a migration touches a narrative model name
+      # OR a DEK-wrap / BYOK ciphertext column. Both are in-lane for the boundary reviewer.
       if git diff "$merge_base"...HEAD -- 'backend/prisma/' \
-          | grep -qE '\b(Story|Chapter|Character|OutlineItem|Chat|Message)\b'; then
+          | grep -qE '\b(Story|Chapter|Character|OutlineItem|Chat|Message|contentDekPassword|contentDekRecovery|veniceApiKeyEnc)\b'; then
         fired="$fired repo-boundary-reviewer"
       fi
     fi
