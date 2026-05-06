@@ -21,7 +21,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ├── docker-compose.override.yml  (local dev, hot reload)
 ├── .env.example
 ├── Makefile
-├── TASKS.md                   Source of truth for all work
+├── TASKS.md                   Historical task journal + per-task verify commands (working tracker is bd)
 └── SELF_HOSTING.md
 ```
 
@@ -56,7 +56,13 @@ cd backend && npm run db:test:reset   # reset the test DB before a full suite
 npm --prefix backend run typecheck    # tsc --noEmit (backend)
 npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
 
-# Running a single task's verify command
+# Working tracker (bd) — see "Task Completion Protocol" below
+bd ready                    # list available tasks (no blockers)
+bd show <id>                # detailed view
+bd update <id> --claim      # claim work atomically
+bd close <id>               # mark complete
+
+# Running a single task's verify command (verify: lines live in TASKS.md)
 /task-verify D9             # runs the `verify:` for [D9] and reports the true exit code
 ```
 
@@ -64,19 +70,22 @@ npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
 
 ## Task Completion Protocol
 
-**NEVER mark a task `[x]` until its verify command passes with exit code 0.**
+**Working tracker is bd; TASKS.md is the historical journal + per-task verify-command store.** New work files into bd (`bd create …`); the bring-up TASKS.md still hosts the `verify:` lines for tasks that originated there, and `/task-verify` reads from it. The two are paired during the migration: when you finish a TASKS.md-originated task, tick its `[x]` *and* `bd close` its bd issue. Tasks created directly in bd skip the `[x]` flow entirely.
+
+**NEVER mark a task `[x]` (TASKS.md) or `bd close` (bd) until its verify command passes with exit code 0.**
 
 For every task:
-1. Read the task and its `verify:` command before writing any code
+1. Read the task and its `verify:` command before writing any code (bd `--notes` or TASKS.md `verify:` line — whichever the task originated in)
 2. Confirm the task has a `plan:` link or a `trivial:` justification line. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
-3. Write the implementation
-4. Write the test if one is required by the task
-5. Run the verify command exactly as written
-6. If it fails: fix the code — do not modify the test to make it pass
-7. Mark `[x]` only when the verify command exits cleanly
-8. Move to the next task immediately — do not refactor or add scope
+3. `bd update <id> --claim` (if the task has a bd issue) before writing code
+4. Write the implementation
+5. Write the test if one is required by the task
+6. Run the verify command exactly as written
+7. If it fails: fix the code — do not modify the test to make it pass
+8. Mark `[x]` (if it has a TASKS.md row) AND `bd close <id>` (if it has a bd issue) only when verify exits cleanly. The pre-edit hook will auto-tick the `[x]`; you still need to `bd close` manually.
+9. Move to the next task immediately — do not refactor or add scope
 
-If a task has no verify command, add one to `TASKS.md` before starting.
+If a task has no verify command, add one (to bd `--notes` for new tasks, or to TASKS.md for existing rows) before starting.
 
 ### Archived sections
 
@@ -94,7 +103,9 @@ Currently archived: **S, A, D, AU, E, V, L, B, I, T**. Currently live in `TASKS.
 
 ## Task Order
 
-Work through tasks in this order unless instructed otherwise:
+> The section letters below are the **bring-up sequence** used during the project's initial build. Most letters (S, A, D, AU, E, V, L, B, I, T) are now archived under `docs/done/`. New work flows through `bd ready` — the table is retained as a glossary for cross-references in plans, agent prompts, and the still-live F/X/M/DS sections.
+
+Original bring-up order (preserved for reference):
 
 **S → A → D → AU → E → V → L → B → F → I → T → X**
 
