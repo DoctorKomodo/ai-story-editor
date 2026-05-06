@@ -29,25 +29,26 @@ Format convention (already in use): the **first** line in `--notes` matching `^v
 ## End state (concrete)
 
 ```
-.claude/skills/task-verify/run.sh        rewritten — reads bd notes
+.claude/skills/task-verify/run.sh        rewritten — bd-only (TASKS.md fallback removed in Phase 2)
+.claude/skills/bd-close/                 new — slash wrapper around scripts/bd-close-verified.sh
 .claude/hooks/pre-tasks-edit.sh          deleted
 .claude/hooks/extract-new-ids.py         deleted
 .claude/settings.json                    PreToolUse hook removed
-scripts/extract-verify.sh                deleted (or rewritten as bd-aware helper)
+scripts/bd-close-verified.sh             new — gate on close (~40 lines bash)
+scripts/extract-verify.sh                deleted
 scripts/tasks-proposed.sh                deleted
 scripts/tasks-implementable.sh           deleted
-scripts/bd-close-verified.sh             new — gate on close
-TASKS.md                                 collapsed to pointer file
-CLAUDE.md                                Task Completion Protocol rewritten
+TASKS.md                                 collapsed to pointer-row mapping (no checkboxes)
+CLAUDE.md                                Task Completion Protocol rewritten (bd-only flow)
 ```
 
 Daily flow becomes:
 ```bash
-bd ready                          # pick work
-bd update <id> --claim            # claim
+bd ready                # pick work
+bd update <id> --claim  # claim
 … write code …
-/task-verify <id>                 # gate (reads bd notes)
-scripts/bd-close-verified.sh <id> # closes only if verify exits 0
+/task-verify <id>       # gate (reads bd notes; doesn't change state)
+/bd-close <id>          # closes only if verify exits 0
 ```
 
 ---
@@ -67,32 +68,39 @@ Convention: first matching `^verify:[ \t]*(.*)$` line in `--notes` is the runnab
 - `story-editor-xwn` (this issue): add a verify on completion — see Phase 4 below.
 
 **1.3 — Rewrite `.claude/skills/task-verify/run.sh`.**
-Behaviour matrix:
+Behaviour matrix (Phase 1 — both modes; Phase 2 strips the TASKS.md fallback):
 
 | Input arg | Behaviour |
 |---|---|
-| `story-editor-XXX` (bd ID) | Read `bd show <id> --json`, extract first `verify:` line from `.notes`, run with `bash -o pipefail -c "$CMD"`. |
-| `[A-Z]+\d+` (TASKS.md ID, transitional) | Fall back to old behaviour: `scripts/extract-verify.sh <id>` → run. Print a deprecation hint pointing at the bd ID if one can be found by ref-grep. |
+| `story-editor-XXX` (bd ID) | Read `bd show <id> --json`, extract first `verify:` line from `.notes` via inline `jq \| awk` (~6 lines, no helper script). Run with `bash -o pipefail -c "$CMD"`. |
+| `[A-Z]+\d+` (TASKS.md ID — **transitional, Phase 1 only**) | Fall back to old behaviour: `scripts/extract-verify.sh <id>` → run. Print a deprecation hint pointing at the bd ID if one can be found by ref-grep on `ref: TASKS.md [<ID>]` lines in bd notes. **Removed in Phase 2.** |
 | Verify is `TBD …`, `design decision …`, or empty | Exit 2 with a clear "no automated verify" message — distinct from a real failure (exit 1+). |
 
-Update `SKILL.md` to document both modes. Skill name and slash trigger unchanged.
+Update `SKILL.md` to document both modes (Phase 1) → bd-only (Phase 2). Skill name and slash trigger unchanged.
 
 **1.4 — Add `scripts/bd-close-verified.sh`.**
 ```bash
-bd-close-verified <id> [--reason="..."]
+bd-close-verified <id> [--reason="..."] [--force]
 ```
-1. Extracts verify from `bd show <id> --json` notes.
+1. Extracts verify from `bd show <id> --json` notes (same inline `jq | awk` as `task-verify`).
 2. Runs it with `bash -o pipefail -c "$CMD"`.
 3. On exit 0: calls `bd close <id> [--reason=…]`, prints success.
 4. On non-zero: refuses to close, prints failing tail, exits with the verify's exit code.
-5. Special-cases "no automated verify" cases by requiring `--force` to close (so design-decision tasks don't get accidentally locked).
+5. "No automated verify" cases (TBD / design-decision / empty) require `--force` to close — so design-decision tasks don't get accidentally locked but accidental closes of "TBD verify" tasks are blocked.
 
 This is the bookkeeping replacement for `pre-tasks-edit.sh`. ~40 lines of bash. No `.beads/hooks/*` integration — beads has no `pre-close` hook today.
 
-**1.5 — Smoke-test on a real issue.**
-Pick `story-editor-9vm` (F63) or `story-editor-6ug` (F65) when its work is in flight: run `/task-verify <id>` *before* implementation (expect failure), implement, run again (expect pass), then `bd-close-verified <id>` to close. This is the live proof that the new tooling works before retiring the old.
+**1.5 — Add `/bd-close` slash skill.**
+`.claude/skills/bd-close/SKILL.md` + `run.sh`, mirroring the existing `task-verify` skill structure. The skill's `run.sh` is a thin wrapper that calls `scripts/bd-close-verified.sh "$@"`. Symmetry with `/task-verify` so agents have parallel verbs:
+- `/task-verify <id>` → run the gate, report result, don't change state.
+- `/bd-close <id>` → run the gate, then close on pass.
 
-**Verify Phase 1:** new skill works against ≥3 bd issues (one passing, one failing, one "no automated verify" branch); old skill still works against TASKS.md IDs unchanged; `bd-close-verified` exercised against one passing and one failing case.
+Documenting them as a pair in CLAUDE.md keeps the convention legible.
+
+**1.6 — Smoke-test on a real issue.**
+Pick `story-editor-9vm` (F63) or `story-editor-6ug` (F65) when its work is in flight: run `/task-verify <id>` *before* implementation (expect failure), implement, run again (expect pass), then `/bd-close <id>` to close. This is the live proof that the new tooling works before retiring the old.
+
+**Verify Phase 1:** new skill works against ≥3 bd issues (one passing, one failing, one "no automated verify" branch); old skill still works against TASKS.md IDs unchanged; `/bd-close` exercised against one passing and one failing case.
 
 ---
 
@@ -103,11 +111,11 @@ Atomic single PR after Phase 1 has at least one real-use proof point.
 **2.1 — Migrate TASKS.md "live" sections to pointer rows.**
 For each open `[ ]` row in TASKS.md live sections (F Phase 4, X, M, DS):
 ```markdown
-- [ ] **[F63]** → bd:story-editor-9vm
-- [ ] **[X28]** → bd:story-editor-tdc
+- **[F63]** → bd:story-editor-9vm
+- **[X28]** → bd:story-editor-tdc
 …
 ```
-Drop the body (description, plan, verify, trivial lines) — bd is now the source of truth for those fields. Keep the `[ ]` checkbox as a visual cue but the auto-tick hook is gone, so the box is purely informational.
+**No checkbox** — state lives in bd, never in TASKS.md again. The pointer row is a pure ID-mapping entry; whether the underlying issue is open or closed is answered by `bd show`. Drop the body (description, plan, verify, trivial lines) entirely.
 
 Rationale for keeping the rows visible (vs deletion): preserves the historical `[A-Z]\d+` ID → bd ID mapping for grep-archaeology of plan docs and commit messages, which all reference TASKS.md IDs. Same purpose as the existing `docs/done/done-*.md` archives.
 
@@ -125,20 +133,21 @@ Remove the dual-tick coordination paragraph from the May-6 edit. Replace step-li
 3. `bd update <id> --claim`.
 4. Write code + test.
 5. `/task-verify <id>` — gate.
-6. `scripts/bd-close-verified.sh <id>` — closes only on verify pass.
+6. `/bd-close <id>` — closes only on verify pass.
 7. Move on.
 
-Drop the "Archived sections" subsection's `TASKS.md` references (archives stay; the section becomes "Historical archives"). Drop the `pre-tasks-edit.sh` and `extract-verify.sh` mentions in "Local tooling".
+Drop the "Archived sections" subsection's `TASKS.md` references (archives stay; the section becomes "Historical archives"). Drop the `pre-tasks-edit.sh` and `extract-verify.sh` mentions in "Local tooling"; replace with `/task-verify` + `/bd-close` slash-skill pair.
 
-**2.4 — Retire the auto-tick hook.**
+**2.4 — Retire the auto-tick hook + TASKS.md fallback.**
 - Remove the `PreToolUse` block targeting `pre-tasks-edit.sh` from `.claude/settings.json`.
 - `git rm .claude/hooks/pre-tasks-edit.sh .claude/hooks/extract-new-ids.py`.
+- Strip the TASKS.md-fallback branch from `.claude/skills/task-verify/run.sh` (Phase 1's transitional code path). After this step, the skill only handles bd IDs.
 
 **2.5 — Retire the helper scripts.**
 - `git rm scripts/extract-verify.sh scripts/tasks-proposed.sh scripts/tasks-implementable.sh`.
-- Add bd-query equivalents (one-liners) to a small README at `.beads/README.md` or fold into CLAUDE.md "Quick Start":
-  - "Implementable tasks": `bd list --status=open --json | jq -r '.[] | select(.notes | test("^plan:|^trivial:"; "m")) | .id'` — or simpler, just trust `bd ready`.
-  - "Proposed but not yet implementable": inverse of above.
+- Add bd-query equivalents to CLAUDE.md "Quick Start":
+  - "Tasks ready to start": `bd ready` (covers blocker-free; the historical "has plan: or trivial:" gate is now enforced by review, not a script — agents check the bd notes for a `plan:` or `trivial:` line before claiming).
+  - "Proposed but not yet implementable": `bd list --status=open --json | jq -r '.[] | select((.notes // "") | test("^plan:|^trivial:"; "m") | not) | .id'` — one-liner, no script needed.
 
 **2.6 — Update agent prompts.**
 - `.claude/agents/security-reviewer.md` and `.claude/agents/repo-boundary-reviewer.md`: replace any "before marking task `[x]`" phrasing with "before `bd close`-ing"; keep the historical AU/E/V task-ID references in their scope tables (those are real archive anchors).
@@ -151,9 +160,15 @@ Drop the "Archived sections" subsection's `TASKS.md` references (archives stay; 
 [ ! -f scripts/tasks-proposed.sh ]
 [ ! -f scripts/tasks-implementable.sh ]
 [ -x scripts/bd-close-verified.sh ]
+[ -f .claude/skills/bd-close/SKILL.md ]
 ! grep -q 'pre-tasks-edit' .claude/settings.json
-! grep -q 'extract-verify\|tasks-proposed\|tasks-implementable' .
-grep -q 'bd-close-verified\|/task-verify' CLAUDE.md
+! grep -rE 'extract-verify|tasks-proposed|tasks-implementable' . \
+  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=docs/done \
+  --exclude-dir=mockups/archive
+grep -q '/bd-close\|/task-verify' CLAUDE.md
+# TASKS.md pointer-row sanity: every live bullet is a pointer, no checkboxes
+! grep -E '^- \[[ x]\] \*\*\[[A-Z0-9]+\]\*\*' TASKS.md
+grep -qE '^- \*\*\[[A-Z0-9]+\]\*\* → bd:story-editor-' TASKS.md
 ```
 
 ---
@@ -170,13 +185,14 @@ After Phase 2 lands and at least one real task is closed via the new flow:
 
 ---
 
-## Open decisions (capture in PR)
+## Decisions (resolved)
 
-1. **Pointer-row format in TASKS.md** — `→ bd:story-editor-9vm` (proposed) or `→ #54` (gh issue style) or fully delete the rows? Recommendation: pointer rows (preserves grep archaeology).
-2. **`bd-close-verified.sh` location** — `scripts/` (project-wide) vs `.beads/scripts/` (bd-namespaced) vs `.claude/skills/bd-close/` (slash-command). Recommendation: `scripts/` so it's invocable outside Claude Code too.
-3. **Slash command for close?** — Add `/bd-close <id>` skill as a thin wrapper over `bd-close-verified.sh`, mirroring `/task-verify`? Recommendation: yes, symmetry with `/task-verify`.
-4. **TASKS.md filename** — keep `TASKS.md` at repo root (preserves historical references) or rename to `docs/TASKS-archive.md`? Recommendation: keep, demote.
-5. **`extract-verify.sh` fate** — delete vs rewrite as bd-aware (e.g. `scripts/bd-extract-verify.sh`)? Recommendation: delete; the logic is 6 lines of `jq | awk` and lives inside the new `task-verify` skill directly.
+1. **Pointer-row format in TASKS.md** — `- **[F63]** → bd:story-editor-9vm` (no checkbox). State lives in bd; the pointer row is a pure ID-mapping entry. Phase-2 verify asserts no `[ ]`/`[x]` checkboxes survive.
+2. **`bd-close-verified.sh` location** — `scripts/bd-close-verified.sh`. Project-wide bash, invocable from any shell, parallels the now-retired `scripts/extract-verify.sh`.
+3. **Slash command for close** — yes. `.claude/skills/bd-close/{SKILL.md,run.sh}` thin wrapper around `scripts/bd-close-verified.sh`. Symmetry with `/task-verify` so agents use parallel verbs.
+4. **TASKS.md filename** — keep at repo root, demote in content. Moving breaks ~50 cross-refs in plan docs / commit messages / agent prompts.
+5. **`extract-verify.sh` fate** — keep through Phase 1 (transitional), delete in Phase 2. The bd-extract logic (`jq | awk`, ~6 lines) lives inline in `task-verify/run.sh` and `bd-close-verified.sh`; no separate helper script needed.
+6. **TASKS.md fallback in `/task-verify`** — kept in Phase 1 for transitional invocations, stripped in Phase 2.4 along with the helper scripts. After Phase 2, the skill is bd-only.
 
 ---
 
