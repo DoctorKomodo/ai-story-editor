@@ -21,7 +21,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ├── docker-compose.override.yml  (local dev, hot reload)
 ├── .env.example
 ├── Makefile
-├── TASKS.md                   Source of truth for all work
+├── TASKS.md                   Historical journal + ID-mapping table (working tracker is bd)
 └── SELF_HOSTING.md
 ```
 
@@ -56,45 +56,54 @@ cd backend && npm run db:test:reset   # reset the test DB before a full suite
 npm --prefix backend run typecheck    # tsc --noEmit (backend)
 npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
 
-# Running a single task's verify command
-/task-verify D9             # runs the `verify:` for [D9] and reports the true exit code
+# Working tracker (bd) — see "Task Completion Protocol" below
+bd ready                    # list available tasks (no blockers)
+bd show <id>                # detailed view (description + verify: in --notes)
+bd update <id> --claim      # claim work atomically
+/task-verify <id>           # gate — runs verify: from bd notes with pipefail
+/bd-close <id>              # closes only if verify exits 0
 ```
 
 ---
 
 ## Task Completion Protocol
 
-**NEVER mark a task `[x]` until its verify command passes with exit code 0.**
+**Working tracker is bd. All open tasks live in bd; `TASKS.md` is a historical ID-mapping table that maps `[A-Z]\d+` IDs (referenced by plan docs, commit messages, and agent prompts) to their bd issues.** New tasks file directly into bd (`bd create …`); there are no checkboxes to tick.
+
+**NEVER `bd close` a task until its verify command exits 0.** `/bd-close <id>` enforces this — it's the only way to close a task with an automated verify. Tasks with `TBD` / `design decision` / empty verify lines require `--force` to close.
 
 For every task:
-1. Read the task and its `verify:` command before writing any code
-2. Confirm the task has a `plan:` link or a `trivial:` justification line. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
-3. Write the implementation
-4. Write the test if one is required by the task
-5. Run the verify command exactly as written
-6. If it fails: fix the code — do not modify the test to make it pass
-7. Mark `[x]` only when the verify command exits cleanly
-8. Move to the next task immediately — do not refactor or add scope
+1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line in `--notes`.
+2. Confirm `--notes` has a `plan:` link or a `trivial:` justification. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
+3. `bd update <id> --claim` before writing code.
+4. Write the implementation.
+5. Write the test if one is required by the task.
+6. `/task-verify <id>` — runs the verify with `bash -o pipefail` and reports true exit code. (Optional sanity-check; `/bd-close` runs the same gate internally.)
+7. If verify fails: fix the code — do not modify the test to make it pass.
+8. `/bd-close <id>` — closes only if verify exits 0.
+9. Move to the next task immediately — do not refactor or add scope.
 
-If a task has no verify command, add one to `TASKS.md` before starting.
+If a task has no verify command, add one to `--notes` (`bd update <id> --notes "verify: <command>\n…"`) before starting.
 
-### Archived sections
+### Verify-line convention in bd `--notes`
 
-`TASKS.md` only lists **live** sections (open tasks or hot code surfaces). A **subsection** is rotated into `docs/done/done-<section>.md` as soon as all its tasks are `[x]`, in the same PR that closes the last task — not the whole section letter. (Earlier S/A/D/E/V/L archives waited for the entire letter to close; that left mostly-done letters live and noisy. AU/B/I/T were rotated under the new subsection rule on 2026-05-02.) Each archive file is immutable; if a closed section is reopened, add a *new* task to `TASKS.md` rather than editing the archive.
+A single line starting with `verify:`, the runnable command on the rest of that line. Multi-line commands go on one line via `&&` / `;`. The first matching line wins. Non-runnable verifies (`TBD …`, `design decision …`, empty) are accepted but the runner exits 2 with a "no automated verify" message; closing those requires `--force`.
 
-To find a historical task ID, grep across both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. The `/task-verify` skill assumes `TASKS.md`; for an archived task, run `scripts/extract-verify.sh <ID> docs/done/done-<X>.md` directly (you almost never need to — archived tasks already passed their verify before they were ticked).
+### Historical archives
 
-Currently archived: **S, A, D, AU, E, V, L, B, I, T**. Currently live in `TASKS.md`: **F (Phase 4 only), X, M, DS**.
+Closed work from the original bring-up letters lives in immutable `docs/done/done-<section>.md` archives. To find a historical task ID, grep both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. Closed `[x]` rows still in TASKS.md (F Phase 4, a few X tasks) are pending rotation into their respective `done-*.md` archives — leave them alone unless you're doing the rotation.
 
 ### Local tooling
-- **`/task-verify <TASK_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that runs the `verify:` command exactly as written and reports the true exit code. Use this before manually ticking a task; it's stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
-- **`.claude/hooks/pre-tasks-edit.sh`** — a pre-edit hook that automatically ticks a task `[x]` in `TASKS.md` when its verify command passes. Treat an auto-tick as authoritative for the verify gate; you still need the `security-reviewer` clearance (where applicable) before the task group is considered closed.
+- **`/task-verify <BD_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that extracts `verify:` from `bd show <id> --json` notes and runs it with `bash -o pipefail`. Stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
+- **`/bd-close <BD_ID>`** — slash-command skill (`.claude/skills/bd-close/`) that runs the verify gate, then calls `bd close` only if it passes. Replaces the retired `pre-tasks-edit.sh` auto-tick hook with a close-time gate. Wraps `scripts/bd-close-verified.sh`.
 
 ---
 
 ## Task Order
 
-Work through tasks in this order unless instructed otherwise:
+> The section letters below are the **bring-up sequence** used during the project's initial build. Most letters (S, A, D, AU, E, V, L, B, I, T) are now archived under `docs/done/`. New work flows through `bd ready` — the table is retained as a glossary for cross-references in plans, agent prompts, and the still-live F/X/M/DS sections.
+
+Original bring-up order (preserved for reference):
 
 **S → A → D → AU → E → V → L → B → F → I → T → X**
 
@@ -335,3 +344,51 @@ Do not ask for permission to:
 - Keyboard shortcuts contract (one listener, scoped callbacks): `⌘/Ctrl+Enter` = chat send, `⌥+Enter` = continue-writing, `Escape` = dismiss selection bubble / inline AI card / close modal
 - The auth identifier is `username` (lowercased, 3–32 chars, `/^[a-z0-9_-]+$/`). `User.email` exists but is optional metadata — do not use it for login or uniqueness checks
 
+
+
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
+## Beads Issue Tracker
+
+This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+
+### Quick Reference
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>         # Complete work
+```
+
+### Rules
+
+- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- Run `bd prime` for detailed command reference and session close protocol
+- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+## Session Completion
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd dolt push
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds
+<!-- END BEADS INTEGRATION -->
