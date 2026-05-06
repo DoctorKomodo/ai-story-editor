@@ -163,8 +163,9 @@ Drop the "Archived sections" subsection's `TASKS.md` references (archives stay; 
 [ -f .claude/skills/bd-close/SKILL.md ]
 ! grep -q 'pre-tasks-edit' .claude/settings.json
 ! grep -rE 'extract-verify|tasks-proposed|tasks-implementable' . \
-  --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=docs/done \
-  --exclude-dir=mockups/archive
+  --exclude-dir=node_modules --exclude-dir=.git \
+  --exclude-dir=docs/done --exclude-dir=docs/superpowers \
+  --exclude-dir=mockups --exclude='*.jsonl'
 grep -q '/bd-close\|/task-verify' CLAUDE.md
 # TASKS.md pointer-row sanity: every live bullet is a pointer, no checkboxes
 ! grep -E '^- \[[ x]\] \*\*\[[A-Z0-9]+\]\*\*' TASKS.md

@@ -21,7 +21,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ├── docker-compose.override.yml  (local dev, hot reload)
 ├── .env.example
 ├── Makefile
-├── TASKS.md                   Historical task journal + per-task verify commands (working tracker is bd)
+├── TASKS.md                   Historical journal + ID-mapping table (working tracker is bd)
 └── SELF_HOSTING.md
 ```
 
@@ -58,46 +58,44 @@ npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
 
 # Working tracker (bd) — see "Task Completion Protocol" below
 bd ready                    # list available tasks (no blockers)
-bd show <id>                # detailed view
+bd show <id>                # detailed view (description + verify: in --notes)
 bd update <id> --claim      # claim work atomically
-bd close <id>               # mark complete
-
-# Running a single task's verify command (verify: lines live in TASKS.md)
-/task-verify D9             # runs the `verify:` for [D9] and reports the true exit code
+/task-verify <id>           # gate — runs verify: from bd notes with pipefail
+/bd-close <id>              # closes only if verify exits 0
 ```
 
 ---
 
 ## Task Completion Protocol
 
-**Working tracker is bd; TASKS.md is the historical journal + per-task verify-command store.** New work files into bd (`bd create …`); the bring-up TASKS.md still hosts the `verify:` lines for tasks that originated there, and `/task-verify` reads from it. The two are paired during the migration: when you finish a TASKS.md-originated task, tick its `[x]` *and* `bd close` its bd issue. Tasks created directly in bd skip the `[x]` flow entirely.
+**Working tracker is bd. All open tasks live in bd; `TASKS.md` is a historical ID-mapping table that maps `[A-Z]\d+` IDs (referenced by plan docs, commit messages, and agent prompts) to their bd issues.** New tasks file directly into bd (`bd create …`); there are no checkboxes to tick.
 
-**NEVER mark a task `[x]` (TASKS.md) or `bd close` (bd) until its verify command passes with exit code 0.**
+**NEVER `bd close` a task until its verify command exits 0.** `/bd-close <id>` enforces this — it's the only way to close a task with an automated verify. Tasks with `TBD` / `design decision` / empty verify lines require `--force` to close.
 
 For every task:
-1. Read the task and its `verify:` command before writing any code (bd `--notes` or TASKS.md `verify:` line — whichever the task originated in)
-2. Confirm the task has a `plan:` link or a `trivial:` justification line. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
-3. `bd update <id> --claim` (if the task has a bd issue) before writing code
-4. Write the implementation
-5. Write the test if one is required by the task
-6. Run the verify command exactly as written
-7. If it fails: fix the code — do not modify the test to make it pass
-8. Mark `[x]` (if it has a TASKS.md row) AND `bd close <id>` (if it has a bd issue) only when verify exits cleanly. The pre-edit hook will auto-tick the `[x]`; you still need to `bd close` manually.
-9. Move to the next task immediately — do not refactor or add scope
+1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line in `--notes`.
+2. Confirm `--notes` has a `plan:` link or a `trivial:` justification. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
+3. `bd update <id> --claim` before writing code.
+4. Write the implementation.
+5. Write the test if one is required by the task.
+6. `/task-verify <id>` — runs the verify with `bash -o pipefail` and reports true exit code. (Optional sanity-check; `/bd-close` runs the same gate internally.)
+7. If verify fails: fix the code — do not modify the test to make it pass.
+8. `/bd-close <id>` — closes only if verify exits 0.
+9. Move to the next task immediately — do not refactor or add scope.
 
-If a task has no verify command, add one (to bd `--notes` for new tasks, or to TASKS.md for existing rows) before starting.
+If a task has no verify command, add one to `--notes` (`bd update <id> --notes "verify: <command>\n…"`) before starting.
 
-### Archived sections
+### Verify-line convention in bd `--notes`
 
-`TASKS.md` only lists **live** sections (open tasks or hot code surfaces). A **subsection** is rotated into `docs/done/done-<section>.md` as soon as all its tasks are `[x]`, in the same PR that closes the last task — not the whole section letter. (Earlier S/A/D/E/V/L archives waited for the entire letter to close; that left mostly-done letters live and noisy. AU/B/I/T were rotated under the new subsection rule on 2026-05-02.) Each archive file is immutable; if a closed section is reopened, add a *new* task to `TASKS.md` rather than editing the archive.
+A single line starting with `verify:`, the runnable command on the rest of that line. Multi-line commands go on one line via `&&` / `;`. The first matching line wins. Non-runnable verifies (`TBD …`, `design decision …`, empty) are accepted but the runner exits 2 with a "no automated verify" message; closing those requires `--force`.
 
-To find a historical task ID, grep across both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. The `/task-verify` skill assumes `TASKS.md`; for an archived task, run `scripts/extract-verify.sh <ID> docs/done/done-<X>.md` directly (you almost never need to — archived tasks already passed their verify before they were ticked).
+### Historical archives
 
-Currently archived: **S, A, D, AU, E, V, L, B, I, T**. Currently live in `TASKS.md`: **F (Phase 4 only), X, M, DS**.
+Closed work from the original bring-up letters lives in immutable `docs/done/done-<section>.md` archives. To find a historical task ID, grep both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. Closed `[x]` rows still in TASKS.md (F Phase 4, a few X tasks) are pending rotation into their respective `done-*.md` archives — leave them alone unless you're doing the rotation.
 
 ### Local tooling
-- **`/task-verify <TASK_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that runs the `verify:` command exactly as written and reports the true exit code. Use this before manually ticking a task; it's stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
-- **`.claude/hooks/pre-tasks-edit.sh`** — a pre-edit hook that automatically ticks a task `[x]` in `TASKS.md` when its verify command passes. Treat an auto-tick as authoritative for the verify gate; you still need the `security-reviewer` clearance (where applicable) before the task group is considered closed.
+- **`/task-verify <BD_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that extracts `verify:` from `bd show <id> --json` notes and runs it with `bash -o pipefail`. Stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
+- **`/bd-close <BD_ID>`** — slash-command skill (`.claude/skills/bd-close/`) that runs the verify gate, then calls `bd close` only if it passes. Replaces the retired `pre-tasks-edit.sh` auto-tick hook with a close-time gate. Wraps `scripts/bd-close-verified.sh`.
 
 ---
 

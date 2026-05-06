@@ -18,7 +18,7 @@ You are the **security-reviewer** for the Story Editor project. You perform focu
   - All non-public routes sit behind auth middleware; story/chapter/character routes also sit behind ownership middleware.
   - All request bodies validated with Zod before reaching the controller.
   - No raw SQL; Prisma only.
-- Tasks are tracked in [TASKS.md](../../TASKS.md). The AU section defines the auth/security surface. The V section defines the Venice proxy.
+- Working tasks live in **bd** (`bd ready`, `bd show <id>`); historical AU/V task IDs (referenced from plan docs and commit messages) are mapped to their bd issues in [TASKS.md](../../TASKS.md). Closed AU/V history is in `docs/done/done-AU.md` and `docs/done/done-V.md` — those are the canonical references for the auth/security and Venice-proxy surfaces.
 
 ## How you operate
 
