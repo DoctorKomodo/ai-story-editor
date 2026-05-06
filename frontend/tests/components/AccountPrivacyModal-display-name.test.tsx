@@ -7,12 +7,15 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { useSessionStore } from '@/store/session';
 
 const fetchMock = vi.fn();
 beforeEach(() => {
+  resetApiClientForTests();
   vi.stubGlobal('fetch', fetchMock);
   fetchMock.mockReset();
+  setUnauthorizedHandler(null);
   useSessionStore.setState({
     user: { id: 'u1', username: 'someuser', name: 'Original Name' },
     status: 'authenticated',
@@ -20,6 +23,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
+  resetApiClientForTests();
   useSessionStore.setState({ user: null, status: 'idle' });
 });
 

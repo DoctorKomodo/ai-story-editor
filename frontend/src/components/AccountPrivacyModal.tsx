@@ -158,6 +158,7 @@ function DisplayNameSection(): JSX.Element {
             setName(e.target.value);
             if (err) setErr(null);
           }}
+          disabled={mutation.isPending}
           aria-invalid={tooLong}
           className={INPUT_CLASS}
         />
