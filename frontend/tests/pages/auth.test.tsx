@@ -235,6 +235,7 @@ describe('auth pages (F4)', () => {
     await user.clear(usernameInput);
     await user.type(usernameInput, 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     expect(submit).not.toBeDisabled();
 
     await user.click(submit);
@@ -251,11 +252,10 @@ describe('auth pages (F4)', () => {
     expect(registerCall).toBeDefined();
     const [, init] = registerCall as [string, RequestInit];
     expect(init.method).toBe('POST');
-    // [X18] follow-up: until the register form collects a separate display
-    // name, useAuth.register() sends `name: username` so the backend's
-    // nameSchema(min 1) is satisfied with the same handle.
+    // The register form now collects a user-supplied display name; the body
+    // sends the trimmed name alongside username + password.
     expect(init.body).toBe(
-      JSON.stringify({ name: 'bob', username: 'bob', password: 'hunter2hunter2' }),
+      JSON.stringify({ name: 'Bob Builder', username: 'bob', password: 'hunter2hunter2' }),
     );
   });
 
@@ -276,6 +276,7 @@ describe('auth pages (F4)', () => {
 
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.click(screen.getByRole('button', { name: /create account/i }));
 
     const alert = await screen.findByRole('alert');

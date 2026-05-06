@@ -3,17 +3,17 @@ import { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
 import { AuthForm } from '@/components/AuthForm';
 import { RecoveryCodeHandoff } from '@/components/RecoveryCodeHandoff';
-import { type Credentials, useAuth } from '@/hooks/useAuth';
+import { type LoginCredentials, type RegisterCredentials, useAuth } from '@/hooks/useAuth';
 
 type Phase =
   | { kind: 'form' }
-  | { kind: 'handoff'; recoveryCode: string; credentials: Credentials }
-  | { kind: 'logging-in'; recoveryCode: string; credentials: Credentials }
+  | { kind: 'handoff'; recoveryCode: string; credentials: RegisterCredentials }
+  | { kind: 'logging-in'; recoveryCode: string; credentials: RegisterCredentials }
   | {
       kind: 'login-failed';
       recoveryCode: string;
       message: string;
-      credentials: Credentials;
+      credentials: RegisterCredentials;
     };
 
 const POST_ACK_LOGIN_FAIL_MESSAGE =
@@ -83,7 +83,12 @@ export function RegisterPage(): JSX.Element {
     );
   }
 
-  const handleRegister = async (creds: Credentials): Promise<void> => {
+  const handleRegister = async (creds: LoginCredentials | RegisterCredentials): Promise<void> => {
+    // AuthForm in register mode always supplies RegisterCredentials (with `name`);
+    // the union type comes from AuthForm's shared prop signature.
+    if (!('name' in creds)) {
+      throw new Error('Register form submitted without a display name');
+    }
     const { recoveryCode } = await register(creds);
     setPhase({ kind: 'handoff', recoveryCode, credentials: creds });
   };

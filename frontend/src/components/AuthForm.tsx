@@ -1,14 +1,14 @@
 import type { JSX, ReactNode } from 'react';
 import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Credentials } from '@/hooks/useAuth';
+import type { LoginCredentials, RegisterCredentials } from '@/hooks/useAuth';
 import { ApiError } from '@/lib/api';
 
 export type AuthMode = 'login' | 'register';
 
 export interface AuthFormProps {
   mode: AuthMode;
-  onSubmit: (creds: Credentials) => Promise<unknown>;
+  onSubmit: (creds: LoginCredentials | RegisterCredentials) => Promise<unknown>;
 }
 
 const USERNAME_PATTERN = /^[a-z0-9_-]+$/;
@@ -19,6 +19,16 @@ const PASSWORD_MIN = 8;
 const USERNAME_ERROR =
   'Username must be 3–32 characters, lowercase letters, numbers, underscores, or hyphens.';
 const PASSWORD_ERROR = `Password must be at least ${String(PASSWORD_MIN)} characters.`;
+
+const NAME_MIN = 1;
+const NAME_MAX = 80;
+const NAME_ERROR = `Display name must be 1–80 characters.`;
+
+function validateName(raw: string): string | null {
+  const value = raw.trim();
+  if (value.length < NAME_MIN || value.length > NAME_MAX) return NAME_ERROR;
+  return null;
+}
 
 function validateUsername(raw: string): string | null {
   const value = raw.trim().toLowerCase();
@@ -147,20 +157,25 @@ const INPUT_CLASS =
   'focus:outline-none focus:border-[var(--ink-3)] transition-colors';
 
 export function AuthForm({ mode, onSubmit }: AuthFormProps): JSX.Element {
+  const [name, setName] = useState('');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [nameTouched, setNameTouched] = useState(false);
   const [usernameTouched, setUsernameTouched] = useState(false);
   const [passwordTouched, setPasswordTouched] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
   const [showPw, setShowPw] = useState(false);
 
+  const nameError = validateName(name);
   const usernameError = validateUsername(username);
   const passwordError = validatePassword(password);
+  const showNameError = nameTouched && nameError !== null;
   const showUsernameError = usernameTouched && usernameError !== null;
   const showPasswordError = passwordTouched && passwordError !== null;
 
-  const formInvalid = usernameError !== null || passwordError !== null;
+  const formInvalid =
+    (mode === 'register' && nameError !== null) || usernameError !== null || passwordError !== null;
   const submitDisabled = formInvalid || pending;
 
   // F4-test asserts these exact heading strings: keep them.
@@ -181,6 +196,7 @@ export function AuthForm({ mode, onSubmit }: AuthFormProps): JSX.Element {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>): Promise<void> => {
     e.preventDefault();
+    if (mode === 'register') setNameTouched(true);
     setUsernameTouched(true);
     setPasswordTouched(true);
     setFormError(null);
@@ -188,7 +204,15 @@ export function AuthForm({ mode, onSubmit }: AuthFormProps): JSX.Element {
 
     setPending(true);
     try {
-      await onSubmit({ username: username.trim().toLowerCase(), password });
+      if (mode === 'register') {
+        await onSubmit({
+          name: name.trim(),
+          username: username.trim().toLowerCase(),
+          password,
+        });
+      } else {
+        await onSubmit({ username: username.trim().toLowerCase(), password });
+      }
     } catch (err) {
       setFormError(mapSubmitError(mode, err));
     } finally {
@@ -227,6 +251,40 @@ export function AuthForm({ mode, onSubmit }: AuthFormProps): JSX.Element {
             {heading}
           </h1>
           <p className="text-[13px] text-[var(--ink-3)] leading-relaxed mb-2 m-0">{subtitle}</p>
+
+          {mode === 'register' ? (
+            <Field
+              label="Display name"
+              hint="Shown in your account menu and AI-prompt header."
+              htmlFor="auth-display-name"
+            >
+              <input
+                id="auth-display-name"
+                data-testid="register-display-name"
+                name="name"
+                autoComplete="name"
+                value={name}
+                aria-invalid={showNameError}
+                aria-describedby={showNameError ? 'auth-display-name-error' : undefined}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  if (formError) setFormError(null);
+                }}
+                onBlur={() => {
+                  setNameTouched(true);
+                }}
+                className={INPUT_CLASS}
+              />
+              {showNameError ? (
+                <span
+                  id="auth-display-name-error"
+                  className="text-[12px] text-[var(--danger)] mt-0.5"
+                >
+                  {nameError}
+                </span>
+              ) : null}
+            </Field>
+          ) : null}
 
           <Field
             label="Username"
