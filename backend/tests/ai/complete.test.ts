@@ -42,6 +42,7 @@ const MODEL_LIST_BODY = {
       model_spec: {
         name: 'Llama 3.3 70B',
         availableContextTokens: BASE_CONTEXT_LENGTH,
+        maxCompletionTokens: 4096,
         capabilities: { supportsReasoning: false, supportsVision: false },
       },
     },
@@ -52,6 +53,7 @@ const MODEL_LIST_BODY = {
       model_spec: {
         name: 'Qwen QwQ 32B',
         availableContextTokens: 32768,
+        maxCompletionTokens: 16384,
         capabilities: { supportsReasoning: true, supportsVision: false },
       },
     },
@@ -428,6 +430,81 @@ describe('POST /api/ai/complete [V5]', () => {
     expect((requestBody.messages as unknown[]).length).toBeGreaterThan(0);
     expect(typeof requestBody.max_completion_tokens).toBe('number');
     expect(requestBody.stream).toBe(true);
+  });
+
+  it('max_completion_tokens = min(model_cap, user_setting) — model cap wins', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { storyId, chapterId } = await setupStoryAndChapter(req);
+
+    // User wants 16k; model caps at 4k → expect 4k.
+    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    await prisma.user.update({
+      where: { id: decoded.sub },
+      data: { settingsJson: { chat: { maxTokens: 16_000 } } },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
+
+    await request(app)
+      .post('/api/ai/complete')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const [, init] = completionCall!;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(requestBody.max_completion_tokens).toBe(4096); // model wins (BASE_MODEL_ID has cap 4096)
+  });
+
+  it('max_completion_tokens = min(model_cap, user_setting) — user setting wins', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { storyId, chapterId } = await setupStoryAndChapter(req);
+
+    // User wants 800; qwen model caps at 16k → expect 800.
+    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    await prisma.user.update({
+      where: { id: decoded.sub },
+      data: { settingsJson: { chat: { maxTokens: 800 } } },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
+
+    await request(app)
+      .post('/api/ai/complete')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: 'qwen-qwq-32b' });
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    const [, init] = completionCall!;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(requestBody.max_completion_tokens).toBe(800); // user wins
   });
 
   it('reads includeVeniceSystemPrompt from settingsJson.ai when set to false', async () => {

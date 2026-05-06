@@ -148,7 +148,7 @@ export function SettingsModelsTab(): JSX.Element {
           label="Max tokens"
           hint="Response length cap"
           min={1}
-          max={8000}
+          max={32_000}
           step={64}
           value={params.maxTokens}
           decimals={0}

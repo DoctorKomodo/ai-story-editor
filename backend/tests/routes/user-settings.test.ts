@@ -251,6 +251,25 @@ describe('User settings routes [B11]', () => {
     expect(res.status).toBe(200);
     expect(res.body.settings.chat.temperature).toBe(0);
   });
+
+  it('accepts chat.maxTokens above the previous 32_768 ceiling (up to 1_000_000)', async () => {
+    const token = await registerAndLogin('max-tokens-high-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { maxTokens: 65_536 } });
+    expect(res.status).toBe(200);
+    expect(res.body.settings.chat.maxTokens).toBe(65_536);
+  });
+
+  it('rejects chat.maxTokens above the 1_000_000 sanity ceiling', async () => {
+    const token = await registerAndLogin('max-tokens-tooHigh-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { maxTokens: 2_000_000 } });
+    expect(res.status).toBe(400);
+  });
 });
 
 // ─── [X29] prompts slice ──────────────────────────────────────────────────────

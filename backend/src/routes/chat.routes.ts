@@ -28,6 +28,11 @@ import {
   renderAskUserContent,
 } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
+import {
+  resolveIncludeVeniceSystemPrompt,
+  resolveUserMaxCompletionTokens,
+  resolveUserPrompts,
+} from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
@@ -66,38 +71,6 @@ const PostMessageBody = z
 // [V8] Deterministic prompt-cache key per (chatId, modelId) for the chat surface.
 function chatPromptCacheKey(chatId: string, modelId: string): string {
   return createHash('sha256').update(`${chatId}:${modelId}`).digest('hex').slice(0, 32);
-}
-
-interface AiSettings {
-  includeVeniceSystemPrompt?: boolean;
-}
-
-interface PromptsSettings {
-  system?: string | null;
-  continue?: string | null;
-  rewrite?: string | null;
-  expand?: string | null;
-  summarise?: string | null;
-  describe?: string | null;
-}
-
-interface UserSettings {
-  ai?: AiSettings;
-  prompts?: PromptsSettings;
-}
-
-function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
-  if (!raw || typeof raw !== 'object') return true;
-  const settings = raw as UserSettings;
-  const flag = (settings as UserSettings).ai?.includeVeniceSystemPrompt;
-  if (typeof flag === 'boolean') return flag;
-  return true;
-}
-
-function resolveUserPrompts(raw: unknown): PromptsSettings {
-  if (!raw || typeof raw !== 'object') return {};
-  const settings = raw as UserSettings;
-  return settings.prompts ?? {};
 }
 
 // ─── Router 1: chapter-scoped chat CRUD ──────────────────────────────────────
@@ -254,6 +227,10 @@ export function createChatMessagesRouter() {
         userRow?.settingsJson ?? null,
       );
       const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
+      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
+        body.modelId,
+      );
 
       // ── 4. Load chapter + story via repos ─────────────────────────────────
       const chapter = await createChapterRepo(req).findById(chatChapterId);
@@ -302,6 +279,8 @@ export function createChatMessagesRouter() {
         characters,
         worldNotes,
         modelContextLength,
+        modelMaxCompletionTokens,
+        userMaxCompletionTokens,
         includeVeniceSystemPrompt,
         userPrompts,
         freeformInstruction: body.content,

@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import * as askAiModule from '@/lib/askAi';
 import { createQueryClient } from '@/lib/queryClient';
+import { ACTION_MAP } from '@/pages/EditorPage';
 import { AppRouter } from '@/router';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
@@ -227,5 +228,21 @@ describe('EditorPage AI surfaces (F53)', () => {
     // surface (the prose region) is the structural assertion.
     const prose = document.querySelector('.paper-prose');
     expect(prose).not.toBeNull();
+  });
+
+  // [fix-max-tokens] ACTION_MAP 1:1 dispatch tests (V14: backend has real
+  // 'describe' and 'rewrite' actions; the old remapping was a pre-V14 shim).
+  describe('ACTION_MAP dispatches 1:1 to backend action ids', () => {
+    it('Describe bubble action maps to action="describe" (not "summarise")', () => {
+      expect(ACTION_MAP.describe).toBe('describe');
+    });
+
+    it('Rewrite bubble action maps to action="rewrite" (not "rephrase")', () => {
+      expect(ACTION_MAP.rewrite).toBe('rewrite');
+    });
+
+    it('Expand bubble action maps to action="expand"', () => {
+      expect(ACTION_MAP.expand).toBe('expand');
+    });
   });
 });

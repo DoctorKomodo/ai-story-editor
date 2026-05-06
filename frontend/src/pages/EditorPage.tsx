@@ -87,6 +87,14 @@ function extractSelection(editor: TiptapEditor): string {
   return editor.state.doc.textBetween(from, to, ' ');
 }
 
+// [F53] Maps the SelectionBubble action id to the backend action id sent to
+// /api/ai/complete. 1:1 since V14 added real 'rewrite' and 'describe' actions.
+export const ACTION_MAP: Record<Exclude<SelectionAction, 'ask'>, RunArgs['action']> = {
+  rewrite: 'rewrite',
+  describe: 'describe',
+  expand: 'expand',
+};
+
 export function EditorPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -347,14 +355,6 @@ export function EditorPage(): JSX.Element {
   const setInlineAIResult = useInlineAIResultStore((s) => s.setInlineAIResult);
   const clearInlineAIResult = useInlineAIResultStore((s) => s.clear);
   const lastRunArgsRef = useRef<RunArgs | null>(null);
-  const ACTION_MAP: Record<Exclude<SelectionAction, 'ask'>, RunArgs['action']> = useMemo(
-    () => ({
-      rewrite: 'rephrase',
-      describe: 'summarise',
-      expand: 'expand',
-    }),
-    [],
-  );
 
   const exportStory: ExportStory | null = useMemo(() => {
     if (!story) return null;
@@ -452,7 +452,6 @@ export function EditorPage(): JSX.Element {
       selectedModelId,
       completion,
       setInlineAIResult,
-      ACTION_MAP,
     ],
   );
 
@@ -468,7 +467,7 @@ export function EditorPage(): JSX.Element {
       output: '',
     });
     void completion.run(args);
-  }, [completion, setInlineAIResult, ACTION_MAP]);
+  }, [completion, setInlineAIResult]);
 
   // Mirror the streaming completion into the inline-result store so
   // <InlineAIResult> renders progressive output and final state. Guarded by
