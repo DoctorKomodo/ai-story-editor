@@ -67,6 +67,7 @@ describe('recovery-code handoff (F59)', () => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
 
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -109,6 +110,7 @@ describe('recovery-code handoff (F59)', () => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
 
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -144,6 +146,7 @@ describe('recovery-code handoff (F59)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -177,6 +180,7 @@ describe('recovery-code handoff (F59)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -214,6 +218,7 @@ describe('recovery-code handoff (F59)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
