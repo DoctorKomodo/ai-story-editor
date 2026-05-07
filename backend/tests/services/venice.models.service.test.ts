@@ -2,6 +2,7 @@ import type OpenAI from 'openai';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createVeniceModelsService,
+  mapModel,
   UnknownModelError,
 } from '../../src/services/venice.models.service';
 
@@ -16,6 +17,7 @@ type VeniceRawModel = {
   model_spec?: {
     name?: string;
     availableContextTokens?: number;
+    maxCompletionTokens?: number;
     capabilities?: {
       supportsReasoning?: boolean;
       supportsVision?: boolean;
@@ -25,6 +27,10 @@ type VeniceRawModel = {
     pricing?: {
       input?: { usd?: number; diem?: number };
       output?: { usd?: number; diem?: number };
+    };
+    constraints?: {
+      temperature?: { default?: number };
+      top_p?: { default?: number };
     };
   };
 };
@@ -118,6 +124,8 @@ describe('venice.models.service [V2]', () => {
           supportsWebSearch: false,
           description: 'A general-purpose 70B model tuned for instruction-following.',
           pricing: { inputUsdPerMTok: 0.6, outputUsdPerMTok: 2.4 },
+          defaultTemperature: null,
+          defaultTopP: null,
         },
         {
           id: 'qwen-qwq-32b',
@@ -129,6 +137,8 @@ describe('venice.models.service [V2]', () => {
           supportsWebSearch: false,
           description: null,
           pricing: null,
+          defaultTemperature: null,
+          defaultTopP: null,
         },
         {
           id: 'mistral-vision',
@@ -140,6 +150,8 @@ describe('venice.models.service [V2]', () => {
           supportsWebSearch: false,
           description: null,
           pricing: null,
+          defaultTemperature: null,
+          defaultTopP: null,
         },
       ]);
     });
@@ -370,7 +382,6 @@ describe('venice.models.service [V2]', () => {
         model_spec: {
           name: 'Has Cap 2',
           availableContextTokens: 65536,
-          // @ts-expect-error — local type omits field
           maxCompletionTokens: 16384,
         },
       };
@@ -379,6 +390,61 @@ describe('venice.models.service [V2]', () => {
       await svc.fetchModels('user-1');
       expect(svc.getModelMaxCompletionTokens('has-cap-2')).toBe(16384);
       expect(() => svc.getModelMaxCompletionTokens('nope')).toThrow(UnknownModelError);
+    });
+  });
+
+  describe('mapModel', () => {
+    it('extracts defaultTemperature and defaultTopP from model_spec.constraints', () => {
+      const raw = {
+        id: 'qwen-3-6-plus',
+        type: 'text',
+        model_spec: {
+          name: 'Qwen 3.6 Plus',
+          availableContextTokens: 1_000_000,
+          maxCompletionTokens: 65_536,
+          constraints: {
+            temperature: { default: 0.7 },
+            top_p: { default: 0.8 },
+          },
+        },
+      };
+      const info = mapModel(raw);
+      expect(info.defaultTemperature).toBe(0.7);
+      expect(info.defaultTopP).toBe(0.8);
+    });
+
+    it('returns null defaults when constraints block is absent', () => {
+      const raw = {
+        id: 'minimal-model',
+        type: 'text',
+        model_spec: {
+          name: 'Minimal',
+          availableContextTokens: 8_000,
+          maxCompletionTokens: 2_000,
+        },
+      };
+      const info = mapModel(raw);
+      expect(info.defaultTemperature).toBeNull();
+      expect(info.defaultTopP).toBeNull();
+    });
+
+    it('returns null for missing default keys inside constraints', () => {
+      const raw = {
+        id: 'partial-constraints',
+        type: 'text',
+        model_spec: {
+          name: 'Partial',
+          availableContextTokens: 8_000,
+          maxCompletionTokens: 2_000,
+          constraints: {
+            temperature: { min: 0, max: 2 }, // no `default`
+            // top_p key entirely absent
+          },
+        },
+      };
+      const info = mapModel(raw);
+      expect(info.defaultTemperature).toBeNull();
+      expect(info.defaultTopP).toBeNull();
     });
   });
 });
