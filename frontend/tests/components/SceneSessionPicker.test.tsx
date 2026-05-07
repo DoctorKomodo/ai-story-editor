@@ -100,4 +100,45 @@ describe('SceneSessionPicker', () => {
     await user.click(screen.getByRole('button', { name: /new scene/i }));
     expect(onNew).toHaveBeenCalledOnce();
   });
+
+  // [B1] Escape during rename should only exit rename mode, NOT close the dropdown.
+  it('[B1] Escape during rename exits rename mode but leaves dropdown open', async () => {
+    const user = userEvent.setup();
+    renderPicker();
+    // Open the dropdown.
+    await user.click(screen.getByRole('button', { name: /scene session/i }));
+    // Start renaming.
+    await user.click(screen.getByRole('button', { name: /rename veranda/i }));
+    expect(screen.getByDisplayValue('Veranda')).toBeInTheDocument();
+
+    // Press Escape — should cancel rename but keep the listbox in the DOM.
+    await user.keyboard('{Escape}');
+
+    // Rename input is gone.
+    expect(screen.queryByDisplayValue('Veranda')).not.toBeInTheDocument();
+    // Dropdown is still open (listbox role still present).
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    // onRename must not have fired.
+    expect(onRename).not.toHaveBeenCalled();
+  });
+
+  // [B2] Blur after Escape should not commit the rename.
+  it('[B2] blur after Escape does not commit the rename', async () => {
+    const user = userEvent.setup();
+    renderPicker();
+    await user.click(screen.getByRole('button', { name: /scene session/i }));
+    await user.click(screen.getByRole('button', { name: /rename veranda/i }));
+    const input = screen.getByDisplayValue('Veranda');
+    // Type something first so there is a changed draft.
+    await user.clear(input);
+    await user.type(input, 'New Name');
+
+    // Simulate Escape then blur (same sequence as real browser).
+    await user.keyboard('{Escape}');
+    // jsdom doesn't fire blur automatically after Escape; fire it manually.
+    input.blur();
+
+    // onRename must not have been called — the cancel should have suppressed the blur.
+    expect(onRename).not.toHaveBeenCalled();
+  });
 });

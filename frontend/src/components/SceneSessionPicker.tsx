@@ -120,6 +120,9 @@ export function SceneSessionPicker({
   const [renameDraft, setRenameDraft] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  // [B2] Tracks whether the current rename was cancelled (Escape) so that the
+  // subsequent blur event (which fires after Escape in real browsers) is a no-op.
+  const cancelledRef = useRef(false);
 
   const active = sessions.find((s) => s.id === activeSessionId) ?? null;
 
@@ -158,11 +161,15 @@ export function SceneSessionPicker({
   }, [open]);
 
   const beginRename = useCallback((s: SceneSession): void => {
+    cancelledRef.current = false;
     setRenamingId(s.id);
     setRenameDraft(s.title);
   }, []);
 
   const commitRename = useCallback((): void => {
+    // [B2] If the rename was cancelled (Escape), the blur that fires right after
+    // in real browsers must not commit the stale draft.
+    if (cancelledRef.current) return;
     if (renamingId === null) return;
     const trimmed = renameDraft.trim();
     if (trimmed.length > 0) {
@@ -172,6 +179,7 @@ export function SceneSessionPicker({
   }, [renamingId, renameDraft, onRename]);
 
   const cancelRename = useCallback((): void => {
+    cancelledRef.current = true;
     setRenamingId(null);
     setRenameDraft('');
   }, []);
@@ -183,6 +191,11 @@ export function SceneSessionPicker({
         commitRename();
       } else if (e.key === 'Escape') {
         e.preventDefault();
+        // [B1] Stop the event from bubbling to the document-level keydown
+        // listener (which would close the whole dropdown). Escape here should
+        // only exit rename mode, not collapse the picker.
+        e.stopPropagation();
+        e.nativeEvent.stopImmediatePropagation();
         cancelRename();
       }
     },
