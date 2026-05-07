@@ -144,12 +144,17 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   const pendingTimersRef = useRef<number[]>([]);
   useEffect(() => {
     return () => {
-      pendingTimersRef.current.forEach((t) => window.clearTimeout(t));
+      pendingTimersRef.current.forEach((t) => {
+        window.clearTimeout(t);
+      });
     };
   }, []);
 
-  const { generate: transcriptGenerate, retry: transcriptRetry, messages: transcriptMessages } =
-    transcript;
+  const {
+    generate: transcriptGenerate,
+    retry: transcriptRetry,
+    messages: transcriptMessages,
+  } = transcript;
   const onGenerate = useCallback(
     async (text: string) => {
       let chatId = activeId;
