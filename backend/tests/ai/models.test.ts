@@ -127,6 +127,8 @@ describe('GET /api/ai/models [V1]', () => {
           supportsWebSearch: false,
           description: null,
           pricing: null,
+          defaultTemperature: null,
+          defaultTopP: null,
         },
         {
           id: 'qwen-qwq-32b',
@@ -138,6 +140,8 @@ describe('GET /api/ai/models [V1]', () => {
           supportsWebSearch: false,
           description: null,
           pricing: null,
+          defaultTemperature: null,
+          defaultTopP: null,
         },
       ],
     });

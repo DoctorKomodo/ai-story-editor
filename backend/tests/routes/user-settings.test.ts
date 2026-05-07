@@ -79,7 +79,7 @@ describe('User settings routes [B11]', () => {
           smartQuotes: true,
           emDashExpansion: true,
         },
-        chat: { model: null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
+        chat: { model: null, overrides: {} },
         ai: { includeVeniceSystemPrompt: true },
         prompts: {
           system: null,
@@ -125,7 +125,7 @@ describe('User settings routes [B11]', () => {
     expect(res.body.settings.theme).toBe('dark');
     expect(res.body.settings.prose.font).toBe('iowan');
     expect(res.body.settings.writing.spellcheck).toBe(true);
-    expect(res.body.settings.chat.temperature).toBe(0.85);
+    expect(res.body.settings.chat.overrides).toEqual({});
     expect(res.body.settings.ai.includeVeniceSystemPrompt).toBe(true);
   });
 
