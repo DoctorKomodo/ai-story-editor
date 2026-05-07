@@ -181,25 +181,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
   const responseTokens = Math.min(input.modelMaxCompletionTokens, input.userMaxCompletionTokens);
   const includeVeniceSystemPrompt = input.includeVeniceSystemPrompt ?? true;
 
-  // ── scene: template appended to system message; user message is raw direction ──
-  if (input.action === 'scene') {
-    if (!input.freeformInstruction) {
-      throw new PromptValidationError('freeformInstruction is required for action "scene"');
-    }
-    const sceneTemplate = resolvePrompt(input.userPrompts, 'scene');
-    const baseSystem = resolvePrompt(input.userPrompts, 'system');
-    const systemContent = `${baseSystem}\n\n${sceneTemplate}`;
-    return {
-      messages: [
-        { role: 'system', content: systemContent },
-        { role: 'user', content: input.freeformInstruction },
-      ],
-      venice_parameters: { include_venice_system_prompt: includeVeniceSystemPrompt },
-      max_completion_tokens: responseTokens,
-    };
-  }
-
-  // ── All other actions ──────────────────────────────────────────────────────
+  // ── Shared context blocks (used by all actions) ───────────────────────────
 
   const promptBudgetTokens = Math.max(
     0,
@@ -225,14 +207,16 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
           .join('\n')}`
       : '';
 
-  const taskBlock = buildTaskBlock(input);
+  // For scene, the scene template replaces taskBlock in the fixed-token budget.
+  const sceneTemplate = input.action === 'scene' ? resolvePrompt(input.userPrompts, 'scene') : '';
+  const taskBlock = input.action === 'scene' ? '' : buildTaskBlock(input);
 
   const sysTokens = estimateTokens(systemContent);
   const fixedTokens =
     sysTokens +
     estimateTokens(worldNotesBlock) +
     estimateTokens(charactersBlock) +
-    estimateTokens(taskBlock);
+    (input.action === 'scene' ? estimateTokens(sceneTemplate) : estimateTokens(taskBlock));
 
   const chapterBudgetTokens = promptBudgetTokens - fixedTokens;
 
@@ -247,6 +231,30 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
   }
 
   const chapterBlock = chapterText.length > 0 ? `Chapter so far:\n${chapterText}` : '';
+
+  // ── scene: all context blocks go into the system message; user message is raw direction ──
+  if (input.action === 'scene') {
+    if (!input.freeformInstruction) {
+      throw new PromptValidationError('freeformInstruction is required for action "scene"');
+    }
+    const systemParts = [
+      systemContent,
+      worldNotesBlock,
+      charactersBlock,
+      chapterBlock,
+      sceneTemplate,
+    ].filter((p) => p.length > 0);
+    return {
+      messages: [
+        { role: 'system', content: systemParts.join('\n\n') },
+        { role: 'user', content: input.freeformInstruction },
+      ],
+      venice_parameters: { include_venice_system_prompt: includeVeniceSystemPrompt },
+      max_completion_tokens: responseTokens,
+    };
+  }
+
+  // ── All other actions ──────────────────────────────────────────────────────
 
   const userParts = [worldNotesBlock, charactersBlock, chapterBlock, taskBlock].filter(
     (p) => p.length > 0,

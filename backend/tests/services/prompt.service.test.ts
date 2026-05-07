@@ -340,4 +340,23 @@ describe('buildPrompt — scene action', () => {
     expect(out.messages[1].content).not.toContain('Attached selection');
     expect(out.messages[1].content).not.toContain('User question');
   });
+
+  it('includes world notes, characters, and chapter content in the system message for scene', () => {
+    const out = buildPrompt({
+      ...baseSceneInput,
+      worldNotes: 'The town is haunted.',
+      characters: [
+        { name: 'Jenny', role: 'protagonist', keyTraits: 'curious' },
+        { name: 'Linda', role: null, keyTraits: 'reserved' },
+      ],
+      chapterContent: 'The veranda was empty when she arrived.',
+    });
+    expect(out.messages[0].role).toBe('system');
+    expect(out.messages[0].content).toContain('The town is haunted.');
+    expect(out.messages[0].content).toContain('Jenny');
+    expect(out.messages[0].content).toContain('Linda');
+    expect(out.messages[0].content).toContain('The veranda was empty when she arrived.');
+    // The user message stays raw.
+    expect(out.messages[1].content).toBe(baseSceneInput.freeformInstruction);
+  });
 });
