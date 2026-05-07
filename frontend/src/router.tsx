@@ -17,18 +17,23 @@ import { useSessionStore } from '@/store/session';
 // Build-time gate: in prod builds (`vite build`), `import.meta.env.PROD` is
 // the literal `true`, so this expression dead-code-eliminates the dynamic
 // import entirely and the Devtools package is excluded from the bundle.
+// Test mode (`MODE === 'test'`) is also gated out so vitest doesn't
+// resolve the lazy() promise after a test has finished and emit
+// "A suspended resource finished loading inside a test" warnings on every
+// test that mounts <AppRouter />. Devtools UI is meaningless in unit tests.
 // In dev builds it resolves to a lazy component; runtime `isDebugMode()`
 // decides whether to mount it. Trade-off: this disables the localStorage
 // opt-in for *prod* builds (you can no longer flip Devtools on in a deployed
 // prod build via `localStorage['inkwell:debug']='1'`). That feature was
 // speculative; correct prod-bundle exclusion is non-speculative.
-const ReactQueryDevtoolsLazy = import.meta.env.PROD
-  ? null
-  : lazy(() =>
-      import('@tanstack/react-query-devtools').then((m) => ({
-        default: m.ReactQueryDevtools,
-      })),
-    );
+const ReactQueryDevtoolsLazy =
+  import.meta.env.PROD || import.meta.env.MODE === 'test'
+    ? null
+    : lazy(() =>
+        import('@tanstack/react-query-devtools').then((m) => ({
+          default: m.ReactQueryDevtools,
+        })),
+      );
 
 /**
  * Side-effect-only component that triggers the user-settings query as soon
