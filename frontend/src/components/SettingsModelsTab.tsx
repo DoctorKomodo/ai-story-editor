@@ -5,16 +5,20 @@
 //      default model used for chat and continuations. The "Use this model"
 //      CTA in the detail pane PATCHes /users/me/settings { chat: { model } }.
 //   2. Generation parameters — three sliders (temperature, topP, maxTokens)
-//      bound to settings.chat. Each tick PATCHes; the optimistic update
-//      keeps the slider responsive.
+//      showing the resolved value for the active model. Each tick PATCHes a
+//      per-model override into settings.chat.overrides[modelId].
 //
 // [X33] Replaces the X27 trigger-button + modal flow with an inline picker
 // living inside the tab.
+// [X28] Sliders now show resolved values (override → venice-default →
+// global-default) and write per-model overrides instead of flat top-level
+// fields.
 import type { ChangeEvent, JSX } from 'react';
 import { useId } from 'react';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
-import { useModelsQuery } from '@/hooks/useModels';
-import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
+import { type Model, useModelsQuery } from '@/hooks/useModels';
+import { resolveChatParams, useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
+import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
 
 interface SliderRowProps {
   id: string;
@@ -82,15 +86,46 @@ export function SettingsModelsTab(): JSX.Element {
   const updateSetting = useUpdateUserSetting();
   const modelsQuery = useModelsQuery();
 
-  const params = settings.chat;
+  const activeModelId = settings.chat.model;
+  const activeModel: Model | undefined = modelsQuery.data?.find((m) => m.id === activeModelId);
+
+  // Resolve the effective params for the active model. When no model is
+  // selected (or models haven't loaded yet), fall back to global defaults.
+  const resolvedParams = activeModel
+    ? resolveChatParams(settings, activeModel)
+    : {
+        temperature: GLOBAL_TEXT_GEN_DEFAULTS.temperature,
+        topP: GLOBAL_TEXT_GEN_DEFAULTS.topP,
+        maxTokens: GLOBAL_TEXT_GEN_DEFAULTS.maxTokens,
+      };
+
   const onTemperature = (v: number): void => {
-    updateSetting.mutate({ chat: { temperature: v } });
+    if (!activeModelId) return;
+    const prev = settings.chat.overrides[activeModelId] ?? {};
+    updateSetting.mutate({
+      chat: {
+        overrides: { ...settings.chat.overrides, [activeModelId]: { ...prev, temperature: v } },
+      },
+    });
   };
   const onTopP = (v: number): void => {
-    updateSetting.mutate({ chat: { topP: v } });
+    if (!activeModelId) return;
+    const prev = settings.chat.overrides[activeModelId] ?? {};
+    updateSetting.mutate({
+      chat: { overrides: { ...settings.chat.overrides, [activeModelId]: { ...prev, topP: v } } },
+    });
   };
   const onMaxTokens = (v: number): void => {
-    updateSetting.mutate({ chat: { maxTokens: Math.round(v) } });
+    if (!activeModelId) return;
+    const prev = settings.chat.overrides[activeModelId] ?? {};
+    updateSetting.mutate({
+      chat: {
+        overrides: {
+          ...settings.chat.overrides,
+          [activeModelId]: { ...prev, maxTokens: Math.round(v) },
+        },
+      },
+    });
   };
 
   return (
@@ -126,7 +161,7 @@ export function SettingsModelsTab(): JSX.Element {
           min={0}
           max={2}
           step={0.05}
-          value={params.temperature}
+          value={resolvedParams.temperature}
           decimals={2}
           testId="param-temperature"
           onChange={onTemperature}
@@ -138,7 +173,7 @@ export function SettingsModelsTab(): JSX.Element {
           min={0}
           max={1}
           step={0.05}
-          value={params.topP}
+          value={resolvedParams.topP}
           decimals={2}
           testId="param-top-p"
           onChange={onTopP}
@@ -150,7 +185,7 @@ export function SettingsModelsTab(): JSX.Element {
           min={1}
           max={32_000}
           step={64}
-          value={params.maxTokens}
+          value={resolvedParams.maxTokens}
           decimals={0}
           testId="param-max-tokens"
           onChange={onMaxTokens}

@@ -2,15 +2,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Model } from '@/hooks/useModels';
 import {
   DEFAULT_SETTINGS,
   mergeSettings,
+  resolveChatParams,
   type UserSettings,
   userSettingsQueryKey,
   useUpdateUserSetting,
   useUserSettings,
 } from '@/hooks/useUserSettings';
 import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
 import { useErrorStore } from '@/store/errors';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -45,12 +48,10 @@ describe('mergeSettings', () => {
     expect(merged.prose.lineHeight).toBe(DEFAULT_SETTINGS.prose.lineHeight);
   });
 
-  it('one-level-merges chat (model only without losing temperature/topP/maxTokens)', () => {
+  it('one-level-merges chat (model only without losing overrides)', () => {
     const merged = mergeSettings(DEFAULT_SETTINGS, { chat: { model: 'venice-uncensored' } });
     expect(merged.chat.model).toBe('venice-uncensored');
-    expect(merged.chat.temperature).toBe(DEFAULT_SETTINGS.chat.temperature);
-    expect(merged.chat.topP).toBe(DEFAULT_SETTINGS.chat.topP);
-    expect(merged.chat.maxTokens).toBe(DEFAULT_SETTINGS.chat.maxTokens);
+    expect(merged.chat.overrides).toEqual(DEFAULT_SETTINGS.chat.overrides);
   });
 
   it('one-level-merges writing (spellcheck without losing other writing flags)', () => {
@@ -135,5 +136,81 @@ describe('useUpdateUserSetting', () => {
     });
     expect(qc.getQueryData<UserSettings>(userSettingsQueryKey)?.theme).toBe('paper');
     expect(useErrorStore.getState().errors[0].source).toBe('settings.update');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveChatParams
+// ---------------------------------------------------------------------------
+
+const MODEL_WITH_DEFAULTS: Model = {
+  id: 'qwen-3-6-plus',
+  name: 'Qwen 3.6 Plus',
+  contextLength: 1_000_000,
+  maxCompletionTokens: 65_536,
+  supportsReasoning: true,
+  supportsVision: true,
+  supportsWebSearch: true,
+  description: null,
+  pricing: null,
+  defaultTemperature: 0.7,
+  defaultTopP: 0.8,
+};
+
+const MODEL_BARE: Model = {
+  ...MODEL_WITH_DEFAULTS,
+  id: 'bare',
+  defaultTemperature: null,
+  defaultTopP: null,
+};
+
+describe('resolveChatParams (frontend)', () => {
+  it('uses Venice default when no override and Venice exposes one', () => {
+    const r = resolveChatParams(
+      { chat: { model: null, overrides: {} } } as never,
+      MODEL_WITH_DEFAULTS,
+    );
+    expect(r.temperature).toBe(0.7);
+    expect(r.source.temperature).toBe('venice-default');
+  });
+
+  it('falls back to global default when Venice exposes neither', () => {
+    const r = resolveChatParams({ chat: { model: null, overrides: {} } } as never, MODEL_BARE);
+    expect(r.temperature).toBe(GLOBAL_TEXT_GEN_DEFAULTS.temperature);
+    expect(r.source.temperature).toBe('global-default');
+  });
+
+  it('user override wins', () => {
+    const r = resolveChatParams(
+      { chat: { model: null, overrides: { 'qwen-3-6-plus': { temperature: 1.2 } } } } as never,
+      MODEL_WITH_DEFAULTS,
+    );
+    expect(r.temperature).toBe(1.2);
+    expect(r.source.temperature).toBe('override');
+  });
+
+  it('reports overridden flags for Reset-button enablement', () => {
+    const r = resolveChatParams(
+      { chat: { model: null, overrides: { 'qwen-3-6-plus': { topP: 0.5 } } } } as never,
+      MODEL_WITH_DEFAULTS,
+    );
+    expect(r.overridden).toEqual({ temperature: false, topP: true, maxTokens: false });
+  });
+
+  it('clamps maxTokens override that exceeds model cap', () => {
+    const r = resolveChatParams(
+      { chat: { model: null, overrides: { 'qwen-3-6-plus': { maxTokens: 999_999 } } } } as never,
+      MODEL_WITH_DEFAULTS,
+    );
+    expect(r.maxTokens).toBe(MODEL_WITH_DEFAULTS.maxCompletionTokens);
+    expect(r.source.maxTokens).toBe('override-capped');
+    expect(r.overridden.maxTokens).toBe(true);
+  });
+
+  it('maxTokens with no override uses min(global, cap)', () => {
+    const smallCapModel: Model = { ...MODEL_WITH_DEFAULTS, maxCompletionTokens: 500 };
+    const r = resolveChatParams({ chat: { model: null, overrides: {} } } as never, smallCapModel);
+    expect(r.maxTokens).toBe(500);
+    expect(r.source.maxTokens).toBe('venice-default');
   });
 });
