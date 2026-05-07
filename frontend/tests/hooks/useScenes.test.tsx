@@ -125,20 +125,19 @@ describe('useScenes', () => {
     expect(api.patchChat).toHaveBeenCalledWith('s1', 'New title');
   });
 
-  it('rename() optimistically updates the title in the query cache', async () => {
-    // Bug 2 fix: the auto-title in SceneTab now calls useScenes.rename()
-    // instead of patchChatApi directly. renameMut.onSuccess must immediately
-    // update the cache so the picker shows the new title without waiting for
-    // the refetch round-trip.
+  it('rename() reflects the server-returned title in the query cache, not the client input', async () => {
+    // The server normalises the title (e.g. trims whitespace). The cache must
+    // reflect the server value, not the raw client-supplied string, so the
+    // picker stays in sync with what is actually stored.
     vi.mocked(api.patchChat).mockResolvedValue({
       id: 's1',
       kind: 'scene',
-      title: 'New title',
+      title: 'Server-Normalized Title',
       chapterId: 'c1',
       createdAt: '',
       updatedAt: '',
     });
-    // Keep the refetch pending so we can assert on the optimistic cache state.
+    // Keep the refetch pending so we can assert on the cache before it refills.
     vi.mocked(api.listChats).mockResolvedValueOnce([
       { id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: '' },
     ]);
@@ -157,14 +156,16 @@ describe('useScenes', () => {
     const { result } = renderHook(() => useScenes('c1'), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
 
+    // The client sends a different string than what the server returns.
     await act(async () => {
-      await result.current.rename('s1', 'New title');
+      await result.current.rename('s1', 'client title');
     });
 
-    // Optimistic update: title must be reflected in cache immediately.
+    // Cache must reflect what the server returned, not the client input.
     const cached = client.getQueryData<api.ChatRow[]>(SCENE_LIST_KEY('c1'));
     expect(cached).toBeDefined();
-    expect(cached?.[0]?.title).toBe('New title');
+    expect(cached?.[0]?.title).toBe('Server-Normalized Title');
+    expect(cached?.[0]?.title).not.toBe('client title');
   });
 
   it('remove() calls api.deleteChat', async () => {

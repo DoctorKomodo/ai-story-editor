@@ -538,6 +538,47 @@ describe('SceneTab — renderTranscript retry visibility', () => {
     expect(directionBubbles[0]).toHaveTextContent('Jenny approaches Linda.');
   });
 
+  it('shows Retry on the last assistant card when the array ends on a user message', async () => {
+    // Issue 3: when the array ends on a user message (stream failed and the
+    // streaming row was removed), isLatest must still flag the last *assistant*
+    // so its Retry button remains visible.
+    const client = makeClient();
+    render(
+      <QueryClientProvider client={client}>
+        <SceneTab chapterId="c1" editor={null} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    // Seed: [user_1, assistant_1_done, user_2] — trailing user, no assistant yet.
+    act(() => {
+      useSceneTranscriptStore.getState().setChat('chat-1', [
+        { id: 'u1', role: 'user', content: 'First direction.', state: 'done' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'First response.',
+          model: 'Test Model',
+          state: 'done',
+        },
+        { id: 'u2', role: 'user', content: 'Second direction (no response yet).', state: 'done' },
+      ]);
+    });
+
+    await waitFor(() => {
+      // Only one assistant card is rendered (a1).
+      expect(screen.getAllByTestId('scene-candidate')).toHaveLength(1);
+    });
+
+    // The single assistant card must still show Retry even though it's not the
+    // last element in the messages array.
+    const retryButtons = screen.getAllByRole('button', { name: /retry/i });
+    expect(retryButtons).toHaveLength(1);
+  });
+
   it('shows separate direction bubbles when two different user turns produce candidates', async () => {
     const client = makeClient();
     render(

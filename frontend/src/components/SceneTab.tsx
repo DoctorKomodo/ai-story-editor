@@ -64,6 +64,17 @@ function renderTranscript(
   let lastUserContent: string | null = null;
   let prevDirectionShown: string | null = null;
 
+  // Pre-compute the index of the last assistant message so isLatest is correct
+  // even when the array ends on a user message (e.g. after failAssistant removes
+  // the streaming row, leaving [user, assistant_done, user]).
+  let lastAssistantIdx = -1;
+  for (let j = messages.length - 1; j >= 0; j--) {
+    if (messages[j].role === 'assistant') {
+      lastAssistantIdx = j;
+      break;
+    }
+  }
+
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     if (m.role === 'user') {
@@ -73,7 +84,7 @@ function renderTranscript(
     if (m.role !== 'assistant') continue;
     if (lastUserContent === null) continue; // orphaned assistant — shouldn't happen
 
-    const isLatest = i === messages.length - 1;
+    const isLatest = i === lastAssistantIdx;
     const state = m.state === 'streaming' ? ('streaming' as const) : ('done' as const);
 
     // Show direction bubble only on the first card per direction string.
@@ -261,6 +272,12 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   // from the bottom), stop auto-scrolling so they can read earlier content.
   const transcriptRef = useRef<HTMLElement>(null);
   const stickToBottomRef = useRef(true);
+
+  // Reset autoscroll pin whenever the active session changes so that session B
+  // doesn't inherit the scrolled-up state the user left in session A.
+  useEffect(() => {
+    stickToBottomRef.current = true;
+  }, [activeId]);
 
   const handleTranscriptScroll = useCallback(() => {
     const el = transcriptRef.current;

@@ -32,10 +32,13 @@ export function useScenes(chapterId: string | null) {
 
   const renameMut = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) => patchChat(id, title),
-    onSuccess: (_, vars) => {
+    onSuccess: (updatedChat, vars) => {
       if (chapterId) {
+        // Use the server-returned title rather than vars.title so that any
+        // server-side normalisation (trim, truncation) is reflected immediately
+        // in the cache without waiting for the invalidate refetch.
         qc.setQueryData<ChatRow[]>(sceneListKey(chapterId), (prev) =>
-          (prev ?? []).map((c) => (c.id === vars.id ? { ...c, title: vars.title } : c)),
+          (prev ?? []).map((c) => (c.id === vars.id ? { ...c, title: updatedChat.title } : c)),
         );
       }
       invalidate();
