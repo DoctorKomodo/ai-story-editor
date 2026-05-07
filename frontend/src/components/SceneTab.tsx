@@ -16,7 +16,7 @@
  *    the timer and restores the session visually.
  */
 import type { Editor as TiptapEditor } from '@tiptap/core';
-import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
+import { type JSX, useCallback, useEffect, useState } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { SceneCandidateCard } from '@/components/SceneCandidateCard';
 import { SceneComposer } from '@/components/SceneComposer';
@@ -24,6 +24,7 @@ import { SceneSessionPicker } from '@/components/SceneSessionPicker';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useScenes } from '@/hooks/useScenes';
 import { useSceneTranscript } from '@/hooks/useSceneTranscript';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { listMessagesForChat, patchChat as patchChatApi } from '@/lib/api';
 import type { SceneMessage } from '@/store/sceneTranscript';
@@ -34,7 +35,6 @@ export interface SceneTabProps {
   editor: TiptapEditor | null;
 }
 
-const UNDO_TIMEOUT_MS = 5_000;
 const TITLE_MAX_CHARS = 50;
 
 function truncateAtWordBoundary(text: string, max: number): string {
@@ -130,7 +130,9 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         .catch((err: unknown) => {
           if (cancelled) return;
           setHydrationError(
-            err instanceof Error ? err.message : "Couldn't load transcript. Try switching sessions.",
+            err instanceof Error
+              ? err.message
+              : "Couldn't load transcript. Try switching sessions.",
           );
         });
     } else {
@@ -141,25 +143,12 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
     };
   }, [activeId, setChat]);
 
-  // Pending soft-deletes — id ⇒ {title, timer}. Frontend hides the session
-  // immediately and waits UNDO_TIMEOUT_MS before calling the API.
-  const [pendingDeletes, setPendingDeletes] = useState<
-    Map<string, { title: string; timer: number }>
-  >(new Map());
-
-  // Track all pending timer IDs so we can cancel them if the component
-  // unmounts before the undo window expires. Without this, the setTimeout
-  // callback would still fire ~5 s later and call remove() (a real API DELETE)
-  // even though the user navigated away and never consciously confirmed the
-  // deletion.
-  const pendingTimersRef = useRef<number[]>([]);
-  useEffect(() => {
-    return () => {
-      pendingTimersRef.current.forEach((t) => {
-        window.clearTimeout(t);
-      });
-    };
-  }, []);
+  const {
+    pending: pendingDeletes,
+    isPending: isDeletePending,
+    scheduleDelete,
+    undo: undoDelete,
+  } = useSoftDelete(remove, { timeoutMs: 5_000 });
 
   const {
     generate: transcriptGenerate,
@@ -211,46 +200,23 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
     (id: string) => {
       const session = sessions.find((s) => s.id === id);
       if (!session) return;
-      const timer = window.setTimeout(() => {
-        // Remove from the timers ref before executing the deletion.
-        pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== timer);
-        void remove(id);
-        setPendingDeletes((prev) => {
-          const next = new Map(prev);
-          next.delete(id);
-          return next;
-        });
-      }, UNDO_TIMEOUT_MS);
-      // Register the timer so unmount cleanup can cancel it.
-      pendingTimersRef.current.push(timer);
-      setPendingDeletes((prev) => {
-        const next = new Map(prev);
-        next.set(id, { title: session.title ?? 'Untitled', timer });
-        return next;
-      });
+      scheduleDelete(id, session.title ?? 'Untitled');
       if (activeId === id) {
         const remaining = sessions.filter((s) => s.id !== id);
         setActiveId(remaining[0]?.id ?? null);
       }
     },
-    [sessions, remove, activeId],
+    [sessions, scheduleDelete, activeId],
   );
 
-  const onUndo = useCallback((id: string) => {
-    setPendingDeletes((prev) => {
-      const entry = prev.get(id);
-      if (entry) {
-        window.clearTimeout(entry.timer);
-        // Also remove from the ref so it won't be double-cleared on unmount.
-        pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== entry.timer);
-      }
-      const next = new Map(prev);
-      next.delete(id);
-      return next;
-    });
-  }, []);
+  const onUndo = useCallback(
+    (id: string) => {
+      undoDelete(id);
+    },
+    [undoDelete],
+  );
 
-  const visibleSessions = sessions.filter((s) => !pendingDeletes.has(s.id));
+  const visibleSessions = sessions.filter((s) => !isDeletePending(s.id));
 
   const lastUndoEntry = (() => {
     if (pendingDeletes.size === 0) return null;

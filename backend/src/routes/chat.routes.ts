@@ -83,7 +83,7 @@ const PostMessageBody = z
     if (!body.retry && !body.content) {
       ctx.addIssue({
         code: 'custom',
-        message: 'content is required when retry is not true',
+        message: 'content is required unless retry is true',
         path: ['content'],
       });
     }
@@ -209,6 +209,8 @@ export function createChatCrudRouter() {
         return;
       }
       const updated = await repo.update(id, { title: parsed.data.title });
+      // Belt-and-suspenders: row deleted between the ownership-check findById and
+      // the update (TOCTOU). Treated identically to "not found".
       if (!updated) {
         res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
         return;
@@ -323,19 +325,18 @@ export function createChatMessagesRouter() {
       const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
 
       // ── [SC6] Retry validation ────────────────────────────────────────────
+      // Compute lastUserMsg once; reused below for trailingUserContent.
       // Retry replays the last user turn; there must be at least one user
       // message in the history (regardless of what the trailing message is).
-      if (body.retry) {
-        const lastUserMsg = [...priorMessages].reverse().find((m) => m.role === 'user');
-        if (!lastUserMsg) {
-          res.status(400).json({
-            error: {
-              message: 'Cannot retry: no user message exists in this chat.',
-              code: 'retry_invalid_state',
-            },
-          });
-          return;
-        }
+      const lastUserMsg = priorMessages.findLast((m) => m.role === 'user');
+      if (body.retry && !lastUserMsg) {
+        res.status(400).json({
+          error: {
+            message: 'Cannot retry: no user message exists in this chat.',
+            code: 'retry_invalid_state',
+          },
+        });
+        return;
       }
 
       // ── 2. Prime models cache (throws NoVeniceKeyError if no BYOK) ────────
@@ -398,13 +399,11 @@ export function createChatMessagesRouter() {
       // instruction so the prompt builder assembles the system message
       // correctly. On a normal turn, use body.content (guaranteed non-empty
       // by superRefine when retry is false/omitted).
+      // lastUserMsg is guaranteed non-null here for retry (checked above).
       const trailingUserContent: string = body.retry
-        ? (() => {
-            const lastUser = [...priorMessages].reverse().find((m) => m.role === 'user')!;
-            return typeof lastUser.contentJson === 'string'
-              ? lastUser.contentJson
-              : JSON.stringify(lastUser.contentJson);
-          })()
+        ? typeof lastUserMsg!.contentJson === 'string'
+          ? lastUserMsg!.contentJson
+          : JSON.stringify(lastUserMsg!.contentJson)
         : (body.content as string);
 
       const {

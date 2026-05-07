@@ -52,7 +52,14 @@ describe('useScenes', () => {
   });
 
   it('rename() calls api.patchChat', async () => {
-    vi.mocked(api.patchChat).mockResolvedValue({} as never);
+    vi.mocked(api.patchChat).mockResolvedValue({
+      id: 's1',
+      kind: 'scene',
+      title: 'New title',
+      chapterId: 'c1',
+      createdAt: '',
+      updatedAt: '',
+    });
     const { result } = renderHook(() => useScenes('c1'), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
     await act(async () => {
