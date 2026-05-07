@@ -213,6 +213,27 @@ export function createChatCrudRouter() {
     }
   });
 
+  router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params.id as string;
+    try {
+      const repo = createChatRepo(req);
+      const existing = await repo.findById(id);
+      if (!existing) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      const ok = await repo.remove(id);
+      if (!ok) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      res.status(204).send();
+    } catch (err) {
+      console.error('[chat.delete]', err);
+      next(err);
+    }
+  });
+
   return router;
 }
 

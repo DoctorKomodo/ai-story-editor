@@ -232,6 +232,40 @@ async function veniceSetup(username: string): Promise<{
 
 // ─── SC6 suite ────────────────────────────────────────────────────────────────
 
+// Helper: queue a fresh SSE response on the fetch spy (shared by SC6 and SC8 suites).
+function queueSseResponse(fetchSpy: ReturnType<typeof vi.fn>, content: string): void {
+  fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, SC5_MODEL_LIST_BODY));
+  fetchSpy.mockResolvedValueOnce(
+    sc5SseStreamResponse([
+      {
+        id: 'chatcmpl-retry',
+        object: 'chat.completion.chunk',
+        choices: [{ index: 0, delta: { content }, finish_reason: null }],
+      },
+    ]),
+  );
+}
+
+// Fire a POST /messages call and drain the SSE stream (so the assistant message is persisted).
+async function sendMessage(
+  agent: ReturnType<typeof request.agent>,
+  chatId: string,
+  body: Record<string, unknown>,
+): Promise<number> {
+  const res = await agent
+    .post(`/api/chats/${chatId}/messages`)
+    .buffer(true)
+    .parse((response, callback) => {
+      let data = '';
+      response.on('data', (chunk: Buffer) => {
+        data += chunk.toString();
+      });
+      response.on('end', () => callback(null, data));
+    })
+    .send(body);
+  return res.status as number;
+}
+
 describe('POST /api/chats/:chatId/messages — retry flag', () => {
   beforeEach(async () => {
     _resetSessionStore();
@@ -244,40 +278,6 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     _resetSessionStore();
     await resetAll();
   });
-
-  // Helper: queue a fresh SSE response on the fetch spy.
-  function queueSseResponse(fetchSpy: ReturnType<typeof vi.fn>, content: string): void {
-    fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, SC5_MODEL_LIST_BODY));
-    fetchSpy.mockResolvedValueOnce(
-      sc5SseStreamResponse([
-        {
-          id: 'chatcmpl-retry',
-          object: 'chat.completion.chunk',
-          choices: [{ index: 0, delta: { content }, finish_reason: null }],
-        },
-      ]),
-    );
-  }
-
-  // Fire a POST /messages call and drain the SSE stream (so the assistant message is persisted).
-  async function sendMessage(
-    agent: ReturnType<typeof request.agent>,
-    chatId: string,
-    body: Record<string, unknown>,
-  ): Promise<number> {
-    const res = await agent
-      .post(`/api/chats/${chatId}/messages`)
-      .buffer(true)
-      .parse((response, callback) => {
-        let data = '';
-        response.on('data', (chunk: Buffer) => {
-          data += chunk.toString();
-        });
-        response.on('end', () => callback(null, data));
-      })
-      .send(body);
-    return res.status as number;
-  }
 
   it('does not persist a new user message when retry=true', async () => {
     const { agent, chapterId, fetchSpy } = await veniceSetup('sc6-retry-u1');
@@ -430,6 +430,54 @@ describe('PATCH /api/chats/:id', () => {
 
     await agent.patch(`/api/chats/${chatId}`).send({ title: '' }).expect(400);
     await agent.patch(`/api/chats/${chatId}`).send({}).expect(400);
+  });
+});
+
+// ─── SC8 suite ────────────────────────────────────────────────────────────────
+
+describe('DELETE /api/chats/:id', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('deletes the chat and cascades messages', async () => {
+    const { agent, chapterId, fetchSpy } = await veniceSetup('sc8-delete-u1');
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 's', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    // Add a message so we can confirm cascade.
+    queueSseResponse(fetchSpy, 'Assistant reply.');
+    await sendMessage(agent, chatId, { content: 'd', modelId: SC5_MODEL_ID });
+
+    await agent.delete(`/api/chats/${chatId}`).expect(204);
+
+    await agent.get(`/api/chats/${chatId}/messages`).expect(404);
+  });
+
+  it('returns 404 for unknown id', async () => {
+    const { agent } = await setup('sc8-delete-u2');
+    await agent.delete('/api/chats/cl000notreal').expect(404);
+  });
+
+  it('returns 404 for chat owned by another user', async () => {
+    const { agent: agentA, chapterId } = await setup('sc8-delete-u3');
+    const created = await agentA
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'a', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    const { agent: agentB } = await setupAsDifferentUser('sc8-delete-u4');
+    await agentB.delete(`/api/chats/${chatId}`).expect(404);
   });
 });
 
