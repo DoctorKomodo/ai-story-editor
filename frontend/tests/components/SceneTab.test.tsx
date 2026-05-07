@@ -9,7 +9,7 @@
  * the component can mount without network access.
  */
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -333,5 +333,252 @@ describe('SceneTab — [A3] transcript hydration error', () => {
       },
       { timeout: 3000 },
     );
+  });
+});
+
+// ─── [Bug 1] renderTranscript — assistant-first walk ─────────────────────────
+//
+// Verifies that retry's streaming assistant row renders as a second candidate
+// card even though no new user message accompanies it. The store is seeded
+// directly (bypassing network) to isolate the rendering logic.
+
+describe('SceneTab — renderTranscript retry visibility', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  function makeClient(): QueryClient {
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, DEFAULT_SETTINGS);
+    qc.setQueryData(modelsQueryKey, [{ id: 'model-a', name: 'Test Model' }]);
+    return qc;
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('test-token');
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    useSceneTranscriptStore.getState().setChat(null, []);
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/chats')) {
+        return Promise.resolve(
+          new Response(JSON.stringify({ chats: [] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
+    useSceneTranscriptStore.getState().setChat(null, []);
+  });
+
+  it('renders two candidate cards when a streaming assistant follows a done assistant for the same user turn', async () => {
+    const client = makeClient();
+    render(
+      <QueryClientProvider client={client}>
+        <SceneTab chapterId="c1" editor={null} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    // Seed the store: [user_1, assistant_1_done, assistant_2_streaming]
+    act(() => {
+      useSceneTranscriptStore.getState().setChat('chat-1', [
+        { id: 'u1', role: 'user', content: 'Jenny approaches Linda.', state: 'done' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'Linda was already…',
+          model: 'Test Model',
+          state: 'done',
+        },
+        { id: 'a2', role: 'assistant', content: '', model: 'Test Model', state: 'streaming' },
+      ]);
+    });
+
+    // Both assistant messages must produce a card.
+    await waitFor(() => {
+      expect(screen.getAllByTestId('scene-candidate')).toHaveLength(2);
+    });
+  });
+
+  it('shows thinking-dots on the streaming card when candidate is empty', async () => {
+    const client = makeClient();
+    render(
+      <QueryClientProvider client={client}>
+        <SceneTab chapterId="c1" editor={null} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    act(() => {
+      useSceneTranscriptStore.getState().setChat('chat-1', [
+        { id: 'u1', role: 'user', content: 'Jenny approaches Linda.', state: 'done' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'Linda was already…',
+          model: 'Test Model',
+          state: 'done',
+        },
+        { id: 'a2', role: 'assistant', content: '', model: 'Test Model', state: 'streaming' },
+      ]);
+    });
+
+    await waitFor(() => {
+      // The second card (empty content, streaming) must show thinking dots.
+      expect(screen.getByTestId('thinking-dots')).toBeInTheDocument();
+    });
+  });
+
+  it('shows Retry only on the last (latest) card', async () => {
+    const client = makeClient();
+    render(
+      <QueryClientProvider client={client}>
+        <SceneTab chapterId="c1" editor={null} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    // Two done assistants — only the last one gets Retry.
+    act(() => {
+      useSceneTranscriptStore.getState().setChat('chat-1', [
+        { id: 'u1', role: 'user', content: 'Jenny approaches Linda.', state: 'done' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'First draft.',
+          model: 'Test Model',
+          state: 'done',
+        },
+        {
+          id: 'a2',
+          role: 'assistant',
+          content: 'Second draft.',
+          model: 'Test Model',
+          state: 'done',
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('scene-candidate')).toHaveLength(2);
+    });
+
+    // Only one Retry button total — on the second (latest) card.
+    const retryButtons = screen.getAllByRole('button', { name: /retry/i });
+    expect(retryButtons).toHaveLength(1);
+
+    // First card is superseded.
+    expect(screen.getByText(/superseded/i)).toBeInTheDocument();
+  });
+
+  it('shows direction bubble only on the first card when multiple candidates share the same direction', async () => {
+    const client = makeClient();
+    render(
+      <QueryClientProvider client={client}>
+        <SceneTab chapterId="c1" editor={null} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    act(() => {
+      useSceneTranscriptStore.getState().setChat('chat-1', [
+        { id: 'u1', role: 'user', content: 'Jenny approaches Linda.', state: 'done' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'First draft.',
+          model: 'Test Model',
+          state: 'done',
+        },
+        {
+          id: 'a2',
+          role: 'assistant',
+          content: 'Second draft.',
+          model: 'Test Model',
+          state: 'done',
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('scene-candidate')).toHaveLength(2);
+    });
+
+    // The direction bubble must appear exactly once (first card only).
+    const directionBubbles = screen.getAllByTestId('scene-direction-bubble');
+    expect(directionBubbles).toHaveLength(1);
+    expect(directionBubbles[0]).toHaveTextContent('Jenny approaches Linda.');
+  });
+
+  it('shows separate direction bubbles when two different user turns produce candidates', async () => {
+    const client = makeClient();
+    render(
+      <QueryClientProvider client={client}>
+        <SceneTab chapterId="c1" editor={null} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    act(() => {
+      useSceneTranscriptStore.getState().setChat('chat-1', [
+        { id: 'u1', role: 'user', content: 'Turn one direction.', state: 'done' },
+        {
+          id: 'a1',
+          role: 'assistant',
+          content: 'First response.',
+          model: 'Test Model',
+          state: 'done',
+        },
+        { id: 'u2', role: 'user', content: 'Turn two direction.', state: 'done' },
+        {
+          id: 'a2',
+          role: 'assistant',
+          content: 'Second response.',
+          model: 'Test Model',
+          state: 'done',
+        },
+      ]);
+    });
+
+    await waitFor(() => {
+      expect(screen.getAllByTestId('scene-candidate')).toHaveLength(2);
+    });
+
+    // Each card has its own distinct direction — both bubbles appear.
+    const directionBubbles = screen.getAllByTestId('scene-direction-bubble');
+    expect(directionBubbles).toHaveLength(2);
+    expect(directionBubbles[0]).toHaveTextContent('Turn one direction.');
+    expect(directionBubbles[1]).toHaveTextContent('Turn two direction.');
   });
 });

@@ -15,8 +15,12 @@ import { ThinkingDots } from '@/design/ThinkingDots';
  */
 
 export interface SceneCandidateCardProps {
-  /** The user-entered scene direction. */
-  direction: string;
+  /**
+   * The user-entered scene direction.
+   * Pass `null` to suppress the direction bubble on subsequent candidates for
+   * the same turn (de-duplication when multiple candidates share one direction).
+   */
+  direction: string | null;
   /** The AI-generated prose candidate. */
   candidate: string;
   /** Current generation state. */
@@ -64,10 +68,16 @@ export function SceneCandidateCard({
 }: SceneCandidateCardProps): JSX.Element {
   return (
     <div className="flex flex-col gap-2" data-testid="scene-candidate">
-      {/* Direction bubble — right-aligned, matches user messages in ChatMessages */}
-      <div className="self-end max-w-[85%] bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] text-ink leading-snug">
-        {direction}
-      </div>
+      {/* Direction bubble — right-aligned, matches user messages in ChatMessages.
+          Omitted when direction is null (subsequent candidates for the same turn). */}
+      {direction !== null && (
+        <div
+          className="self-end max-w-[85%] bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] text-ink leading-snug"
+          data-testid="scene-direction-bubble"
+        >
+          {direction}
+        </div>
+      )}
 
       {/* Candidate card */}
       <article className="rounded-[var(--radius)] border border-line bg-bg px-3.5 py-3">

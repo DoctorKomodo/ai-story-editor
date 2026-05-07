@@ -45,6 +45,15 @@ function truncateAtWordBoundary(text: string, max: number): string {
   return `${cut.trim().replace(/[.,;:!?]+$/, '')}…`;
 }
 
+/**
+ * Walk assistant-first so every assistant message — including a retry's new
+ * streaming row that has no paired user row of its own — gets rendered.
+ *
+ * Direction de-duplication (option a): when consecutive candidates share the
+ * same direction text, pass `direction={null}` on all but the first card so the
+ * direction bubble is suppressed. This avoids repeated bubbles stacking visually
+ * for the same turn while keeping the layout simple.
+ */
 function renderTranscript(
   messages: SceneMessage[],
   onInsert: (text: string) => void,
@@ -52,27 +61,39 @@ function renderTranscript(
   onCopy: (text: string) => void,
 ): JSX.Element[] {
   const cards: JSX.Element[] = [];
+  let lastUserContent: string | null = null;
+  let prevDirectionShown: string | null = null;
+
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
-    if (m.role !== 'user') continue;
-    const next = messages[i + 1];
-    if (!next || next.role !== 'assistant') continue;
-    const isLatest = i + 2 >= messages.length;
-    const state = next.state === 'streaming' ? ('streaming' as const) : ('done' as const);
+    if (m.role === 'user') {
+      lastUserContent = m.content;
+      continue;
+    }
+    if (m.role !== 'assistant') continue;
+    if (lastUserContent === null) continue; // orphaned assistant — shouldn't happen
+
+    const isLatest = i === messages.length - 1;
+    const state = m.state === 'streaming' ? ('streaming' as const) : ('done' as const);
+
+    // Show direction bubble only on the first card per direction string.
+    const direction = lastUserContent === prevDirectionShown ? null : lastUserContent;
+    prevDirectionShown = lastUserContent;
+
     cards.push(
       <SceneCandidateCard
-        key={next.id}
-        direction={m.content}
-        candidate={next.content}
+        key={m.id}
+        direction={direction}
+        candidate={m.content}
         state={state}
         isLatest={isLatest}
-        model={next.model}
+        model={m.model}
         onInsert={() => {
-          onInsert(next.content);
+          onInsert(m.content);
         }}
         onRetry={onRetry}
         onCopy={() => {
-          onCopy(next.content);
+          onCopy(m.content);
         }}
       />,
     );
