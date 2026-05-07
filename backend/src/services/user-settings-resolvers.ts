@@ -7,9 +7,9 @@
 // inputs so callers can always pass the resolved value into buildPrompt
 // without further branching.
 
-import { GLOBAL_TEXT_GEN_DEFAULTS } from '../lib/text-gen-defaults.js';
-import type { UserSettings } from '../routes/user-settings.routes.js';
-import type { ModelInfo } from '../services/venice.models.service.js';
+import { GLOBAL_TEXT_GEN_DEFAULTS } from '../lib/text-gen-defaults';
+import type { UserSettings } from '../routes/user-settings.routes';
+import type { ModelInfo } from './venice.models.service';
 
 export interface PromptsSettings {
   system?: string | null;
