@@ -59,8 +59,12 @@ const ListChatsQuery = z
 
 const PostMessageBody = z
   .object({
-    content: z.string().min(1),
+    content: z.string().min(1).optional(),
     modelId: z.string().min(1),
+    // [SC6] When retry=true the handler replays the existing trailing user
+    // turn against a fresh Venice completion without persisting a new user
+    // message. `content` is not required in this case.
+    retry: z.boolean().optional(),
     // [V16] Optional attachment — selection from the current chapter.
     attachment: z
       .object({
@@ -74,7 +78,16 @@ const PostMessageBody = z
     // false/omitted, the stream behaves exactly as today.
     enableWebSearch: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((body, ctx) => {
+    if (!body.retry && !body.content) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'content is required when retry is not true',
+        path: ['content'],
+      });
+    }
+  });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -233,6 +246,27 @@ export function createChatMessagesRouter() {
         return;
       }
 
+      // ── 1b. Load message history early for retry validation ──────────────
+      // Done here — before any external calls — so an invalid retry state
+      // returns 400 without touching the Venice API or user settings.
+      const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
+
+      // ── [SC6] Retry validation ────────────────────────────────────────────
+      // Retry replays the last user turn; there must be at least one user
+      // message in the history (regardless of what the trailing message is).
+      if (body.retry) {
+        const lastUserMsg = [...priorMessages].reverse().find((m) => m.role === 'user');
+        if (!lastUserMsg) {
+          res.status(400).json({
+            error: {
+              message: 'Cannot retry: no user message exists in this chat.',
+              code: 'retry_invalid_state',
+            },
+          });
+          return;
+        }
+      }
+
       // ── 2. Prime models cache (throws NoVeniceKeyError if no BYOK) ────────
       await veniceModelsService.fetchModels(userId);
       const modelContextLength = veniceModelsService.getModelContextLength(body.modelId);
@@ -289,6 +323,19 @@ export function createChatMessagesRouter() {
       // user message, scene template in system); ask chats use the ask action.
       const action: 'ask' | 'scene' = chat.kind === 'scene' ? 'scene' : 'ask';
 
+      // [SC6] On retry, use the last user turn's content as the freeform
+      // instruction so the prompt builder assembles the system message
+      // correctly. On a normal turn, use body.content (guaranteed non-empty
+      // by superRefine when retry is false/omitted).
+      const trailingUserContent: string = body.retry
+        ? (() => {
+            const lastUser = [...priorMessages].reverse().find((m) => m.role === 'user')!;
+            return typeof lastUser.contentJson === 'string'
+              ? lastUser.contentJson
+              : JSON.stringify(lastUser.contentJson);
+          })()
+        : (body.content as string);
+
       const {
         messages: baseMessages,
         venice_parameters: baseVeniceParams,
@@ -307,11 +354,10 @@ export function createChatMessagesRouter() {
         userMaxCompletionTokens: Number.POSITIVE_INFINITY,
         includeVeniceSystemPrompt,
         userPrompts,
-        freeformInstruction: body.content,
+        freeformInstruction: trailingUserContent,
       });
 
-      // ── 7. Load + prepend message history ────────────────────────────────
-      const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
+      // ── 8. Build messages array for Venice ───────────────────────────────
       const systemMsg = baseMessages[0];
       const synthesisedUserMsg = baseMessages[1];
       const history = priorMessages.map((m) => {
@@ -340,25 +386,28 @@ export function createChatMessagesRouter() {
           content: rawContent,
         };
       });
-      const messages: Array<{ role: MessageRole; content: string }> = [
-        systemMsg,
-        ...history,
-        synthesisedUserMsg,
-      ];
+      // [SC6] On retry the trailing user turn is already in `history`; do
+      // NOT append synthesisedUserMsg again or the model would see a
+      // duplicate user turn. On a normal turn, append as usual.
+      const messages: Array<{ role: MessageRole; content: string }> = body.retry
+        ? [systemMsg, ...history]
+        : [systemMsg, ...history, synthesisedUserMsg];
 
-      // ── 8. Persist the user message BEFORE calling Venice ────────────────
+      // ── 9a. Persist the user message BEFORE calling Venice (normal turn only)
       const messageRepo = createMessageRepo(req);
-      await messageRepo.create({
-        chatId,
-        role: 'user' as MessageRole,
-        contentJson: body.content,
-        attachmentJson: body.attachment ?? null,
-        model: null,
-        tokens: null,
-        latencyMs: null,
-      });
+      if (!body.retry) {
+        await messageRepo.create({
+          chatId,
+          role: 'user' as MessageRole,
+          contentJson: body.content as string,
+          attachmentJson: body.attachment ?? null,
+          model: null,
+          tokens: null,
+          latencyMs: null,
+        });
+      }
 
-      // ── 9. Get Venice client + enrich params ──────────────────────────────
+      // ── 9b. Get Venice client + enrich params ─────────────────────────────
       const client = await getVeniceClient(userId);
 
       const venice_parameters: Record<string, unknown> = { ...baseVeniceParams };

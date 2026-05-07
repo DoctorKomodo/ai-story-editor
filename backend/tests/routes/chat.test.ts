@@ -230,6 +230,146 @@ async function veniceSetup(username: string): Promise<{
   return { agent, chapterId: chapter.id as string, fetchSpy };
 }
 
+// ─── SC6 suite ────────────────────────────────────────────────────────────────
+
+describe('POST /api/chats/:chatId/messages — retry flag', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  // Helper: queue a fresh SSE response on the fetch spy.
+  function queueSseResponse(fetchSpy: ReturnType<typeof vi.fn>, content: string): void {
+    fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, SC5_MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sc5SseStreamResponse([
+        {
+          id: 'chatcmpl-retry',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content }, finish_reason: null }],
+        },
+      ]),
+    );
+  }
+
+  // Fire a POST /messages call and drain the SSE stream (so the assistant message is persisted).
+  async function sendMessage(
+    agent: ReturnType<typeof request.agent>,
+    chatId: string,
+    body: Record<string, unknown>,
+  ): Promise<number> {
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send(body);
+    return res.status as number;
+  }
+
+  it('does not persist a new user message when retry=true', async () => {
+    const { agent, chapterId, fetchSpy } = await veniceSetup('sc6-retry-u1');
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 's', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    // First turn — normal generate. Models cache miss + stream.
+    queueSseResponse(fetchSpy, 'First assistant reply.');
+    const firstStatus = await sendMessage(agent, chatId, {
+      content: 'Direction A',
+      modelId: SC5_MODEL_ID,
+    });
+    expect(firstStatus).toBe(200);
+
+    // Read messages: should be 1 user + 1 assistant.
+    const before = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(before.body.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(1);
+    expect(
+      before.body.messages.filter((m: { role: string }) => m.role === 'assistant'),
+    ).toHaveLength(1);
+
+    // Retry — must NOT add a user message. Models cache is warm so only stream mock needed.
+    fetchSpy.mockResolvedValueOnce(
+      sc5SseStreamResponse([
+        {
+          id: 'chatcmpl-retry2',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'Retry reply.' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, {
+      retry: true,
+      modelId: SC5_MODEL_ID,
+    });
+    expect(retryStatus).toBe(200);
+
+    const after = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(after.body.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(1);
+    expect(
+      after.body.messages.filter((m: { role: string }) => m.role === 'assistant'),
+    ).toHaveLength(2);
+  });
+
+  it('400 when retry=true and the trailing message is not a user turn', async () => {
+    const { agent, chapterId } = await veniceSetup('sc6-retry-u2');
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 's', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    // No prior messages — retry has nothing to base on.
+    await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ retry: true, modelId: SC5_MODEL_ID })
+      .expect(400);
+  });
+
+  it('does not require content when retry=true', async () => {
+    const { agent, chapterId, fetchSpy } = await veniceSetup('sc6-retry-u3');
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 's', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    // Prime with a normal turn first.
+    queueSseResponse(fetchSpy, 'First reply.');
+    await sendMessage(agent, chatId, { content: 'd', modelId: SC5_MODEL_ID });
+
+    // Retry with no content — models cache warm, only stream mock needed.
+    fetchSpy.mockResolvedValueOnce(
+      sc5SseStreamResponse([
+        {
+          id: 'chatcmpl-retry3',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'No-content retry.' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, {
+      retry: true,
+      modelId: SC5_MODEL_ID,
+    });
+    expect(retryStatus).toBe(200);
+  });
+});
+
 // ─── SC5 suite ────────────────────────────────────────────────────────────────
 
 describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
