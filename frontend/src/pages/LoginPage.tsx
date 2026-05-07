@@ -2,6 +2,7 @@ import type { JSX } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { AuthForm } from '@/components/AuthForm';
 import { useAuth } from '@/hooks/useAuth';
+import { useSessionStore } from '@/store/session';
 
 interface LoginLocationState {
   resetSuccess?: boolean;
@@ -20,7 +21,22 @@ interface BannerProps {
   message: string;
 }
 
-function bannerProps(state: LoginLocationState | null): BannerProps | null {
+// [F65] sessionExpired is read from the session store (not location.state)
+// because the api-client's unauthorized handler can't drive navigation —
+// it only mutates state. RequireAuth then redirects on status change. The
+// flag takes precedence over signedOutEverywhere only if both ever held;
+// in practice they're mutually exclusive (signedOutEverywhere uses
+// location.state from a deliberate user action).
+function bannerProps(
+  state: LoginLocationState | null,
+  sessionExpired: boolean,
+): BannerProps | null {
+  if (sessionExpired) {
+    return {
+      ariaLabel: 'Session expired',
+      message: 'Your session has expired. Sign in again to continue.',
+    };
+  }
   if (state?.signedOutEverywhere === true) {
     return {
       ariaLabel: 'Signed out everywhere',
@@ -45,7 +61,8 @@ function bannerProps(state: LoginLocationState | null): BannerProps | null {
 export function LoginPage(): JSX.Element {
   const { user, login } = useAuth();
   const location = useLocation();
-  const banner = bannerProps(location.state as LoginLocationState | null);
+  const sessionExpired = useSessionStore((s) => s.sessionExpired);
+  const banner = bannerProps(location.state as LoginLocationState | null, sessionExpired);
 
   if (user) return <Navigate to="/" replace />;
 
