@@ -53,7 +53,7 @@ describe('routing', () => {
 
   it('authenticated session lands on / (dashboard)', async () => {
     // Pre-seed the store as authenticated so RequireAuth admits us immediately.
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice' }, 'tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
     // initAuth will still try to refresh — return a successful refresh + /me
     // so state stays authenticated after bootstrap. The dashboard also fires
     // a GET /api/stories on mount, so mock every call via mockImplementation
@@ -70,7 +70,7 @@ describe('routing', () => {
       }
       if (url.endsWith('/auth/me')) {
         return Promise.resolve(
-          new Response(JSON.stringify({ user: { id: 'u1', username: 'alice' } }), {
+          new Response(JSON.stringify({ user: { id: 'u1', username: 'alice', name: 'Alice' } }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }),
@@ -95,7 +95,7 @@ describe('routing', () => {
   });
 
   it('authenticated session can load /stories/:id (editor)', async () => {
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice' }, 'tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
     // Router-based fetch mock: initAuth's refresh + /me keep the session
     // authenticated; EditorPage then fetches the story to render its title.
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
@@ -110,7 +110,7 @@ describe('routing', () => {
       }
       if (url.endsWith('/auth/me')) {
         return Promise.resolve(
-          new Response(JSON.stringify({ user: { id: 'u1', username: 'alice' } }), {
+          new Response(JSON.stringify({ user: { id: 'u1', username: 'alice', name: 'Alice' } }), {
             status: 200,
             headers: { 'Content-Type': 'application/json' },
           }),
