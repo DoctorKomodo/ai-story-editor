@@ -149,6 +149,46 @@ describe('SceneTab — first-generate race (Bug 1)', () => {
     expect(vi.mocked(api.listMessagesForChat)).not.toHaveBeenCalled();
   });
 
+  it('activeId stays set after first generate — optimistic update prevents auto-select reset', async () => {
+    // This test targets Bug 1: when sessions is still [] at re-render time,
+    // the auto-select effect fires `setActiveId(null)` because
+    // `activeId && !sessions.find(s => s.id === activeId)` is true.
+    // The fix adds an optimistic cache update in createMut.onSuccess so
+    // `sessions` contains the new chat before the re-render — the reset branch
+    // never fires.
+    //
+    // We verify this by checking the query cache immediately after generate
+    // completes: the new chat must already be in the cache (optimistic write),
+    // not just after the background refetch resolves.
+    const user = userEvent.setup();
+    const { client } = renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeClient());
+
+    await waitFor(() => {
+      expect(screen.getByText(/describe what happens next/i)).toBeInTheDocument();
+    });
+
+    const textarea = screen.getByRole('textbox');
+    await user.click(textarea);
+    await user.type(textarea, 'Direction A');
+
+    const generateBtn = screen.getByRole('button', { name: /generate/i });
+    await user.click(generateBtn);
+
+    // After generate + streaming, the candidate text must appear. If activeId
+    // had been reset to null, setChat(null,[]) would have wiped the store and
+    // this element would not be present.
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-candidate-text')).toHaveTextContent('hello');
+    });
+
+    // The optimistic update must have seeded the query cache with the new chat
+    // so `sessions` included it at the time of the auto-select effect, preventing
+    // the reset-to-null branch from firing.
+    const cached = client.getQueryData<api.ChatRow[]>(['scenes', 'c1']);
+    expect(cached).toBeDefined();
+    expect(cached?.some((c) => c.id === CHAT_ROW.id)).toBe(true);
+  });
+
   it('listMessagesForChat is called when an existing session becomes active', async () => {
     // Override the beforeEach defaults: an existing session exists from the start.
     const existingChat: api.ChatRow = {

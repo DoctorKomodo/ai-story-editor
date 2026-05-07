@@ -26,7 +26,7 @@ import { useScenes } from '@/hooks/useScenes';
 import { useSceneTranscript } from '@/hooks/useSceneTranscript';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
-import { listMessagesForChat, patchChat as patchChatApi } from '@/lib/api';
+import { listMessagesForChat } from '@/lib/api';
 import type { SceneMessage } from '@/store/sceneTranscript';
 import { useSceneTranscriptStore } from '@/store/sceneTranscript';
 
@@ -187,13 +187,13 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       if (isFirstTurn) {
         const title = truncateAtWordBoundary(text, TITLE_MAX_CHARS);
         try {
-          await patchChatApi(chatId, title);
+          await rename(chatId, title);
         } catch {
           // non-fatal — session remains usable without a title
         }
       }
     },
-    [activeId, chapterId, create, transcriptGenerate, transcriptMessages, setChat],
+    [activeId, chapterId, create, rename, transcriptGenerate, transcriptMessages, setChat],
   );
 
   const onRetry = useCallback(async () => {
