@@ -15,7 +15,6 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
       title: 'The Long Road',
       synopsis: 'A quiet epic.',
       worldNotes: 'Two suns. Magnetic north is mutable.',
-      systemPrompt: 'Write in close third person.',
       genre: 'fantasy',
       targetWords: 90000,
     });
@@ -23,7 +22,6 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
     expect(result.title).toBe('The Long Road');
     expect(result.synopsis).toBe('A quiet epic.');
     expect(result.worldNotes).toBe('Two suns. Magnetic north is mutable.');
-    expect(result.systemPrompt).toBe('Write in close third person.');
     expect(result.genre).toBe('fantasy');
     expect(result.targetWords).toBe(90000);
 

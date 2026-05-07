@@ -66,7 +66,6 @@ function makeStory(
     synopsis: 'A boy on a desert planet.',
     worldNotes: null,
     targetWords: null,
-    systemPrompt: null,
     chapterCount: 3,
     totalWordCount: 4500,
     createdAt: '2026-04-24T00:00:00.000Z',
@@ -85,7 +84,7 @@ describe('DashboardPage (F58 — embedded StoryPicker)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     fetchMock = vi.fn();

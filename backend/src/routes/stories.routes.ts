@@ -33,7 +33,6 @@ const CreateStoryBody = z.object({
   genre: z.string().max(200).nullable().optional(),
   worldNotes: z.string().max(50_000).nullable().optional(),
   targetWords: z.number().int().positive().nullable().optional(),
-  systemPrompt: z.string().max(10_000).nullable().optional(),
 });
 
 // PATCH body: every field is optional. Nullable-fields accept `null` to clear;
@@ -48,7 +47,6 @@ const UpdateStoryBody = z
     genre: z.string().max(200).nullable().optional(),
     worldNotes: z.string().max(50_000).nullable().optional(),
     targetWords: z.number().int().positive().nullable().optional(),
-    systemPrompt: z.string().max(10_000).nullable().optional(),
   })
   .strict();
 
@@ -99,7 +97,6 @@ export function createStoriesRouter() {
         genre: body.genre ?? null,
         worldNotes: body.worldNotes ?? null,
         targetWords: body.targetWords ?? null,
-        systemPrompt: body.systemPrompt ?? null,
       });
 
       res.status(201).json({ story });
@@ -190,7 +187,6 @@ export function createStoriesRouter() {
     if (body.genre !== undefined) input.genre = body.genre;
     if (body.worldNotes !== undefined) input.worldNotes = body.worldNotes;
     if (body.targetWords !== undefined) input.targetWords = body.targetWords;
-    if (body.systemPrompt !== undefined) input.systemPrompt = body.systemPrompt;
 
     try {
       const story = await createStoryRepo(req).update(id, input);

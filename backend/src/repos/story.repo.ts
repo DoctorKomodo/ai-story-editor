@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
-const ENCRYPTED_FIELDS = ['title', 'synopsis', 'worldNotes', 'systemPrompt'] as const;
+const ENCRYPTED_FIELDS = ['title', 'synopsis', 'worldNotes'] as const;
 
 export interface StoryCreateInput {
   title: string;
@@ -11,7 +11,6 @@ export interface StoryCreateInput {
   genre?: string | null;
   worldNotes?: string | null;
   targetWords?: number | null;
-  systemPrompt?: string | null;
 }
 
 export interface StoryUpdateInput {
@@ -20,7 +19,6 @@ export interface StoryUpdateInput {
   genre?: string | null;
   worldNotes?: string | null;
   targetWords?: number | null;
-  systemPrompt?: string | null;
 }
 
 function resolveUserId(req: Request): string {
@@ -36,7 +34,6 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
       ...writeEncrypted(req, 'title', input.title),
       ...writeEncrypted(req, 'synopsis', input.synopsis ?? null),
       ...writeEncrypted(req, 'worldNotes', input.worldNotes ?? null),
-      ...writeEncrypted(req, 'systemPrompt', input.systemPrompt ?? null),
     };
     const row = await client.story.create({
       data: {
@@ -44,7 +41,8 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
         genre: input.genre ?? null,
         targetWords: input.targetWords ?? null,
         // Post-[E11]: only the ciphertext triple persists. `title`,
-        // `synopsis`, `worldNotes`, `systemPrompt` are encrypted-only.
+        // `synopsis`, `worldNotes` are encrypted-only.
+        // `genre`, `targetWords`, `userId`, timestamps remain plaintext.
         ...encCols,
       },
     });
@@ -82,9 +80,6 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     }
     if (input.worldNotes !== undefined) {
       Object.assign(data, writeEncrypted(req, 'worldNotes', input.worldNotes));
-    }
-    if (input.systemPrompt !== undefined) {
-      Object.assign(data, writeEncrypted(req, 'systemPrompt', input.systemPrompt));
     }
     if (input.genre !== undefined) data.genre = input.genre;
     if (input.targetWords !== undefined) data.targetWords = input.targetWords;

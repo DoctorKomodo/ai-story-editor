@@ -31,7 +31,6 @@ function makeStory(): Record<string, unknown> {
     synopsis: null,
     worldNotes: null,
     targetWords: 50_000,
-    systemPrompt: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
   };
@@ -42,7 +41,9 @@ function defaultRouter(url: string): Promise<Response> {
     return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
   }
   if (url.endsWith('/auth/me')) {
-    return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+    return Promise.resolve(
+      jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+    );
   }
   if (url.endsWith('/stories/abc123')) {
     return Promise.resolve(jsonResponse(200, { story: makeStory() }));
@@ -56,11 +57,34 @@ function defaultRouter(url: string): Promise<Response> {
   if (url.endsWith('/stories/abc123/outline')) {
     return Promise.resolve(jsonResponse(200, { items: [] }));
   }
-  if (url.endsWith('/ai/balance')) {
-    return Promise.resolve(jsonResponse(200, { balance: { dollars: 1.23, vcu: 100 } }));
+  if (url.endsWith('/users/me/venice-account')) {
+    return Promise.resolve(
+      jsonResponse(200, {
+        verified: true,
+        balanceUsd: 1.23,
+        diem: 100,
+        endpoint: null,
+        lastSix: null,
+      }),
+    );
   }
   if (url.endsWith('/ai/models')) {
-    return Promise.resolve(jsonResponse(200, { models: [] }));
+    return Promise.resolve(
+      jsonResponse(200, {
+        models: [
+          {
+            id: 'llama-3.3-70b',
+            name: 'Llama 3.3 70B',
+            contextLength: 128000,
+            supportsReasoning: false,
+            supportsVision: false,
+            supportsWebSearch: true,
+            description: null,
+            pricing: null,
+          },
+        ],
+      }),
+    );
   }
   if (url.endsWith('/users/me/settings')) {
     return Promise.resolve(
@@ -102,7 +126,7 @@ describe('EditorPage shell integration (F51)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     useActiveChapterStore.setState({ activeChapterId: null });
@@ -180,5 +204,20 @@ describe('EditorPage shell integration (F51)', () => {
     }
 
     expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+  });
+
+  it('[X33] chat-bar model trigger opens Settings on the Models tab', async () => {
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('model-bar')).toBeInTheDocument();
+    });
+
+    const trigger = screen.getByLabelText('Open model picker');
+    await userEvent.setup().click(trigger);
+
+    // Settings opens on the Models tab — the inline picker rail is present.
+    expect(await screen.findByTestId('settings-panel-models')).toBeInTheDocument();
+    expect(await screen.findByTestId('model-rail')).toBeInTheDocument();
   });
 });

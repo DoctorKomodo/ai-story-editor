@@ -1,9 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 
-// Post-[E11] Story.systemPrompt is ciphertext-only. This file keeps coverage
-// of the surviving plaintext setting — targetWords. systemPrompt round-trip
-// is in tests/repos/story.repo.test.ts.
+// Post-[X29] Story.systemPrompt has been removed entirely. This file keeps
+// coverage of the surviving plaintext setting — targetWords.
 
 async function makeUser(email = 'settings-user@example.com') {
   const username = email
@@ -26,7 +25,6 @@ describe('Story settings (targetWords plaintext)', () => {
     const user = await makeUser();
     const story = await prisma.story.create({ data: { userId: user.id } });
     expect(story.targetWords).toBeNull();
-    expect(story.systemPromptCiphertext).toBeNull();
   });
 
   it('persists targetWords when provided', async () => {

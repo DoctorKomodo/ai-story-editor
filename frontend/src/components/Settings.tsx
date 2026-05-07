@@ -13,31 +13,39 @@
 // extracted into a <ModalTabbed> primitive — Settings is the only multi-tab
 // modal in the app (the other role="tablist" usages live in Sidebar /
 // ChatPanel / ChatComposer, not modals).
+
+import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
+import { formatUsd } from '@/components/BalanceDisplay';
 import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
+import { SettingsPromptsTab } from '@/components/SettingsPromptsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
-import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
+import { Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
+import { useVeniceAccountQuery, veniceAccountQueryKey } from '@/hooks/useVeniceAccount';
 import {
   useDeleteVeniceKeyMutation,
   useStoreVeniceKeyMutation,
   useVeniceKeyStatusQuery,
-  useVerifyVeniceKeyMutation,
-  type VeniceKeyVerify,
 } from '@/hooks/useVeniceKey';
+import { ApiError } from '@/lib/api';
+import { useErrorStore } from '@/store/errors';
 
 export interface SettingsModalProps {
   open: boolean;
   onClose: () => void;
+  /** When provided, the modal opens on this tab instead of the default ('venice'). */
+  initialTab?: SettingsTab;
 }
 
-type SettingsTab = 'venice' | 'models' | 'writing' | 'appearance';
+export type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'venice', label: 'Venice.ai' },
   { id: 'models', label: 'Models' },
+  { id: 'prompts', label: 'Prompts' },
   { id: 'writing', label: 'Writing' },
   { id: 'appearance', label: 'Appearance' },
 ];
@@ -82,15 +90,19 @@ function EyeOffIcon(): JSX.Element {
   );
 }
 
-export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Element | null {
+export function SettingsModal({
+  open,
+  onClose,
+  initialTab,
+}: SettingsModalProps): JSX.Element | null {
   const titleId = useId();
   const [activeTab, setActiveTab] = useState<SettingsTab>('venice');
 
-  // Reset to Venice tab whenever the modal re-opens — avoids stale tab
-  // state bleeding across opens.
+  // Reset to the requested tab (or Venice) whenever the modal re-opens —
+  // avoids stale tab state bleeding across opens.
   useEffect(() => {
-    if (open) setActiveTab('venice');
-  }, [open]);
+    if (open) setActiveTab(initialTab ?? 'venice');
+  }, [open, initialTab]);
 
   return (
     <Modal
@@ -152,6 +164,8 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
           <VeniceTab />
         ) : activeTab === 'models' ? (
           <SettingsModelsTab />
+        ) : activeTab === 'prompts' ? (
+          <SettingsPromptsTab />
         ) : activeTab === 'writing' ? (
           <SettingsWritingTab />
         ) : (
@@ -162,17 +176,10 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
       <ModalFooter
         leading={
           <span data-testid="settings-autosave-hint">
-            Changes save automatically to your local vault
+            Changes save automatically &middot; tap outside or press Esc to close
           </span>
         }
-      >
-        <Button variant="ghost" data-testid="settings-cancel" onClick={onClose}>
-          Cancel
-        </Button>
-        <Button variant="primary" data-testid="settings-done" onClick={onClose}>
-          Done
-        </Button>
-      </ModalFooter>
+      />
     </Modal>
   );
 }
@@ -180,7 +187,7 @@ export function SettingsModal({ open, onClose }: SettingsModalProps): JSX.Elemen
 // --- Venice tab ---------------------------------------------------------
 
 interface VerifyPillState {
-  kind: 'idle' | 'ok' | 'err';
+  kind: 'idle' | 'pending' | 'ok' | 'err';
   message: string;
 }
 
@@ -193,14 +200,34 @@ function VeniceTab(): JSX.Element {
   const settingsQuery = useUserSettingsQuery();
   const storeMutation = useStoreVeniceKeyMutation();
   const deleteMutation = useDeleteVeniceKeyMutation();
-  const verifyMutation = useVerifyVeniceKeyMutation();
   const updateSettings = useUpdateUserSettingsMutation();
+
+  const status = statusQuery.data;
+  const lastSix = status?.lastSix ?? null;
+
+  const accountQuery = useVeniceAccountQuery(status?.hasKey ?? false);
+  const queryClient = useQueryClient();
+
+  // Push account query errors to the global error store.
+  useEffect(() => {
+    if (!accountQuery.error) return;
+    const err = accountQuery.error;
+    const body = err instanceof ApiError ? err.body : undefined;
+    const upstream = body?.error?.upstreamStatus ?? null;
+    useErrorStore.getState().push({
+      severity: 'error',
+      source: 'venice-account',
+      code: body?.error?.code ?? null,
+      message: err.message,
+      httpStatus: err instanceof ApiError ? err.status : undefined,
+      detail: { upstreamStatus: upstream },
+    });
+  }, [accountQuery.error]);
 
   const [apiKeyDraft, setApiKeyDraft] = useState('');
   const [endpointDraft, setEndpointDraft] = useState('');
   const [organizationDraft, setOrganizationDraft] = useState('');
   const [showKey, setShowKey] = useState(false);
-  const [verifyPill, setVerifyPill] = useState<VerifyPillState>({ kind: 'idle', message: '' });
 
   // Seed the endpoint field from the latest server status — but only when
   // the user hasn't started editing it yet (don't trample drafts).
@@ -214,12 +241,33 @@ function VeniceTab(): JSX.Element {
     }
   }, [statusQuery.data?.endpoint]);
 
-  const status = statusQuery.data;
-  const lastFour = status?.lastFour ?? null;
+  // [X26 (b)] Masked stored-key indicator — used as the API key input's
+  // placeholder when a key is already stored, replacing the separate
+  // "Stored: •••• xxxx" field above the Remove button.
+  const storedKeyPlaceholder = lastSix ? `••••••••••••${lastSix}` : 'vn_…';
+
+  // Derive verify pill state from accountQuery — no local setState for this.
+  let verifyPill: VerifyPillState = { kind: 'idle', message: '' };
+  if (status?.hasKey) {
+    if (accountQuery.isFetching) {
+      verifyPill = { kind: 'pending', message: 'Verifying…' };
+    } else if (accountQuery.error instanceof Error) {
+      const six = lastSix ?? '??????';
+      verifyPill = { kind: 'err', message: `Not verified · last six ${six}` };
+    } else if (accountQuery.data) {
+      if (accountQuery.data.verified) {
+        const usd =
+          accountQuery.data.balanceUsd != null ? formatUsd(accountQuery.data.balanceUsd) : 'USD —';
+        verifyPill = { kind: 'ok', message: `Verified · ${usd}` };
+      } else {
+        const six = accountQuery.data.lastSix ?? lastSix ?? '??????';
+        verifyPill = { kind: 'err', message: `Not verified · last six ${six}` };
+      }
+    }
+  }
 
   const handleSave = async (): Promise<void> => {
     if (apiKeyDraft.trim().length === 0) return;
-    setVerifyPill({ kind: 'idle', message: '' });
     try {
       await storeMutation.mutateAsync({
         apiKey: apiKeyDraft,
@@ -229,29 +277,19 @@ function VeniceTab(): JSX.Element {
       // Clear the plaintext draft immediately — never keep it sitting in
       // component state once the server has acknowledged storage.
       setApiKeyDraft('');
+      // [X32] Invalidate the account query instead of chaining a verify mutation.
+      // The query refetches automatically and the pill derives from its result.
+      void queryClient.invalidateQueries({ queryKey: veniceAccountQueryKey });
     } catch {
-      // Mutation error state is rendered via `storeMutation.isError` below.
+      // store mutation error state is rendered via `storeMutation.isError` below.
     }
   };
 
-  const handleVerify = async (): Promise<void> => {
-    try {
-      const res: VeniceKeyVerify = await verifyMutation.mutateAsync();
-      if (res.verified) {
-        const credits = res.credits != null ? res.credits.toLocaleString() : '—';
-        setVerifyPill({ kind: 'ok', message: `Verified · ${credits} credits` });
-      } else {
-        const four = res.lastFour ?? lastFour ?? '????';
-        setVerifyPill({ kind: 'err', message: `Not verified · last four ${four}` });
-      }
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Verification failed';
-      setVerifyPill({ kind: 'err', message: msg });
-    }
+  const handleVerify = (): void => {
+    void queryClient.invalidateQueries({ queryKey: veniceAccountQueryKey });
   };
 
   const handleRemove = async (): Promise<void> => {
-    setVerifyPill({ kind: 'idle', message: '' });
     try {
       await deleteMutation.mutateAsync();
       setApiKeyDraft('');
@@ -281,15 +319,7 @@ function VeniceTab(): JSX.Element {
         <div className="flex flex-col gap-1">
           <label htmlFor={apiKeyId} className="flex items-baseline justify-between text-[12px]">
             <span className="font-medium text-ink-2">API Key</span>
-            <span className="text-ink-4 font-sans">
-              {status?.hasKey && lastFour ? (
-                <span data-testid="venice-key-last-four">
-                  Stored: <span aria-hidden="true">••••</span> {lastFour}
-                </span>
-              ) : (
-                <>From venice.ai → Settings → API</>
-              )}
-            </span>
+            <span className="text-ink-4 font-sans">From venice.ai → Settings → API</span>
           </label>
           <div className="flex items-center gap-2">
             <input
@@ -299,7 +329,10 @@ function VeniceTab(): JSX.Element {
               value={apiKeyDraft}
               autoComplete="off"
               spellCheck={false}
-              placeholder={status?.hasKey ? 'Enter a new key to replace' : 'vn_…'}
+              // [X26 (b)] When a key is stored, the placeholder shows it
+              // partially masked with the last six characters visible — a
+              // single field replaces the prior "Stored: •••• xxxx" label.
+              placeholder={storedKeyPlaceholder}
               onChange={(e) => {
                 setApiKeyDraft(e.target.value);
               }}
@@ -330,13 +363,13 @@ function VeniceTab(): JSX.Element {
             <button
               type="button"
               data-testid="venice-key-verify"
-              disabled={!status?.hasKey || verifyMutation.isPending}
+              disabled={!status?.hasKey || accountQuery.isFetching}
               onClick={() => {
-                void handleVerify();
+                handleVerify();
               }}
               className="px-3 py-1.5 text-[12px] border border-line rounded-[var(--radius)] text-ink-2 hover:bg-[var(--surface-hover)] hover:text-ink transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {verifyMutation.isPending ? 'Verifying…' : 'Verify'}
+              {accountQuery.isFetching ? 'Verifying…' : 'Verify'}
             </button>
             <button
               type="button"
@@ -360,7 +393,9 @@ function VeniceTab(): JSX.Element {
                 'mt-1 inline-flex w-fit items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-mono',
                 verifyPill.kind === 'ok'
                   ? 'bg-success-soft text-[color:var(--success)]'
-                  : 'bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] text-[color:var(--danger)]',
+                  : verifyPill.kind === 'err'
+                    ? 'bg-[color-mix(in_srgb,var(--danger)_16%,transparent)] text-[color:var(--danger)]'
+                    : 'bg-[color-mix(in_srgb,var(--ink)_8%,transparent)] text-ink-3',
               ].join(' ')}
             >
               {verifyPill.message}
@@ -442,10 +477,12 @@ function VeniceTab(): JSX.Element {
             className="mt-1"
           />
           <span className="flex flex-col gap-[2px]">
-            <span className="font-medium text-ink-2">Include Venice creative-writing prompt</span>
+            <span className="font-medium text-ink-2">
+              Include Venice&apos;s default system prompt
+            </span>
             <span className="text-ink-4 font-sans">
-              Prepend Venice&apos;s built-in creative writing guidance on top of Inkwell&apos;s own
-              system prompt.
+              When on, Venice prepends its own default system prompt before Inkwell&apos;s. When
+              off, only Inkwell&apos;s system prompt is sent.
             </span>
           </span>
         </label>

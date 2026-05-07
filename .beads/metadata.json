@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "story_editor",
+  "project_id": "ff87f249-fc6f-457e-9774-df3bfb3e35ed"
+}

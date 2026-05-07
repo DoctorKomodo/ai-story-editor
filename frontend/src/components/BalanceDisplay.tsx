@@ -2,8 +2,8 @@ import type { JSX } from 'react';
 /**
  * [F17] Venice account balance display.
  *
- * Pure presentation — consumes the output of `useBalanceQuery` (see
- * `useBalance.ts`) and renders one of four states: loading, error
+ * Pure presentation — consumes the output of `useVeniceAccountQuery` (see
+ * `useVeniceAccount.ts`) and renders one of four states: loading, error
  * (with a dedicated copy for `venice_key_required`), loaded-but-empty,
  * or the two-line USD / Diem readout.
  *
@@ -11,10 +11,10 @@ import type { JSX } from 'react';
  * data shape are intentionally stable so F26 is layout-only.
  */
 
-import type { Balance } from '@/hooks/useBalance';
+import type { VeniceAccount } from '@/hooks/useVeniceAccount';
 
 export interface BalanceDisplayProps {
-  balance: Balance | null;
+  balance: VeniceAccount | null;
   isLoading?: boolean;
   isError?: boolean;
   errorCode?: string | null;
@@ -70,7 +70,7 @@ export function BalanceDisplay({
     );
   }
 
-  const usd = balance.credits == null ? 'USD: —' : `USD: ${formatUsd(balance.credits)}`;
+  const usd = balance.balanceUsd == null ? 'USD: —' : `USD: ${formatUsd(balance.balanceUsd)}`;
   const diem = balance.diem == null ? 'Diem: —' : `Diem: ${formatDiem(balance.diem)}`;
 
   return (

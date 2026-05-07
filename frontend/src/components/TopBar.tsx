@@ -10,8 +10,8 @@
 // the sidebar and chat panes land (F27/F38).
 import type { JSX } from 'react';
 import { AutosaveIndicator, type AutosaveIndicatorProps } from '@/components/AutosaveIndicator';
-import type { Balance } from '@/hooks/useBalance';
 import { useFocusToggle } from '@/hooks/useFocusToggle';
+import type { VeniceAccount } from '@/hooks/useVeniceAccount';
 import { UserMenu } from './UserMenu';
 
 export interface TopBarProps {
@@ -39,7 +39,7 @@ export interface TopBarProps {
   username: string;
   displayName?: string | null;
   userInitial?: string | null;
-  balance?: Balance | null;
+  balance?: VeniceAccount | null;
   isBalanceLoading?: boolean;
   isBalanceError?: boolean;
   balanceErrorCode?: string | null;

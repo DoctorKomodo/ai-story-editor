@@ -14,13 +14,13 @@ import type { JSX } from 'react';
  * disabled-style no-ops.
  */
 import { useEffect, useRef, useState } from 'react';
-import type { Balance } from '@/hooks/useBalance';
+import type { VeniceAccount } from '@/hooks/useVeniceAccount';
 import { BalanceDisplay } from './BalanceDisplay';
 
 export interface UserMenuProps {
   username: string;
   onSignOut: () => void;
-  balance: Balance | null;
+  balance: VeniceAccount | null;
   isLoading?: boolean;
   isError?: boolean;
   errorCode?: string | null;

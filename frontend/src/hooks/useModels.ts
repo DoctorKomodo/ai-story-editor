@@ -12,6 +12,11 @@
 import { type UseQueryResult, useQuery } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 
+export interface ModelPricing {
+  inputUsdPerMTok: number;
+  outputUsdPerMTok: number;
+}
+
 export interface Model {
   id: string;
   name: string;
@@ -19,6 +24,8 @@ export interface Model {
   supportsReasoning: boolean;
   supportsVision: boolean;
   supportsWebSearch: boolean;
+  description: string | null;
+  pricing: ModelPricing | null;
 }
 
 export interface ModelsResponse {

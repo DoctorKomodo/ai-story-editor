@@ -1,46 +1,54 @@
 # Story Editor — Development Tasks
 
-> A self-hosted, web-based story and text editor with Venice.ai AI integration. Users can manage multiple stories, break them into chapters, attach characters for consistency, and invoke AI assistance directly from the editor.
+> **Working task tracker is [bd (beads)](https://gastownhall.github.io/beads/).** Run `bd ready` for available work, `bd show <id>` for details. This file is now a **historical journal + ID-mapping table** — it preserves the original `[A-Z]\d+` task IDs that are referenced from plan docs (`docs/superpowers/plans/*.md`), commit messages, and agent prompts, mapped to the bd issue each one lives in today.
 
 ---
 
-## Tech Stack
+## How work gets done
 
-- **Frontend:** React + Vite + TypeScript + TailwindCSS + TipTap
-- **Backend:** Node.js + Express + TypeScript + Prisma
-- **Database:** PostgreSQL
-- **Auth:** JWT (access token) + refresh token (httpOnly cookie)
-- **AI:** Venice.ai API — OpenAI-compatible, proxied through backend
-- **Venice SDK:** `openai` npm package pointed at Venice base URL (`https://api.venice.ai/api/v1`)
-- **Containerisation:** Docker + Docker Compose
-- **Testing:** Vitest + Supertest (backend), Vitest + React Testing Library (frontend), Playwright (E2E)
+```bash
+bd ready                # pick a task with no blockers
+bd show <id>            # read the description + verify: line in --notes
+bd update <id> --claim  # claim it
+… write code …
+/task-verify <id>       # gate (reads verify: from bd notes)
+/bd-close <id>          # closes only if verify exits 0
+```
 
----
-
-## Current focus
-
-- **In flight:** F63 chat history, F65 terminal-401 redirect.
-- **Backlog (next):** M1–M3 maintenance, X26–X29 testing-found UI/settings polish.
-- **Proposed (no plan yet):** X1, X2, X3, X4, X5, X6, X7, X8, X9, X11, X17, X18, X26, X27, X28, X29, DS-* (none yet).
-- **Archived:** S, A, D, AU, E, V, L, B, I, T (full task history in `docs/done/`).
-- **Live sections:** F (Phase 4 only), X, M, DS.
+The verify-as-contract convention from the original workflow is preserved: each bd issue's `--notes` carries a `verify: <command>` line; `/task-verify` runs it with `bash -o pipefail`. A `plan:` link or `trivial:` justification line in `--notes` indicates implementability.
 
 ---
 
-## Workflow
+## Section glossary (historical bring-up order)
 
-Tasks lifecycle: `proposed` → `planned` / `trivial` → `done`.
+The original project bring-up sequenced work through these letters. Most are now archived; the glossary stays for cross-refs in plans, commits, and agent prompts.
 
-- Add a task with description only — no plan needed at creation.
-- Before implementation, every task needs either:
-  - `- plan: [...]` link to a spec/plan under `docs/superpowers/plans/`, OR
-  - `- trivial: <one-line justification>` (≤30 LoC, no new abstractions, no schema/auth/crypto/repo touch, no new dependency)
-- Both gates also require `- verify: <command>`.
-- Tick `[x]` only after `/task-verify <ID>` exits 0 (auto-ticked by the pre-edit hook).
+**S → A → D → AU → E → V → L → B → F → I → T → X**, plus **M** (maintenance) and **DS** (design-system) added later.
 
-Helpers:
-- `bash scripts/tasks-proposed.sh` — list open tasks missing both `plan:` and `trivial:`.
-- `bash scripts/tasks-implementable.sh` — list open tasks ready to start.
+| Letter | Scope | Status |
+|---|---|---|
+| S | scaffold | archived → `docs/done/done-S.md` |
+| A | architecture docs | archived → `docs/done/done-A.md` |
+| D | database (schema + migrations + seed) | archived → `docs/done/done-D.md` |
+| AU | auth (username, refresh, BYOK Venice key) | archived → `docs/done/done-AU.md` |
+| E | encryption at rest | archived → `docs/done/done-E.md` |
+| V | Venice.ai integration | archived → `docs/done/done-V.md` |
+| L | live Venice testing | archived → `docs/done/done-L.md` |
+| B | backend non-AI routes | archived → `docs/done/done-B.md` |
+| I | infra (Docker / compose) | archived → `docs/done/done-I.md` |
+| T | testing (integration + E2E) | archived → `docs/done/done-T.md` |
+| F | frontend | live (closed `[x]` rows pending rotation into `docs/done/done-F.md`) |
+| X | extras / feature backlog | live (closed `[x]` rows pending rotation into `docs/done/done-X.md`) |
+| M | maintenance & dependency upgrades | live |
+| DS | design-system follow-ups | live (no open issues) |
+
+Hard gates from the original plan (preserved as cross-ref):
+- **B** required **AU** (ownership middleware).
+- **Any narrative-entity CRUD** required **E3 + E9**.
+- **V** beyond `[A4]` required **AU11 + AU12** (BYOK).
+- **L** required **V17** (per-user OpenAI client).
+- **F AI features** ([F33]–[F42]) required **V5+** streaming endpoints.
+- **E2E tests** ([T8]) required full stack via Docker Compose.
 
 ---
 
@@ -110,11 +118,8 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 
 ### F — Core completion
 
-- [ ] **[F63]** **[design-first]** Chat history pane content. `[F38]` mounts a History tab whose body is the placeholder string `"History — coming in a future task"`. Render the list of chats for the active chapter via `useChatsQuery(chapterId)` — each row showing title (or first user-message preview), relative timestamp, and message count. Click selects-and-loads the chat into the Chat tab. Define archive/pin/delete semantics in the design (recommended minimum: just delete + select; archive/pin punted). Decide what "New chat" does to the previous one.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/components/ChatHistory.test.tsx`
-
-- [ ] **[F65]** Terminal-401 redirect to login. `[F3]`'s api client retries refresh once; when the refresh itself returns 401, the user is left on a broken page. Wire the existing `setUnauthorizedHandler(...)` (already in `frontend/src/lib/api.ts`) so a terminal failure clears `useSessionStore` and navigates to `/login`. Confirm `useInitAuth()` correctly handles a hard 401 on app boot. Add a small "Your session expired — please sign in again" toast/banner on the login page when redirected from a terminal 401. No design needed — uses existing toast/error patterns.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/lib/api-401-terminal.test.ts tests/pages/auth.test.tsx`
+- **[F63]** → bd:story-editor-9vm
+- **[F65]** → bd:story-editor-6ug
 
 ### F — Phase 4 (Storybook)
 
@@ -157,74 +162,76 @@ All [T]-series tasks complete — archived in [`docs/done/done-T.md`](docs/done/
 
 ### X — Editor & writing
 
-- [ ] **[X1]** Word count goals per chapter with progress bar in chapter list.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/components/WordCountGoal.test.tsx`
-
-- [ ] **[X2]** Focus mode: keyboard shortcut hides all UI chrome. Escape to exit.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/components/FocusMode.test.tsx`
-
-- [ ] **[X9]** Typewriter mode + Focus paragraph rendering (Settings → Writing toggles from [F45]): typewriter keeps active line vertically centred via padding manipulation; focus paragraph dims all but the current paragraph via an `opacity: .35` rule controlled by `data-focus-active` on the prose container.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/components/FocusParagraph.test.tsx`
-
-- [ ] **[X17]** Find / Replace UI in the editor. Wire `<FormatBar>`'s `onToggleFind` callback to a small inline find bar inside `<Paper>` that highlights matches, supports next/previous, and optionally Replace. Decision (capture in plan): inline strip vs floating popover. Match the prototype's mockup if one is added; otherwise design-first. F52 ships the FormatBar Find button as `disabled` with a `title="Find — coming in [X17]"` tooltip; X17 lifts the disabled state and wires the actual feature.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/components/EditorFind.test.tsx`
+- **[X1]** → bd:story-editor-566
+- **[X2]** → bd:story-editor-4i7
+- **[X9]** → bd:story-editor-coi
+- **[X17]** → bd:story-editor-6aa
 
 - [x] **[X25]** Modals open in an off-centre position (towards the upper-left) on first frame, then visibly snap to the centre of the viewport once mounted. Fix the `<Modal>` primitive (and any wrapper layout) so the dialog renders in its final centred position from frame one — likely a transform / measurement / focus-trap-mount race. Affects every modal across the app (Story picker, Settings, Account confirm, etc.).
   - trivial: Root cause was a Tailwind v4 `translate` longhand × `t-modal-in` keyframe `transform` collision — the two composed into a -100%/-100% double translate during the 180ms animation, then snapped back when the keyframe `transform` reverted. Fix: drop `fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2` from the Modal card (the backdrop's `flex items-center justify-center` already centres it), simplify the keyframe to `translateY(8px) scale(.98) → translateY(0) scale(1)`. Single primitive change, covers every modal.
   - verify: `cd frontend && npm run test:frontend -- --run tests/design/ModalCentering.test.tsx tests/components/Animations.test.tsx`
 
+- **[X30]** → bd:story-editor-8od
+
+- [x] **[X31]** `/api/ai/balance` still returns `{ credits, diem }` after [X26] renamed `credits` → `balanceUsd` on the verify endpoint. The two endpoints both surface the same `x-venice-balance-usd` header value and now disagree on field name, which is the kind of drift that bites the next person reading either response. Rename the field on the balance route too: `backend/src/routes/ai.routes.ts:97-108` (`{ credits, diem }` → `{ balanceUsd, diem }`); `frontend/src/hooks/useBalance.ts` `Balance.credits` → `balanceUsd`; `frontend/src/components/BalanceDisplay.tsx:73` reads `balance.credits` → `balance.balanceUsd`; `frontend/src/components/UserMenu.tsx` if it forwards the field; tests under `backend/tests/ai/balance.test.ts` and `frontend/tests/components/{BalanceDisplay,UserMenu}.test.tsx`; `docs/api-contract.md` for the balance endpoint shape. Pure rename, no behaviour change. Out of [X26]'s scope per security-reviewer's call (the field is auth-gated USD, not key material), but worth doing before the naming rot spreads further.
+  - superseded-by: X32 (the rename and the balance endpoint were consolidated into one unified `/api/users/me/venice-account` endpoint replacing both `/api/ai/balance` and the verify endpoint)
+  - verify: `cd backend && npx vitest run tests/routes/venice-account.test.ts && cd ../frontend && npx vitest run tests/components/BalanceDisplay.test.tsx`
+
+- [x] **[X32]** Unified Venice account-info endpoint. Replaces `GET /api/ai/balance` and `POST /api/users/me/venice-key/verify` with one `GET /api/users/me/venice-account` returning `{ verified, balanceUsd, diem, endpoint, lastSix }`. Fixes the BalanceDisplay header pill (was reading non-existent `x-venice-balance-*` headers off `/v1/models`). Per-user 30/min rate limit (distinct `account_rate_limited` code from `venice_rate_limited`). `upstreamStatus` carried in error body for the #54 diagnostics overlay. Internal `getStatusAndKey()` halves DB reads + decrypts. `parseRetryAfter` deduped via `lib/venice-errors`.
+  - spec: [docs/superpowers/specs/2026-05-04-x32-venice-account-endpoint-design.md](docs/superpowers/specs/2026-05-04-x32-venice-account-endpoint-design.md)
+  - plan: [docs/superpowers/plans/2026-05-04-x32-venice-account-endpoint.md](docs/superpowers/plans/2026-05-04-x32-venice-account-endpoint.md)
+  - verify: `cd backend && npx vitest run tests/routes/venice-account.test.ts && cd ../frontend && npx vitest run tests/hooks/useVeniceAccount.test.tsx tests/components/Settings.shell-venice.test.tsx tests/components/BalanceDisplay.test.tsx`
+
 ### X — AI features
 
-- [ ] **[X4]** Image generation: "Generate image" button calls `POST /api/ai/image` which forwards to Venice's image generation endpoint. Result inserted as a TipTap image node.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/image.test.ts`
+- **[X4]** → bd:story-editor-nx0
+- **[X8]** → bd:story-editor-fo3
 
-- [ ] **[X8]** Consistency check (character popover footer button): sends the character bible entry + the last N chapters (budget-aware via [V3]) to the selected model, returns an annotated list of discrepancies ("Eira's eye colour — grey in Ch.2 but hazel in Ch.5"). Renders as a scrollable list in the popover's expanded state.
-  - verify: `cd backend && npm run test:backend -- --run tests/ai/consistency-check.test.ts`
+- [x] **[X27]** Settings → Models picker rework. The current dialog dumps the full model list inline and gets unwieldy. Mirror the chat-window pattern: the Settings panel shows only the currently selected model; clicking it opens a dedicated picker modal containing the full list. In the picker, surface the per-model description from Venice's `/models` endpoint and the per-token price alongside the model name.
+  - spec: [docs/superpowers/specs/2026-05-04-x27-models-picker-rework-design.md](docs/superpowers/specs/2026-05-04-x27-models-picker-rework-design.md)
+  - plan: [docs/superpowers/plans/2026-05-04-x27-models-picker-rework.md](docs/superpowers/plans/2026-05-04-x27-models-picker-rework.md)
+  - superseded-by: [X33] (modal-trigger pattern replaced by inline master/detail picker; the backend mapper + frontend Model type from X27 survive in X33)
+  - verify: `npm --prefix backend run test -- venice.models.service.test.ts && npm --prefix frontend run typecheck`
 
-- [ ] **[X27]** Settings → Models picker rework. The current dialog dumps the full model list inline and gets unwieldy. Mirror the chat-window pattern: the Settings panel shows only the currently selected model; clicking it opens a dedicated picker modal containing the full list. In the picker, surface the per-model description from Venice's `/models` endpoint and the per-token price alongside the model name.
+- [x] **[X33]** Settings → Models tab inline picker. Supersedes X27's modal trigger pattern with an inline master/detail picker living inside the Settings → Models tab. Chat-bar model trigger reroutes to Settings → Models. Drops Cancel/Done from Settings (auto-save). Bumps modal close-X to 44×44 across the app.
+  - spec: [docs/superpowers/specs/2026-05-05-x33-models-tab-inline-picker-design.md](docs/superpowers/specs/2026-05-05-x33-models-tab-inline-picker-design.md)
+  - plan: [docs/superpowers/plans/2026-05-05-x33-models-tab-inline-picker.md](docs/superpowers/plans/2026-05-05-x33-models-tab-inline-picker.md)
+  - verify: `npm --prefix backend run test -- venice.models.service.test.ts && npm --prefix frontend run test -- ModelPickerInline Settings.models editor-shell.integration && npm --prefix frontend run typecheck && npm --prefix frontend run build-storybook`
 
-- [ ] **[X28]** Settings → Models generation-parameter revisit: (1) audit the UI defaults — confirm temperature / top_p / max_tokens etc. are sane for general writing use; (2) parameter changes must persist *per model* (today they're applied globally), so the saved settings shape becomes `{ [modelId]: { temperature, ... } }` keyed by Venice model ID; (3) add a per-model Reset button that clears the user's saved overrides for that model and falls back to the model's defaults; (4) some models expose default parameter values via Venice's `/models` endpoint (e.g. "Qwen 3.5 397B") — load those as the baseline defaults instead of a global hardcode where present.
+- **[X34]** → bd:story-editor-myi
+- **[X28]** → bd:story-editor-tdc
 
-- [ ] **[X29]** Settings → Models system prompt is dead UI. Current copy reads "Per-story override for the default creative-writing prompt" with a "Pick a story to set a custom system prompt" hint, but no story selector exists in this surface. Repurpose the field as a *user-level* system prompt that applies to every AI call, used either alongside the Venice default system prompt (when the [X26] toggle is on) or on its own. Per-story `Story.systemPrompt` ([V13]) continues to override the user-level value when present.
+- [x] **[X29]** Settings → Models system prompt is dead UI. Repurposed as a Settings → Prompts tab with user-level overrides for the system prompt and five action templates (continue, rewrite/rephrase, expand, summarise, describe). Per-story `Story.systemPrompt` (column + repo path + dead Models-tab UI) removed entirely.
+  - plan: [docs/superpowers/plans/2026-05-04-x29-prompts-tab.md](docs/superpowers/plans/2026-05-04-x29-prompts-tab.md)
+  - verify: `cd backend && npm run test:backend -- --run tests/services/prompt.user-prompts.test.ts tests/routes/user-settings.test.ts tests/routes/ai-defaults.test.ts tests/repos/story.repo.test.ts tests/routes/stories.test.ts && cd ../frontend && npm run test:frontend -- --run tests/components/Settings.prompts.test.tsx tests/components/Settings.models.test.tsx tests/hooks/useDefaultPrompts.test.tsx`
 
-- [ ] **[X11]** (optional) Reconsider whether `/api/ai/complete` should keep `enable_web_search` on at all. Context: V7 wired web-search opt-in (`enableWebSearch?: boolean` on the `/api/ai/complete` body). V26 scoped citations to the chat panel only, so on the inline-AI surface users currently pay Venice web-search cost with zero user-visible benefit — citations are dropped silently. Decide one of: (a) turn web search OFF across all inline AI actions (simplest, removes the wasted spend); (b) keep it ON as a silent fact-grounding nudge for accuracy (tolerable but undocumented); (c) extend V26's delivery to inline AI (requires a new F-design for a sources UI on the inline card — the selection bubble / inline AI card has no mockup for this today). Write the decision + rationale into `docs/venice-integration.md` § Web Search. If (a), also remove `enableWebSearch` from `ai.routes.ts` body schema + update `docs/api-contract.md` § `/api/ai/complete`. If (c), spawn a follow-up F-task and a follow-up V-task.
-  - verify: (design decision — no automated verify)
+- **[X11]** → bd:story-editor-h1i
 
 ### X — Import & export
 
-- [ ] **[X5]** DOCX export (per chapter + whole story): backend converts `bodyJson` → .docx via the `docx` npm package; frontend "Import .docx" sits in Story Picker footer ([F30]) and triggers `POST /api/stories/:id/export/docx`.
-  - verify: `cd backend && npm run test:backend -- --run tests/routes/export-docx.test.ts`
-
-- [ ] **[X6]** EPUB export (whole story): stitches chapters in `orderIndex` order into a single .epub. Async — returns a job id, polled for the download URL.
-  - verify: `cd backend && npm run test:backend -- --run tests/routes/export-epub.test.ts`
-
-- [ ] **[X7]** Import .docx into a story: parses headings as chapter splits, creates Chapter rows with derived `bodyJson` + `content`.
-  - verify: `cd backend && npm run test:backend -- --run tests/routes/import-docx.test.ts`
+- **[X5]** → bd:story-editor-lbn
+- **[X6]** → bd:story-editor-wh3
+- **[X7]** → bd:story-editor-8og
 
 ### X — Account
 
-- [ ] **[X3]** Remaining account-settings scope: edit display name — no editor exists today (`User.name` is set once at register time to the username and cannot be changed; backend has no `PATCH /api/users/me` for name/username). The (b) delete-account piece shipped 2026-05-02 via the F61 modal-takeover redesign — `DELETE /api/auth/delete-account` (auth + per-user rate-limit + timing-equalised wrong-password + cookie clear), `useDeleteAccountMutation` (clears session/cache + navigates to `/login` with `accountDeleted: true`), and the in-modal password + typed-`DELETE` confirm form. Change-password / rotate-recovery / sign-out-everywhere are not in this task's scope (already shipped under F61/B12/AU15/AU17).
-  - verify: `cd backend && npm run test:backend -- --run tests/routes/account.test.ts && cd ../frontend && npm run test:frontend -- --run tests/pages/account.test.tsx`
+- **[X3]** → bd:story-editor-3xj
 
-- [ ] **[X26]** Settings → Venice.ai polish pass: (a) the toggle currently labelled "Include Venice creative-writing prompt" should ask whether to include Venice's *default system prompt* — current copy is misleading about what the flag actually toggles; (b) once a key is stored, prefill the API-key input with a partially-masked value showing the last **6** characters (currently last 4) and remove the separate "Stored key" field above the Remove button — collapse into one field; (c) the Save button should validate against Venice in the same call (saves an extra click), keep the standalone Verify button for re-checking an existing stored key; (d) the Verify result text "Verified · — credits" leaves the credit count blank — fill it in from the verify response, and double-check Venice's API: their balance is denominated in $ (USD) on the dashboard, not "credits". Update the label accordingly.
+- [x] **[X26]** Settings → Venice.ai polish pass: (a) the toggle currently labelled "Include Venice creative-writing prompt" should ask whether to include Venice's *default system prompt* — current copy is misleading about what the flag actually toggles; (b) once a key is stored, prefill the API-key input with a partially-masked value showing the last **6** characters (currently last 4) and remove the separate "Stored key" field above the Remove button — collapse into one field; (c) the Save button should validate against Venice in the same call (saves an extra click), keep the standalone Verify button for re-checking an existing stored key; (d) the Verify result text "Verified · — credits" leaves the credit count blank — fill it in from the verify response, and double-check Venice's API: their balance is denominated in $ (USD) on the dashboard, not "credits". Update the label accordingly.
+  - trivial: (a) copy fix in Settings.tsx; (b) `lastFour`→`lastSix` rename across backend service + routes + frontend hook + Settings UI (placeholder replaces inline indicator); (c) `handleSave` chains `verifyMutation` after `storeMutation` and reuses the existing pill UI; (d) `credits`→`balanceUsd` rename on the verify endpoint only (the `/api/ai/balance` `credits` field is a separate endpoint, untouched here per security-reviewer scope note). docs/api-contract.md updated. security-reviewer CLEAN (1 stale-comment fix folded in, no other findings).
+  - verify: `cd backend && npm run test:backend -- --run tests/routes/venice-key.test.ts tests/routes/venice-key-verify.test.ts && cd ../frontend && npm run test:frontend -- --run tests/components/Settings.shell-venice.test.tsx`
 
-- [ ] **[X18]** Display name in the registration flow. Today `frontend/src/components/AuthForm.tsx` collects only `username` + `password`; `frontend/src/hooks/useAuth.ts:register()` defaults the backend-required `name` to the username so the schema's `nameSchema` (min 1) passes. Add a third `Display name` field to the register variant of `<AuthForm>` (login variant unchanged), validate min 1 / max 80 client-side to mirror `nameSchema`, and pass it through `register({ name, username, password })`. Update `Credentials` (or split into `LoginCredentials` / `RegisterCredentials`) so the type captures the register-only field. Sweep the existing register tests to assert `name` is sent in the body. Pairs with [X3]'s display-name editor — together they let users set + later edit a name distinct from the login handle.
-  - verify: `cd frontend && npm run test:frontend -- --run tests/components/AuthForm.test.tsx tests/hooks/useAuth.test.tsx tests/pages/recovery-code-handoff.test.tsx`
+- **[X18]** → bd:story-editor-6bw
 
 ---
 
 ## 🔧 M — Maintenance & dependencies
 
-> Recurring dependency upgrades, security advisories, and tooling hygiene. Each task that touches more than ~30 LoC, adds an abstraction, touches schema/auth/crypto/repo, or adds a dependency requires a plan before implementation (per the Workflow section above).
+> Recurring dependency upgrades, security advisories, and tooling hygiene. Open work tracked in bd; the rows below are the ID → bd-issue mapping.
 
-- [ ] **[M1]** (was X16) Resolve `pg@8` `client.query() when the client is already executing a query` DeprecationWarning surfaced under the X13 Prisma 7 + `@prisma/adapter-pg` migration. Backend `npm test` and `npm run venice:probe` now emit `(node:NNNN) DeprecationWarning: Calling client.query() when the client is already executing a query is deprecated and will be removed in pg@9.0` once per process. Source is the adapter shim — `node-postgres` is reusing a single `Client` for overlapping queries inside a Prisma `$transaction` callback. Three resolution paths in priority order: (1) wait for `@prisma/adapter-pg` to ship a release that switches to `pg.Pool`-per-statement (track https://github.com/prisma/prisma/issues — search `adapter-pg DeprecationWarning`); (2) bump to `pg@^9` if Prisma's adapter declares it as a peer; (3) if neither lands within ~6 weeks, file an upstream issue with a minimal repro and add a `process.removeAllListeners('warning')` filter scoped to that exact code (NOT a blanket suppress). Do not introduce a global silencer of node warnings in tests — masks future real deprecations.
-  - verify: `cd backend && npm test 2>&1 | tee /tmp/backend-test.log && ! grep -q 'client.query() when the client is already executing' /tmp/backend-test.log`
-
-- [ ] **[M2]** (was X20) Finish the [X15] act-warning sweep — it was ticked but a verbose run still emits **60** `An update to <Component> inside a test was not wrapped in act(...)` lines across **9** files: `AppShell.test.tsx`, `ChatComposer.test.tsx`, `ChatPanel.test.tsx`, `InlineAIResult.test.tsx`, `ModelPicker.test.tsx`, `SelectionBubble.test.tsx`, `Settings.appearance.test.tsx`, `Settings.models.test.tsx`, `Sidebar.test.tsx`. Two distinct root causes seen so far: (a) TanStack Query settle-after-test — the `useUserSettingsQuery` resolution fires `setSizeDraft` / `setTweaks` / etc. inside seed `useEffect`s after the test's last `await` returns (`SettingsAppearanceTab.tsx:208,252,276`); fix per-test by `await waitFor(() => expect(...).toBe(...))` on a settings-derived element, or by adding a settle-helper to `tests/setup.ts` and calling it after every render; (b) Zustand `setState` from outside React combined with `useLayoutEffect`-driven re-positioning (`SelectionBubble.tsx:157`); some tests already wrap `setState` in `act()` but the chained re-render still leaks. The X15 fix pattern (`await userEvent.click` / `await screen.findBy…` / `await waitFor`) is correct — apply consistently. Verify with the exact command in [X15] (`--reporter=verbose`, asserting zero `not wrapped in act` lines).
-  - verify: `cd frontend && bash -c 'npm run test:frontend -- --run --reporter=verbose 2>&1 | grep -c "not wrapped in act"' | tee /tmp/act-count && [ "$(cat /tmp/act-count)" = "0" ]`
-
-- [ ] **[M3]** (was X21) Track upstream Prisma fix for `@hono/node-server` advisory **GHSA-92pp-h63x-v22m** (path-traversal in `serveStatic` via repeated slashes). Pulled in transitively as `prisma → @prisma/dev → @hono/node-server@<1.19.13`. `@prisma/dev` is the package powering `prisma studio` / `prisma dev` — it's a dev-only surface and is not loaded by `@prisma/client` at runtime, so production hosts (which only run `prisma migrate deploy`) are not exposed. The Prisma maintainers ship bundled-dep bumps in patch releases; periodically re-run `cd backend && npm audit` and bump `prisma` / `@prisma/client` / `@prisma/adapter-pg` together when a clean version is available. Don't take `npm audit fix --force` — its proposed fix is `prisma@6.19.3`, a major-version downgrade. Close this when the audit advisory disappears without a downgrade, or when the underlying advisory is withdrawn.
-  - verify: `cd backend && bash -c 'npm audit --omit=dev --json 2>/dev/null | jq ".vulnerabilities | to_entries | map(select(.value.via[] | type==\"object\" and .source==1107173)) | length"' | tee /tmp/x21-count && [ "$(cat /tmp/x21-count)" = "0" ]`
+- **[M1]** → bd:story-editor-907
+- **[M2]** → bd:story-editor-10m
+- **[M3]** → bd:story-editor-ei0
 
 ---
 

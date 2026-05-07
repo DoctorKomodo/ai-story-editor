@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import * as askAiModule from '@/lib/askAi';
 import { createQueryClient } from '@/lib/queryClient';
+import { ACTION_MAP } from '@/pages/EditorPage';
 import { AppRouter } from '@/router';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
@@ -32,7 +33,6 @@ function makeStory(): Record<string, unknown> {
     synopsis: null,
     worldNotes: null,
     targetWords: 50_000,
-    systemPrompt: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
   };
@@ -57,7 +57,9 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
       return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
     }
     if (url.endsWith('/auth/me')) {
-      return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+      return Promise.resolve(
+        jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+      );
     }
     if (url.endsWith('/stories/abc123')) {
       return Promise.resolve(jsonResponse(200, { story: makeStory() }));
@@ -71,8 +73,16 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
     if (url.endsWith('/stories/abc123/outline')) {
       return Promise.resolve(jsonResponse(200, { items: [] }));
     }
-    if (url.endsWith('/ai/balance')) {
-      return Promise.resolve(jsonResponse(200, { balance: { dollars: 1, vcu: 100 } }));
+    if (url.endsWith('/users/me/venice-account')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          verified: true,
+          balanceUsd: 1,
+          diem: 100,
+          endpoint: null,
+          lastSix: null,
+        }),
+      );
     }
     if (url.endsWith('/ai/models')) {
       return Promise.resolve(jsonResponse(200, { models: [] }));
@@ -118,7 +128,7 @@ describe('EditorPage AI surfaces (F53)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     useActiveChapterStore.setState({ activeChapterId: null });
@@ -220,5 +230,21 @@ describe('EditorPage AI surfaces (F53)', () => {
     // surface (the prose region) is the structural assertion.
     const prose = document.querySelector('.paper-prose');
     expect(prose).not.toBeNull();
+  });
+
+  // [fix-max-tokens] ACTION_MAP 1:1 dispatch tests (V14: backend has real
+  // 'describe' and 'rewrite' actions; the old remapping was a pre-V14 shim).
+  describe('ACTION_MAP dispatches 1:1 to backend action ids', () => {
+    it('Describe bubble action maps to action="describe" (not "summarise")', () => {
+      expect(ACTION_MAP.describe).toBe('describe');
+    });
+
+    it('Rewrite bubble action maps to action="rewrite" (not "rephrase")', () => {
+      expect(ACTION_MAP.rewrite).toBe('rewrite');
+    });
+
+    it('Expand bubble action maps to action="expand"', () => {
+      expect(ACTION_MAP.expand).toBe('expand');
+    });
   });
 });

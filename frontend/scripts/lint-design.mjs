@@ -43,6 +43,11 @@ const PATTERNS = [
 
   // 6. Focus rings. Inkwell uses focus:border-ink-3 — no ring.
   /\bfocus:ring(?:-\w+)*\b/,
+
+  // 7. Bare CSS color functions outside Tailwind brackets.
+  //    e.g. style={{ color: 'rgb(0,0,0)' }} or const c = 'hsl(...)'.
+  //    Tailwind-bracketed forms are already caught by pattern 4.
+  /\b(rgba?|hsla?|oklch|hwb)\(/,
 ];
 
 // =============================================================================

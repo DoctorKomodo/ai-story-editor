@@ -10,13 +10,21 @@
 import type OpenAI from 'openai';
 import { getVeniceClient } from '../lib/venice';
 
+export interface ModelPricing {
+  inputUsdPerMTok: number;
+  outputUsdPerMTok: number;
+}
+
 export interface ModelInfo {
   id: string;
   name: string;
   contextLength: number;
+  maxCompletionTokens: number;
   supportsReasoning: boolean;
   supportsVision: boolean;
   supportsWebSearch: boolean;
+  description: string | null;
+  pricing: ModelPricing | null;
 }
 
 export class UnknownModelError extends Error {
@@ -29,6 +37,12 @@ export class UnknownModelError extends Error {
 
 const TTL_MS = 10 * 60 * 1000;
 
+// Cap used when Venice's /v1/models omits or zeroes maxCompletionTokens.
+// 4096 is below every observed Venice cap (lowest in the catalogue today is
+// 4096 itself), so a request built against it will never trip the upstream
+// "max_tokens > maximum allowed" 400.
+const FALLBACK_MAX_COMPLETION_TOKENS = 4096;
+
 interface VeniceRawCapabilities {
   supportsReasoning?: boolean;
   supportsVision?: boolean;
@@ -38,7 +52,13 @@ interface VeniceRawCapabilities {
 interface VeniceRawModelSpec {
   name?: string;
   availableContextTokens?: number;
+  maxCompletionTokens?: number;
   capabilities?: VeniceRawCapabilities;
+  description?: string;
+  pricing?: {
+    input?: { usd?: number };
+    output?: { usd?: number };
+  };
 }
 
 interface VeniceRawModel {
@@ -50,14 +70,39 @@ interface VeniceRawModel {
 function mapModel(raw: VeniceRawModel): ModelInfo {
   const spec = raw.model_spec ?? {};
   const caps = spec.capabilities ?? {};
+
+  const rawDesc = typeof spec.description === 'string' ? spec.description.trim() : '';
+  const description = rawDesc.length > 0 ? rawDesc : null;
+
+  const inUsd = spec.pricing?.input?.usd;
+  const outUsd = spec.pricing?.output?.usd;
+  const pricing =
+    typeof inUsd === 'number' && typeof outUsd === 'number'
+      ? { inputUsdPerMTok: inUsd, outputUsdPerMTok: outUsd }
+      : null;
+
+  const rawCap = spec.maxCompletionTokens;
+  let maxCompletionTokens: number;
+  if (typeof rawCap === 'number' && rawCap > 0) {
+    maxCompletionTokens = rawCap;
+  } else {
+    maxCompletionTokens = FALLBACK_MAX_COMPLETION_TOKENS;
+    console.warn(
+      `[venice.models] model "${raw.id}" exposes no positive maxCompletionTokens; defaulting to ${FALLBACK_MAX_COMPLETION_TOKENS}`,
+    );
+  }
+
   return {
     id: raw.id,
     name: spec.name ?? raw.id,
     contextLength:
       typeof spec.availableContextTokens === 'number' ? spec.availableContextTokens : 0,
+    maxCompletionTokens,
     supportsReasoning: Boolean(caps.supportsReasoning),
     supportsVision: Boolean(caps.supportsVision),
     supportsWebSearch: Boolean(caps.supportsWebSearch),
+    description,
+    pricing,
   };
 }
 
@@ -108,6 +153,15 @@ export function createVeniceModelsService(deps: VeniceModelsServiceDeps = {}) {
     throw new UnknownModelError(modelId);
   }
 
+  function getModelMaxCompletionTokens(modelId: string): number {
+    for (const entry of byUser.values()) {
+      for (const m of entry.models) {
+        if (m.id === modelId) return m.maxCompletionTokens;
+      }
+    }
+    throw new UnknownModelError(modelId);
+  }
+
   // [V6] Find a model by id from the in-memory cache. Returns null when the
   // model isn't present. fetchModels() must have been called first (which
   // /api/ai/complete always does) so the cache is populated; a null return
@@ -125,7 +179,7 @@ export function createVeniceModelsService(deps: VeniceModelsServiceDeps = {}) {
     byUser.clear();
   }
 
-  return { fetchModels, getModelContextLength, findModel, resetCache };
+  return { fetchModels, getModelContextLength, getModelMaxCompletionTokens, findModel, resetCache };
 }
 
 export const veniceModelsService = createVeniceModelsService();

@@ -14,7 +14,7 @@ A self-hosted, web-based story and text editor with Venice.ai AI integration. Us
 └── docker-compose.yml
 ```
 
-Source of truth for development work is [TASKS.md](TASKS.md). Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md). Production deployment notes are in [SELF_HOSTING.md](SELF_HOSTING.md).
+Working task tracker is [**bd** (beads)](https://gastownhall.github.io/beads/) — run `bd ready` to find available work, `bd show <id>` for details. Historical task journal and per-task `verify:` commands live in [TASKS.md](TASKS.md) (still authoritative for closed-task history and the `/task-verify` skill). Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md). Production deployment notes are in [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Quick start
 
@@ -86,8 +86,8 @@ Single-task verify: `/task-verify <TASK_ID>` (project-local slash command, see `
 | `npm run format` | Biome format with `--write` |
 | `npm run format:check` | Biome format dry-run |
 | `cd frontend && npm run lint:design` | design-token guard (forbids raw Tailwind colour utilities) |
-| `cd backend && npx tsc --noEmit` | backend typecheck |
-| `cd frontend && npx tsc --noEmit` | frontend typecheck |
+| `npm --prefix backend run typecheck` | backend typecheck (`tsc --noEmit`) |
+| `npm --prefix frontend run typecheck` | frontend typecheck (`tsc -b`, project references) |
 
 A `lint-staged` + Biome pre-commit hook runs automatically on `git commit` (see `Pre-commit hook` below).
 

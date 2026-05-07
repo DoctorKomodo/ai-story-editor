@@ -31,7 +31,6 @@ function makeStory(): Record<string, unknown> {
     synopsis: null,
     worldNotes: null,
     targetWords: null,
-    systemPrompt: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
   };
@@ -51,7 +50,9 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
       return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
     }
     if (url.endsWith('/auth/me')) {
-      return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+      return Promise.resolve(
+        jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+      );
     }
     if (url.endsWith('/stories/abc123')) {
       return Promise.resolve(jsonResponse(200, { story: makeStory() }));
@@ -68,8 +69,16 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
     if (url.endsWith('/stories')) {
       return Promise.resolve(jsonResponse(200, { stories: [] }));
     }
-    if (url.endsWith('/ai/balance')) {
-      return Promise.resolve(jsonResponse(200, { balance: { dollars: 1, vcu: 100 } }));
+    if (url.endsWith('/users/me/venice-account')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          verified: true,
+          balanceUsd: 1,
+          diem: 100,
+          endpoint: null,
+          lastSix: null,
+        }),
+      );
     }
     if (url.endsWith('/ai/models')) {
       return Promise.resolve(jsonResponse(200, { models: [] }));
@@ -103,7 +112,7 @@ describe('EditorPage chat panel + modals (F55)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     useActiveChapterStore.setState({ activeChapterId: null });

@@ -1,5 +1,5 @@
 import type OpenAI from 'openai';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   createVeniceModelsService,
   UnknownModelError,
@@ -21,6 +21,11 @@ type VeniceRawModel = {
       supportsVision?: boolean;
       supportsWebSearch?: boolean;
     };
+    description?: string;
+    pricing?: {
+      input?: { usd?: number; diem?: number };
+      output?: { usd?: number; diem?: number };
+    };
   };
 };
 
@@ -38,8 +43,13 @@ const LLAMA: VeniceRawModel = {
   type: 'text',
   model_spec: {
     name: 'Llama 3.3 70B',
+    description: 'A general-purpose 70B model tuned for instruction-following.',
     availableContextTokens: 65536,
     capabilities: { supportsReasoning: false, supportsVision: false },
+    pricing: {
+      input: { usd: 0.6, diem: 0.6 },
+      output: { usd: 2.4, diem: 2.4 },
+    },
   },
 };
 
@@ -102,25 +112,34 @@ describe('venice.models.service [V2]', () => {
           id: 'llama-3.3-70b',
           name: 'Llama 3.3 70B',
           contextLength: 65536,
+          maxCompletionTokens: 4096,
           supportsReasoning: false,
           supportsVision: false,
           supportsWebSearch: false,
+          description: 'A general-purpose 70B model tuned for instruction-following.',
+          pricing: { inputUsdPerMTok: 0.6, outputUsdPerMTok: 2.4 },
         },
         {
           id: 'qwen-qwq-32b',
           name: 'Qwen QwQ 32B',
           contextLength: 32768,
+          maxCompletionTokens: 4096,
           supportsReasoning: true,
           supportsVision: false,
           supportsWebSearch: false,
+          description: null,
+          pricing: null,
         },
         {
           id: 'mistral-vision',
           name: 'Mistral Vision',
           contextLength: 131072,
+          maxCompletionTokens: 4096,
           supportsReasoning: false,
           supportsVision: true,
           supportsWebSearch: false,
+          description: null,
+          pricing: null,
         },
       ]);
     });
@@ -150,6 +169,60 @@ describe('venice.models.service [V2]', () => {
       expect(only.supportsReasoning).toBe(false);
       expect(only.supportsVision).toBe(false);
       expect(only.supportsWebSearch).toBe(false);
+      expect(only.description).toBeNull();
+      expect(only.pricing).toBeNull();
+    });
+
+    it('omits pricing when only the input side is present', async () => {
+      const halfPriced: VeniceRawModel = {
+        id: 'half-priced',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Half Priced',
+          pricing: { input: { usd: 0.15 } },
+        },
+      };
+      const { client } = makeListStub([halfPriced]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.pricing).toBeNull();
+    });
+
+    it('omits pricing when output.usd is non-numeric', async () => {
+      const bad: VeniceRawModel = {
+        id: 'bad-priced',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Bad Priced',
+          pricing: {
+            input: { usd: 0.15 },
+            // @ts-expect-error — intentional non-numeric to mirror upstream noise
+            output: { usd: 'free' },
+          },
+        },
+      };
+      const { client } = makeListStub([bad]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.pricing).toBeNull();
+    });
+
+    it('normalises blank description to null', async () => {
+      const blank: VeniceRawModel = {
+        id: 'blank-desc',
+        object: 'model',
+        type: 'text',
+        model_spec: { name: 'Blank Desc', description: '   ' },
+      };
+      const { client } = makeListStub([blank]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.description).toBeNull();
     });
 
     it('serves from cache within the 10-minute TTL without re-calling Venice', async () => {
@@ -212,6 +285,100 @@ describe('venice.models.service [V2]', () => {
       });
 
       expect(() => svc.getModelContextLength('never-fetched')).toThrow(UnknownModelError);
+    });
+  });
+
+  describe('maxCompletionTokens mapping', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('maps spec.maxCompletionTokens onto ModelInfo when present', async () => {
+      const m: VeniceRawModel = {
+        id: 'has-cap',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Has Cap',
+          availableContextTokens: 65536,
+          // @ts-expect-error — field is absent from the test's local raw type
+          maxCompletionTokens: 8192,
+        },
+      };
+      const { client } = makeListStub([m]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.maxCompletionTokens).toBe(8192);
+    });
+
+    it('falls back to 4096 and warns once when maxCompletionTokens is missing', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const m: VeniceRawModel = {
+        id: 'no-cap',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'No Cap',
+          availableContextTokens: 65536,
+        },
+      };
+      const { client } = makeListStub([m]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.maxCompletionTokens).toBe(4096);
+      expect(warnSpy).toHaveBeenCalledTimes(1);
+      expect(warnSpy.mock.calls[0]?.[0]).toContain('no-cap');
+    });
+
+    it('falls back to 4096 and warns when maxCompletionTokens is zero or negative', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const zero: VeniceRawModel = {
+        id: 'zero-cap',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Zero',
+          availableContextTokens: 65536,
+          // @ts-expect-error — local type omits field
+          maxCompletionTokens: 0,
+        },
+      };
+      const neg: VeniceRawModel = {
+        id: 'neg-cap',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Neg',
+          availableContextTokens: 65536,
+          // @ts-expect-error — local type omits field
+          maxCompletionTokens: -10,
+        },
+      };
+      const { client } = makeListStub([zero, neg]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+      const models = await svc.fetchModels('user-1');
+      expect(models[0]?.maxCompletionTokens).toBe(4096);
+      expect(models[1]?.maxCompletionTokens).toBe(4096);
+      expect(warnSpy).toHaveBeenCalledTimes(2);
+    });
+
+    it('getModelMaxCompletionTokens returns the cap and throws UnknownModelError on miss', async () => {
+      const m: VeniceRawModel = {
+        id: 'has-cap-2',
+        object: 'model',
+        type: 'text',
+        model_spec: {
+          name: 'Has Cap 2',
+          availableContextTokens: 65536,
+          // @ts-expect-error — local type omits field
+          maxCompletionTokens: 16384,
+        },
+      };
+      const { client } = makeListStub([m]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+      await svc.fetchModels('user-1');
+      expect(svc.getModelMaxCompletionTokens('has-cap-2')).toBe(16384);
+      expect(() => svc.getModelMaxCompletionTokens('nope')).toThrow(UnknownModelError);
     });
   });
 });

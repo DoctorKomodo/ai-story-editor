@@ -62,8 +62,10 @@ model Story {
   genre        String?
   targetWords  Int?
   // [E4] ciphertext triples — now the SOLE source of truth for narrative
-  // fields (title, synopsis, worldNotes, systemPrompt). Populated by the repo
-  // layer ([E9]) on write. Plaintext siblings were dropped in [E11].
+  // fields (title, synopsis, worldNotes). Populated by the repo layer
+  // ([E9]) on write. Plaintext siblings were dropped in [E11].
+  // [X29] Story.systemPrompt removed; user-level overrides live in
+  // User.settingsJson.prompts.
   // `genre`, `targetWords`, `userId`, timestamps remain plaintext.
   titleCiphertext         String?
   titleIv                 String?
@@ -74,9 +76,6 @@ model Story {
   worldNotesCiphertext    String?
   worldNotesIv            String?
   worldNotesAuthTag       String?
-  systemPromptCiphertext  String?
-  systemPromptIv          String?
-  systemPromptAuthTag     String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 

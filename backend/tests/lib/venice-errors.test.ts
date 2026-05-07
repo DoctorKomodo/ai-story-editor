@@ -299,6 +299,98 @@ describe('mapVeniceError — 402 INSUFFICIENT_BALANCE', () => {
   });
 });
 
+describe('mapVeniceError — status forwarding + details.veniceMessage', () => {
+  function makeResStub() {
+    const state: { statusCode?: number; body?: unknown } = {};
+    const res = {
+      status(code: number) {
+        state.statusCode = code;
+        return this;
+      },
+      json(body: unknown) {
+        state.body = body;
+        return this;
+      },
+    } as unknown as Response;
+    return { res, state };
+  }
+
+  function fakeApiError(status: number, message: string): APIError {
+    return new APIError(status, { error: { message } }, message, new Headers());
+  }
+
+  it('forwards Venice 400 as HTTP 400, code=venice_error, with details.veniceMessage', () => {
+    const { res, state } = makeResStub();
+    const err = fakeApiError(
+      400,
+      'Requested max_tokens or max_completion_tokens of 51200, but the maximum allowed is 32768',
+    );
+    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(state.statusCode).toBe(400);
+    const body = state.body as {
+      error: { code: string; message: string; details?: { veniceMessage?: string } };
+    };
+    expect(body.error.code).toBe('venice_error');
+    expect(body.error.details?.veniceMessage).toContain('maximum allowed is 32768');
+  });
+
+  it('forwards Venice 404 as HTTP 404 with details.veniceMessage', () => {
+    const { res, state } = makeResStub();
+    const err = fakeApiError(404, 'Model not found: bogus-model');
+    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(state.statusCode).toBe(404);
+    const body = state.body as { error: { details?: { veniceMessage?: string } } };
+    expect(body.error.details?.veniceMessage).toContain('bogus-model');
+  });
+
+  it('forwards Venice 422 as HTTP 422 with details.veniceMessage', () => {
+    const { res, state } = makeResStub();
+    const err = fakeApiError(422, 'Invalid value for parameter "temperature"');
+    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(state.statusCode).toBe(422);
+    const body = state.body as { error: { details?: { veniceMessage?: string } } };
+    expect(body.error.details?.veniceMessage).toContain('temperature');
+  });
+
+  it('keeps unmapped non-2xx (e.g. 418) at HTTP 502 but still adds details.veniceMessage', () => {
+    const { res, state } = makeResStub();
+    const err = fakeApiError(418, 'I am a teapot');
+    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(state.statusCode).toBe(502);
+    const body = state.body as { error: { details?: { veniceMessage?: string } } };
+    expect(body.error.details?.veniceMessage).toBe('I am a teapot');
+  });
+
+  it('sanitises sk-prefixed key fragments out of details.veniceMessage', () => {
+    const { res, state } = makeResStub();
+    const err = fakeApiError(
+      400,
+      'Bad request from key sk-veniceLEAKYABCDEF1234567890; please retry',
+    );
+    mapVeniceError(err, res, 'user-1');
+    const body = state.body as { error: { details?: { veniceMessage?: string } } };
+    expect(body.error.details?.veniceMessage).not.toContain('sk-veniceLEAKY');
+    expect(body.error.details?.veniceMessage).toContain('[redacted]');
+  });
+
+  it('SSE path emits details.veniceMessage on the error frame', () => {
+    const frames: string[] = [];
+    const err = fakeApiError(
+      400,
+      'Requested max_tokens of 51200, but the maximum allowed is 32768',
+    );
+    expect(mapVeniceErrorToSse(err, (s) => frames.push(s), 'user-1')).toBe(true);
+    expect(frames).toHaveLength(2);
+    const payload = JSON.parse(frames[0].slice('data: '.length).trimEnd()) as {
+      code: string;
+      message: string;
+      details?: { veniceMessage?: string };
+    };
+    expect(payload.code).toBe('venice_error');
+    expect(payload.details?.veniceMessage).toContain('32768');
+  });
+});
+
 describe('mapVeniceErrorToSse — uniform { error, code, message } shape', () => {
   function captureFrames(): { writes: string[]; write: (s: string) => void } {
     const writes: string[] = [];

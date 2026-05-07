@@ -49,6 +49,7 @@ const MODEL_LIST_BODY = {
       model_spec: {
         name: 'Llama 3.3 70B',
         availableContextTokens: BASE_CONTEXT_LENGTH,
+        maxCompletionTokens: 4096,
         capabilities: { supportsReasoning: false, supportsVision: false },
       },
     },
@@ -124,7 +125,6 @@ async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; ch
   const story = await createStoryRepo(req).create({
     title: 'Cit Story',
     worldNotes: null,
-    systemPrompt: null,
   });
   const storyId = story.id as string;
   const chapter = await createChapterRepo(req).create({

@@ -11,7 +11,7 @@ All endpoints are served from the Express backend at `/api`. Content type is `ap
 - **Validation** — request bodies are Zod-validated ([AU / B series]); invalid payloads return `400 { error: { message, code: "validation_error", issues } }`.
 - **Errors** — global error handler returns `{ error: { message, code } }`. Never exposes stack traces in `NODE_ENV=production` ([B7]). Common codes: `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `venice_key_required`, `venice_key_invalid`, `internal_error`.
 - **Narrative fields** — responses for Story, Chapter, Character, OutlineItem, Chat, Message never include ciphertext siblings (`*Ciphertext`, `*Iv`, `*AuthTag`). The repo layer strips them ([E9]).
-- **Secrets** — `passwordHash` is never returned. The decrypted Venice API key is never returned; the "hasKey / lastFour / endpoint" shape is the only read surface ([AU12]).
+- **Secrets** — `passwordHash` is never returned. The decrypted Venice API key is never returned; the "hasKey / lastSix / endpoint" shape is the only read surface ([AU12]). Balance is exposed via `GET /api/users/me/venice-account` ([X32]) only.
 
 ---
 
@@ -53,23 +53,45 @@ Response `200`: `{ "user": { "id", "username", "name", "createdAt" } }`.
 ## User — `/api/users/me`
 
 ### `GET /api/users/me/settings` · `PATCH /api/users/me/settings` ([B11])
-Read/write `User.settingsJson`. Zod enforces allowed keys: `theme`, `proseFont`, `proseSize`, `lineHeight`, `writing.{typewriter,focusParagraph,autosave,smartQuotes,emDashExpansion}`, `dailyGoal`, `chat.{model,temperature,top_p,max_tokens,frequency_penalty}`, `ai.includeVeniceSystemPrompt` (boolean, default `true` when absent — controls `venice_parameters.include_venice_system_prompt` on every `/api/ai/complete` call).
+Read/write `User.settingsJson`. Zod enforces allowed keys: `theme`, `proseFont`, `proseSize`, `lineHeight`, `writing.{typewriter,focusParagraph,autosave,smartQuotes,emDashExpansion}`, `dailyGoal`, `chat.{model,temperature,top_p,max_tokens,frequency_penalty}`, `ai.includeVeniceSystemPrompt` (boolean, default `true` when absent — controls `venice_parameters.include_venice_system_prompt` on every `/api/ai/complete` call), and `prompts` (user-level prompt overrides — see below).
+
+The `prompts` slice sits next to `ai`:
+
+```json
+"prompts": {
+  "system": "string | null",
+  "continue": "string | null",
+  "rewrite": "string | null",
+  "expand": "string | null",
+  "summarise": "string | null",
+  "describe": "string | null"
+}
+```
+
+`null` for any field means use the built-in default. The defaults are exposed read-only via `GET /api/ai/default-prompts`.
+
 Response `200`: `{ "settings": { … } }`.
 
 ### `GET /api/users/me/venice-key` ([AU12])
-Response `200`: `{ "hasKey": true, "lastFour": "x9ab", "endpoint": "https://api.venice.ai/api/v1" }`. Never returns the key.
+Response `200`: `{ "hasKey": true, "lastSix": "abx9ab", "endpoint": "https://api.venice.ai/api/v1" }`. Never returns the key.
 
 ### `PUT /api/users/me/venice-key` ([AU12])
 Body: `{ "apiKey": "vn-…", "endpoint?": "https://…" }`. Validates by calling Venice `GET /v1/models` before storing; encrypts via the AU11 helper.
-Response `200`: `{ "status": "saved", "lastFour": "x9ab" }`.
+Response `200`: `{ "status": "saved", "lastSix": "abx9ab" }`.
 Errors: `400 { code: "venice_key_invalid" }` on 401 from Venice (key not stored).
 
 ### `DELETE /api/users/me/venice-key` ([AU12])
 Nulls the four BYOK columns. Response `200`: `{ "status": "removed" }`.
 
-### `POST /api/users/me/venice-key/verify` ([V18])
-Rate-limited 6 req/min/user.
-Response `200`: `{ "verified": true, "credits": 2200, "diem": 15.0, "endpoint": "…", "lastFour": "x9ab" }`.
+### `GET /api/users/me/venice-account` ([X32])
+Per-user rate-limited 30 req/min. Probes Venice's `GET /api_keys/rate_limits` endpoint and reads `data.balances.{USD,DIEM}` from the body.
+Response `200`: `{ "verified": true, "balanceUsd": 22.5, "diem": 15.0, "endpoint": "https://api.venice.ai/api/v1", "lastSix": "abx9ab" }`. Either of `balanceUsd` / `diem` may be `null` when the corresponding currency isn't on the user's account. `verified: false` is returned (still HTTP 200) when no key is stored OR the stored key was rejected by Venice (401/403).
+Errors:
+- `429 { code: "venice_rate_limited", upstreamStatus: 429, retryAfterSeconds }` — Venice itself rate-limited our probe.
+- `429 { code: "account_rate_limited" }` — our own per-user limit (chatty client). Distinct from `venice_rate_limited` so the frontend can tell which side is the bottleneck.
+- `502 { code: "venice_unavailable", upstreamStatus: number | null }` — non-401/429 from Venice (5xx, 4xx other than auth) or transport failure (`upstreamStatus: null` in the latter case).
+
+Replaces the deleted `GET /api/ai/balance` (V10) and `POST /api/users/me/venice-key/verify` (V18).
 
 ---
 
@@ -79,7 +101,7 @@ Response `200`: `{ "verified": true, "credits": 2200, "diem": 15.0, "endpoint": 
 Response `200`: `{ "stories": [{ "id", "title", "genre", "synopsis", "targetWords", "chapterCount", "wordCount", "updatedAt" }] }`.
 
 ### `POST /api/stories` ([B1])
-Body: `{ "title": "…", "genre?", "synopsis?", "worldNotes?", "targetWords?", "systemPrompt?" }`.
+Body: `{ "title": "…", "genre?", "synopsis?", "worldNotes?", "targetWords?" }`.
 Response `201`: `{ "story": { … } }`.
 
 ### `GET /api/stories/:id` ([B2])
@@ -185,10 +207,48 @@ Errors: `409 { code: "venice_key_required" }` when the user has no stored key.
 ## AI — `/api/ai`
 
 ### `GET /api/ai/models` ([V1])
-Response `200`: `{ "models": [{ "id", "name", "contextLength", "supportsReasoning", "supportsVision" }] }`. Cached 10 min in memory.
 
-### `GET /api/ai/balance` ([V10])
-Response `200`: `{ "usd": 15.0, "diem": 2200 }`.
+Response `200`:
+```jsonc
+{
+  "models": [
+    {
+      "id": "llama-3.3-70b",
+      "name": "Llama 3.3 70B",
+      "contextLength": 65536,
+      "supportsReasoning": false,
+      "supportsVision": false,
+      "supportsWebSearch": false,
+      "description": "A general-purpose 70B model tuned for instruction-following.",
+      "pricing": { "inputUsdPerMTok": 0.6, "outputUsdPerMTok": 2.4 }
+    }
+  ]
+}
+```
+
+`description` is `string | null`. `pricing` is atomic — either both `inputUsdPerMTok` and `outputUsdPerMTok` are present (numbers, USD per 1M tokens) or the whole `pricing` object is `null`. We never expose a partial price.
+
+Cached 10 min in memory.
+
+### `GET /api/ai/default-prompts`
+
+Returns the canonical default templates the prompt builder falls back to
+when a user has not overridden a given key. Auth-required. Constants
+change only on backend deploy — frontend caches with `staleTime: Infinity`.
+
+**Response 200**
+```json
+{
+  "defaults": {
+    "system": "string",
+    "continue": "string",
+    "rewrite": "string",
+    "expand": "string",
+    "summarise": "string",
+    "describe": "string"
+  }
+}
+```
 
 ### `POST /api/ai/complete` — SSE stream ([V5], [V7])
 Body: `{ "action": "continue" | "rewrite" | "describe" | "expand" | "summarise" | "ask" | "freeform", "selectedText?", "chapterContent?", "storyId", "modelId", "enableWebSearch?" }`.
@@ -211,4 +271,4 @@ Response `503`: `{ "status": "degraded", "db": "unreachable" }` when Prisma can'
 
 - Global: Helmet + a sensible default (TBD in [AU7]).
 - `/api/ai/*`: 20 req/min/IP ([AU7]).
-- `/api/users/me/venice-key/verify`: 6 req/min/user ([V18]).
+- `/api/users/me/venice-account`: 30 req/min/user ([X32]).

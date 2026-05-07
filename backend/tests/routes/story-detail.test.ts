@@ -108,7 +108,6 @@ describe('Story detail routes [B2]', () => {
       genre: 'sci-fi',
       worldNotes: 'Notes on the world.',
       targetWords: 80000,
-      systemPrompt: null,
     });
 
     const res = await request(app)
@@ -124,7 +123,6 @@ describe('Story detail routes [B2]', () => {
     expect(story.genre).toBe('sci-fi');
     expect(story.worldNotes).toBe('Notes on the world.');
     expect(story.targetWords).toBe(80000);
-    expect(story.systemPrompt).toBeNull();
 
     for (const key of Object.keys(story)) {
       expect(key.endsWith('Ciphertext')).toBe(false);

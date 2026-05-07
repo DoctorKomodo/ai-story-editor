@@ -29,7 +29,6 @@ function makeStory(id: string, overrides: Partial<Record<string, unknown>> = {})
     synopsis: null,
     worldNotes: null,
     targetWords: 80_000,
-    systemPrompt: null,
     chapterCount: 1,
     totalWordCount: 1234,
     createdAt: new Date().toISOString(),
@@ -57,7 +56,7 @@ describe('StoryPicker (F30)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     fetchMock = vi.fn();

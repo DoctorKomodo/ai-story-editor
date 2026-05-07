@@ -6,7 +6,7 @@ describe('[E4] Story — ciphertext columns', () => {
   beforeEach(resetNarrativeTables);
   afterEach(resetNarrativeTables);
 
-  it('persists title/synopsis/worldNotes/systemPrompt ciphertext triples', async () => {
+  it('persists title/synopsis/worldNotes ciphertext triples', async () => {
     const user = await createUser();
     const created = await prisma.story.create({
       data: {
@@ -20,9 +20,6 @@ describe('[E4] Story — ciphertext columns', () => {
         worldNotesCiphertext: SENTINEL.ciphertext,
         worldNotesIv: SENTINEL.iv,
         worldNotesAuthTag: SENTINEL.authTag,
-        systemPromptCiphertext: SENTINEL.ciphertext,
-        systemPromptIv: SENTINEL.iv,
-        systemPromptAuthTag: SENTINEL.authTag,
       },
     });
     const read = await prisma.story.findUniqueOrThrow({ where: { id: created.id } });
@@ -31,7 +28,6 @@ describe('[E4] Story — ciphertext columns', () => {
     expect(read.titleAuthTag).toBe(SENTINEL.authTag);
     expect(read.synopsisCiphertext).toBe(SENTINEL.ciphertext);
     expect(read.worldNotesCiphertext).toBe(SENTINEL.ciphertext);
-    expect(read.systemPromptCiphertext).toBe(SENTINEL.ciphertext);
   });
 
   it('keeps genre, targetWords, userId, timestamps plaintext (unchanged)', async () => {

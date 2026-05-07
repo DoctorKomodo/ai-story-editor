@@ -10,6 +10,11 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createStoryRepo } from '../repos/story.repo';
 import { buildPrompt, type CharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
+import {
+  resolveIncludeVeniceSystemPrompt,
+  resolveUserMaxCompletionTokens,
+  resolveUserPrompts,
+} from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
@@ -52,24 +57,6 @@ function promptCacheKey(storyId: string, modelId: string): string {
   return createHash('sha256').update(`${storyId}:${modelId}`).digest('hex').slice(0, 32);
 }
 
-// ─── settingsJson type helper ────────────────────────────────────────────────
-
-interface AiSettings {
-  includeVeniceSystemPrompt?: boolean;
-}
-
-interface UserSettings {
-  ai?: AiSettings;
-}
-
-function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
-  if (!raw || typeof raw !== 'object') return true;
-  const settings = raw as UserSettings;
-  const flag = settings.ai?.includeVeniceSystemPrompt;
-  if (typeof flag === 'boolean') return flag;
-  return true;
-}
-
 export function createAiRouter() {
   const router = Router();
 
@@ -86,28 +73,6 @@ export function createAiRouter() {
       res.status(200).json({ models });
     } catch (err) {
       console.error('[ai.models]', err);
-      if (mapVeniceError(err, res, req.user!.id)) return;
-      next(err);
-    }
-  });
-
-  // [V10] GET /api/ai/balance — reads x-venice-balance-usd and x-venice-balance-diem
-  // from Venice response headers via a lightweight models.list() call.
-  // Does NOT use the models service cache (balance must be fresh).
-  // Returns { credits: number | null, diem: number | null }.
-  router.get('/balance', async (req: Request, res: Response, next: NextFunction) => {
-    try {
-      const client = await getVeniceClient(req.user!.id);
-      // .withResponse() gives us the raw HTTP response so we can read
-      // balance headers even though the openai SDK doesn't type them.
-      const { response } = await client.models.list().withResponse();
-      const rawUsd = response.headers.get('x-venice-balance-usd');
-      const rawDiem = response.headers.get('x-venice-balance-diem');
-      const credits = rawUsd !== null ? parseFloat(rawUsd) : null;
-      const diem = rawDiem !== null ? parseFloat(rawDiem) : null;
-      res.status(200).json({ credits, diem });
-    } catch (err) {
-      console.error('[ai.balance]', err);
       if (mapVeniceError(err, res, req.user!.id)) return;
       next(err);
     }
@@ -151,6 +116,11 @@ export function createAiRouter() {
       const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(
         userRow?.settingsJson ?? null,
       );
+      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
+      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
+        body.modelId,
+      );
 
       // ── 4. Load story via repo (ownership-scoped) ────────────────────────
       const story = await createStoryRepo(req).findById(body.storyId);
@@ -192,7 +162,6 @@ export function createAiRouter() {
 
       // ── 9. Build prompt ───────────────────────────────────────────────────
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
-      const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
       const {
         messages,
@@ -205,8 +174,10 @@ export function createAiRouter() {
         characters,
         worldNotes,
         modelContextLength,
+        modelMaxCompletionTokens,
+        userMaxCompletionTokens,
         includeVeniceSystemPrompt,
-        storySystemPrompt,
+        userPrompts,
         freeformInstruction: body.freeformInstruction,
       });
 

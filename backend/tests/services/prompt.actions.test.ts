@@ -19,6 +19,8 @@ function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput 
     characters: [],
     worldNotes: null,
     modelContextLength: 4096,
+    modelMaxCompletionTokens: 4096,
+    userMaxCompletionTokens: Number.POSITIVE_INFINITY,
     ...overrides,
   };
 }
@@ -86,9 +88,9 @@ describe('[V12] action=continue', () => {
 // ─── action: rephrase ─────────────────────────────────────────────────────────
 
 describe('[V12] action=rephrase', () => {
-  it('user message contains "rephrase" instruction', () => {
+  it('user message contains the rewrite instruction (collapsed under X29)', () => {
     const content = userContent(baseInput({ action: 'rephrase', selectedText: 'He said hello.' }));
-    expect(content.toLowerCase()).toContain('rephrase');
+    expect(content.toLowerCase()).toContain('rewrite');
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {

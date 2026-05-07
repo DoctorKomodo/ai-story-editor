@@ -1,24 +1,23 @@
 import type { PrismaClient } from '@prisma/client';
-import type OpenAI from 'openai';
 import { z } from 'zod';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { getVeniceClient } from '../lib/venice';
+import { parseRetryAfter } from '../lib/venice-errors';
 import { decrypt, encrypt } from './crypto.service';
 
 export const DEFAULT_VENICE_ENDPOINT = 'https://api.venice.ai/api/v1';
 
 export interface VeniceKeyStatus {
   hasKey: boolean;
-  lastFour: string | null;
+  lastSix: string | null;
   endpoint: string | null;
 }
 
-export interface VeniceKeyVerifyResult {
+export interface VeniceAccountResult {
   verified: boolean;
-  credits: number | null;
+  balanceUsd: number | null;
   diem: number | null;
   endpoint: string | null;
-  lastFour: string | null;
+  lastSix: string | null;
 }
 
 export class VeniceKeyInvalidError extends Error {
@@ -33,6 +32,41 @@ export class VeniceKeyCheckError extends Error {
     super(message);
     this.name = 'VeniceKeyCheckError';
   }
+}
+
+export class VeniceAccountRateLimitedError extends Error {
+  constructor(
+    public readonly retryAfterSeconds: number | null,
+    public readonly upstreamStatus: number,
+  ) {
+    super('Venice rate-limited the account-info probe');
+    this.name = 'VeniceAccountRateLimitedError';
+  }
+}
+
+export class VeniceAccountUnavailableError extends Error {
+  constructor(public readonly upstreamStatus: number | null) {
+    super('Venice account-info probe failed');
+    this.name = 'VeniceAccountUnavailableError';
+  }
+}
+
+// Extract the USD / DIEM balances from the rate_limits response body. The
+// body shape is `{ data: { balances: { USD: number, DIEM: number, ... } } }`.
+// Returns nulls when the body doesn't match — verified:true is still useful
+// to display even without numeric balances.
+function readBalances(body: unknown): { usd: number | null; diem: number | null } {
+  if (typeof body !== 'object' || body === null) return { usd: null, diem: null };
+  const data = (body as { data?: unknown }).data;
+  if (typeof data !== 'object' || data === null) return { usd: null, diem: null };
+  const balances = (data as { balances?: unknown }).balances;
+  if (typeof balances !== 'object' || balances === null) return { usd: null, diem: null };
+  const usdRaw = (balances as Record<string, unknown>).USD;
+  const diemRaw = (balances as Record<string, unknown>).DIEM;
+  return {
+    usd: typeof usdRaw === 'number' && Number.isFinite(usdRaw) ? usdRaw : null,
+    diem: typeof diemRaw === 'number' && Number.isFinite(diemRaw) ? diemRaw : null,
+  };
 }
 
 export const storeVeniceKeyInputSchema = z.object({
@@ -52,13 +86,10 @@ export type StoreVeniceKeyInput = z.infer<typeof storeVeniceKeyInputSchema>;
 export interface VeniceKeyServiceDeps {
   client?: PrismaClient;
   fetchFn?: typeof fetch;
-  // Injection seam for tests: override getVeniceClient so tests can stub
-  // the OpenAI SDK without touching globalThis.fetch at the verify layer.
-  getVeniceClientFn?: (userId: string) => Promise<OpenAI>;
 }
 
-function lastFourOf(apiKey: string): string {
-  return apiKey.slice(-4);
+function lastSixOf(apiKey: string): string {
+  return apiKey.slice(-6);
 }
 
 function resolveEndpoint(endpoint: string | null | undefined): string {
@@ -95,7 +126,14 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     }
   }
 
-  async function getStatus(userId: string): Promise<VeniceKeyStatus> {
+  interface StatusAndKey {
+    hasKey: boolean;
+    lastSix: string | null;
+    endpoint: string | null;
+    apiKey: string | null; // plaintext, request-scoped
+  }
+
+  async function getStatusAndKey(userId: string): Promise<StatusAndKey> {
     const row = await client.user.findUnique({
       where: { id: userId },
       select: {
@@ -107,19 +145,26 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     });
 
     if (!row?.veniceApiKeyEnc || !row.veniceApiKeyIv || !row.veniceApiKeyAuthTag) {
-      return { hasKey: false, lastFour: null, endpoint: null };
+      return { hasKey: false, lastSix: null, endpoint: null, apiKey: null };
     }
 
-    const plaintext = decrypt({
+    const apiKey = decrypt({
       ciphertext: row.veniceApiKeyEnc,
       iv: row.veniceApiKeyIv,
       authTag: row.veniceApiKeyAuthTag,
     });
+
     return {
       hasKey: true,
-      lastFour: lastFourOf(plaintext),
+      lastSix: lastSixOf(apiKey),
       endpoint: row.veniceEndpoint ?? DEFAULT_VENICE_ENDPOINT,
+      apiKey,
     };
+  }
+
+  async function getStatus(userId: string): Promise<VeniceKeyStatus> {
+    const { hasKey, lastSix, endpoint } = await getStatusAndKey(userId);
+    return { hasKey, lastSix, endpoint };
   }
 
   async function store(userId: string, rawInput: unknown): Promise<VeniceKeyStatus> {
@@ -142,7 +187,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
 
     return {
       hasKey: true,
-      lastFour: lastFourOf(input.apiKey),
+      lastSix: lastSixOf(input.apiKey),
       endpoint: input.endpoint ?? DEFAULT_VENICE_ENDPOINT,
     };
   }
@@ -159,41 +204,76 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     });
   }
 
-  // [V18] Re-validates the stored key by calling Venice (GET /v1/models) and
-  // reads balance headers from the response. Never modifies stored rows —
-  // purely a read + probe operation.
-  async function verify(userId: string): Promise<VeniceKeyVerifyResult> {
-    const status = await getStatus(userId);
+  // [X32] Unified Venice account-info probe. Calls GET /api_keys/rate_limits
+  // (Venice's account-info endpoint) and reads `data.balances.{USD,DIEM}` from
+  // the JSON body. Replaces the old `verify()` (V18) which read non-existent
+  // `x-venice-balance-*` headers off /v1/models.
+  //
+  // On 401/403, returns verified:false rather than throwing — the Settings UI
+  // must show "Not verified" without treating it as a crash. 429 / 5xx surface
+  // as typed errors with `upstreamStatus` carried through to the route's error
+  // body so the frontend's DevErrorOverlay can render it for triage.
+  async function getAccount(userId: string): Promise<VeniceAccountResult> {
+    const { hasKey, lastSix, endpoint, apiKey } = await getStatusAndKey(userId);
 
-    if (!status.hasKey) {
-      return { verified: false, credits: null, diem: null, endpoint: null, lastFour: null };
+    if (!hasKey || apiKey === null) {
+      return { verified: false, balanceUsd: null, diem: null, endpoint: null, lastSix: null };
     }
 
-    // Use the injected getter (or the default) so tests can stub the client
-    // without needing to manipulate globalThis.fetch directly.
-    const getClientFn = deps.getVeniceClientFn ?? getVeniceClient;
-    const veniceClient = await getClientFn(userId);
+    const fetchFn = deps.fetchFn ?? globalThis.fetch;
+    const baseEndpoint = endpoint ?? DEFAULT_VENICE_ENDPOINT;
+    const url = `${baseEndpoint.replace(/\/$/, '')}/api_keys/rate_limits`;
 
-    // .withResponse() gives us the raw HTTP response so we can read balance
-    // headers even though the openai SDK doesn't type them.
-    const { response } = await veniceClient.models.list().withResponse();
+    let response: Response;
+    try {
+      response = await fetchFn(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${apiKey}` },
+      });
+    } catch {
+      console.error('[X32] Venice rate_limits probe failed (transport) for user', userId);
+      throw new VeniceAccountUnavailableError(null);
+    }
 
-    const rawUsd = response.headers.get('x-venice-balance-usd');
-    const rawDiem = response.headers.get('x-venice-balance-diem');
+    if (response.status === 401 || response.status === 403) {
+      return {
+        verified: false,
+        balanceUsd: null,
+        diem: null,
+        endpoint,
+        lastSix,
+      };
+    }
 
-    const creditsVal = rawUsd !== null ? parseFloat(rawUsd) : null;
-    const diemVal = rawDiem !== null ? parseFloat(rawDiem) : null;
+    if (response.status === 429) {
+      console.error('[X32] Venice rate_limits probe returned', response.status, 'for user', userId);
+      throw new VeniceAccountRateLimitedError(parseRetryAfter(response.headers), 429);
+    }
 
+    if (!response.ok) {
+      console.error('[X32] Venice rate_limits probe returned', response.status, 'for user', userId);
+      throw new VeniceAccountUnavailableError(response.status);
+    }
+
+    let body: unknown;
+    try {
+      body = await response.json();
+    } catch {
+      console.error('[X32] Venice rate_limits probe failed (json parse) for user', userId);
+      throw new VeniceAccountUnavailableError(response.status);
+    }
+
+    const balances = readBalances(body);
     return {
       verified: true,
-      credits: creditsVal !== null && !Number.isNaN(creditsVal) ? creditsVal : null,
-      diem: diemVal !== null && !Number.isNaN(diemVal) ? diemVal : null,
-      endpoint: status.endpoint,
-      lastFour: status.lastFour,
+      balanceUsd: balances.usd,
+      diem: balances.diem,
+      endpoint,
+      lastSix,
     };
   }
 
-  return { getStatus, store, remove, validateAgainstVenice, verify };
+  return { getStatus, store, remove, validateAgainstVenice, getAccount };
 }
 
 export const veniceKeyService = createVeniceKeyService();

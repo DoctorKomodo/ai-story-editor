@@ -13,6 +13,8 @@ function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput 
     characters: [],
     worldNotes: null,
     modelContextLength: 4096,
+    modelMaxCompletionTokens: 4096,
+    userMaxCompletionTokens: Number.POSITIVE_INFINITY,
     ...overrides,
   };
 }
@@ -148,7 +150,7 @@ describe('[V14] smoke — existing actions still produce prompts', () => {
   it('action=rephrase still produces a non-empty user message', () => {
     const content = userContent(baseInput({ action: 'rephrase', selectedText: 'Old text.' }));
     expect(content.length).toBeGreaterThan(0);
-    expect(content.toLowerCase()).toContain('rephrase');
+    expect(content.toLowerCase()).toContain('rewrite');
   });
 
   it('action=summarise still produces a non-empty user message', () => {

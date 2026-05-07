@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { IconButton } from './primitives';
+import { CloseIcon, IconButton } from './primitives';
 
 function CloseGlyph() {
   return (
@@ -51,3 +51,6 @@ export const Active: Story = {
   args: { ariaLabel: 'Bold', active: true, children: <BoldGlyph /> },
 };
 export const Disabled: Story = { args: { disabled: true } };
+export const Lg: Story = {
+  args: { size: 'lg', ariaLabel: 'Close', children: <CloseIcon size="lg" /> },
+};

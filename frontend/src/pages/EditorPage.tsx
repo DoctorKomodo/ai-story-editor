@@ -6,21 +6,22 @@
 //   - useChapterQuery(activeChapterId)    → Paper bodyJson source (F52)
 //   - useUpdateChapterMutation            → autosave PATCH (F52)
 //   - useCharactersQuery(storyId)         → CastTab body
-//   - useBalanceQuery()                   → UserMenu balance
+//   - useVeniceAccountQuery()             → UserMenu balance
 //   - useSessionStore(user)               → UserMenu username
 //   - useAuth().logout + navigate         → sign out
 //   - useActiveChapterStore               → ChapterList selection
 //   - useSidebarTabStore                  → active tab
 //   - <CharacterSheet> modal              → page-root, id-driven
 //   - <FormatBar> + <Paper>               → editor slot (F52 — replaces F8)
-//   - <ChatPanel> (ChatMessages + ChatComposer + ModelPicker) → chat slot (F55)
+//   - <ChatPanel> (ChatMessages + ChatComposer + model trigger) → chat slot (F55)
 //   - <Export>                            → rendered below Paper (until F52 promote)
 //
 // Modal-mount convention (locked in F51 for the rest of the F-series):
 //   page-level useState per modal; callback prop down via TopBar / Sidebar /
 //   ChatPanel; <Modal /> rendered at the bottom of the component, NOT inside
-//   AppShell. F55 mounts <SettingsModal>, <StoryPicker>, <ModelPicker> here;
-//   F61 mounts <AccountPrivacyModal>.
+//   AppShell. F55 mounts <SettingsModal>, <StoryPicker> here; F61 mounts
+//   <AccountPrivacyModal>. (X33 retired the standalone <ModelPicker> — model
+//   selection lives inside <SettingsModal initialTab="models">.)
 
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
@@ -43,18 +44,16 @@ import { ContinueWriting } from '@/components/ContinueWriting';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
 import { InlineAIResult } from '@/components/InlineAIResult';
-import { ModelPicker } from '@/components/ModelPicker';
 import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
 import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
-import { SettingsModal } from '@/components/Settings';
+import { SettingsModal, type SettingsTab } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
 import { StoryPicker } from '@/components/StoryPicker';
 import { TopBar } from '@/components/TopBar';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
-import { useBalanceQuery } from '@/hooks/useBalance';
 import {
   type Chapter,
   chapterQueryKey,
@@ -71,6 +70,7 @@ import {
 } from '@/hooks/useChat';
 import { useStoryQuery } from '@/hooks/useStories';
 import { useUserSettings } from '@/hooks/useUserSettings';
+import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -87,6 +87,14 @@ function extractSelection(editor: TiptapEditor): string {
   return editor.state.doc.textBetween(from, to, ' ');
 }
 
+// [F53] Maps the SelectionBubble action id to the backend action id sent to
+// /api/ai/complete. 1:1 since V14 added real 'rewrite' and 'describe' actions.
+export const ACTION_MAP: Record<Exclude<SelectionAction, 'ask'>, RunArgs['action']> = {
+  rewrite: 'rewrite',
+  describe: 'describe',
+  expand: 'expand',
+};
+
 export function EditorPage(): JSX.Element {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -96,11 +104,12 @@ export function EditorPage(): JSX.Element {
   const story = storyQuery.data;
   const chaptersQuery = useChaptersQuery(story?.id);
   const charactersQuery = useCharactersQuery(story?.id);
-  const balanceQuery = useBalanceQuery();
+  const balanceQuery = useVeniceAccountQuery();
   const balanceErrorCode =
     balanceQuery.error instanceof ApiError ? (balanceQuery.error.code ?? null) : null;
 
   const username = useSessionStore((s) => s.user?.username) ?? '';
+  const displayName = useSessionStore((s) => s.user?.name) ?? null;
   const { logout } = useAuth();
   const handleSignOut = useCallback((): void => {
     void logout().finally(() => {
@@ -151,7 +160,7 @@ export function EditorPage(): JSX.Element {
   // of its JSX; TopBar / Sidebar / ChatPanel callbacks flip these flags.
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
   // [F61] Account & privacy modal state — same page-root convention.
   const [accountPrivacyOpen, setAccountPrivacyOpen] = useState(false);
 
@@ -347,14 +356,6 @@ export function EditorPage(): JSX.Element {
   const setInlineAIResult = useInlineAIResultStore((s) => s.setInlineAIResult);
   const clearInlineAIResult = useInlineAIResultStore((s) => s.clear);
   const lastRunArgsRef = useRef<RunArgs | null>(null);
-  const ACTION_MAP: Record<Exclude<SelectionAction, 'ask'>, RunArgs['action']> = useMemo(
-    () => ({
-      rewrite: 'rephrase',
-      describe: 'summarise',
-      expand: 'expand',
-    }),
-    [],
-  );
 
   const exportStory: ExportStory | null = useMemo(() => {
     if (!story) return null;
@@ -452,7 +453,6 @@ export function EditorPage(): JSX.Element {
       selectedModelId,
       completion,
       setInlineAIResult,
-      ACTION_MAP,
     ],
   );
 
@@ -468,7 +468,7 @@ export function EditorPage(): JSX.Element {
       output: '',
     });
     void completion.run(args);
-  }, [completion, setInlineAIResult, ACTION_MAP]);
+  }, [completion, setInlineAIResult]);
 
   // Mirror the streaming completion into the inline-result store so
   // <InlineAIResult> renders progressive output and final state. Guarded by
@@ -555,6 +555,7 @@ export function EditorPage(): JSX.Element {
               setAccountPrivacyOpen(true);
             }}
             username={username}
+            displayName={displayName}
             balance={balanceQuery.data ?? null}
             isBalanceLoading={balanceQuery.isLoading}
             isBalanceError={balanceQuery.isError}
@@ -678,7 +679,8 @@ export function EditorPage(): JSX.Element {
             }
             composer={<ChatComposer onSend={handleChatSend} disabled={sendChatMessage.isPending} />}
             onOpenModelPicker={() => {
-              setModelPickerOpen(true);
+              setSettingsInitialTab('models');
+              setSettingsOpen(true);
             }}
             onNewChat={handleNewChat}
             onOpenSettings={() => {
@@ -733,16 +735,12 @@ export function EditorPage(): JSX.Element {
         activeStoryId={story.id}
         onSelectStory={handleStoryPickerSelect}
       />
-      <ModelPicker
-        open={modelPickerOpen}
-        onClose={() => {
-          setModelPickerOpen(false);
-        }}
-      />
       <SettingsModal
         open={settingsOpen}
+        initialTab={settingsInitialTab}
         onClose={() => {
           setSettingsOpen(false);
+          setSettingsInitialTab(undefined);
         }}
       />
       <AccountPrivacyModal

@@ -47,7 +47,10 @@ describe('useAuth', () => {
 
   it('login() calls POST /api/auth/login and populates the session', async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { user: { id: 'u1', username: 'alice' }, accessToken: 'tok-1' }),
+      jsonResponse(200, {
+        user: { id: 'u1', username: 'alice', name: 'Alice' },
+        accessToken: 'tok-1',
+      }),
     );
 
     const { result } = renderHook(() => useAuth());
@@ -62,7 +65,7 @@ describe('useAuth', () => {
     expect(init.body).toBe(JSON.stringify({ username: 'alice', password: 'hunter2hunter2' }));
 
     await waitFor(() => {
-      expect(result.current.user).toEqual({ id: 'u1', username: 'alice' });
+      expect(result.current.user).toEqual({ id: 'u1', username: 'alice', name: 'Alice' });
       expect(result.current.status).toBe('authenticated');
     });
     expect(getAccessToken()).toBe('tok-1');
@@ -73,27 +76,35 @@ describe('useAuth', () => {
     // register; the page is responsible for the post-ack login. See [F59].
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'Display Name' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
 
     const { result } = renderHook(() => useAuth());
-    let registerResult: { user: { id: string; username: string }; recoveryCode: string } | null =
-      null;
+    let registerResult: {
+      user: { id: string; username: string; name: string };
+      recoveryCode: string;
+    } | null = null;
     await act(async () => {
       registerResult = await result.current.register({
+        name: 'Display Name',
         username: 'bob',
         password: 'hunter2hunter2',
       });
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/auth/register');
+    // The body must forward the user-supplied display name distinctly from the
+    // username — register no longer defaults `name = username`.
+    expect(init.body).toBe(
+      JSON.stringify({ name: 'Display Name', username: 'bob', password: 'hunter2hunter2' }),
+    );
 
     expect(registerResult).toEqual({
-      user: { id: 'u2', username: 'bob' },
+      user: { id: 'u2', username: 'bob', name: 'Display Name' },
       recoveryCode: 'horse-battery-staple-correct',
     });
 
@@ -105,7 +116,7 @@ describe('useAuth', () => {
 
   it('logout() calls POST /api/auth/logout and clears the session', async () => {
     // Start authenticated.
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice' }, 'tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
     expect(getAccessToken()).toBe('tok-1');
 
     fetchMock.mockResolvedValueOnce(emptyResponse(204));
@@ -127,7 +138,7 @@ describe('useAuth', () => {
   });
 
   it('logout() clears the session even if the network call fails', async () => {
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice' }, 'tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
     fetchMock.mockRejectedValueOnce(new TypeError('network down'));
 
     const { result } = renderHook(() => useAuth());
@@ -144,7 +155,9 @@ describe('useAuth', () => {
   it('initAuth() attempts POST /api/auth/refresh on app load', async () => {
     fetchMock
       .mockResolvedValueOnce(jsonResponse(200, { accessToken: 'refreshed-tok' }))
-      .mockResolvedValueOnce(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+      .mockResolvedValueOnce(
+        jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+      );
 
     await act(async () => {
       await initAuth();
@@ -165,7 +178,11 @@ describe('useAuth', () => {
     await waitFor(() => {
       expect(useSessionStore.getState().status).toBe('authenticated');
     });
-    expect(useSessionStore.getState().user).toEqual({ id: 'u1', username: 'alice' });
+    expect(useSessionStore.getState().user).toEqual({
+      id: 'u1',
+      username: 'alice',
+      name: 'Alice',
+    });
     expect(getAccessToken()).toBe('refreshed-tok');
   });
 

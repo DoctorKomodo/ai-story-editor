@@ -227,7 +227,7 @@ Columns on `User` that change: all four `contentDekRecovery*` columns. **The pas
 
 | Model | Encrypted columns | Task |
 |---|---|---|
-| `Story` | `title`, `synopsis`, `worldNotes`, `systemPrompt` | [E4] |
+| `Story` | `title`, `synopsis`, `worldNotes` | [E4] |
 | `Chapter` | `title`, `body` (serialised TipTap JSON tree) | [E5] |
 | `Character` | `name`, `role`, `appearance`, `voice`, `arc`, `age`, `personality`, `backstory`, `notes`, `physicalDescription` | [E6] |
 | `OutlineItem` | `title`, `sub` | [E7] |

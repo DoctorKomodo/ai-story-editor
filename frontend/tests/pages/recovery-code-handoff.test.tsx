@@ -55,7 +55,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -67,6 +67,7 @@ describe('recovery-code handoff (F59)', () => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
 
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -90,13 +91,13 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         accessToken: 'tok-2',
         accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
       }),
@@ -109,6 +110,7 @@ describe('recovery-code handoff (F59)', () => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
 
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -134,7 +136,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -144,6 +146,7 @@ describe('recovery-code handoff (F59)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -167,7 +170,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -177,6 +180,7 @@ describe('recovery-code handoff (F59)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));
@@ -199,7 +203,7 @@ describe('recovery-code handoff (F59)', () => {
     primeUnauthenticatedInit(fetchMock);
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
-        user: { id: 'u2', username: 'bob' },
+        user: { id: 'u2', username: 'bob', name: 'bob' },
         recoveryCode: 'horse-battery-staple-correct',
       }),
     );
@@ -214,6 +218,7 @@ describe('recovery-code handoff (F59)', () => {
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: /create account/i })).toBeInTheDocument();
     });
+    await user.type(screen.getByLabelText(/display name/i), 'Bob Builder');
     await user.type(screen.getByLabelText(/username/i), 'bob');
     await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
     await user.click(screen.getByRole('button', { name: /create account/i }));

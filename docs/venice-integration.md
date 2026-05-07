@@ -77,6 +77,31 @@ Each action has a system prompt that instructs the model to return **only** the 
 
 ---
 
+## Prompt resolution
+
+The prompt builder (`backend/src/services/prompt.service.ts`) resolves
+each prompt slot via `resolvePrompt(userPrompts, key)`:
+
+1. If `userPrompts[key]` is a non-empty trimmed string → use the override.
+2. Otherwise → use `DEFAULT_PROMPTS[key]`.
+
+Overridable keys (six): `system`, `continue`, `rewrite`, `expand`,
+`summarise`, `describe`. The `'rephrase'` action is collapsed onto the
+`'rewrite'` override key (both surfaces share one user-level override).
+
+The selection text is auto-appended as `\n\nSelection: «…»` *after* the
+resolved task block — users edit the instruction line only, never the
+selection injection.
+
+`freeform` and `ask` are not template-driven (the user-typed text *is*
+the prompt) and do not consult `userPrompts`.
+
+User overrides are stored in `User.settingsJson.prompts` (six
+`string | null` fields). The Settings → Prompts tab is the sole
+authoring surface; per-story overrides were removed in [X29].
+
+---
+
 ## Dynamic Context Budgeting ([V2] + [V3])
 
 **Token counts are never hardcoded.** The prompt builder always consults the current model's `context_length`:
@@ -168,7 +193,7 @@ The editor's usage indicator ([F16]) reads those headers after each AI call.
 
 ### Balance ([V10])
 
-`GET /api/ai/balance` makes a lightweight Venice call and returns `x-venice-balance-usd` + `x-venice-balance-diem`. The frontend shows these in the user menu / settings → Venice tab ([F43]).
+`GET /api/users/me/venice-account` ([X32]) makes a lightweight Venice call to `GET /api_keys/rate_limits` and reads `data.balances.{USD,DIEM}` from the JSON body. Returns `{ verified, balanceUsd, diem, endpoint, lastSix }`. The frontend shows these in the user menu (header pill via `useVeniceAccountQuery`) and settings → Venice tab. Per-user rate-limited at 30 req/min. **Note:** the legacy `/api/ai/balance` endpoint was removed; it read non-existent `x-venice-balance-*` headers off `/v1/models` and always returned null balances.
 
 ---
 
@@ -286,9 +311,10 @@ This is the [V22] read-only compliance audit of the Story Editor Venice integrat
 **7. Models endpoint (`model_spec.availableContextTokens` + `capabilities`) — MATCHES**
 - Our side: `mapModel()` reads `raw.model_spec.availableContextTokens` (number) and `raw.model_spec.capabilities.{supportsReasoning, supportsVision}` (`backend/src/services/venice.models.service.ts:52–57`), and filters to `raw.type === 'text'` (line 93).
 - Venice (verbatim from docs.venice.ai/api-reference/endpoint/models/list example response): top-level `type: "text"`, `model_spec.availableContextTokens: 131072`, `model_spec.capabilities.supportsReasoning: false`, `model_spec.capabilities.supportsVision: false`. Field paths confirmed unchanged.
+- **[X27] Description and pricing.** `model_spec.description` (string) is mapped to `ModelInfo.description`, with empty / whitespace-only strings normalised to `null`. `model_spec.pricing.input.usd` and `model_spec.pricing.output.usd` (USD per 1M tokens) are mapped to `ModelInfo.pricing.{inputUsdPerMTok, outputUsdPerMTok}`. If either side is missing or non-numeric, the whole `pricing` object becomes `null` — we never render half-pricing. The DEM column from Venice (`pricing.{input,output}.diem`) is intentionally not consumed.
 
 **8. Rate-limit headers — MATCHES**
-- Our side: we forward `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` (`backend/src/routes/ai.routes.ts:241–248`, `backend/src/routes/chat.routes.ts:364–371`), and read `x-venice-balance-usd` + `x-venice-balance-diem` for `/balance` (`backend/src/routes/ai.routes.ts:90–93`).
+- Our side: we forward `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` (`backend/src/routes/ai.routes.ts:241–248`, `backend/src/routes/chat.routes.ts:364–371`), and read `data.balances.{USD,DIEM}` from `/api_keys/rate_limits` for `/api/users/me/venice-account` (`backend/src/services/venice-key.service.ts:getAccount`).
 - Venice: all four headers are documented verbatim on docs.venice.ai/api-reference → "Rate Limiting Information" and "Account Balance Information".
 - Note: Venice also publishes `x-ratelimit-limit-{requests,tokens}` and `x-ratelimit-reset-{requests,tokens}` — we don't forward these. Not drift; just an opportunity for a richer frontend usage display.
 

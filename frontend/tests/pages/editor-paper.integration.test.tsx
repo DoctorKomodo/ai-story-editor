@@ -30,7 +30,6 @@ function makeStory(): Record<string, unknown> {
     synopsis: null,
     worldNotes: null,
     targetWords: 50_000,
-    systemPrompt: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
   };
@@ -56,7 +55,9 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
       return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
     }
     if (url.endsWith('/auth/me')) {
-      return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+      return Promise.resolve(
+        jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+      );
     }
     if (url.endsWith('/stories/abc123')) {
       return Promise.resolve(jsonResponse(200, { story: makeStory() }));
@@ -70,8 +71,16 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
     if (url.endsWith('/stories/abc123/outline')) {
       return Promise.resolve(jsonResponse(200, { items: [] }));
     }
-    if (url.endsWith('/ai/balance')) {
-      return Promise.resolve(jsonResponse(200, { balance: { dollars: 1, vcu: 100 } }));
+    if (url.endsWith('/users/me/venice-account')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          verified: true,
+          balanceUsd: 1,
+          diem: 100,
+          endpoint: null,
+          lastSix: null,
+        }),
+      );
     }
     if (url.endsWith('/ai/models')) {
       return Promise.resolve(jsonResponse(200, { models: [] }));
@@ -117,7 +126,7 @@ describe('EditorPage paper integration (F52)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     useActiveChapterStore.setState({ activeChapterId: null });
@@ -186,7 +195,9 @@ describe('EditorPage paper integration (F52)', () => {
       if (url.endsWith('/auth/refresh'))
         return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
       if (url.endsWith('/auth/me'))
-        return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+        return Promise.resolve(
+          jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+        );
       if (url.endsWith('/stories/abc123'))
         return Promise.resolve(jsonResponse(200, { story: makeStory() }));
       if (url.endsWith('/stories/abc123/chapters'))
@@ -215,8 +226,16 @@ describe('EditorPage paper integration (F52)', () => {
         return Promise.resolve(jsonResponse(200, { characters: [] }));
       if (url.endsWith('/stories/abc123/outline'))
         return Promise.resolve(jsonResponse(200, { items: [] }));
-      if (url.endsWith('/ai/balance'))
-        return Promise.resolve(jsonResponse(200, { balance: { dollars: 1, vcu: 100 } }));
+      if (url.endsWith('/users/me/venice-account'))
+        return Promise.resolve(
+          jsonResponse(200, {
+            verified: true,
+            balanceUsd: 1,
+            diem: 100,
+            endpoint: null,
+            lastSix: null,
+          }),
+        );
       if (url.endsWith('/ai/models')) return Promise.resolve(jsonResponse(200, { models: [] }));
       if (url.endsWith('/users/me/settings')) {
         return Promise.resolve(

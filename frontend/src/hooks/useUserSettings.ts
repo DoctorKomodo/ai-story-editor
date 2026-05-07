@@ -48,12 +48,23 @@ export interface UserAiSettings {
   includeVeniceSystemPrompt: boolean;
 }
 
+/** [X29] Per-prompt user-level overrides. null = use built-in default. */
+export interface UserPromptsSettings {
+  system: string | null;
+  continue: string | null;
+  rewrite: string | null;
+  expand: string | null;
+  summarise: string | null;
+  describe: string | null;
+}
+
 export interface UserSettings {
   theme: 'paper' | 'sepia' | 'dark';
   prose: UserProseSettings;
   writing: UserWritingSettings;
   chat: UserChatSettings;
   ai: UserAiSettings;
+  prompts: UserPromptsSettings;
 }
 
 interface SettingsEnvelope {
@@ -86,6 +97,7 @@ export type UserSettingsPatch = {
   writing?: Partial<UserWritingSettings>;
   chat?: Partial<UserChatSettings>;
   ai?: Partial<UserAiSettings>;
+  prompts?: Partial<UserPromptsSettings>;
 };
 
 export function useUpdateUserSettingsMutation(): UseMutationResult<
@@ -126,6 +138,14 @@ export const DEFAULT_SETTINGS: UserSettings = {
   },
   chat: { model: null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
   ai: { includeVeniceSystemPrompt: true },
+  prompts: {
+    system: null,
+    continue: null,
+    rewrite: null,
+    expand: null,
+    summarise: null,
+    describe: null,
+  },
 };
 
 /**
@@ -140,6 +160,7 @@ export function mergeSettings(prev: UserSettings, patch: UserSettingsPatch): Use
     writing: { ...prev.writing, ...(patch.writing ?? {}) },
     chat: { ...prev.chat, ...(patch.chat ?? {}) },
     ai: { ...prev.ai, ...(patch.ai ?? {}) },
+    prompts: { ...prev.prompts, ...(patch.prompts ?? {}) },
   };
 }
 

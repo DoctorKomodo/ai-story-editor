@@ -28,6 +28,11 @@ import {
   renderAskUserContent,
 } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
+import {
+  resolveIncludeVeniceSystemPrompt,
+  resolveUserMaxCompletionTokens,
+  resolveUserPrompts,
+} from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
@@ -66,22 +71,6 @@ const PostMessageBody = z
 // [V8] Deterministic prompt-cache key per (chatId, modelId) for the chat surface.
 function chatPromptCacheKey(chatId: string, modelId: string): string {
   return createHash('sha256').update(`${chatId}:${modelId}`).digest('hex').slice(0, 32);
-}
-
-interface AiSettings {
-  includeVeniceSystemPrompt?: boolean;
-}
-
-interface UserSettings {
-  ai?: AiSettings;
-}
-
-function resolveIncludeVeniceSystemPrompt(raw: unknown): boolean {
-  if (!raw || typeof raw !== 'object') return true;
-  const settings = raw as UserSettings;
-  const flag = (settings as UserSettings).ai?.includeVeniceSystemPrompt;
-  if (typeof flag === 'boolean') return flag;
-  return true;
 }
 
 // ─── Router 1: chapter-scoped chat CRUD ──────────────────────────────────────
@@ -237,6 +226,11 @@ export function createChatMessagesRouter() {
       const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(
         userRow?.settingsJson ?? null,
       );
+      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
+      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
+        body.modelId,
+      );
 
       // ── 4. Load chapter + story via repos ─────────────────────────────────
       const chapter = await createChapterRepo(req).findById(chatChapterId);
@@ -273,7 +267,6 @@ export function createChatMessagesRouter() {
       // ── 6. Build prompt from chapter + story context ──────────────────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
-      const storySystemPrompt = typeof story.systemPrompt === 'string' ? story.systemPrompt : null;
 
       const {
         messages: baseMessages,
@@ -286,8 +279,10 @@ export function createChatMessagesRouter() {
         characters,
         worldNotes,
         modelContextLength,
+        modelMaxCompletionTokens,
+        userMaxCompletionTokens,
         includeVeniceSystemPrompt,
-        storySystemPrompt,
+        userPrompts,
         freeformInstruction: body.content,
       });
 

@@ -2,7 +2,13 @@ import { useCallback, useEffect } from 'react';
 import { api, refreshAccessToken, setAccessToken } from '@/lib/api';
 import { type SessionUser, useSessionStore } from '@/store/session';
 
-export interface Credentials {
+export interface LoginCredentials {
+  username: string;
+  password: string;
+}
+
+export interface RegisterCredentials {
+  name: string;
   username: string;
   password: string;
 }
@@ -35,8 +41,8 @@ export interface ResetPasswordInput {
 export interface UseAuthResult {
   user: SessionUser | null;
   status: ReturnType<typeof useSessionStore.getState>['status'];
-  login: (creds: Credentials) => Promise<SessionUser>;
-  register: (creds: Credentials) => Promise<RegisterResult>;
+  login: (creds: LoginCredentials) => Promise<SessionUser>;
+  register: (creds: RegisterCredentials) => Promise<RegisterResult>;
   logout: () => Promise<void>;
   resetPassword: (input: ResetPasswordInput) => Promise<void>;
 }
@@ -87,7 +93,7 @@ export function useAuth(): UseAuthResult {
   const clearSession = useSessionStore((s) => s.clearSession);
 
   const login = useCallback(
-    async ({ username, password }: Credentials): Promise<SessionUser> => {
+    async ({ username, password }: LoginCredentials): Promise<SessionUser> => {
       const res = await api<LoginResponse>('/auth/login', {
         method: 'POST',
         body: { username, password },
@@ -99,13 +105,10 @@ export function useAuth(): UseAuthResult {
   );
 
   const register = useCallback(
-    async ({ username, password }: Credentials): Promise<RegisterResult> => {
-      // Backend requires `name`; the auth form doesn't collect a separate
-      // display name yet, so default it to the username. Adding the field
-      // is [X18]; editing it after register is [X3].
+    async ({ name, username, password }: RegisterCredentials): Promise<RegisterResult> => {
       const res = await api<RegisterResponse>('/auth/register', {
         method: 'POST',
-        body: { name: username, username, password },
+        body: { name, username, password },
       });
       // Intentionally do NOT call setSession — the backend has not issued an
       // access token or refresh cookie yet. The page must show the recovery

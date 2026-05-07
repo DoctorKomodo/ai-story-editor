@@ -19,7 +19,6 @@ export interface StoryListItem {
   synopsis: string | null;
   worldNotes: string | null;
   targetWords: number | null;
-  systemPrompt: string | null;
   chapterCount: number;
   totalWordCount: number;
   createdAt: string;
@@ -36,10 +35,10 @@ export interface StoryResponse {
 
 /**
  * Single-story shape fetched by the editor. The editor needs the narrative
- * fields a dashboard card doesn't (worldNotes, systemPrompt, ...), but still
- * never sees ciphertext — the repo layer strips it on read. Chapters are
- * fetched separately by F10 (`useChapters(storyId)`), so this shape does
- * not embed them.
+ * fields a dashboard card doesn't (worldNotes, ...), but still never sees
+ * ciphertext — the repo layer strips it on read. Chapters are fetched
+ * separately by F10 (`useChapters(storyId)`), so this shape does not embed
+ * them.
  */
 export interface Story {
   id: string;
@@ -48,7 +47,6 @@ export interface Story {
   synopsis: string | null;
   worldNotes: string | null;
   targetWords: number | null;
-  systemPrompt: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -69,7 +67,6 @@ export interface StoryInput {
   synopsis?: string | null;
   worldNotes?: string | null;
   targetWords?: number | null;
-  systemPrompt?: string | null;
 }
 
 export const storiesQueryKey = ['stories'] as const;

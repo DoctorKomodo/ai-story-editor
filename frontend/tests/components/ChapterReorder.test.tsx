@@ -87,7 +87,10 @@ describe('useReorderChaptersMutation', () => {
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });
-    useSessionStore.setState({ user: { id: 'u1', username: 'alice' }, status: 'authenticated' });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
     setAccessToken('test-token');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);

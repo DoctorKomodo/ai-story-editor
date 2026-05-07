@@ -117,7 +117,6 @@ describe('Stories routes [B1]', () => {
         genre: 'literary',
         worldNotes: 'Set in a quiet town.',
         targetWords: 50000,
-        systemPrompt: null,
       });
 
     expect(res.status).toBe(201);
@@ -128,7 +127,6 @@ describe('Stories routes [B1]', () => {
     expect(story.genre).toBe('literary');
     expect(story.worldNotes).toBe('Set in a quiet town.');
     expect(story.targetWords).toBe(50000);
-    expect(story.systemPrompt).toBeNull();
     expect(typeof story.id).toBe('string');
 
     // No ciphertext fields leak through.
@@ -150,7 +148,6 @@ describe('Stories routes [B1]', () => {
     expect(res.body.story.title).toBe('Just a Title');
     expect(res.body.story.synopsis).toBeNull();
     expect(res.body.story.worldNotes).toBeNull();
-    expect(res.body.story.systemPrompt).toBeNull();
     expect(res.body.story.genre).toBeNull();
     expect(res.body.story.targetWords).toBeNull();
   });

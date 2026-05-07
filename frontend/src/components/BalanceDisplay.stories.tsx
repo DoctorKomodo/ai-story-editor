@@ -10,11 +10,15 @@ export default meta;
 type Story = StoryObj<typeof meta>;
 
 export const WithBalance: Story = {
-  args: { balance: { credits: 12.34, diem: 4200 } },
+  args: {
+    balance: { verified: true, balanceUsd: 12.34, diem: 4200, endpoint: null, lastSix: null },
+  },
 };
 
 export const PartialBalance: Story = {
-  args: { balance: { credits: 0.42, diem: null } },
+  args: {
+    balance: { verified: true, balanceUsd: 0.42, diem: null, endpoint: null, lastSix: null },
+  },
 };
 
 export const Loading: Story = { args: { balance: null, isLoading: true } };
