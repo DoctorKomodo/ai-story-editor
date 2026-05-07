@@ -370,6 +370,69 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
   });
 });
 
+// ─── SC7 suite ────────────────────────────────────────────────────────────────
+
+// setupAsDifferentUser: registers a second user and returns only an authed agent.
+// Does NOT need a story or chapter — ownership-fence tests only need the agent.
+async function setupAsDifferentUser(
+  username: string,
+): Promise<{ agent: ReturnType<typeof request.agent> }> {
+  const accessToken = await registerAndLogin(username, 'diff-user-pw', 'Different User');
+  const agent = request.agent(app);
+  agent.set('Authorization', `Bearer ${accessToken}`);
+  return { agent };
+}
+
+describe('PATCH /api/chats/:id', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  afterEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('updates the title', async () => {
+    const { agent, chapterId } = await setup('sc7-patch-u1');
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'old', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    const res = await agent.patch(`/api/chats/${chatId}`).send({ title: 'new title' }).expect(200);
+    expect(res.body.chat.title).toBe('new title');
+  });
+
+  it('returns 404 for unknown id', async () => {
+    const { agent } = await setup('sc7-patch-u2');
+    await agent.patch('/api/chats/cl000notreal').send({ title: 'x' }).expect(404);
+  });
+
+  it('returns 404 for chat owned by another user', async () => {
+    const { agent: agentA, chapterId } = await setup('sc7-patch-u3');
+    const created = await agentA
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'a', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    const { agent: agentB } = await setupAsDifferentUser('sc7-patch-u4');
+    await agentB.patch(`/api/chats/${chatId}`).send({ title: 'hijack' }).expect(404);
+  });
+
+  it('rejects invalid bodies', async () => {
+    const { agent, chapterId } = await setup('sc7-patch-u5');
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'a', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    await agent.patch(`/api/chats/${chatId}`).send({ title: '' }).expect(400);
+    await agent.patch(`/api/chats/${chatId}`).send({}).expect(400);
+  });
+});
+
 // ─── SC5 suite ────────────────────────────────────────────────────────────────
 
 describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {

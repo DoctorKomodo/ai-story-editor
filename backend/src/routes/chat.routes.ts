@@ -173,6 +173,49 @@ export function createChapterChatsRouter() {
   return router;
 }
 
+// ─── Router 3: chat-level CRUD (rename, etc.) ────────────────────────────────
+
+const PatchChatBody = z
+  .object({
+    title: z.string().min(1).max(200),
+  })
+  .strict();
+
+export function createChatCrudRouter() {
+  const router = Router();
+  router.use(requireAuth);
+
+  router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params.id as string;
+    const parsed = PatchChatBody.safeParse(req.body);
+    if (!parsed.success) {
+      badRequestFromZod(res, parsed.error);
+      return;
+    }
+    try {
+      const repo = createChatRepo(req);
+      // findById enforces ownership via the repo's chapter→story→user chain;
+      // null = not found OR not owned (intentionally indistinguishable).
+      const existing = await repo.findById(id);
+      if (!existing) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      const updated = await repo.update(id, { title: parsed.data.title });
+      if (!updated) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      res.status(200).json({ chat: updated });
+    } catch (err) {
+      console.error('[chat.patch]', err);
+      next(err);
+    }
+  });
+
+  return router;
+}
+
 // ─── Router 2: chat message POST with SSE streaming ──────────────────────────
 
 export function createChatMessagesRouter() {
