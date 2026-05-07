@@ -31,7 +31,7 @@ export interface UseSoftDeleteReturn {
 }
 
 export function useSoftDelete(
-  remove: (id: string) => Promise<unknown> | void,
+  remove: (id: string) => Promise<unknown> | undefined,
   options?: { timeoutMs?: number },
 ): UseSoftDeleteReturn {
   const timeoutMs = options?.timeoutMs ?? DEFAULT_TIMEOUT_MS;

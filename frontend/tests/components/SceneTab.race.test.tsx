@@ -14,7 +14,7 @@
  * because findLastIdx returned -1.
  */
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -82,9 +82,7 @@ describe('SceneTab — first-generate race (Bug 1)', () => {
     // First listChats returns empty (no sessions yet). After createChat the
     // sessions query is invalidated and refetches — the second call returns
     // the newly created session so the sessions effect doesn't reset activeId.
-    vi.mocked(api.listChats)
-      .mockResolvedValueOnce([])
-      .mockResolvedValue([CHAT_ROW]);
+    vi.mocked(api.listChats).mockResolvedValueOnce([]).mockResolvedValue([CHAT_ROW]);
 
     // listMessagesForChat must NOT be called in the first-generate path (the
     // hydratedChatIdRef guard should skip it). If it ever IS called, return []
@@ -100,12 +98,10 @@ describe('SceneTab — first-generate race (Bug 1)', () => {
     // streamMessage: fires onDelta then onDone synchronously (still within
     // the awaited async call) so the store is updated before the promise
     // chain continues.
-    vi.mocked(api.streamMessage).mockImplementation(
-      async (_chatId, _body, opts) => {
-        opts.onDelta('hello');
-        opts.onDone();
-      },
-    );
+    vi.mocked(api.streamMessage).mockImplementation(async (_chatId, _body, opts) => {
+      opts.onDelta('hello');
+      opts.onDone();
+    });
   });
 
   afterEach(() => {
