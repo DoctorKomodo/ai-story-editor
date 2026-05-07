@@ -129,10 +129,7 @@ export function SettingsModelsTab(): JSX.Element {
 
   const resetTooltip = useMemo((): string | undefined => {
     if (!activeModel) return undefined;
-    const resolved = resolveChatParams(settings, activeModel);
-    const venice =
-      resolved.source.temperature === 'venice-default' ||
-      resolved.source.topP === 'venice-default';
+    const venice = activeModel.defaultTemperature !== null || activeModel.defaultTopP !== null;
     if (venice) {
       const parts: string[] = [];
       if (activeModel.defaultTemperature !== null)

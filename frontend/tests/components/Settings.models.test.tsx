@@ -9,14 +9,13 @@
 //   - Sliders carry `disabled` attribute when chat.model is null.
 //   - Reset tooltip references Venice defaults when the model exposes them.
 //   - Reset tooltip says "general defaults" when Venice exposes neither.
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
 import type { Model } from '@/hooks/useModels';
-import { modelsQueryKey } from '@/hooks/useModels';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
@@ -202,12 +201,6 @@ function renderModal(
   const client = qc ?? createQueryClient();
   const result = render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
   return { ...result, qc: client };
-}
-
-/** Pre-seed the models query cache — avoids a network round-trip in tests
- * where we want deterministic model data without a fetch mock. */
-function setModels(qc: QueryClient, models: Model[]): void {
-  qc.setQueryData(modelsQueryKey, models);
 }
 
 describe('SettingsModal Models tab (X28)', () => {
