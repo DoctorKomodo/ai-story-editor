@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
-import { useSessionStore } from '@/store/session';
+import { handleUnauthorizedAccess, useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -313,16 +313,22 @@ describe('auth pages (F4)', () => {
   describe('terminal-401 session-expired banner (F65)', () => {
     it('shows the "session expired" banner when sessionExpired is true on /login', async () => {
       primeUnauthenticatedInit(fetchMock);
-      act(() => {
-        useSessionStore.setState({ sessionExpired: true });
-      });
       renderAt('/login');
 
+      // initAuth's failed refresh runs clearSession, which (per the
+      // invariant in store/session.ts) resets sessionExpired to false. Set
+      // the flag AFTER initAuth has resolved so the LoginPage subscriber
+      // sees the post-init value, mirroring the real terminal-401 sequence
+      // (initAuth completes → user is in-app → terminal 401 → handler sets
+      // flag → /login renders banner).
       await waitFor(() => {
         expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
       });
+      act(() => {
+        useSessionStore.setState({ sessionExpired: true });
+      });
 
-      const banner = screen.getByRole('status', { name: /session expired/i });
+      const banner = await screen.findByRole('status', { name: /session expired/i });
       expect(banner).toHaveTextContent(/session has expired/i);
     });
 
@@ -337,28 +343,56 @@ describe('auth pages (F4)', () => {
       expect(screen.queryByRole('status', { name: /session expired/i })).not.toBeInTheDocument();
     });
 
-    it('redirects a protected route to /login with the session-expired banner when the api client gives up', async () => {
-      // Pre-authenticate so the dashboard mounts.
-      primeUnauthenticatedInit(fetchMock);
-      // Mount /login first to verify the unauth path; then drive a manual
-      // unauthorized handler trigger (matches what the api client does on
-      // a terminal 401).
-      renderAt('/login');
+    it('terminal-401 mid-session: production handler flips the store and redirects /login → banner', async () => {
+      // Install the production handler (not the stub from beforeEach) so this
+      // test exercises the real wiring under change. If session.ts's handler
+      // body drifts from the stub, this test catches it; the stub-based tests
+      // above don't.
+      setUnauthorizedHandler(handleUnauthorizedAccess);
+
+      // Pre-seed an authenticated session so RequireAuth admits the dashboard.
+      act(() => {
+        useSessionStore
+          .getState()
+          .setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
+      });
+
+      // Stage machine: /auth/refresh succeeds the first time (initAuth keeps
+      // us authenticated) and 401s thereafter (terminal). Any /api/* call
+      // returns 401, which drives the api client into the refresh-and-retry
+      // path → terminal handler → store flip.
+      let refreshCalls = 0;
+      fetchMock.mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/auth/refresh')) {
+          refreshCalls += 1;
+          if (refreshCalls === 1) {
+            return Promise.resolve(jsonResponse(200, { accessToken: 'tok-1' }));
+          }
+          return Promise.resolve(jsonResponse(401, { error: { message: 'no session' } }));
+        }
+        if (url.endsWith('/auth/me')) {
+          return Promise.resolve(
+            jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+          );
+        }
+        return Promise.resolve(jsonResponse(401, { error: { message: 'expired' } }));
+      });
+
+      renderAt('/');
+
+      // RequireAuth flips on the production handler's setState, redirects to
+      // /login, and the LoginPage renders the banner from the store flag.
       await waitFor(() => {
         expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
       });
-
-      // Simulate the api-client's terminal-401 path by invoking the wired
-      // handler directly. This is the only piece of the chain that can't
-      // be exercised purely via fetch mocks — once it fires, we want to
-      // confirm the LoginPage banner appears via the store flag.
-      act(() => {
-        useSessionStore.getState().clearSession();
-        useSessionStore.setState({ sessionExpired: true });
-      });
-
-      const banner = await screen.findByRole('status', { name: /session expired/i });
+      const banner = screen.getByRole('status', { name: /session expired/i });
       expect(banner).toHaveTextContent(/session has expired/i);
+
+      const finalState = useSessionStore.getState();
+      expect(finalState.user).toBeNull();
+      expect(finalState.status).toBe('unauthenticated');
+      expect(finalState.sessionExpired).toBe(true);
     });
 
     it('successful login clears the sessionExpired flag', async () => {
@@ -370,18 +404,20 @@ describe('auth pages (F4)', () => {
         }),
       );
 
-      act(() => {
-        useSessionStore.setState({ sessionExpired: true });
-      });
-
       const user = userEvent.setup();
       renderAt('/login');
 
+      // Set sessionExpired AFTER initAuth completes — clearSession (called
+      // when init's refresh 401s) resets the flag, so any pre-render set
+      // would be wiped.
       await waitFor(() => {
         expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
       });
+      act(() => {
+        useSessionStore.setState({ sessionExpired: true });
+      });
       // Banner is visible at first.
-      expect(screen.getByRole('status', { name: /session expired/i })).toBeInTheDocument();
+      expect(await screen.findByRole('status', { name: /session expired/i })).toBeInTheDocument();
 
       await user.type(screen.getByLabelText(/username/i), 'alice');
       await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');

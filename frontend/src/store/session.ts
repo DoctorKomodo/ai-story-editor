@@ -12,17 +12,18 @@ export type SessionStatus = 'idle' | 'loading' | 'authenticated' | 'unauthentica
 export interface SessionState {
   user: SessionUser | null;
   status: SessionStatus;
-  // [F65] Set true when the api client gives up after a failed refresh during
-  // an active session. LoginPage reads this to show a "session expired"
-  // banner. Distinct from explicit logout / sign-out-everywhere / account-
-  // deleted (which use location.state banners). Cleared on the next
-  // successful login (setSession) or by an explicit acknowledge call.
+  // [F65] Set true ONLY by the api client's terminal-401 handler (below).
+  // LoginPage reads this to show a "session expired" banner. Distinct from
+  // explicit logout / sign-out-everywhere / account-deleted (which use
+  // location.state banners). Cleared on the next successful login
+  // (setSession) AND on every clearSession — so the only path that sets it
+  // true is the handler, and the flag never lingers across deliberate
+  // session changes.
   sessionExpired: boolean;
   setSession: (user: SessionUser, accessToken: string) => void;
   setUser: (user: SessionUser) => void;
   clearSession: () => void;
   setStatus: (status: SessionStatus) => void;
-  acknowledgeSessionExpired: () => void;
 }
 
 export const useSessionStore = create<SessionState>((set) => ({
@@ -42,10 +43,9 @@ export const useSessionStore = create<SessionState>((set) => ({
   },
   clearSession: () => {
     setAccessToken(null);
-    set({ user: null, status: 'unauthenticated' });
+    set({ user: null, status: 'unauthenticated', sessionExpired: false });
   },
   setStatus: (status) => set({ status }),
-  acknowledgeSessionExpired: () => set({ sessionExpired: false }),
 }));
 
 // When the api client gives up after a failed refresh, flip the store to
@@ -55,8 +55,23 @@ export const useSessionStore = create<SessionState>((set) => ({
 // `refreshAccessToken` helper), so a cold-boot 401 lands as plain
 // unauthenticated without the "session expired" banner — which is the
 // intended UX (the user wasn't actively in a session).
-setUnauthorizedHandler(() => {
-  const state = useSessionStore.getState();
-  state.clearSession();
-  useSessionStore.setState({ sessionExpired: true });
-});
+//
+// Single setState (rather than clearSession() + setState) avoids a render
+// where the user is unauthenticated but sessionExpired is still false —
+// React 18's automatic batching may not coalesce two zustand mutations
+// dispatched from a non-React callback, which would briefly flash /login
+// without the banner.
+//
+// Exported so tests can install the production wiring after
+// `resetApiClientForTests` strips it; otherwise tests would have to inline
+// a near-duplicate of the same body and silently drift if this changes.
+export function handleUnauthorizedAccess(): void {
+  setAccessToken(null);
+  useSessionStore.setState({
+    user: null,
+    status: 'unauthenticated',
+    sessionExpired: true,
+  });
+}
+
+setUnauthorizedHandler(handleUnauthorizedAccess);
