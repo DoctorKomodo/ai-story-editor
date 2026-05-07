@@ -42,9 +42,18 @@ type MessageRole = 'user' | 'assistant' | 'system';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
+const ChatKind = z.enum(['ask', 'scene']);
+
 const CreateChatBody = z
   .object({
     title: z.string().optional(),
+    kind: ChatKind.optional(),
+  })
+  .strict();
+
+const ListChatsQuery = z
+  .object({
+    kind: ChatKind.optional(),
   })
   .strict();
 
@@ -102,6 +111,7 @@ export function createChapterChatsRouter() {
       const chat = await createChatRepo(req).create({
         chapterId,
         title: body.title ?? null,
+        kind: body.kind ?? 'ask',
       });
 
       res.status(201).json({ chat });
@@ -114,6 +124,14 @@ export function createChapterChatsRouter() {
   // GET /api/chapters/:chapterId/chats — list chats for the chapter.
   router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const chapterId = req.params.chapterId as string;
+
+    const parsedQuery = ListChatsQuery.safeParse(req.query);
+    if (!parsedQuery.success) {
+      badRequestFromZod(res, parsedQuery.error);
+      return;
+    }
+    const { kind } = parsedQuery.data;
+
     try {
       // Ownership: chapter must exist and belong to req.user.
       const chapter = await createChapterRepo(req).findById(chapterId);
@@ -122,7 +140,7 @@ export function createChapterChatsRouter() {
         return;
       }
 
-      const chats = await createChatRepo(req).findManyForChapter(chapterId);
+      const chats = await createChatRepo(req).findManyForChapter(chapterId, { kind });
 
       // Enrich each chat with its message count (via repo layer — ownership enforced).
       const enriched = await Promise.all(
