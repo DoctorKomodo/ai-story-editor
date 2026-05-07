@@ -446,5 +446,25 @@ describe('venice.models.service [V2]', () => {
       expect(info.defaultTemperature).toBeNull();
       expect(info.defaultTopP).toBeNull();
     });
+
+    // Regression trap: `defaultTemperature = 0` is a valid greedy-sampling
+    // value. The `typeof === 'number'` guard handles it correctly today;
+    // this test catches a future refactor to `dt ?? null` (falsy
+    // short-circuit) that would silently turn 0 into null.
+    it('extracts defaultTemperature = 0 (valid greedy-sampling value)', () => {
+      const raw = {
+        id: 'deterministic',
+        type: 'text',
+        model_spec: {
+          name: 'Deterministic',
+          availableContextTokens: 8_000,
+          maxCompletionTokens: 2_000,
+          constraints: { temperature: { default: 0 } },
+        },
+      };
+      const info = mapModel(raw);
+      expect(info.defaultTemperature).toBe(0);
+      expect(info.defaultTopP).toBeNull();
+    });
   });
 });
