@@ -42,9 +42,14 @@ export interface BuildPromptInput {
   /** Per-model output cap from Venice's /v1/models. Required. */
   modelMaxCompletionTokens: number;
   /**
-   * User's settings.chat.maxTokens. Required. Pass Number.POSITIVE_INFINITY
-   * when the user hasn't expressed a preference; the resolver in
-   * user-settings-resolvers.ts does this.
+   * Budget cap for the prompt builder's context calculation. Post-X28 the
+   * AI/chat routes always pass `Number.POSITIVE_INFINITY` here so the
+   * prompt-side budget is governed solely by `modelMaxCompletionTokens`
+   * (the model's own cap from Venice). The user's per-model `maxTokens`
+   * override goes directly to Venice via `resolveTextGenParams`'s
+   * `max_completion_tokens` and does not narrow the prompt's chapter-text
+   * budget — keeping a small "fast response" override from over-trimming
+   * the input context window.
    */
   userMaxCompletionTokens: number;
   /** [V4] — default true when omitted */
