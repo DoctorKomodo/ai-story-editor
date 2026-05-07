@@ -431,4 +431,72 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
       .send({ chat: { overrides: { m1: { temperature: 5 } } } });
     expect(res.status).toBe(400);
   });
+
+  // Reset to defaults: sending an empty entry for a model clears its overrides.
+  // Per-model entries are atomic — they replace, not deep-merge — so `{}` means
+  // "no overrides for this model" and the prior fields drop. Without this, the
+  // SettingsModelsTab Reset button is a no-op and the sliders snap back to the
+  // override values right after flashing to defaults.
+  it('treats chat.overrides[modelId] as atomic — empty entry clears overrides', async () => {
+    const token = await registerAndLogin('x28-reset-user');
+
+    // First set an override.
+    const set = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: { temperature: 1.5, topP: 0.8 } } } });
+    expect(set.status).toBe(200);
+    expect(set.body.settings.chat.overrides.m1).toEqual({ temperature: 1.5, topP: 0.8 });
+
+    // Then reset that model with an empty entry.
+    const reset = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: {} } } });
+    expect(reset.status).toBe(200);
+    expect(reset.body.settings.chat.overrides.m1).toEqual({});
+  });
+
+  it('reset of one model does not affect overrides for other models', async () => {
+    const token = await registerAndLogin('x28-reset-isolated-user');
+
+    const seed = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        chat: {
+          overrides: { m1: { temperature: 1.2 }, m2: { topP: 0.3 } },
+        },
+      });
+    expect(seed.status).toBe(200);
+
+    const reset = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: {} } } });
+    expect(reset.status).toBe(200);
+    expect(reset.body.settings.chat.overrides.m1).toEqual({});
+    expect(reset.body.settings.chat.overrides.m2).toEqual({ topP: 0.3 });
+  });
+
+  // Distinct from the atomic-entry rule above: when a per-model entry IS
+  // populated, fields the patch omits should not leak from the prior entry.
+  // Sending { m1: { temperature: 0.4 } } after { m1: { temperature: 1.5, topP: 0.8 } }
+  // must yield { temperature: 0.4 } only — no stale topP.
+  it('replaces a populated per-model entry wholesale (no field leakage)', async () => {
+    const token = await registerAndLogin('x28-replace-user');
+
+    const set = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: { temperature: 1.5, topP: 0.8 } } } });
+    expect(set.status).toBe(200);
+
+    const replace = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: { temperature: 0.4 } } } });
+    expect(replace.status).toBe(200);
+    expect(replace.body.settings.chat.overrides.m1).toEqual({ temperature: 0.4 });
+  });
 });
