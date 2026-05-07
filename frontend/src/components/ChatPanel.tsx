@@ -3,14 +3,14 @@ import { type JSX, type ReactNode, useState } from 'react';
  * [F38] Chat panel shell — 360px wide right column.
  *
  * Owns the structural chrome of the AI chat side panel:
- *   - 40px header with `Chat / History` pill tabs + `New chat` and `Settings`
- *     icon buttons.
+ *   - 40px header with `Chat / Scene / History` pill tabs + `New chat` and
+ *     `Settings` icon buttons.
  *   - Scrollable body slot for the message list ([F39]).
- *   - Composer slot pinned to the bottom ([F40]).
+ *   - Composer slot pinned to the bottom ([F40]) — Chat tab only.
  *   - ModelFooter at the very bottom: model picker button showing the active
  *     model and context-window chip (opens [F42]).
  *
- * The active tab (`chat` | `history`) is local state for now — there is no
+ * The active tab (`chat` | `scene` | `history`) is local state — no
  * cross-component need for it yet; future history work may lift it.
  *
  * Width is set by the F25 grid (`.app-shell` column 3 = 360px). For
@@ -22,8 +22,10 @@ import { ModelFooter } from '@/components/ModelFooter';
 export interface ChatPanelProps {
   /** Slot for the message list ([F39]). Rendered when the Chat tab is active. */
   messagesBody: ReactNode;
-  /** Slot for the composer ([F40]). Rendered when the Chat tab is active. */
+  /** Slot for the composer ([F40]). Rendered when the Chat tab is active only. */
   composer: ReactNode;
+  /** Slot for the Scene tab body ([SC18]). Rendered when the Scene tab is active. */
+  sceneBody: ReactNode;
   /** Click handler for the model picker button — opens [F42]. */
   onOpenModelPicker?: () => void;
   /** Click handler for the New chat icon button. */
@@ -32,7 +34,7 @@ export interface ChatPanelProps {
   onOpenSettings?: () => void;
 }
 
-type TabId = 'chat' | 'history';
+type TabId = 'chat' | 'scene' | 'history';
 
 function PlusIcon(): JSX.Element {
   return (
@@ -82,6 +84,7 @@ function SlidersIcon(): JSX.Element {
 export function ChatPanel({
   messagesBody,
   composer,
+  sceneBody,
   onOpenModelPicker,
   onNewChat,
   onOpenSettings,
@@ -118,6 +121,17 @@ export function ChatPanel({
           <button
             type="button"
             role="tab"
+            aria-selected={activeTab === 'scene'}
+            className={tabClass(activeTab === 'scene')}
+            onClick={() => {
+              setActiveTab('scene');
+            }}
+          >
+            Scene
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={activeTab === 'history'}
             className={tabClass(activeTab === 'history')}
             onClick={() => {
@@ -150,13 +164,13 @@ export function ChatPanel({
       </header>
 
       <section
-        className="flex-1 min-h-0 overflow-y-auto"
+        className="flex-1 min-h-0 overflow-hidden"
         aria-label="Chat messages"
         data-testid="chat-body"
       >
-        {activeTab === 'chat' ? (
-          messagesBody
-        ) : (
+        {activeTab === 'chat' && messagesBody}
+        {activeTab === 'scene' && sceneBody}
+        {activeTab === 'history' && (
           <div className="px-4 py-6 text-[12px] text-ink-4">History — coming in a future task</div>
         )}
       </section>
