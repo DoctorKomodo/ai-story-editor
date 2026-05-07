@@ -2,53 +2,14 @@
 // and GET /api/chapters/:chapterId/chats (kind filter).
 // [SC5] Integration test for POST /api/chats/:chatId/messages kind=scene routing.
 
-import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
-import { prisma } from '../setup';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function registerAndLogin(
-  username: string,
-  password = 'chat-route-pw',
-  name = 'Chat Route User',
-): Promise<string> {
-  await request(app).post('/api/auth/register').send({ name, username, password });
-  const login = await request(app).post('/api/auth/login').send({ username, password });
-  expect(login.status).toBe(200);
-  return login.body.accessToken as string;
-}
-
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
-  const session = getSession(sessionId);
-  expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
-  attachDekToRequest(req, session!.dek);
-  return req;
-}
-
-async function resetAll(): Promise<void> {
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
-  await prisma.user.deleteMany();
-}
+import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
 
 // Returns a supertest agent (with auth header set) and a chapterId for use in tests.
 async function setup(
@@ -148,15 +109,15 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
   });
 });
 
-// ─── Fixtures shared by SC5 suite ─────────────────────────────────────────────
+// ─── Fixtures shared by SC5/SC6/SC8 suites ───────────────────────────────────
 
-const SC5_MODEL_ID = 'venice-test-model';
+const MODEL_ID = 'venice-test-model';
 
-const SC5_MODEL_LIST_BODY = {
+const MODEL_LIST_BODY = {
   object: 'list',
   data: [
     {
-      id: SC5_MODEL_ID,
+      id: MODEL_ID,
       object: 'model',
       type: 'text',
       model_spec: {
@@ -169,7 +130,7 @@ const SC5_MODEL_LIST_BODY = {
   ],
 };
 
-function sc5JsonResponse(status: number, body: unknown): Response {
+function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     statusText: status === 200 ? 'OK' : 'err',
@@ -177,7 +138,7 @@ function sc5JsonResponse(status: number, body: unknown): Response {
   });
 }
 
-function sc5SseStreamResponse(chunks: Array<Record<string, unknown>>): Response {
+function sseStreamResponse(chunks: Array<Record<string, unknown>>): Response {
   const enc = new TextEncoder();
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -194,49 +155,33 @@ function sc5SseStreamResponse(chunks: Array<Record<string, unknown>>): Response 
   });
 }
 
-// veniceSetup: registers a user, stores a BYOK key, creates story+chapter,
-// returns agent + chapterId + fetchSpy (already stubbed on globalThis).
-async function veniceSetup(username: string): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  chapterId: string;
-  fetchSpy: ReturnType<typeof vi.fn>;
-}> {
+// Installs a fresh fetch spy on globalThis. Must be paired with
+// vi.unstubAllGlobals() in afterEach.
+function stubVeniceFetch(): ReturnType<typeof vi.fn> {
   const fetchSpy = vi.fn();
   vi.stubGlobal('fetch', fetchSpy);
+  return fetchSpy;
+}
 
-  const accessToken = await registerAndLogin(username);
-
-  // Store BYOK key (validate endpoint returns 200 with { data: [] }).
-  fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, { data: [] }));
-  const keyRes = await request(app)
+// Stores a BYOK Venice key for the authenticated user (validate call → 200).
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
+  fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
+  const keyRes = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
     .send({ apiKey: 'sk-venice-sc5-test-key-ABCD' });
   expect(keyRes.status).toBe(200);
-
-  const req = makeFakeReq(accessToken);
-  const story = await createStoryRepo(req).create({ title: 'SC5 Story', worldNotes: null });
-  const chapter = await createChapterRepo(req).create({
-    storyId: story.id as string,
-    title: 'SC5 Chapter',
-    bodyJson: null,
-    orderIndex: 0,
-    wordCount: 0,
-  });
-
-  const agent = request.agent(app);
-  agent.set('Authorization', `Bearer ${accessToken}`);
-
-  return { agent, chapterId: chapter.id as string, fetchSpy };
 }
 
 // ─── SC6 suite ────────────────────────────────────────────────────────────────
 
 // Helper: queue a fresh SSE response on the fetch spy (shared by SC6 and SC8 suites).
 function queueSseResponse(fetchSpy: ReturnType<typeof vi.fn>, content: string): void {
-  fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, SC5_MODEL_LIST_BODY));
+  fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
   fetchSpy.mockResolvedValueOnce(
-    sc5SseStreamResponse([
+    sseStreamResponse([
       {
         id: 'chatcmpl-retry',
         object: 'chat.completion.chunk',
@@ -280,7 +225,9 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
   });
 
   it('does not persist a new user message when retry=true', async () => {
-    const { agent, chapterId, fetchSpy } = await veniceSetup('sc6-retry-u1');
+    const { agent, chapterId } = await setup('sc6-retry-u1');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
@@ -291,7 +238,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     queueSseResponse(fetchSpy, 'First assistant reply.');
     const firstStatus = await sendMessage(agent, chatId, {
       content: 'Direction A',
-      modelId: SC5_MODEL_ID,
+      modelId: MODEL_ID,
     });
     expect(firstStatus).toBe(200);
 
@@ -304,7 +251,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     // Retry — must NOT add a user message. Models cache is warm so only stream mock needed.
     fetchSpy.mockResolvedValueOnce(
-      sc5SseStreamResponse([
+      sseStreamResponse([
         {
           id: 'chatcmpl-retry2',
           object: 'chat.completion.chunk',
@@ -314,7 +261,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     );
     const retryStatus = await sendMessage(agent, chatId, {
       retry: true,
-      modelId: SC5_MODEL_ID,
+      modelId: MODEL_ID,
     });
     expect(retryStatus).toBe(200);
 
@@ -326,7 +273,9 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
   });
 
   it('400 when retry=true and the trailing message is not a user turn', async () => {
-    const { agent, chapterId } = await veniceSetup('sc6-retry-u2');
+    const { agent, chapterId } = await setup('sc6-retry-u2');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
@@ -336,12 +285,14 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     // No prior messages — retry has nothing to base on.
     await agent
       .post(`/api/chats/${chatId}/messages`)
-      .send({ retry: true, modelId: SC5_MODEL_ID })
+      .send({ retry: true, modelId: MODEL_ID })
       .expect(400);
   });
 
   it('does not require content when retry=true', async () => {
-    const { agent, chapterId, fetchSpy } = await veniceSetup('sc6-retry-u3');
+    const { agent, chapterId } = await setup('sc6-retry-u3');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
@@ -350,11 +301,11 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     // Prime with a normal turn first.
     queueSseResponse(fetchSpy, 'First reply.');
-    await sendMessage(agent, chatId, { content: 'd', modelId: SC5_MODEL_ID });
+    await sendMessage(agent, chatId, { content: 'd', modelId: MODEL_ID });
 
     // Retry with no content — models cache warm, only stream mock needed.
     fetchSpy.mockResolvedValueOnce(
-      sc5SseStreamResponse([
+      sseStreamResponse([
         {
           id: 'chatcmpl-retry3',
           object: 'chat.completion.chunk',
@@ -364,20 +315,22 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     );
     const retryStatus = await sendMessage(agent, chatId, {
       retry: true,
-      modelId: SC5_MODEL_ID,
+      modelId: MODEL_ID,
     });
     expect(retryStatus).toBe(200);
   });
 
   it('400 when retry=true and content is also supplied', async () => {
-    const { agent, chapterId } = await veniceSetup('sc6-retry-u4');
+    const { agent, chapterId } = await setup('sc6-retry-u4');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
       .send({ title: 's', kind: 'scene' });
     const chatId = created.body.chat.id as string;
     await agent
       .post(`/api/chats/${chatId}/messages`)
-      .send({ retry: true, content: 'extra', modelId: SC5_MODEL_ID })
+      .send({ retry: true, content: 'extra', modelId: MODEL_ID })
       .expect(400);
   });
 });
@@ -385,13 +338,11 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 // ─── SC7 suite ────────────────────────────────────────────────────────────────
 
 // setupAsDifferentUser: registers a second user and returns only an authed agent.
-// Does NOT need a story or chapter — ownership-fence tests only need the agent.
+// Reuses setup() — the story/chapter it creates are unused but cheap.
 async function setupAsDifferentUser(
   username: string,
 ): Promise<{ agent: ReturnType<typeof request.agent> }> {
-  const accessToken = await registerAndLogin(username, 'diff-user-pw', 'Different User');
-  const agent = request.agent(app);
-  agent.set('Authorization', `Bearer ${accessToken}`);
+  const { agent } = await setup(username);
   return { agent };
 }
 
@@ -465,7 +416,9 @@ describe('DELETE /api/chats/:id', () => {
   });
 
   it('deletes the chat and cascades messages', async () => {
-    const { agent, chapterId, fetchSpy } = await veniceSetup('sc8-delete-u1');
+    const { agent, chapterId } = await setup('sc8-delete-u1');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
       .send({ title: 's', kind: 'scene' });
@@ -473,7 +426,7 @@ describe('DELETE /api/chats/:id', () => {
 
     // Add a message so we can confirm cascade.
     queueSseResponse(fetchSpy, 'Assistant reply.');
-    await sendMessage(agent, chatId, { content: 'd', modelId: SC5_MODEL_ID });
+    await sendMessage(agent, chatId, { content: 'd', modelId: MODEL_ID });
 
     await agent.delete(`/api/chats/${chatId}`).expect(204);
 
@@ -513,7 +466,9 @@ describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
   });
 
   it('builds the prompt with action="scene" when chat.kind="scene"', async () => {
-    const { agent, chapterId, fetchSpy } = await veniceSetup('sc5-scene-u1');
+    const { agent, chapterId } = await setup('sc5-scene-u1');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
@@ -522,9 +477,9 @@ describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
     const chatId = created.body.chat.id as string;
 
     // Prime models cache, then serve the completion stream.
-    fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, SC5_MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
-      sc5SseStreamResponse([
+      sseStreamResponse([
         {
           id: 'chatcmpl-sc5',
           object: 'chat.completion.chunk',
@@ -545,7 +500,7 @@ describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
       })
       .send({
         content: 'Jenny approaches Linda on the veranda and they talk about cheese.',
-        modelId: SC5_MODEL_ID,
+        modelId: MODEL_ID,
       });
 
     expect(res.status).toBe(200);
