@@ -37,6 +37,8 @@ function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput 
     characters: [],
     worldNotes: null,
     modelContextLength: 4096,
+    modelMaxCompletionTokens: 4096,
+    userMaxCompletionTokens: Number.POSITIVE_INFINITY,
     ...overrides,
   };
 }
@@ -72,18 +74,79 @@ describe('buildPrompt — shape', () => {
 // ─── max_completion_tokens budget ─────────────────────────────────────────────
 
 describe('buildPrompt — max_completion_tokens', () => {
-  it('equals floor(modelContextLength * 0.2)', () => {
-    const result = buildPrompt(baseInput({ modelContextLength: 4096 }));
-    expect(result.max_completion_tokens).toBe(Math.floor(4096 * 0.2));
+  it('user_setting < model_cap → user_setting wins', () => {
+    const r = buildPrompt(
+      baseInput({
+        modelContextLength: 128_000,
+        modelMaxCompletionTokens: 32_000,
+        userMaxCompletionTokens: 800,
+      }),
+    );
+    expect(r.max_completion_tokens).toBe(800);
   });
 
-  it('works for a larger context length', () => {
-    const result = buildPrompt(baseInput({ modelContextLength: 65536 }));
-    expect(result.max_completion_tokens).toBe(Math.floor(65536 * 0.2));
+  it('model_cap < user_setting → model_cap wins', () => {
+    const r = buildPrompt(
+      baseInput({
+        modelContextLength: 128_000,
+        modelMaxCompletionTokens: 4096,
+        userMaxCompletionTokens: 16_000,
+      }),
+    );
+    expect(r.max_completion_tokens).toBe(4096);
   });
 
-  it('floors non-integer result (4097 * 0.2 = 819.4 → 819)', () => {
-    expect(buildPrompt(baseInput({ modelContextLength: 4097 })).max_completion_tokens).toBe(819);
+  it('user_setting === model_cap → that value', () => {
+    const r = buildPrompt(
+      baseInput({
+        modelContextLength: 128_000,
+        modelMaxCompletionTokens: 8192,
+        userMaxCompletionTokens: 8192,
+      }),
+    );
+    expect(r.max_completion_tokens).toBe(8192);
+  });
+
+  it('user_setting === Number.POSITIVE_INFINITY (unset) → model_cap wins', () => {
+    const r = buildPrompt(
+      baseInput({
+        modelContextLength: 128_000,
+        modelMaxCompletionTokens: 16_384,
+        userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+      }),
+    );
+    expect(r.max_completion_tokens).toBe(16_384);
+  });
+
+  it('does NOT apply the legacy 0.2 × context heuristic any more', () => {
+    // For a 256k-context model, the old code would have produced 51200.
+    // Under the new rule, the model_cap dominates.
+    const r = buildPrompt(
+      baseInput({
+        modelContextLength: 256_000,
+        modelMaxCompletionTokens: 32_768,
+        userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+      }),
+    );
+    expect(r.max_completion_tokens).toBe(32_768);
+    expect(r.max_completion_tokens).not.toBe(Math.floor(256_000 * 0.2));
+  });
+
+  it('response cap is NOT shrunk by prompt-budget pressure (response > context-safety)', () => {
+    // Pathological: response cap wider than the model's context. The builder
+    // must still honour the response contract; chapter content just falls out.
+    const r = buildPrompt(
+      baseInput({
+        modelContextLength: 4096,
+        modelMaxCompletionTokens: 8192,
+        userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+        chapterContent: 'x'.repeat(40_000),
+      }),
+    );
+    expect(r.max_completion_tokens).toBe(8192);
+    // Chapter is dropped because promptBudget = 4096 - 8192 - 512 < 0.
+    const userMsg = r.messages.find((m) => m.role === 'user')?.content ?? '';
+    expect(userMsg).not.toContain('xxxx'); // no chapter content survives
   });
 });
 
@@ -175,17 +238,24 @@ describe('buildPrompt — chapterContent truncation', () => {
     const HEAD = 'HEAD_DROPPED_SENTINEL';
     const TAIL = 'TAIL_CONTENT_SURVIVES';
     const bigContent = HEAD + 'x'.repeat(200_000) + TAIL;
-    const result = buildPrompt(baseInput({ chapterContent: bigContent, modelContextLength: 4096 }));
+    const result = buildPrompt(
+      baseInput({
+        chapterContent: bigContent,
+        modelContextLength: 4096,
+        modelMaxCompletionTokens: 256, // small response cap → leaves prompt budget for truncated chapter
+      }),
+    );
     const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
     // The tail (newest content) must survive
     expect(userContent).toContain(TAIL);
     // The head (oldest content) must have been dropped
     expect(userContent).not.toContain(HEAD);
-    // The overall token count of the user message must be ≤ promptBudget
-    const promptBudget = Math.floor(4096 * 0.8);
-    const sysTokens = estimateTokens(result.messages[0]?.content ?? '');
+    // The overall token count of the user message must be ≤ derived prompt
+    // budget = contextLength - responseTokens - SAFETY_MARGIN_TOKENS.
+    const responseTokens = Math.min(256, Number.POSITIVE_INFINITY); // = 256
+    const promptBudget = 4096 - responseTokens - 512;
     const userTokens = estimateTokens(userContent);
-    expect(sysTokens + userTokens).toBeLessThanOrEqual(promptBudget + 10); // small rounding slack
+    expect(userTokens).toBeLessThanOrEqual(Math.max(0, promptBudget) + 10);
   });
 
   it('sets chapterContent to empty string when worldNotes + characters alone exceed budget', () => {

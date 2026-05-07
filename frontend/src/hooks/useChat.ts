@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { api, apiStream } from '@/lib/api';
+import { ApiError, api, apiStream } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
 import { useChatDraftStore } from '@/store/chatDraft';
 
@@ -196,7 +196,8 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
         });
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Chat send failed';
-        useChatDraftStore.getState().markError({ code: null, message });
+        const code = err instanceof ApiError ? (err.code ?? null) : null;
+        useChatDraftStore.getState().markError({ code, message });
         throw err;
       }
 
@@ -234,7 +235,8 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
       } catch (err) {
         if (useChatDraftStore.getState().draft?.status !== 'error') {
           const message = err instanceof Error ? err.message : 'Chat stream failed';
-          useChatDraftStore.getState().markError({ code: null, message });
+          const code = err instanceof ApiError ? (err.code ?? null) : null;
+          useChatDraftStore.getState().markError({ code, message });
         }
         throw err;
       }

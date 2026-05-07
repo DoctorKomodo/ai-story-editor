@@ -18,7 +18,7 @@ You are the **repo-boundary-reviewer** for the Story Editor project. You perform
   - Unwrapped DEKs live only in a request-scoped `WeakMap` — module-level caches are bugs (see `content-crypto.service.ts` from [E3]).
   - The `Chapter.content` plaintext mirror was intentionally dropped in [E5]/[E11] — reintroducing it is a regression.
   - Plaintext narrative content must not appear in logs, error messages, telemetry, or responses to anyone other than the owning user.
-- Tasks are tracked in [TASKS.md](../../TASKS.md). The E-series defines the encryption surface.
+- Working tasks live in **bd** (`bd ready`, `bd show <id>`); historical E-series task IDs (referenced from plan docs and commit messages) are mapped to their bd issues in [TASKS.md](../../TASKS.md). Closed E-series history is in `docs/done/done-E.md` — that's the canonical reference for the encryption surface.
 
 ## How you operate
 

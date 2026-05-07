@@ -36,6 +36,7 @@ const MODEL_LIST_BODY = {
       model_spec: {
         name: 'Llama 3.3 70B',
         availableContextTokens: BASE_CONTEXT_LENGTH,
+        maxCompletionTokens: 4096,
         capabilities: { supportsReasoning: false, supportsVision: false },
       },
     },

@@ -51,6 +51,7 @@ const MODEL_LIST_BODY = {
       model_spec: {
         name: 'Llama 3.3 70B',
         availableContextTokens: BASE_CONTEXT_LENGTH,
+        maxCompletionTokens: 4096,
         capabilities: { supportsReasoning: false, supportsVision: false },
       },
     },
@@ -589,6 +590,86 @@ describe('Chat persistence [V15]', () => {
       (m) => m.role === 'assistant' && m.content.includes('First reply.'),
     );
     expect(assistantTurn).toBeDefined();
+  });
+
+  it('max_completion_tokens = min(model_cap, user_setting) — user setting wins', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { chapterId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chatId = chat.id as string;
+
+    // User wants 1234; model caps at 4096 → expect 1234 (user wins).
+    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    await prisma.user.update({
+      where: { id: decoded.sub },
+      data: { settingsJson: { chat: { maxTokens: 1234 } } },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
+
+    await request(app)
+      .post(`/api/chats/${chatId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ content: 'Tell me a story.', modelId: BASE_MODEL_ID });
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const [, init] = completionCall!;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(requestBody.max_completion_tokens).toBe(1234); // user wins
+  });
+
+  it('max_completion_tokens = min(model_cap, user_setting) — model cap wins', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { chapterId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chatId = chat.id as string;
+
+    // User wants 16000; model caps at 4096 → expect 4096 (model wins).
+    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    await prisma.user.update({
+      where: { id: decoded.sub },
+      data: { settingsJson: { chat: { maxTokens: 16_000 } } },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
+
+    await request(app)
+      .post(`/api/chats/${chatId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ content: 'Tell me a story.', modelId: BASE_MODEL_ID });
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const [, init] = completionCall!;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(requestBody.max_completion_tokens).toBe(4096); // model wins (BASE_MODEL_ID has cap 4096)
   });
 
   it('[V23] sends prompt_cache_key at top level, not inside venice_parameters', async () => {

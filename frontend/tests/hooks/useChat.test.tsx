@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chatMessagesQueryKey, useSendChatMessageMutation } from '@/hooks/useChat';
-import { apiStream } from '@/lib/api';
+import { ApiError, apiStream } from '@/lib/api';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 vi.mock('@/lib/api', async () => {
@@ -153,6 +153,29 @@ describe('useSendChatMessageMutation', () => {
       expect(d?.error?.message).toBe('rate limited');
       expect(d?.error?.code).toBe('rate_limited');
     });
+  });
+
+  it('forwards ApiError.code into the draft on pre-stream HTTP error', async () => {
+    // Mock apiStream to throw an ApiError simulating a 502 venice_error response.
+    vi.mocked(apiStream).mockRejectedValueOnce(
+      new ApiError(502, 'Venice rejected the request.', 'venice_error'),
+    );
+
+    const { wrapper } = withClient();
+    const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
+    await act(async () => {
+      await expect(
+        result.current.mutateAsync({
+          chatId: 'c1',
+          content: 'hi',
+          modelId: 'm1',
+        }),
+      ).rejects.toBeDefined();
+    });
+
+    const draft = useChatDraftStore.getState().draft;
+    expect(draft?.status).toBe('error');
+    expect(draft?.error?.code).toBe('venice_error');
   });
 
   it('flips status to streaming on the first non-empty content delta', async () => {

@@ -15,6 +15,8 @@ function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput 
     characters: [],
     worldNotes: null,
     modelContextLength: 4096,
+    modelMaxCompletionTokens: 4096,
+    userMaxCompletionTokens: Number.POSITIVE_INFINITY,
     ...overrides,
   };
 }

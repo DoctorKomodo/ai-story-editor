@@ -18,6 +18,7 @@
       "!frontend/dist",
       "!backend/dist",
       "!mockups/archive",
+      "!.beads",
       "!**/*.min.js",
       "!**/package-lock.json"
     ]

@@ -21,7 +21,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ├── docker-compose.override.yml  (local dev, hot reload)
 ├── .env.example
 ├── Makefile
-├── TASKS.md                   Source of truth for all work
+├── TASKS.md                   Historical journal + ID-mapping table (working tracker is bd)
 └── SELF_HOSTING.md
 ```
 
@@ -56,45 +56,54 @@ cd backend && npm run db:test:reset   # reset the test DB before a full suite
 npm --prefix backend run typecheck    # tsc --noEmit (backend)
 npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
 
-# Running a single task's verify command
-/task-verify D9             # runs the `verify:` for [D9] and reports the true exit code
+# Working tracker (bd) — see "Task Completion Protocol" below
+bd ready                    # list available tasks (no blockers)
+bd show <id>                # detailed view (description + verify: in --notes)
+bd update <id> --claim      # claim work atomically
+/task-verify <id>           # gate — runs verify: from bd notes with pipefail
+/bd-close <id>              # closes only if verify exits 0
 ```
 
 ---
 
 ## Task Completion Protocol
 
-**NEVER mark a task `[x]` until its verify command passes with exit code 0.**
+**Working tracker is bd. All open tasks live in bd; `TASKS.md` is a historical ID-mapping table that maps `[A-Z]\d+` IDs (referenced by plan docs, commit messages, and agent prompts) to their bd issues.** New tasks file directly into bd (`bd create …`); there are no checkboxes to tick.
+
+**NEVER `bd close` a task until its verify command exits 0.** `/bd-close <id>` enforces this — it's the only way to close a task with an automated verify. Tasks with `TBD` / `design decision` / empty verify lines require `--force` to close.
 
 For every task:
-1. Read the task and its `verify:` command before writing any code
-2. Confirm the task has a `plan:` link or a `trivial:` justification line. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
-3. Write the implementation
-4. Write the test if one is required by the task
-5. Run the verify command exactly as written
-6. If it fails: fix the code — do not modify the test to make it pass
-7. Mark `[x]` only when the verify command exits cleanly
-8. Move to the next task immediately — do not refactor or add scope
+1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line in `--notes`.
+2. Confirm `--notes` has a `plan:` link or a `trivial:` justification. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
+3. `bd update <id> --claim` before writing code.
+4. Write the implementation.
+5. Write the test if one is required by the task.
+6. `/task-verify <id>` — runs the verify with `bash -o pipefail` and reports true exit code. (Optional sanity-check; `/bd-close` runs the same gate internally.)
+7. If verify fails: fix the code — do not modify the test to make it pass.
+8. `/bd-close <id>` — closes only if verify exits 0.
+9. Move to the next task immediately — do not refactor or add scope.
 
-If a task has no verify command, add one to `TASKS.md` before starting.
+If a task has no verify command, add one to `--notes` (`bd update <id> --notes "verify: <command>\n…"`) before starting.
 
-### Archived sections
+### Verify-line convention in bd `--notes`
 
-`TASKS.md` only lists **live** sections (open tasks or hot code surfaces). A **subsection** is rotated into `docs/done/done-<section>.md` as soon as all its tasks are `[x]`, in the same PR that closes the last task — not the whole section letter. (Earlier S/A/D/E/V/L archives waited for the entire letter to close; that left mostly-done letters live and noisy. AU/B/I/T were rotated under the new subsection rule on 2026-05-02.) Each archive file is immutable; if a closed section is reopened, add a *new* task to `TASKS.md` rather than editing the archive.
+A single line starting with `verify:`, the runnable command on the rest of that line. Multi-line commands go on one line via `&&` / `;`. The first matching line wins. Non-runnable verifies (`TBD …`, `design decision …`, empty) are accepted but the runner exits 2 with a "no automated verify" message; closing those requires `--force`.
 
-To find a historical task ID, grep across both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. The `/task-verify` skill assumes `TASKS.md`; for an archived task, run `scripts/extract-verify.sh <ID> docs/done/done-<X>.md` directly (you almost never need to — archived tasks already passed their verify before they were ticked).
+### Historical archives
 
-Currently archived: **S, A, D, AU, E, V, L, B, I, T**. Currently live in `TASKS.md`: **F (Phase 4 only), X, M, DS**.
+Closed work from the original bring-up letters lives in immutable `docs/done/done-<section>.md` archives. To find a historical task ID, grep both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. Closed `[x]` rows still in TASKS.md (F Phase 4, a few X tasks) are pending rotation into their respective `done-*.md` archives — leave them alone unless you're doing the rotation.
 
 ### Local tooling
-- **`/task-verify <TASK_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that runs the `verify:` command exactly as written and reports the true exit code. Use this before manually ticking a task; it's stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
-- **`.claude/hooks/pre-tasks-edit.sh`** — a pre-edit hook that automatically ticks a task `[x]` in `TASKS.md` when its verify command passes. Treat an auto-tick as authoritative for the verify gate; you still need the `security-reviewer` clearance (where applicable) before the task group is considered closed.
+- **`/task-verify <BD_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that extracts `verify:` from `bd show <id> --json` notes and runs it with `bash -o pipefail`. Stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
+- **`/bd-close <BD_ID>`** — slash-command skill (`.claude/skills/bd-close/`) that runs the verify gate, then calls `bd close` only if it passes. Replaces the retired `pre-tasks-edit.sh` auto-tick hook with a close-time gate. Wraps `scripts/bd-close-verified.sh`.
 
 ---
 
 ## Task Order
 
-Work through tasks in this order unless instructed otherwise:
+> The section letters below are the **bring-up sequence** used during the project's initial build. Most letters (S, A, D, AU, E, V, L, B, I, T) are now archived under `docs/done/`. New work flows through `bd ready` — the table is retained as a glossary for cross-references in plans, agent prompts, and the still-live F/X/M/DS sections.
+
+Original bring-up order (preserved for reference):
 
 **S → A → D → AU → E → V → L → B → F → I → T → X**
 
@@ -140,49 +149,19 @@ Hard gates (do not start until the prerequisite is complete):
 - **Dependencies: install the current stable mainline by default, not whatever range the LLM remembers.** Before adding a new package — or pinning one that doesn't already exist in `package.json` — check what the current stable is via `npm view <pkg> version` (latest tag) and, if the major-version jump matters (e.g. Express 4 → 5, Vite 5 → 8, Tiptap 2 → 3, Zod 3 → 4), `npm view <pkg> versions --json | tail` to confirm the latest stable on the channel you want. Pin to the latest stable by default. Going in on an older major needs a real reason recorded in the commit (e.g. "blocked on upstream peer X" with a removal trigger), not silence. The historical pattern of landing dependencies several majors behind current and then paying for the bump later (Express 4, the dep-sweep PRs) is what this rule exists to prevent. Apply equally to `dependencies`, `devDependencies`, `peerDependencies`, and tooling pulled in via skill / hook / agent glue. Doesn't apply to *intentional* downgrades to dodge a known regression — those need the same commit-message justification.
 
 ### Backend
-- All route handlers must be thin — logic goes in service files in `src/services/` and repository wrappers in `src/repos/`
-- All request bodies must be validated with Zod before reaching a controller
-- All routes except `/api/auth/register`, `/api/auth/login`, `/api/auth/refresh`, and `/api/health` require the auth middleware
-- All story, chapter, character, outline, chat, and message routes require both auth middleware AND ownership middleware (scoped to `req.user.id`)
-- Errors are handled by the global error handler — do not write per-route try/catch unless it adds meaningful context
-- Never expose `passwordHash` in any API response
-- Never expose stack traces in responses when `NODE_ENV=production`
-- Never return ciphertext fields (`*Ciphertext`, `*Iv`, `*AuthTag`, `contentDekEnc`, `veniceApiKeyEnc`, …) from any endpoint — the repo layer strips them on read
-- Never return or log the decrypted Venice API key; `GET /api/users/me/venice-key` returns only `{ hasKey, lastFour, endpoint }` ([AU12])
+*Backend implementation rules live in `docs/agent-rules/backend.md` (read by implementer + code-quality-reviewer at dispatch time via `/bd-execute`).*
 
 ### Frontend
-- JWT access token is stored in memory (Zustand `session` slice) — never in localStorage or sessionStorage
-- Refresh token lives in an httpOnly cookie set by the backend — the frontend never reads it directly
-- **State management:** Zustand for client/UI state (`session`, `activeStoryId`, `activeChapterId`, `sidebarTab`, `selection`, `inlineAIResult`, `attachedSelection`, `model`, `params`, `tweaks`); TanStack Query for server state (`stories`, `story(id)`, `chapter(id)`, `characters(storyId)`, `outline(storyId)`, `chats(chapterId)`). No other stores, no React Context for app data.
-- All API calls go through `src/lib/api.ts` — never call `fetch` directly in components
-- Components do not contain business logic — use hooks in `src/hooks/`
-- **Styling:** TailwindCSS for layout + utilities. Theme-level design tokens (colors, typography, spacing, radii, shadows) live as CSS custom properties in `src/index.css`. Tailwind's `theme.extend` references those vars. Themes (`paper` / `sepia` / `dark`) switch via `data-theme` on `<html>`. No inline styles; no per-component CSS files.
-- Browse Storybook (`npm --prefix frontend run storybook`) before authoring new UI; the `Tokens/` story is authoritative for hex values, type scale, radii, and shadows. Historical reference at `mockups/archive/v1-2025-11/` (read-only).
+*Frontend implementation rules live in `docs/agent-rules/frontend.md` (read by implementer + code-quality-reviewer at dispatch time via `/bd-execute`).*
 
 ### Database
-- **Narrative entities** (Story, Chapter, Character, OutlineItem, Chat, Message) are accessed **only through the repo layer** in `src/repos/` — controllers and services never call Prisma directly for these models. Repos encrypt on write and decrypt on read ([E9]). Raw Prisma access for these entities outside repos is a bug.
-- Non-narrative entities (User, RefreshToken) may be accessed directly via Prisma from services.
-- No raw SQL except in migration files.
-- Every model has `createdAt`; most have `updatedAt`. `Message` is an append-only log and has `createdAt` only.
-- Foreign key fields must have indexes.
-- Cascading deletes must be defined in the schema (`onDelete: Cascade`) — do not handle cascade logic in application code.
-- Schema changes after the initial migration require explicit approval (see **When to Stop and Ask**). The E-series adds many encrypted columns; plan those migrations in batches. [E10] (backfill) is **cancelled** — pre-deployment there were no legacy plaintext rows, and [E11] already dropped the plaintext columns, leaving no source to read from. [X10] (migration-handling revisit) is **retired** — every legacy branch it was holding space for was deleted in situ. If the app is ever deployed against pre-existing plaintext data in future, reintroduce only the specific branch needed with a dated removal TODO.
+*Database / repo-layer rules live in `docs/agent-rules/backend.md` (general database rules) and `docs/agent-rules/repo-boundary.md` (narrative-entity boundary, encrypt-on-write / decrypt-on-read template). Every model has `createdAt`; most have `updatedAt`; `Message` is append-only with `createdAt` only. `[E10]` is cancelled and `[X10]` is retired — see "General" rules above for the no-data-migration-branches policy.*
 
 ### AI Integration
-- All Venice.ai calls are proxied through the backend — the frontend only talks to `/api/ai/*`.
-- The per-user Venice client (`getVeniceClient(userId)` — [V17]) is the only way to reach Venice. There is no singleton. If the user has no stored key, the call throws `NoVeniceKeyError` mapped to HTTP 409 `{ error: "venice_key_required" }`.
-- Prompt construction lives in `src/services/prompt.service.ts` — keep it separate and unit-testable.
-- **Context budget is dynamic, not a hardcoded 3000.** The prompt builder reserves 20% of the selected model's `context_length` for the response and uses the remainder for prompt content. Chapter content truncates from the top (oldest first) when over-budget. Character context is condensed to `{ name, role, key traits }`. Character and `worldNotes` are never truncated.
-- Per-story `systemPrompt` overrides the default creative-writing system prompt when non-null ([V13]).
-- Venice-specific features go via `venice_parameters`: `include_venice_system_prompt` is driven by the user setting `settingsJson.ai.includeVeniceSystemPrompt` (default `true` when the key is absent) — the AI route reads it off `req.user` and passes it to the prompt builder, which never hardcodes the flag. Inkwell's own system message (default or per-story `Story.systemPrompt`) is sent in every case; the flag only controls whether Venice additionally prepends its own creative-writing prompt. Set `strip_thinking_response: true` for reasoning models ([V6]); set `enable_web_search` + `enable_web_citations` when the request opts in ([V7]); set `prompt_cache_key` to a hash of `storyId + modelId` ([V8]).
-- Chapter bodies must be decrypted **via the chapter repo** before the prompt builder sees them. The builder never sees ciphertext, and decrypted bodies exist only for the lifetime of the request.
+*AI integration rules (per-user Venice client, prompt service, context budget, `venice_parameters`) live in `docs/agent-rules/backend.md`.*
 
 ### Encryption at Rest
-- **Envelope model:** per-user random DEK (32-byte) wrapped **twice** by AES-256-GCM. Wrap #1: key derived via argon2id from the user's password. Wrap #2: key derived via argon2id from a one-time recovery code shown at signup. Both wraps live on `User` (`contentDekPassword*` and `contentDekRecovery*` columns, each with its own salt). No server-held KEK. Narrative columns store `{Ciphertext, Iv, AuthTag}` triples.
-- DEK is random; its **wraps** are password-derived and recovery-code-derived. Password reset requires the recovery code ([AU16]). Password change ([AU15]) only re-wraps the password copy — narrative ciphertext is untouched. Rotating the recovery code ([AU17]) only re-wraps the recovery copy. **The server cannot decrypt user content while the user is logged out** — there is no offline / background / admin decryption path. If that requirement ever appears, it needs a schema migration to add a third wrap. See `docs/encryption.md` Revisit section ([E1]).
-- The content-crypto service (`src/services/content-crypto.service.ts` — [E3]) unwraps DEKs only into a **request-scoped `WeakMap`**. Module-level caching of unwrapped DEKs is a bug. **Open design question** (see [AU10] note and [E3]): the DEK must survive across requests within a single session — how that's implemented (process-memory session cache, session-key wrap in access token, `Session` table, etc.) is pending resolution in `docs/encryption.md` and must be finalised before [E3] starts.
-- Plaintext narrative content must never appear in logs, error messages, telemetry, or responses to anyone other than the owning user. Plaintext passwords and recovery codes must never appear in logs, error messages, responses, or error objects.
-- The leak test ([E12]) inserts a sentinel string and asserts it's absent from every raw row in the narrative tables. Run it after any change to the repo layer, schema, or migrations.
+*Encryption-at-rest rules live in `docs/agent-rules/repo-boundary.md` (envelope model, request-scoped DEK, ciphertext-egress, leak-test invariant) and `docs/agent-rules/backend.md` (the surrounding backend invariants and `APP_ENCRYPTION_KEY` policy). The DEK must survive across requests within a single session — implementation (process-memory session cache, session-key wrap in access token, `Session` table, etc.) is pending resolution in `docs/encryption.md` and must be finalised before `[E3]` starts.*
 
 ---
 
@@ -335,3 +314,51 @@ Do not ask for permission to:
 - Keyboard shortcuts contract (one listener, scoped callbacks): `⌘/Ctrl+Enter` = chat send, `⌥+Enter` = continue-writing, `Escape` = dismiss selection bubble / inline AI card / close modal
 - The auth identifier is `username` (lowercased, 3–32 chars, `/^[a-z0-9_-]+$/`). `User.email` exists but is optional metadata — do not use it for login or uniqueness checks
 
+
+
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
+## Beads Issue Tracker
+
+This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
+
+### Quick Reference
+
+```bash
+bd ready              # Find available work
+bd show <id>          # View issue details
+bd update <id> --claim  # Claim work
+bd close <id>         # Complete work
+```
+
+### Rules
+
+- Use `bd` for ALL task tracking — do NOT use TodoWrite, TaskCreate, or markdown TODO lists
+- Run `bd prime` for detailed command reference and session close protocol
+- Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
+
+## Session Completion
+
+**When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
+
+**MANDATORY WORKFLOW:**
+
+1. **File issues for remaining work** - Create issues for anything that needs follow-up
+2. **Run quality gates** (if code changed) - Tests, linters, builds
+3. **Update issue status** - Close finished work, update in-progress items
+4. **PUSH TO REMOTE** - This is MANDATORY:
+   ```bash
+   git pull --rebase
+   bd dolt push
+   git push
+   git status  # MUST show "up to date with origin"
+   ```
+5. **Clean up** - Clear stashes, prune remote branches
+6. **Verify** - All changes committed AND pushed
+7. **Hand off** - Provide context for next session
+
+**CRITICAL RULES:**
+- Work is NOT complete until `git push` succeeds
+- NEVER stop before pushing - that leaves work stranded locally
+- NEVER say "ready to push when you are" - YOU must push
+- If push fails, resolve and retry until it succeeds
+<!-- END BEADS INTEGRATION -->
