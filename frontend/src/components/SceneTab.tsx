@@ -16,7 +16,7 @@
  *    the timer and restores the session visually.
  */
 import type { Editor as TiptapEditor } from '@tiptap/core';
-import { type JSX, useCallback, useEffect, useState } from 'react';
+import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { SceneCandidateCard } from '@/components/SceneCandidateCard';
 import { SceneComposer } from '@/components/SceneComposer';
@@ -107,14 +107,25 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   // doesn't appear in the effect dependency array and cause an infinite loop.
   const setChat = useSceneTranscriptStore((s) => s.setChat);
 
+  // Tracks which chatId the transcript store is already in sync with. When
+  // onGenerate creates a new chat, it primes the store and sets this ref
+  // BEFORE calling setActiveId — so the hydration effect sees that the chatId
+  // is already hydrated and skips the round-trip that would wipe streaming state.
+  const hydratedChatIdRef = useRef<string | null>(null);
+
   // Load messages whenever the active session changes.
   useEffect(() => {
     let cancelled = false;
     setHydrationError(null);
     if (activeId) {
+      // Skip the fetch if we already seeded the store for this chatId (e.g.
+      // right after creating a new chat in onGenerate — the streaming rows
+      // are already in the store and a round-trip would wipe them).
+      if (hydratedChatIdRef.current === activeId) return;
       listMessagesForChat(activeId)
         .then((messages) => {
           if (cancelled) return;
+          hydratedChatIdRef.current = activeId;
           setChat(
             activeId,
             messages.map((m) => ({
@@ -136,6 +147,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
           );
         });
     } else {
+      hydratedChatIdRef.current = null;
       setChat(null, []);
     }
     return () => {
@@ -162,6 +174,12 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         if (!chapterId) return;
         const chat = await create();
         chatId = chat.id;
+        // Prime the store with the new chatId BEFORE setActiveId fires a
+        // re-render. This prevents the hydration effect from seeing an
+        // un-hydrated chatId and wiping the streaming rows that generate()
+        // is about to append.
+        hydratedChatIdRef.current = chatId;
+        setChat(chatId, []);
         setActiveId(chatId);
       }
       const isFirstTurn = transcriptMessages.length === 0;
@@ -175,7 +193,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         }
       }
     },
-    [activeId, chapterId, create, transcriptGenerate, transcriptMessages],
+    [activeId, chapterId, create, transcriptGenerate, transcriptMessages, setChat],
   );
 
   const onRetry = useCallback(async () => {
