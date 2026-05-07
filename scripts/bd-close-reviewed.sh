@@ -132,6 +132,18 @@ case "$PHASE" in
     ;;
 
   close)
+    # Idempotency: if the issue is already closed, exit 0 silently with a
+    # one-line stdout note. Don't call `bd close` again, don't append
+    # another override line, don't create another trailer commit.
+    # Protects against double-invocation from interrupted sessions or
+    # manual re-runs.
+    EXISTING_STATUS="$(bd show "$ID" --json 2>/dev/null \
+      | jq -r 'if type == "array" and length > 0 then (.[0].status // "") else (.status // "") end' 2>/dev/null)"
+    if [ "$EXISTING_STATUS" = "closed" ]; then
+      echo "▶ $ID already closed; skipping (idempotent close)."
+      exit 0
+    fi
+
     if [ -n "$OVERRIDE" ]; then
       # Read existing notes, append override line, write back.
       EXISTING="$(bd show "$ID" --json 2>/dev/null \
