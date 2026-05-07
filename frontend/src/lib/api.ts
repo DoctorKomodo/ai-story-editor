@@ -288,3 +288,181 @@ export async function api<T = unknown>(path: string, init?: ApiRequestInit): Pro
 export async function apiStream(path: string, init?: ApiRequestInit): Promise<Response> {
   return doRequest(path, init);
 }
+
+// ─── Chat API client functions ───────────────────────────────────────────────
+//
+// Thin wrappers over `api()` / `apiStream()` used by SC14+ scene-tab hooks.
+// All auth, 401-retry, and error handling is delegated to `doRequest` via
+// `api()` / `apiStream()` — do not call `fetch` directly here.
+
+/** Shape returned by all chat CRUD endpoints. */
+export interface ChatRow {
+  id: string;
+  chapterId: string;
+  title: string | null;
+  kind: 'ask' | 'scene';
+  createdAt: string;
+  updatedAt: string;
+  messageCount?: number;
+}
+
+/**
+ * [SC14] GET /api/chapters/:chapterId/chats
+ *
+ * Fetches all chats for the given chapter. Pass `opts.kind` to filter by chat
+ * kind (`'ask'` or `'scene'`).
+ */
+export async function listChats(
+  chapterId: string,
+  opts?: { kind?: 'ask' | 'scene' },
+): Promise<ChatRow[]> {
+  const params = opts?.kind !== undefined ? `?kind=${encodeURIComponent(opts.kind)}` : '';
+  const res = await api<{ chats: ChatRow[] }>(
+    `/chapters/${encodeURIComponent(chapterId)}/chats${params}`,
+  );
+  return res.chats;
+}
+
+/**
+ * [SC14] POST /api/chapters/:chapterId/chats
+ *
+ * Creates a new chat for the given chapter.
+ */
+export async function createChat(
+  chapterId: string,
+  opts?: { title?: string; kind?: 'ask' | 'scene' },
+): Promise<ChatRow> {
+  const body: Record<string, unknown> = {};
+  if (opts?.title !== undefined) body.title = opts.title;
+  if (opts?.kind !== undefined) body.kind = opts.kind;
+  const res = await api<{ chat: ChatRow }>(`/chapters/${encodeURIComponent(chapterId)}/chats`, {
+    method: 'POST',
+    body,
+  });
+  return res.chat;
+}
+
+/**
+ * [SC14] PATCH /api/chats/:id
+ *
+ * Renames an existing chat.
+ */
+export async function patchChat(id: string, title: string): Promise<ChatRow> {
+  const res = await api<{ chat: ChatRow }>(`/chats/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { title },
+  });
+  return res.chat;
+}
+
+/**
+ * [SC14] DELETE /api/chats/:id
+ *
+ * Deletes a chat and all its messages.
+ */
+export async function deleteChat(id: string): Promise<void> {
+  await api<void>(`/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+export interface StreamMessageBody {
+  /** Message text. Required unless `retry` is true. */
+  content?: string;
+  modelId: string;
+  /**
+   * [SC6] When true, replays the existing trailing user turn against a fresh
+   * Venice completion without persisting a new user message.
+   */
+  retry?: boolean;
+  enableWebSearch?: boolean;
+  attachment?: { selectionText: string; chapterId: string };
+}
+
+export interface StreamMessageOpts {
+  signal?: AbortSignal;
+  onDelta: (chunk: string) => void;
+  onDone: () => void;
+  onError: (err: unknown) => void;
+}
+
+/**
+ * [SC14] POST /api/chats/:chatId/messages (SSE streaming)
+ *
+ * Opens the SSE stream for a chat message send or retry and drives the caller
+ * via `opts.onDelta` / `opts.onDone` / `opts.onError`. Thin wrapper over
+ * `apiStream()` + the raw SSE line parser — does not manage React state.
+ *
+ * Callers that need React / TanStack Query integration should use
+ * `useSendChatMessageMutation` from `@/hooks/useChat` instead.
+ */
+export async function streamMessage(
+  chatId: string,
+  body: StreamMessageBody,
+  opts: StreamMessageOpts,
+): Promise<void> {
+  const requestBody: Record<string, unknown> = { modelId: body.modelId };
+  if (body.content !== undefined) requestBody.content = body.content;
+  if (body.retry === true) requestBody.retry = true;
+  if (body.enableWebSearch === true) requestBody.enableWebSearch = true;
+  if (body.attachment) requestBody.attachment = body.attachment;
+
+  let res: Response;
+  try {
+    res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
+      method: 'POST',
+      body: requestBody,
+      signal: opts.signal,
+    });
+  } catch (err) {
+    opts.onError(err);
+    return;
+  }
+
+  if (!res.body) {
+    opts.onError(new Error('Empty response body'));
+    return;
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (payload === '[DONE]') {
+          opts.onDone();
+          return;
+        }
+        try {
+          const parsed = JSON.parse(payload) as {
+            choices?: Array<{ delta?: { content?: string } }>;
+            error?: string;
+            code?: string;
+          };
+          if (parsed.error) {
+            opts.onError(new Error(parsed.error));
+            return;
+          }
+          const delta = parsed.choices?.[0]?.delta?.content;
+          if (typeof delta === 'string' && delta.length > 0) {
+            opts.onDelta(delta);
+          }
+        } catch {
+          // Ignore unparseable SSE frames.
+        }
+      }
+    }
+    opts.onDone();
+  } catch (err) {
+    opts.onError(err);
+  } finally {
+    reader.releaseLock();
+  }
+}

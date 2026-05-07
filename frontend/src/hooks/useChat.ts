@@ -88,7 +88,9 @@ export interface ChatSummary {
   id: string;
   chapterId: string;
   title: string | null;
+  kind: 'ask' | 'scene';
   createdAt: string;
+  updatedAt: string;
   messageCount: number;
 }
 
@@ -103,8 +105,11 @@ interface ChatsResponse {
 export const chatMessagesQueryKey = (chatId: string): readonly [string, string, string] =>
   ['chat', chatId, 'messages'] as const;
 
-export const chatsQueryKey = (chapterId: string): readonly [string, string, string] =>
-  ['chapter', chapterId, 'chats'] as const;
+export const chatsQueryKey = (
+  chapterId: string,
+  kind?: 'ask' | 'scene',
+): readonly [string, string, string, string | undefined] =>
+  ['chapter', chapterId, 'chats', kind] as const;
 
 export function useChatMessagesQuery(chatId: string | null): UseQueryResult<ChatMessage[], Error> {
   return useQuery({
@@ -119,12 +124,17 @@ export function useChatMessagesQuery(chatId: string | null): UseQueryResult<Chat
   });
 }
 
-export function useChatsQuery(chapterId: string | null): UseQueryResult<ChatSummary[], Error> {
+export function useChatsQuery(
+  chapterId: string | null,
+  opts?: { kind?: 'ask' | 'scene' },
+): UseQueryResult<ChatSummary[], Error> {
+  const kind = opts?.kind;
   return useQuery({
-    queryKey: chatsQueryKey(chapterId ?? ''),
+    queryKey: chatsQueryKey(chapterId ?? '', kind),
     queryFn: async (): Promise<ChatSummary[]> => {
+      const params = kind !== undefined ? `?kind=${encodeURIComponent(kind)}` : '';
       const res = await api<ChatsResponse>(
-        `/chapters/${encodeURIComponent(chapterId ?? '')}/chats`,
+        `/chapters/${encodeURIComponent(chapterId ?? '')}/chats${params}`,
       );
       return res.chats;
     },
@@ -137,15 +147,19 @@ export function useChatsQuery(chapterId: string | null): UseQueryResult<ChatSumm
 export interface CreateChatArgs {
   chapterId: string;
   title?: string;
+  kind?: 'ask' | 'scene';
 }
 
 export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, CreateChatArgs> {
   const qc = useQueryClient();
   return useMutation<ChatSummary, Error, CreateChatArgs>({
-    mutationFn: async ({ chapterId, title }) => {
+    mutationFn: async ({ chapterId, title, kind }) => {
+      const body: Record<string, unknown> = {};
+      if (title !== undefined) body.title = title;
+      if (kind !== undefined) body.kind = kind;
       const res = await api<{ chat: ChatSummary }>(
         `/chapters/${encodeURIComponent(chapterId)}/chats`,
-        { method: 'POST', body: title !== undefined ? { title } : {} },
+        { method: 'POST', body },
       );
       return res.chat;
     },
@@ -157,8 +171,11 @@ export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, C
 
 export interface SendChatMessageArgs {
   chatId: string;
-  content: string;
+  /** Message text. Required unless `retry` is true. */
+  content?: string;
   modelId: string;
+  /** When true, replays the existing trailing user turn without persisting a new message. */
+  retry?: boolean;
   attachment?: { selectionText: string; chapterId: string };
   enableWebSearch?: boolean;
 }
@@ -179,12 +196,14 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
     onMutate: ({ chatId, content, attachment }) => {
       useChatDraftStore.getState().start({
         chatId,
-        userContent: content,
+        userContent: content ?? '',
         attachment: attachment ?? null,
       });
     },
-    mutationFn: async ({ chatId, content, modelId, attachment, enableWebSearch }) => {
-      const body: Record<string, unknown> = { content, modelId };
+    mutationFn: async ({ chatId, content, modelId, retry, attachment, enableWebSearch }) => {
+      const body: Record<string, unknown> = { modelId };
+      if (content !== undefined) body.content = content;
+      if (retry === true) body.retry = true;
       if (attachment) body.attachment = attachment;
       if (enableWebSearch === true) body.enableWebSearch = true;
 
