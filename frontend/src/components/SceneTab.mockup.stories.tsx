@@ -34,6 +34,7 @@ const sampleSessions: SessionRow[] = [
 ];
 
 interface CandidateTurn {
+  id: string;
   direction: string;
   candidate: string;
   state?: 'streaming' | 'done';
@@ -42,6 +43,7 @@ interface CandidateTurn {
 
 const sampleTurns: CandidateTurn[] = [
   {
+    id: 't1',
     direction: 'Jenny approaches Linda on the veranda and they talk about cheese.',
     candidate:
       'Linda was already at the railing when Jenny stepped onto the veranda, the boards giving a soft, settled sound under her shoes. The afternoon sun lay flat across the planters, and the smell of jasmine had thinned to almost nothing. Jenny cleared her throat. "I brought the cheese," she said, and held up the small wax-paper bundle as proof. Linda turned, and for a moment her face did the thing it always did — a beat of uncertainty, then warmth. "From the Tuesday market?" she asked.',
@@ -49,6 +51,7 @@ const sampleTurns: CandidateTurn[] = [
     model: 'Llama 3.3 70B',
   },
   {
+    id: 't2',
     direction: 'Make Linda colder. She is hiding something.',
     candidate:
       'Linda did not turn at first. She let the silence sit, the way she always did when she wanted you to feel the shape of it. Jenny stopped two paces short of the railing. "I brought the cheese." Linda\'s shoulders moved — a breath, not a turn. "Did you," she said. It was not a question.',
@@ -207,11 +210,7 @@ function ScenePickerHeader({ open = false }: { open?: boolean } = {}): JSX.Eleme
   );
 }
 
-function SessionPickerButton({
-  variant,
-}: {
-  variant: 'subrow' | 'inline';
-}): JSX.Element {
+function SessionPickerButton({ variant }: { variant: 'subrow' | 'inline' }): JSX.Element {
   const cls =
     variant === 'subrow'
       ? 'flex items-center gap-2 w-full px-2 py-1 rounded-[var(--radius)] text-left'
@@ -309,11 +308,7 @@ function CandidateBubble({ turn, last }: { turn: CandidateTurn; last: boolean })
   );
 }
 
-function SceneComposer({
-  state = 'idle',
-}: {
-  state?: 'idle' | 'streaming';
-} = {}): JSX.Element {
+function SceneComposer({ state = 'idle' }: { state?: 'idle' | 'streaming' } = {}): JSX.Element {
   const isStreaming = state === 'streaming';
   return (
     <div className="border-t border-line p-3 bg-bg flex flex-col gap-2">
@@ -366,7 +361,7 @@ function TranscriptBody(): JSX.Element {
   return (
     <section className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-4">
       {sampleTurns.map((t, i) => (
-        <CandidateBubble key={i} turn={t} last={i === sampleTurns.length - 1} />
+        <CandidateBubble key={t.id} turn={t} last={i === sampleTurns.length - 1} />
       ))}
     </section>
   );
@@ -401,9 +396,8 @@ function ChatTranscript(): JSX.Element {
         Is Linda's mother still alive in this chapter?
       </div>
       <div className="self-start max-w-[90%] text-[13px] text-ink leading-snug">
-        Based on chapter 4 ("The Letter"), Linda's mother is alive but estranged.
-        She is mentioned by name (Margery) once, in a flashback, and Linda has not
-        seen her in seven years.
+        Based on chapter 4 ("The Letter"), Linda's mother is alive but estranged. She is mentioned
+        by name (Margery) once, in a flashback, and Linda has not seen her in seven years.
       </div>
     </section>
   );
@@ -501,6 +495,7 @@ function SessionPickerDropdown(): JSX.Element {
           }`}
           role="option"
           aria-selected={i === 0}
+          tabIndex={0}
         >
           <div className="flex flex-col flex-1 min-w-0">
             <span className="text-[13px] text-ink truncate">{s.title}</span>
@@ -578,8 +573,8 @@ function EmptyState(): JSX.Element {
       </div>
       <section className="flex-1 min-h-0 overflow-y-auto p-6 flex flex-col items-center justify-center gap-3 text-center">
         <div className="font-serif italic text-[15px] text-ink-3 max-w-[280px]">
-          Describe what happens next — a scene, a beat, an action — and the assistant
-          will draft it in your voice.
+          Describe what happens next — a scene, a beat, an action — and the assistant will draft it
+          in your voice.
         </div>
         <div className="text-[11px] font-mono text-ink-4">
           Try: "Jenny approaches Linda on the veranda and they talk about cheese."
@@ -631,9 +626,7 @@ function ManagementShowcase(): JSX.Element {
   return (
     <div className="flex gap-6 p-6 bg-[var(--bg-sunken)] min-h-screen items-start">
       <div className="flex flex-col gap-2">
-        <div className="text-[11px] uppercase tracking-[.08em] text-ink-3 font-sans">
-          Closed
-        </div>
+        <div className="text-[11px] uppercase tracking-[.08em] text-ink-3 font-sans">Closed</div>
         <ScenePanel />
       </div>
       <div className="flex flex-col gap-2">
