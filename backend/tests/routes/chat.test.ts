@@ -99,6 +99,26 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
     expect(res.body.chats[0].kind).toBe('scene');
   });
 
+  // [D1] ?kind=ask filter
+  it('returns only kind=ask rows when ?kind=ask', async () => {
+    const { agent, chapterId } = await setup('chat-filter-ask-u6');
+    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
+    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 's', kind: 'scene' });
+
+    const res = await agent
+      .get(`/api/chapters/${chapterId}/chats`)
+      .query({ kind: 'ask' })
+      .expect(200);
+    expect(res.body.chats).toHaveLength(1);
+    expect(res.body.chats[0].kind).toBe('ask');
+  });
+
+  // [D1] ?kind=bogus → 400
+  it('returns 400 when ?kind is an unknown value', async () => {
+    const { agent, chapterId } = await setup('chat-filter-bogus-u7');
+    await agent.get(`/api/chapters/${chapterId}/chats`).query({ kind: 'bogus' }).expect(400);
+  });
+
   it('returns both kinds when ?kind is omitted', async () => {
     const { agent, chapterId } = await setup('chat-filter-all-u5');
     await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
@@ -106,6 +126,9 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
 
     const res = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
     expect(res.body.chats).toHaveLength(2);
+    // [D1] Assert both kinds are present
+    const kinds = res.body.chats.map((c: { kind: string }) => c.kind).sort();
+    expect(kinds).toEqual(['ask', 'scene']);
   });
 });
 
@@ -397,6 +420,32 @@ describe('PATCH /api/chats/:id', () => {
       .patch(`/api/chats/${chatId}`)
       .send({ title: 'a'.repeat(201) })
       .expect(400);
+  });
+
+  // [D2] .strict() extra-fields rejection
+  it('rejects extra fields in the body (.strict())', async () => {
+    const { agent, chapterId } = await setup('sc7-patch-u6');
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'a', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    await agent.patch(`/api/chats/${chatId}`).send({ title: 'valid', extra: 'field' }).expect(400);
+  });
+
+  // [D2] 200-char boundary: title of exactly 200 chars must succeed
+  it('accepts title of exactly 200 characters', async () => {
+    const { agent, chapterId } = await setup('sc7-patch-u7');
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'a', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+
+    const res = await agent
+      .patch(`/api/chats/${chatId}`)
+      .send({ title: 'b'.repeat(200) })
+      .expect(200);
+    expect(res.body.chat.title).toBe('b'.repeat(200));
   });
 });
 
