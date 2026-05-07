@@ -15,6 +15,7 @@ export interface DefaultPrompts {
   expand: string;
   summarise: string;
   describe: string;
+  scene: string;
 }
 
 interface DefaultsEnvelope {

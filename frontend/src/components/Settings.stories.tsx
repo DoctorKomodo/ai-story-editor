@@ -37,6 +37,7 @@ const SAMPLE_SETTINGS: UserSettings = {
     expand: null,
     summarise: null,
     describe: null,
+    scene: null,
   },
 };
 

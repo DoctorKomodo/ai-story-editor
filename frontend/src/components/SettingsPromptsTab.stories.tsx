@@ -22,6 +22,8 @@ const DEFAULTS: DefaultPrompts = {
   summarise: 'Task: summarise the selection to its essential points. Use 1–3 sentences.',
   describe:
     "Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
+  scene:
+    'Task: turn the following scene direction into a paragraph of vivid prose that fits the story voice.',
 };
 
 function withQueryClient(settings: UserSettings) {
@@ -79,6 +81,7 @@ export const EverythingOverridden: Story = {
         expand: 'Custom expand.',
         summarise: 'Custom summarise.',
         describe: 'Custom describe.',
+        scene: 'Custom scene.',
       },
     }),
   ],
