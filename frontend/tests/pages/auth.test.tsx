@@ -44,14 +44,13 @@ describe('auth pages (F4)', () => {
     resetApiClientForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    // Re-install the unauthorized handler — resetApiClientForTests cleared
-    // the one session.ts wired at module load, and the import from earlier
-    // in the process does not re-run. Mirrors the production wiring so
-    // terminal-401 tests can assert the sessionExpired flag flip.
-    setUnauthorizedHandler(() => {
-      useSessionStore.getState().clearSession();
-      useSessionStore.setState({ sessionExpired: true });
-    });
+    // Re-install the production unauthorized handler — resetApiClientForTests
+    // cleared the one session.ts wired at module load, and the import from
+    // earlier in the process does not re-run. Using `handleUnauthorizedAccess`
+    // (rather than a hand-rolled stub) ensures every test exercises the same
+    // wiring as production; if the handler body changes, every F65 test
+    // catches the drift, not just the explicit production-wiring case.
+    setUnauthorizedHandler(handleUnauthorizedAccess);
     useSessionStore.setState({ user: null, status: 'idle', sessionExpired: false });
   });
 
@@ -344,11 +343,10 @@ describe('auth pages (F4)', () => {
     });
 
     it('terminal-401 mid-session: production handler flips the store and redirects /login → banner', async () => {
-      // Install the production handler (not the stub from beforeEach) so this
-      // test exercises the real wiring under change. If session.ts's handler
-      // body drifts from the stub, this test catches it; the stub-based tests
-      // above don't.
-      setUnauthorizedHandler(handleUnauthorizedAccess);
+      // beforeEach already installed `handleUnauthorizedAccess` as the
+      // handler, so this test exercises the production wiring end-to-end via
+      // a real fetch-401 chain (rather than asserting against a hand-rolled
+      // stub).
 
       // Pre-seed an authenticated session so RequireAuth admits the dashboard.
       act(() => {
