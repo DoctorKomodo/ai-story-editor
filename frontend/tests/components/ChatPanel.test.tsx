@@ -94,7 +94,7 @@ describe('ChatPanel (F38)', () => {
     });
   }
 
-  it('renders header tabs, model bar, body, and composer landmarks', () => {
+  it('renders header tabs, model footer, body, and composer landmarks', () => {
     mockModels();
     renderWithProviders(
       <ChatPanel
@@ -107,8 +107,8 @@ describe('ChatPanel (F38)', () => {
     expect(screen.getByRole('tab', { name: 'Chat' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'History' })).toBeInTheDocument();
 
-    // Model bar — testid + the MODEL label.
-    expect(screen.getByTestId('model-bar')).toBeInTheDocument();
+    // Model footer — testid + the MODEL label.
+    expect(screen.getByTestId('model-footer')).toBeInTheDocument();
     expect(screen.getByText('MODEL')).toBeInTheDocument();
 
     // Scrollable body region.
@@ -191,8 +191,6 @@ describe('ChatPanel (F38)', () => {
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('32k');
     // The Venice mark is rendered.
     expect(screen.getByTestId('venice-mark')).toBeInTheDocument();
-    // The right-aligned model label uses the same human name.
-    expect(screen.getByTestId('model-label')).toHaveTextContent('Venice Uncensored 1.5');
   });
 
   it('shows "No model" and "—" ctx chip when no model is selected', () => {
@@ -202,26 +200,6 @@ describe('ChatPanel (F38)', () => {
 
     expect(screen.getByText('No model')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('—');
-  });
-
-  it('renders the params row from current settings values', async () => {
-    mockModels();
-    const qc = seedSettings({
-      chat: {
-        model: 'venice-uncensored-1.5',
-        overrides: { 'venice-uncensored-1.5': { temperature: 0.7, topP: 0.9, maxTokens: 1200 } },
-      },
-    });
-
-    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />, qc);
-
-    await waitFor(() => {
-      const params = screen.getByTestId('model-params');
-      expect(params.textContent ?? '').toContain('temp 0.7');
-    });
-    const params = screen.getByTestId('model-params');
-    expect(params.textContent ?? '').toContain('top_p 0.9');
-    expect(params.textContent ?? '').toContain('max 1200');
   });
 
   it('composer is visible on Chat tab and hidden on History tab', async () => {

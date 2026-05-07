@@ -5,12 +5,10 @@ import { type JSX, type ReactNode, useState } from 'react';
  * Owns the structural chrome of the AI chat side panel:
  *   - 40px header with `Chat / History` pill tabs + `New chat` and `Settings`
  *     icon buttons.
- *   - Model bar (`var(--bg-sunken)` background) with two rows:
- *       row 1: `MODEL` label + a model picker button that fires
- *              `onOpenModelPicker` (opens [F42]).
- *       row 2: mono `temp / top_p / max` and a right-aligned model label.
  *   - Scrollable body slot for the message list ([F39]).
  *   - Composer slot pinned to the bottom ([F40]).
+ *   - ModelFooter at the very bottom: model picker button showing the active
+ *     model and context-window chip (opens [F42]).
  *
  * The active tab (`chat` | `history`) is local state for now — there is no
  * cross-component need for it yet; future history work may lift it.
@@ -19,9 +17,7 @@ import { type JSX, type ReactNode, useState } from 'react';
  * standalone testing we add `min-w-[360px]` so the panel renders at its
  * intended width without the shell.
  */
-import { type Model, useModelsQuery } from '@/hooks/useModels';
-import { resolveChatParams, useUserSettings } from '@/hooks/useUserSettings';
-import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
+import { ModelFooter } from '@/components/ModelFooter';
 
 export interface ChatPanelProps {
   /** Slot for the message list ([F39]). Rendered when the Chat tab is active. */
@@ -37,37 +33,6 @@ export interface ChatPanelProps {
 }
 
 type TabId = 'chat' | 'history';
-
-function VeniceMark(): JSX.Element {
-  // 18×18 black square with a white serif "V" centred. The mockup uses a
-  // styled <div> with `font-family: var(--serif)`; we mirror that with a
-  // foreignObject-free SVG so the mark survives in environments that strip
-  // CSS (and so the test can pluck it out by `data-testid`).
-  return (
-    <svg
-      data-testid="venice-mark"
-      width="18"
-      height="18"
-      viewBox="0 0 18 18"
-      aria-hidden="true"
-      className="flex-shrink-0"
-    >
-      <rect width="18" height="18" rx="3" fill="var(--ink)" />
-      <text
-        x="9"
-        y="13"
-        textAnchor="middle"
-        fontFamily="var(--serif)"
-        fontStyle="italic"
-        fontSize="12"
-        fontWeight="500"
-        fill="var(--bg)"
-      >
-        V
-      </text>
-    </svg>
-  );
-}
 
 function PlusIcon(): JSX.Element {
   return (
@@ -114,44 +79,6 @@ function SlidersIcon(): JSX.Element {
   );
 }
 
-function ChevronDownIcon(): JSX.Element {
-  return (
-    <svg
-      width="12"
-      height="12"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-      className="text-ink-4"
-    >
-      <polyline points="6 9 12 15 18 9" />
-    </svg>
-  );
-}
-
-/**
- * Format a context-window size as a short label, e.g.
- *   32_000 → "32k"
- *   128_000 → "128k"
- *   500 → "500"
- *
- * Note: this differs from `formatContextLength` used by `<ModelPicker />`,
- * which uses 1024-based "K". The mockup model bar uses 1000-based "k", so we
- * keep the F38 helper local rather than reuse the F13 one.
- */
-export function formatCtxLabel(contextLength: number): string {
-  if (contextLength <= 0) return '—';
-  if (contextLength >= 1000) {
-    const k = Math.round(contextLength / 1000);
-    return `${String(k)}k`;
-  }
-  return String(contextLength);
-}
-
 export function ChatPanel({
   messagesBody,
   composer,
@@ -160,20 +87,6 @@ export function ChatPanel({
   onOpenSettings,
 }: ChatPanelProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('chat');
-
-  const settings = useUserSettings();
-  const modelId = settings.chat.model;
-  const { data: models } = useModelsQuery();
-
-  const selectedModel: Model | undefined = models?.find((m) => m.id === modelId);
-
-  // Resolved generation params for the model bar display.
-  const params = selectedModel
-    ? resolveChatParams(settings, selectedModel)
-    : GLOBAL_TEXT_GEN_DEFAULTS;
-  const modelName = selectedModel?.name ?? 'No model';
-  const ctxLabel = selectedModel ? formatCtxLabel(selectedModel.contextLength) : '—';
-  const modelLabel = selectedModel?.name ?? selectedModel?.id ?? modelId ?? '';
 
   const tabClass = (isActive: boolean): string =>
     [
@@ -236,39 +149,6 @@ export function ChatPanel({
         </div>
       </header>
 
-      <div
-        className="model-bar bg-[var(--bg-sunken)] px-3.5 py-2.5 flex flex-col gap-1.5 border-b border-line"
-        data-testid="model-bar"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-[.08em] text-ink-4 font-sans">MODEL</span>
-          <button
-            type="button"
-            onClick={onOpenModelPicker}
-            aria-label="Open model picker"
-            className="model-picker-btn flex items-center gap-1.5 hover:bg-[var(--surface-hover)] px-2 py-1 rounded-[var(--radius)] flex-1 min-w-0"
-          >
-            <VeniceMark />
-            <span className="font-mono text-[12px] text-ink truncate flex-1 min-w-0 text-left">
-              {modelName}
-            </span>
-            <span
-              className="ctx-chip text-[10px] uppercase font-mono px-1.5 py-0.5 rounded bg-bg border border-line text-ink-3"
-              data-testid="ctx-chip"
-            >
-              {ctxLabel}
-            </span>
-            <ChevronDownIcon />
-          </button>
-        </div>
-        <div className="flex items-center justify-between font-mono text-[11px] text-ink-4">
-          <span data-testid="model-params">
-            {`temp ${params.temperature}  top_p ${params.topP}  max ${params.maxTokens}`}
-          </span>
-          <span data-testid="model-label">{modelLabel}</span>
-        </div>
-      </div>
-
       <section
         className="flex-1 min-h-0 overflow-y-auto"
         aria-label="Chat messages"
@@ -286,6 +166,8 @@ export function ChatPanel({
           {composer}
         </div>
       ) : null}
+
+      <ModelFooter onOpenModelPicker={onOpenModelPicker} />
     </aside>
   );
 }

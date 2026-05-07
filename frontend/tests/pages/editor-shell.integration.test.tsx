@@ -210,7 +210,7 @@ describe('EditorPage shell integration (F51)', () => {
     renderEditor();
 
     await waitFor(() => {
-      expect(screen.getByTestId('model-bar')).toBeInTheDocument();
+      expect(screen.getByTestId('model-footer')).toBeInTheDocument();
     });
 
     const trigger = screen.getByLabelText('Open model picker');
