@@ -59,6 +59,40 @@ describe('SceneCandidateCard', () => {
     expect(screen.getByText(/streaming/i)).toBeInTheDocument();
   });
 
+  it('shows thinking dots when state="streaming" and candidate is empty', () => {
+    render(
+      <SceneCandidateCard
+        direction="Jenny approaches Linda."
+        candidate=""
+        state="streaming"
+        isLatest={true}
+        model="Llama 3.3 70B"
+        onInsert={vi.fn()}
+        onRetry={vi.fn()}
+        onCopy={vi.fn()}
+      />,
+    );
+    expect(screen.getByTestId('thinking-dots')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /insert/i })).not.toBeInTheDocument();
+  });
+
+  it('hides thinking dots once candidate content arrives (non-empty candidate)', () => {
+    render(
+      <SceneCandidateCard
+        direction="Jenny approaches Linda."
+        candidate="Linda was already at the railing…"
+        state="streaming"
+        isLatest={true}
+        model="Llama 3.3 70B"
+        onInsert={vi.fn()}
+        onRetry={vi.fn()}
+        onCopy={vi.fn()}
+      />,
+    );
+    expect(screen.queryByTestId('thinking-dots')).not.toBeInTheDocument();
+    expect(screen.getByText(/Linda was already/)).toBeInTheDocument();
+  });
+
   it('shows the model label in the metadata row', () => {
     render(<SceneCandidateCard {...baseProps()} />);
     expect(screen.getByText('Llama 3.3 70B')).toBeInTheDocument();

@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { ThinkingDots } from '@/design/ThinkingDots';
 
 /**
  * [SC11] Scene candidate card — renders a single AI-generated prose candidate
@@ -70,15 +71,26 @@ export function SceneCandidateCard({
 
       {/* Candidate card */}
       <article className="rounded-[var(--radius)] border border-line bg-bg px-3.5 py-3">
-        {/* Prose body — left-border accent matches assistant bubbles in ChatMessages */}
-        <div
-          className="pl-3 border-l-2 border-[var(--ai)] font-serif text-[14.5px] text-ink leading-[1.55] whitespace-pre-wrap"
-          data-testid="scene-candidate-text"
-        >
-          {candidate}
-        </div>
+        {/* Prose body — left-border accent matches assistant bubbles in ChatMessages.
+            When streaming with no content yet, show the thinking dots in the prose
+            area (same pattern as ChatMessages DraftPair). */}
+        {state === 'streaming' && candidate.length === 0 ? (
+          <div
+            className="pl-3 border-l-2 border-[var(--ai)] py-1"
+            data-testid="scene-candidate-text"
+          >
+            <ThinkingDots label="Generating scene…" />
+          </div>
+        ) : (
+          <div
+            className="pl-3 border-l-2 border-[var(--ai)] font-serif text-[14.5px] text-ink leading-[1.55] whitespace-pre-wrap"
+            data-testid="scene-candidate-text"
+          >
+            {candidate}
+          </div>
+        )}
 
-        {/* Streaming state */}
+        {/* Streaming state footer */}
         {state === 'streaming' && (
           <div className="mt-3 text-[11px] font-mono text-ink-4">
             streaming via {model ?? 'model'}…

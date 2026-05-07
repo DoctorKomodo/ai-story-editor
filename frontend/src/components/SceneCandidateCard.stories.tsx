@@ -27,5 +27,10 @@ type Story = StoryObj<typeof SceneCandidateCard>;
 
 export const LatestDone: Story = { args: { state: 'done', isLatest: true } };
 export const SupersededDone: Story = { args: { state: 'done', isLatest: false } };
+/** Streaming with content — LLM is mid-response, tokens are arriving. */
 export const Streaming: Story = { args: { state: 'streaming', isLatest: true } };
+/** Streaming, empty — request just fired, no tokens yet; shows thinking dots. */
+export const StreamingEmpty: Story = {
+  args: { state: 'streaming', isLatest: true, candidate: '' },
+};
 export const ErrorState: Story = { args: { state: 'error', isLatest: true } };
