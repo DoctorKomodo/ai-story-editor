@@ -615,6 +615,7 @@ export function EditorPage(): JSX.Element {
                   // the in-place setContent effect skips empty bodies — the
                   // user sees the old chapter's text under the new title.
                   key={activeChapterId}
+                  storyId={story.id}
                   storyTitle={story.title}
                   storyGenre={story.genre}
                   storyWordCount={totalWordCount}
