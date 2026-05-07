@@ -18,6 +18,6 @@ describe('GLOBAL_TEXT_GEN_DEFAULTS', () => {
     const text = await fs.readFile(frontendFile, 'utf8');
     expect(text).toMatch(/temperature:\s*0\.85/);
     expect(text).toMatch(/topP:\s*0\.95/);
-    expect(text).toMatch(/maxTokens:\s*800/);
+    expect(text).toMatch(/maxTokens:\s*800\b/);
   });
 });
