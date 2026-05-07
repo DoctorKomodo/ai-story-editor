@@ -17,6 +17,7 @@
  */
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
+import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { SceneCandidateCard } from '@/components/SceneCandidateCard';
 import { SceneComposer } from '@/components/SceneComposer';
 import { SceneSessionPicker } from '@/components/SceneSessionPicker';
@@ -85,8 +86,10 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   const { data: models } = useModelsQuery();
   const modelName = models?.find((m) => m.id === modelId)?.name;
 
-  const { sessions, create, rename, remove } = useScenes(chapterId);
+  const { sessions, create, rename, remove, error: scenesError } = useScenes(chapterId);
   const [activeId, setActiveId] = useState<string | null>(null);
+  // [A3] Error state for listMessagesForChat hydration failures.
+  const [hydrationError, setHydrationError] = useState<string | null>(null);
 
   // Pick the most recent session if none is active. If active session was
   // deleted, advance to next.
@@ -107,21 +110,29 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   // Load messages whenever the active session changes.
   useEffect(() => {
     let cancelled = false;
+    setHydrationError(null);
     if (activeId) {
-      listMessagesForChat(activeId).then((messages) => {
-        if (cancelled) return;
-        setChat(
-          activeId,
-          messages.map((m) => ({
-            id: m.id,
-            role: m.role as 'user' | 'assistant',
-            content:
-              typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson),
-            model: m.model ?? undefined,
-            state: 'done' as const,
-          })),
-        );
-      });
+      listMessagesForChat(activeId)
+        .then((messages) => {
+          if (cancelled) return;
+          setChat(
+            activeId,
+            messages.map((m) => ({
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              content:
+                typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson),
+              model: m.model ?? undefined,
+              state: 'done' as const,
+            })),
+          );
+        })
+        .catch((err: unknown) => {
+          if (cancelled) return;
+          setHydrationError(
+            err instanceof Error ? err.message : "Couldn't load transcript. Try switching sessions.",
+          );
+        });
     } else {
       setChat(null, []);
     }
@@ -249,24 +260,33 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
 
   return (
     <div className="flex flex-col h-full" data-testid="scene-tab">
-      <SceneSessionPicker
-        sessions={visibleSessions.map((s) => ({
-          id: s.id,
-          title: s.title ?? 'Untitled',
-          updatedAt: s.updatedAt,
-        }))}
-        activeSessionId={activeId}
-        onSelect={setActiveId}
-        onRename={(id, title) => {
-          void rename(id, title);
-        }}
-        onDelete={onDelete}
-        onNew={() => {
-          void create().then((c) => {
-            setActiveId(c.id);
-          });
-        }}
-      />
+      {/* [A2] useScenes query error — renders above (or instead of) the picker */}
+      {scenesError !== null ? (
+        <div className="px-3 py-2">
+          <InlineErrorBanner
+            error={{ code: null, message: scenesError.message || 'Failed to load scene sessions.' }}
+          />
+        </div>
+      ) : (
+        <SceneSessionPicker
+          sessions={visibleSessions.map((s) => ({
+            id: s.id,
+            title: s.title ?? 'Untitled',
+            updatedAt: s.updatedAt,
+          }))}
+          activeSessionId={activeId}
+          onSelect={setActiveId}
+          onRename={(id, title) => {
+            void rename(id, title);
+          }}
+          onDelete={onDelete}
+          onNew={() => {
+            void create().then((c) => {
+              setActiveId(c.id);
+            });
+          }}
+        />
+      )}
 
       {lastUndoEntry !== null && (
         <div
@@ -287,7 +307,54 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       )}
 
       <section className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-4">
-        {transcript.messages.length === 0 ? (
+        {/* [A1] Venice generation error banner */}
+        {transcript.streamState === 'error' && transcript.errorMessage !== null && (
+          <InlineErrorBanner
+            error={{ code: null, message: transcript.errorMessage }}
+            onDismiss={() => {
+              useSceneTranscriptStore.getState().resetStream();
+            }}
+          />
+        )}
+
+        {/* [A3] Transcript hydration error (listMessagesForChat rejection) */}
+        {hydrationError !== null && (
+          <InlineErrorBanner
+            error={{ code: null, message: hydrationError }}
+            onRetry={() => {
+              if (activeId) {
+                setHydrationError(null);
+                listMessagesForChat(activeId)
+                  .then((messages) => {
+                    setChat(
+                      activeId,
+                      messages.map((m) => ({
+                        id: m.id,
+                        role: m.role as 'user' | 'assistant',
+                        content:
+                          typeof m.contentJson === 'string'
+                            ? m.contentJson
+                            : JSON.stringify(m.contentJson),
+                        model: m.model ?? undefined,
+                        state: 'done' as const,
+                      })),
+                    );
+                  })
+                  .catch((err: unknown) => {
+                    setHydrationError(
+                      err instanceof Error
+                        ? err.message
+                        : "Couldn't load transcript. Try switching sessions.",
+                    );
+                  });
+              }
+            }}
+          />
+        )}
+
+        {transcript.streamState !== 'error' &&
+        hydrationError === null &&
+        transcript.messages.length === 0 ? (
           <div className="m-auto flex flex-col items-center gap-3 text-center">
             <div className="font-serif italic text-[15px] text-ink-3 max-w-[280px]">
               Describe what happens next — a scene, a beat, an action — and the assistant will draft
@@ -297,9 +364,9 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
               Try: &ldquo;Jenny approaches Linda on the veranda and they talk about cheese.&rdquo;
             </div>
           </div>
-        ) : (
+        ) : transcript.streamState !== 'error' && hydrationError === null ? (
           renderTranscript(transcript.messages, onInsert, onRetry, onCopy)
-        )}
+        ) : null}
       </section>
 
       <SceneComposer

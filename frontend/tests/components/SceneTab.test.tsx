@@ -10,6 +10,7 @@
  */
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SceneTab } from '@/components/SceneTab';
@@ -113,5 +114,222 @@ describe('SceneTab — smoke', () => {
     await waitFor(() => {
       expect(screen.getByText(/no session yet/i)).toBeInTheDocument();
     });
+  });
+});
+
+// ─── [A1] Venice generation error ─────────────────────────────────────────────
+
+describe('SceneTab — [A1] Venice generation error', () => {
+  let fetchMock: FetchMock;
+
+  function makeClient(): QueryClient {
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, DEFAULT_SETTINGS);
+    qc.setQueryData(modelsQueryKey, []);
+    return qc;
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('test-token');
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    useSceneTranscriptStore.getState().setChat(null, []);
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
+  });
+
+  it('shows an inline error banner when streamState is "error" with the error message', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/chats')) {
+        return Promise.resolve(jsonResponse(200, { chats: [] }));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
+    });
+
+    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeClient());
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    // Simulate Venice failure by calling failAssistant directly on the store.
+    useSceneTranscriptStore.getState().failAssistant('Venice quota exceeded');
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+      expect(screen.getByText(/Venice quota exceeded/i)).toBeInTheDocument();
+    });
+  });
+
+  it('dismisses the Venice error banner when the dismiss button is clicked', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/chats')) {
+        return Promise.resolve(jsonResponse(200, { chats: [] }));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
+    });
+
+    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeClient());
+
+    await waitFor(() => {
+      expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
+    });
+
+    useSceneTranscriptStore.getState().failAssistant('Network error');
+
+    await waitFor(() => {
+      expect(screen.getByRole('alert')).toBeInTheDocument();
+    });
+
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: /dismiss/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(useSceneTranscriptStore.getState().streamState).toBe('idle');
+    });
+  });
+});
+
+// ─── [A2] useScenes query error ───────────────────────────────────────────────
+
+describe('SceneTab — [A2] useScenes query error', () => {
+  let fetchMock: FetchMock;
+
+  function makeClient(): QueryClient {
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, DEFAULT_SETTINGS);
+    qc.setQueryData(modelsQueryKey, []);
+    return qc;
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('test-token');
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    useSceneTranscriptStore.getState().setChat(null, []);
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
+  });
+
+  it('shows an error banner and hides the picker when listChats fails', async () => {
+    // listChats returns a 500 — api layer converts to Error.
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/chats')) {
+        return Promise.resolve(jsonResponse(500, { error: { message: 'list failed', code: 'internal' } }));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
+    });
+
+    // Use retry: false to avoid long retry delays in tests.
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, DEFAULT_SETTINGS);
+    qc.setQueryData(modelsQueryKey, []);
+
+    render(
+      <QueryClientProvider client={qc}>
+        <SceneTab chapterId="c1" editor={null} />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(
+      () => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
+
+    // The picker button should not appear since we're showing the error instead.
+    expect(screen.queryByRole('button', { name: /scene session/i })).not.toBeInTheDocument();
+  });
+});
+
+// ─── [A3] listMessagesForChat rejection ───────────────────────────────────────
+
+describe('SceneTab — [A3] transcript hydration error', () => {
+  let fetchMock: FetchMock;
+
+  function makeClient(): QueryClient {
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, DEFAULT_SETTINGS);
+    qc.setQueryData(modelsQueryKey, []);
+    return qc;
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('test-token');
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    useSceneTranscriptStore.getState().setChat(null, []);
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
+  });
+
+  it('shows an error banner when listMessagesForChat fails', async () => {
+    // First call: listChats returns a session so we get an activeId.
+    // Second call: listMessagesForChat fails with 404.
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/messages')) {
+        return Promise.resolve(
+          jsonResponse(404, { error: { message: 'Chat not found', code: 'not_found' } }),
+        );
+      }
+      if (typeof url === 'string' && url.includes('/chats')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chats: [{ id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: new Date().toISOString() }],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
+    });
+
+    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeClient());
+
+    await waitFor(
+      () => {
+        expect(screen.getByRole('alert')).toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
   });
 });
