@@ -239,7 +239,7 @@ The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a re
 - **I7** — env swap (`VENICE_API_KEY` removed, `APP_ENCRYPTION_KEY` added — no `CONTENT_ENCRYPTION_KEY`).
 - Any change to: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/ai.service.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`.
 
-Invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope in the prompt (e.g. "review AU9–AU10 as currently implemented" or "review the repo-layer boundary for E9"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box — if the hook (see `.claude/hooks/pre-tasks-edit.sh`) says the verify passed but the reviewer says `BLOCK`, do not tick.
+Invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope in the prompt (e.g. "review AU9–AU10 as currently implemented" or "review the repo-layer boundary for E9"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before closing the bd issue — if `/bd-close` (the verify gate in `scripts/bd-close-verified.sh`) reports the verify passed but the reviewer says `BLOCK`, do not close.
 
 **Example invocation:**
 ```
