@@ -1,16 +1,18 @@
 // [SC4] Integration tests for POST /api/chapters/:chapterId/chats (kind field)
 // and GET /api/chapters/:chapterId/chats (kind filter).
+// [SC5] Integration test for POST /api/chats/:chatId/messages kind=scene routing.
 
 import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -143,5 +145,164 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
 
     const res = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
     expect(res.body.chats).toHaveLength(2);
+  });
+});
+
+// ─── Fixtures shared by SC5 suite ─────────────────────────────────────────────
+
+const SC5_MODEL_ID = 'venice-test-model';
+
+const SC5_MODEL_LIST_BODY = {
+  object: 'list',
+  data: [
+    {
+      id: SC5_MODEL_ID,
+      object: 'model',
+      type: 'text',
+      model_spec: {
+        name: 'Venice Test Model',
+        availableContextTokens: 65536,
+        maxCompletionTokens: 4096,
+        capabilities: { supportsReasoning: false, supportsVision: false },
+      },
+    },
+  ],
+};
+
+function sc5JsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    statusText: status === 200 ? 'OK' : 'err',
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+function sc5SseStreamResponse(chunks: Array<Record<string, unknown>>): Response {
+  const enc = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const c of chunks) {
+        controller.enqueue(enc.encode(`data: ${JSON.stringify(c)}\n\n`));
+      }
+      controller.enqueue(enc.encode('data: [DONE]\n\n'));
+      controller.close();
+    },
+  });
+  return new Response(stream, {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
+}
+
+// veniceSetup: registers a user, stores a BYOK key, creates story+chapter,
+// returns agent + chapterId + fetchSpy (already stubbed on globalThis).
+async function veniceSetup(username: string): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  chapterId: string;
+  fetchSpy: ReturnType<typeof vi.fn>;
+}> {
+  const fetchSpy = vi.fn();
+  vi.stubGlobal('fetch', fetchSpy);
+
+  const accessToken = await registerAndLogin(username);
+
+  // Store BYOK key (validate endpoint returns 200 with { data: [] }).
+  fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, { data: [] }));
+  const keyRes = await request(app)
+    .put('/api/users/me/venice-key')
+    .set('Authorization', `Bearer ${accessToken}`)
+    .send({ apiKey: 'sk-venice-sc5-test-key-ABCD' });
+  expect(keyRes.status).toBe(200);
+
+  const req = makeFakeReq(accessToken);
+  const story = await createStoryRepo(req).create({ title: 'SC5 Story', worldNotes: null });
+  const chapter = await createChapterRepo(req).create({
+    storyId: story.id as string,
+    title: 'SC5 Chapter',
+    bodyJson: null,
+    orderIndex: 0,
+    wordCount: 0,
+  });
+
+  const agent = request.agent(app);
+  agent.set('Authorization', `Bearer ${accessToken}`);
+
+  return { agent, chapterId: chapter.id as string, fetchSpy };
+}
+
+// ─── SC5 suite ────────────────────────────────────────────────────────────────
+
+describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('builds the prompt with action="scene" when chat.kind="scene"', async () => {
+    const { agent, chapterId, fetchSpy } = await veniceSetup('sc5-scene-u1');
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 's1', kind: 'scene' })
+      .expect(201);
+    const chatId = created.body.chat.id as string;
+
+    // Prime models cache, then serve the completion stream.
+    fetchSpy.mockResolvedValueOnce(sc5JsonResponse(200, SC5_MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sc5SseStreamResponse([
+        {
+          id: 'chatcmpl-sc5',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'Scene prose.' }, finish_reason: null }],
+        },
+      ]),
+    );
+
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({
+        content: 'Jenny approaches Linda on the veranda and they talk about cheese.',
+        modelId: SC5_MODEL_ID,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body as string).toContain('data:'); // SSE flowed
+
+    // Find the Venice completions call and inspect the messages array.
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const [, init] = completionCall!;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    const sentMessages = requestBody.messages as Array<{ role: string; content: string }>;
+
+    // System message must contain the scene template text.
+    expect(sentMessages[0].role).toBe('system');
+    expect(sentMessages[0].content).toContain('write a passage of prose');
+
+    // Last user message must be the raw direction — no "User question:" framing.
+    const lastMsg = sentMessages[sentMessages.length - 1];
+    expect(lastMsg.role).toBe('user');
+    expect(lastMsg.content).toBe(
+      'Jenny approaches Linda on the veranda and they talk about cheese.',
+    );
+    expect(lastMsg.content).not.toContain('User question');
   });
 });

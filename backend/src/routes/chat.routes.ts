@@ -285,12 +285,16 @@ export function createChatMessagesRouter() {
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
 
+      // Route by chat.kind: scene chats use the scene action (raw direction as
+      // user message, scene template in system); ask chats use the ask action.
+      const action: 'ask' | 'scene' = chat.kind === 'scene' ? 'scene' : 'ask';
+
       const {
         messages: baseMessages,
         venice_parameters: baseVeniceParams,
         max_completion_tokens,
       } = buildPrompt({
-        action: 'ask',
+        action,
         selectedText: body.attachment?.selectionText ?? '',
         chapterContent,
         characters,
@@ -314,10 +318,11 @@ export function createChatMessagesRouter() {
         const rawContent =
           typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
 
-        // For prior user turns that carried an attachment, re-synthesise the
-        // same framing that the prompt builder emits for the `ask` action so
-        // that Venice sees consistent context across turns.
-        if (m.role === 'user' && m.attachmentJson != null) {
+        // For prior user turns in an `ask` chat that carried an attachment,
+        // re-synthesise the framing the prompt builder emits for the `ask`
+        // action so Venice sees consistent context across turns.
+        // Scene chats take the raw direction — no "User question:" framing.
+        if (action === 'ask' && m.role === 'user' && m.attachmentJson != null) {
           const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
           if (typeof att.selectionText === 'string') {
             return {
