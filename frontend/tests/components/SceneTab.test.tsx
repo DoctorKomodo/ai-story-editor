@@ -242,21 +242,14 @@ describe('SceneTab — [A2] useScenes query error', () => {
     // listChats returns a 500 — api layer converts to Error.
     fetchMock.mockImplementation((url: string) => {
       if (typeof url === 'string' && url.includes('/chats')) {
-        return Promise.resolve(jsonResponse(500, { error: { message: 'list failed', code: 'internal' } }));
+        return Promise.resolve(
+          jsonResponse(500, { error: { message: 'list failed', code: 'internal' } }),
+        );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
     });
 
-    // Use retry: false to avoid long retry delays in tests.
-    const qc = createQueryClient();
-    qc.setQueryData(userSettingsQueryKey, DEFAULT_SETTINGS);
-    qc.setQueryData(modelsQueryKey, []);
-
-    render(
-      <QueryClientProvider client={qc}>
-        <SceneTab chapterId="c1" editor={null} />
-      </QueryClientProvider>,
-    );
+    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeClient());
 
     await waitFor(
       () => {
@@ -316,7 +309,16 @@ describe('SceneTab — [A3] transcript hydration error', () => {
       if (typeof url === 'string' && url.includes('/chats')) {
         return Promise.resolve(
           jsonResponse(200, {
-            chats: [{ id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: new Date().toISOString() }],
+            chats: [
+              {
+                id: 's1',
+                kind: 'scene',
+                title: 'Veranda',
+                chapterId: 'c1',
+                createdAt: '',
+                updatedAt: new Date().toISOString(),
+              },
+            ],
           }),
         );
       }
