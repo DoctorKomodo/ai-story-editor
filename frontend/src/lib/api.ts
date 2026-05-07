@@ -12,6 +12,7 @@
  * The access token is held in a module-level variable so the session store can
  * push updates (`setAccessToken`) without creating a circular import.
  */
+import { parseAiSseStream } from '@/lib/sse';
 
 const DEFAULT_BASE_URL = '/api';
 
@@ -388,8 +389,17 @@ export interface StreamMessageOpts {
  * [SC14] POST /api/chats/:chatId/messages (SSE streaming)
  *
  * Opens the SSE stream for a chat message send or retry and drives the caller
- * via `opts.onDelta` / `opts.onDone` / `opts.onError`. Thin wrapper over
- * `apiStream()` + the raw SSE line parser — does not manage React state.
+ * via `opts.onDelta` / `opts.onDone` / `opts.onError`. Delegates SSE parsing
+ * to `parseAiSseStream` (from `@/lib/sse`) so that named-event frames
+ * (e.g. `event: citations`) and abort-signal propagation are handled
+ * consistently with `useSendChatMessageMutation`.
+ *
+ * NOTE: `event: citations` frames are consumed by the parser but not
+ * forwarded to the caller here — `streamMessage` is used by scene-tab
+ * components that read citations from the persisted message after the stream
+ * completes. If a caller needs in-flight citation delivery, use
+ * `useSendChatMessageMutation` instead (it handles the `citations` event).
+ * TODO: expose an `onCitations` callback when a scene-tab caller needs it.
  *
  * Callers that need React / TanStack Query integration should use
  * `useSendChatMessageMutation` from `@/hooks/useChat` instead.
@@ -422,47 +432,27 @@ export async function streamMessage(
     return;
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-
   try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.startsWith('data:')) continue;
-        const payload = line.slice(5).trim();
-        if (payload === '[DONE]') {
-          opts.onDone();
-          return;
+    // `parseAiSseStream` handles abort-signal propagation, blank-line frame
+    // delimiters (correct SSE semantics), and named-event frames (citations).
+    for await (const event of parseAiSseStream(res.body, opts.signal)) {
+      if (event.type === 'chunk') {
+        const delta = event.chunk.choices?.[0]?.delta?.content;
+        if (typeof delta === 'string' && delta.length > 0) {
+          opts.onDelta(delta);
         }
-        try {
-          const parsed = JSON.parse(payload) as {
-            choices?: Array<{ delta?: { content?: string } }>;
-            error?: string;
-            code?: string;
-          };
-          if (parsed.error) {
-            opts.onError(new Error(parsed.error));
-            return;
-          }
-          const delta = parsed.choices?.[0]?.delta?.content;
-          if (typeof delta === 'string' && delta.length > 0) {
-            opts.onDelta(delta);
-          }
-        } catch {
-          // Ignore unparseable SSE frames.
-        }
+      } else if (event.type === 'error') {
+        opts.onError(new Error(event.error.error));
+        return;
+      } else if (event.type === 'done') {
+        opts.onDone();
+        return;
       }
+      // citations frame: not forwarded — caller reads from persisted message.
     }
+    // Stream exhausted without a [DONE] frame — treat as completion.
     opts.onDone();
   } catch (err) {
     opts.onError(err);
-  } finally {
-    reader.releaseLock();
   }
 }

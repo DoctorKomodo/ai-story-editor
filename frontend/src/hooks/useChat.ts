@@ -5,7 +5,8 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { ApiError, api, apiStream } from '@/lib/api';
+import { ApiError, api, apiStream, type ChatRow } from '@/lib/api';
+import { type Citation, isCitationArray } from '@/lib/citations';
 import { parseAiSseStream } from '@/lib/sse';
 import { useChatDraftStore } from '@/store/chatDraft';
 
@@ -38,38 +39,11 @@ export interface ChatMessageAttachment {
   chapterId?: string;
 }
 
-/**
- * [V26][F50] Web-search citation shape returned by the backend on any
- * assistant message that opted into `enableWebSearch`. `null` means the
- * turn did not request search; an empty array is never stored (treated
- * the same as `null` by `<MessageCitations />`).
- */
-export interface Citation {
-  title: string;
-  url: string;
-  snippet: string;
-  publishedAt: string | null;
-}
-
-/**
- * [V26][F50] Defensive runtime guard for citation arrays. Used by the SSE
- * `event: citations` parser so a malformed frame from the wire (or a
- * future schema drift) cannot crash the renderer — we either accept a
- * well-formed array or treat the frame as missing.
- */
-export function isCitationArray(value: unknown): value is Citation[] {
-  if (!Array.isArray(value)) return false;
-  return value.every((item): item is Citation => {
-    if (item === null || typeof item !== 'object') return false;
-    const c = item as Record<string, unknown>;
-    return (
-      typeof c.title === 'string' &&
-      typeof c.url === 'string' &&
-      typeof c.snippet === 'string' &&
-      (c.publishedAt === null || typeof c.publishedAt === 'string')
-    );
-  });
-}
+// Re-export so existing callers (`MessageCitations`, tests, etc.) that
+// import `Citation` / `isCitationArray` from `@/hooks/useChat` keep working
+// without a cascade of import-site changes.
+export type { Citation };
+export { isCitationArray };
 
 export interface ChatMessage {
   id: string;
@@ -84,15 +58,16 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export interface ChatSummary {
-  id: string;
-  chapterId: string;
-  title: string | null;
-  kind: 'ask' | 'scene';
-  createdAt: string;
-  updatedAt: string;
-  messageCount: number;
-}
+/**
+ * Chat list item returned by GET /api/chapters/:chapterId/chats.
+ *
+ * Alias of `ChatRow` from `@/lib/api` with `messageCount` narrowed to
+ * `number` (required) — the list endpoint always enriches each row with
+ * a message count, whereas single-chat endpoints (PATCH/DELETE) do not.
+ * Keeping this as a derived type rather than a parallel interface prevents
+ * the two shapes from drifting independently.
+ */
+export type ChatSummary = Omit<ChatRow, 'messageCount'> & { messageCount: number };
 
 interface ChatMessagesResponse {
   messages: ChatMessage[];
@@ -104,6 +79,16 @@ interface ChatsResponse {
 
 export const chatMessagesQueryKey = (chatId: string): readonly [string, string, string] =>
   ['chat', chatId, 'messages'] as const;
+
+/**
+ * 3-element prefix key covering all kind variants for a given chapter.
+ * Use this (not `chatsQueryKey`) when invalidating after mutations so that
+ * TanStack Query's prefix-match logic sweeps both `kind='ask'` and
+ * `kind='scene'` cached queries.  `chatsQueryKey` (below) appends the kind
+ * as a 4th slot and is only appropriate for registering individual queries.
+ */
+export const chatsBaseQueryKey = (chapterId: string): readonly [string, string, string] =>
+  ['chapter', chapterId, 'chats'] as const;
 
 export const chatsQueryKey = (
   chapterId: string,
@@ -164,7 +149,9 @@ export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, C
       return res.chat;
     },
     onSuccess: (chat) => {
-      void qc.invalidateQueries({ queryKey: chatsQueryKey(chat.chapterId) });
+      // Invalidate by the 3-element prefix so ALL kind variants
+      // (ask, scene, undefined) are swept — not just the undefined slot.
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chat.chapterId) });
     },
   });
 }

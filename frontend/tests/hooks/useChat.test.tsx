@@ -2,8 +2,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chatMessagesQueryKey, useSendChatMessageMutation } from '@/hooks/useChat';
-import { ApiError, apiStream } from '@/lib/api';
+import {
+  chatMessagesQueryKey,
+  chatsBaseQueryKey,
+  chatsQueryKey,
+  useCreateChatMutation,
+  useSendChatMessageMutation,
+} from '@/hooks/useChat';
+import { ApiError, apiStream, resetApiClientForTests, setAccessToken } from '@/lib/api';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 vi.mock('@/lib/api', async () => {
@@ -221,5 +227,79 @@ describe('useSendChatMessageMutation', () => {
     await act(async () => {
       await p;
     });
+  });
+});
+
+// ── useCreateChatMutation cache invalidation ──────────────────────────────────
+
+describe('useCreateChatMutation cache invalidation', () => {
+  type FetchMock = ReturnType<typeof vi.fn>;
+  let fetchMock: FetchMock;
+  const CHAPTER_ID = 'ch-inv-1';
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('tok');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
+
+  it('invalidates kind-filtered cache entries after createChat so all kind variants are refreshed', async () => {
+    // Arrange: POST /chapters/:id/chats returns a new chat row.
+    const newChat = {
+      id: 'chat-new',
+      chapterId: CHAPTER_ID,
+      title: null,
+      kind: 'scene' as const,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      messageCount: 0,
+    };
+    fetchMock.mockResolvedValue(jsonResponse(201, { chat: newChat }));
+
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+
+    // Pre-populate the kind='scene' query with a stale-time so TanStack
+    // Query treats it as fresh before the mutation fires.
+    const sceneKey = chatsQueryKey(CHAPTER_ID, 'scene');
+    qc.setQueryData(sceneKey, []);
+
+    // Verify the scene query starts fresh (not stale).
+    const stateBefore = qc.getQueryState(sceneKey);
+    expect(stateBefore?.isInvalidated).toBeFalsy();
+
+    const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useCreateChatMutation(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ chapterId: CHAPTER_ID, kind: 'scene' });
+    });
+
+    // After the mutation succeeds, the kind='scene' query must be marked
+    // stale (invalidated) by the 3-element prefix invalidation.  Previously,
+    // invalidating with `chatsQueryKey(chapterId)` (4 elements, undefined kind)
+    // would NOT have matched the 4-element key `['chapter', id, 'chats', 'scene']`.
+    const stateAfter = qc.getQueryState(sceneKey);
+    expect(stateAfter?.isInvalidated).toBe(true);
+
+    // The 3-element base key is what chatsBaseQueryKey returns — confirm shape.
+    expect(chatsBaseQueryKey(CHAPTER_ID)).toEqual(['chapter', CHAPTER_ID, 'chats']);
   });
 });
