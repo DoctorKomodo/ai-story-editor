@@ -109,6 +109,7 @@ export function EditorPage(): JSX.Element {
     balanceQuery.error instanceof ApiError ? (balanceQuery.error.code ?? null) : null;
 
   const username = useSessionStore((s) => s.user?.username) ?? '';
+  const displayName = useSessionStore((s) => s.user?.name) ?? null;
   const { logout } = useAuth();
   const handleSignOut = useCallback((): void => {
     void logout().finally(() => {
@@ -554,6 +555,7 @@ export function EditorPage(): JSX.Element {
               setAccountPrivacyOpen(true);
             }}
             username={username}
+            displayName={displayName}
             balance={balanceQuery.data ?? null}
             isBalanceLoading={balanceQuery.isLoading}
             isBalanceError={balanceQuery.isError}

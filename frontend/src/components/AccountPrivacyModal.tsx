@@ -24,7 +24,7 @@
 // which dismisses the takeover and remounts the rotate form (via formKey)
 // with a clean password input.
 import type { JSX, ReactNode } from 'react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import {
   type ChangePasswordInput,
@@ -32,8 +32,10 @@ import {
   useDeleteAccountMutation,
   useRotateRecoveryCodeMutation,
   useSignOutEverywhereMutation,
+  useUpdateProfileMutation,
 } from '@/hooks/useAccount';
 import { ApiError } from '@/lib/api';
+import { useSessionStore } from '@/store/session';
 import { RecoveryCodeCard } from './RecoveryCodeCard';
 
 export interface AccountPrivacyModalProps {
@@ -107,6 +109,87 @@ function mapApiError(err: unknown, on401: string): string {
     return ERR_GENERIC;
   }
   return ERR_GENERIC;
+}
+
+// ---------- Section 0: Display name ([X3]) ----------
+function DisplayNameSection(): JSX.Element {
+  const inputId = useId();
+  const currentName = useSessionStore((s) => s.user?.name ?? '');
+
+  const [name, setName] = useState(currentName);
+  const [err, setErr] = useState<string | null>(null);
+  const mutation = useUpdateProfileMutation();
+
+  // Re-sync local input if the session store updates from elsewhere
+  // (e.g. another tab via /me query refresh).
+  useEffect(() => {
+    setName(currentName);
+  }, [currentName]);
+
+  const trimmed = name.trim();
+  const tooShort = trimmed.length === 0;
+  const tooLong = trimmed.length > 80;
+  const dirty = trimmed !== currentName;
+  const submitDisabled = !dirty || tooShort || tooLong || mutation.isPending;
+
+  const submit = async (): Promise<void> => {
+    setErr(null);
+    if (submitDisabled) return;
+    try {
+      await mutation.mutateAsync({ name: trimmed });
+      // session store updated by the mutation's onSuccess; local input
+      // reconciles via the useEffect above.
+    } catch (e) {
+      setErr(mapApiError(e, ERR_GENERIC));
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3">
+      <label htmlFor={inputId} className="flex flex-col gap-1.5">
+        <span className="text-[12px] font-medium text-[var(--ink-2)]">Display name</span>
+        <input
+          id={inputId}
+          type="text"
+          autoComplete="name"
+          maxLength={80}
+          value={name}
+          onChange={(e) => {
+            setName(e.target.value);
+            if (err) setErr(null);
+          }}
+          disabled={mutation.isPending}
+          aria-invalid={tooLong}
+          className={INPUT_CLASS}
+        />
+        {tooLong ? (
+          <span className="text-[12px] text-[var(--danger)]">
+            Display name must be 1–80 characters.
+          </span>
+        ) : null}
+      </label>
+
+      {err ? (
+        <div role="alert" className="auth-error">
+          {err}
+        </div>
+      ) : null}
+
+      <div className="flex justify-end">
+        <button
+          type="button"
+          aria-label="Save display name"
+          disabled={submitDisabled}
+          onClick={() => {
+            void submit();
+          }}
+          className={BTN_PRIMARY}
+        >
+          {mutation.isPending ? 'Saving…' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
 }
 
 // ---------- Section 1: Change password ----------
@@ -523,6 +606,9 @@ export function AccountPrivacyModal({
             closeTestId="account-privacy-close"
           />
           <ModalBody className="!py-0 px-[18px]">
+            <Section title="Display name" hint="Shown in your account menu. Visible only to you.">
+              <DisplayNameSection />
+            </Section>
             <Section
               title="Change password"
               hint="Use your current password to set a new one. Other sessions will be signed out."

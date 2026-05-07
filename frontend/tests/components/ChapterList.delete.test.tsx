@@ -52,7 +52,10 @@ describe('ChapterList — delete', () => {
     resetApiClientForTests();
     setAccessToken('tok-1');
     setUnauthorizedHandler(() => useSessionStore.getState().clearSession());
-    useSessionStore.setState({ user: { id: 'u1', username: 'alice' }, status: 'authenticated' });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

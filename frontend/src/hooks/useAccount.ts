@@ -18,7 +18,7 @@
 import { type UseMutationResult, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
-import { useSessionStore } from '@/store/session';
+import { type SessionUser, useSessionStore } from '@/store/session';
 
 export interface ChangePasswordInput {
   oldPassword: string;
@@ -105,6 +105,38 @@ export function useDeleteAccountMutation(): UseMutationResult<void, Error, Delet
       queryClient.clear();
       clearSession();
       navigate('/login', { replace: true, state: { accountDeleted: true } });
+    },
+  });
+}
+
+export interface UpdateProfileInput {
+  name: string;
+}
+
+export interface UpdateProfileResponse {
+  user: SessionUser;
+}
+
+/**
+ * Update-profile mutation ([X3]). On success, mirrors the returned user
+ * into the session store so anywhere that reads from useSessionStore (TopBar,
+ * UserMenu, AccountPrivacyModal) re-renders with the new display name. The
+ * backend response shape matches GET /api/auth/me so we reuse SessionUser.
+ */
+export function useUpdateProfileMutation(): UseMutationResult<
+  UpdateProfileResponse,
+  Error,
+  UpdateProfileInput
+> {
+  const setUser = useSessionStore((s) => s.setUser);
+  return useMutation<UpdateProfileResponse, Error, UpdateProfileInput>({
+    mutationFn: async (input: UpdateProfileInput): Promise<UpdateProfileResponse> =>
+      api<UpdateProfileResponse>('/auth/update-profile', {
+        method: 'POST',
+        body: input,
+      }),
+    onSuccess: ({ user }) => {
+      setUser(user);
     },
   });
 }

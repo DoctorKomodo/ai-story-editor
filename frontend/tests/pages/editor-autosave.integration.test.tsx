@@ -48,7 +48,9 @@ function defaultRouter(): (url: string) => Promise<Response> {
       return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
     }
     if (url.endsWith('/auth/me')) {
-      return Promise.resolve(jsonResponse(200, { user: { id: 'u1', username: 'alice' } }));
+      return Promise.resolve(
+        jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+      );
     }
     if (url.endsWith('/stories/abc123')) {
       return Promise.resolve(jsonResponse(200, { story: makeStory() }));
@@ -102,7 +104,7 @@ describe('EditorPage autosave indicator (F56)', () => {
       useSessionStore.getState().clearSession();
     });
     useSessionStore.setState({
-      user: { id: 'u1', username: 'alice' },
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
     useActiveChapterStore.setState({ activeChapterId: null });

@@ -89,7 +89,7 @@ const usernameSchema = z.preprocess(
   z.string().regex(USERNAME_REGEX, 'Invalid username'),
 );
 
-const nameSchema = z
+export const nameSchema = z
   .string()
   .transform((v) => v.trim())
   .pipe(z.string().min(1, 'Name is required').max(80, 'Name too long'));
@@ -644,6 +644,16 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     closeSessionsForUser(user.id);
   }
 
+  // [X3] / [story-editor-3xj] Update display name. Plaintext metadata; no
+  // crypto. Caller has already passed requireAuth so the userId is trusted.
+  async function updateProfile(input: { userId: string; name: string }): Promise<PublicUser> {
+    const user = await client.user.update({
+      where: { id: input.userId },
+      data: { name: input.name },
+    });
+    return toPublicUser(user);
+  }
+
   return {
     register,
     login,
@@ -655,6 +665,7 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     rotateRecoveryCode,
     signOutEverywhere,
     deleteAccount,
+    updateProfile,
   };
 }
 
