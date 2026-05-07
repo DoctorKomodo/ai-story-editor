@@ -53,10 +53,19 @@ const SettingsSchema = z
       .optional(),
     chat: z
       .object({
-        model: z.string().min(1).max(200).optional(),
-        temperature: z.number().min(0).max(2).optional(),
-        topP: z.number().min(0).max(1).optional(),
-        maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+        model: z.string().nullable().optional(),
+        overrides: z
+          .record(
+            z.string(),
+            z
+              .object({
+                temperature: z.number().min(0).max(2).optional(),
+                topP: z.number().min(0).max(1).optional(),
+                maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+              })
+              .strict(),
+          )
+          .optional(),
       })
       .strict()
       .optional(),
@@ -80,6 +89,44 @@ const SettingsSchema = z
   })
   .strict();
 
+// ─── Exported type ────────────────────────────────────────────────────────────
+
+// X28: per-model generation parameters. `overrides` is keyed by Venice model
+// ID; each entry carries only the fields the user has explicitly changed so
+// that absent fields fall through to the Venice-default → global-default chain
+// in `resolveTextGenParams`.
+export interface UserSettings {
+  theme?: string;
+  prose?: { font?: string; size?: number; lineHeight?: number };
+  writing?: {
+    spellcheck?: boolean;
+    typewriterMode?: boolean;
+    focusMode?: boolean;
+    dailyWordGoal?: number;
+    smartQuotes?: boolean;
+    emDashExpansion?: boolean;
+  };
+  chat: {
+    model: string | null;
+    overrides: {
+      [modelId: string]: {
+        temperature?: number;
+        topP?: number;
+        maxTokens?: number;
+      };
+    };
+  };
+  ai?: { includeVeniceSystemPrompt?: boolean };
+  prompts?: {
+    system?: string | null;
+    continue?: string | null;
+    rewrite?: string | null;
+    expand?: string | null;
+    summarise?: string | null;
+    describe?: string | null;
+  };
+}
+
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
 const DEFAULT_SETTINGS = {
@@ -93,7 +140,10 @@ const DEFAULT_SETTINGS = {
     smartQuotes: true,
     emDashExpansion: true,
   },
-  chat: { model: null as string | null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
+  chat: {
+    model: null as string | null,
+    overrides: {} as Record<string, { temperature?: number; topP?: number; maxTokens?: number }>,
+  },
   ai: { includeVeniceSystemPrompt: true },
   prompts: {
     system: null as string | null,

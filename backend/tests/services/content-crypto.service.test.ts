@@ -100,9 +100,14 @@ describe('content-crypto.service — encryptWithDek / decryptWithDek', () => {
   });
 
   it('produces a fresh IV per encrypt call', () => {
+    // Plaintext must be long enough that ciphertext collision under different
+    // IVs is statistically impossible. AES-GCM ciphertext length == plaintext
+    // length, so the original 1-byte 'x' collided ~1/256 per CI run. 32 bytes
+    // makes collision ~1/2^256.
     const dek = Buffer.alloc(DEK_BYTES, 0x77);
-    const a = encryptWithDek(dek, 'x');
-    const b = encryptWithDek(dek, 'x');
+    const plaintext = 'x'.repeat(32);
+    const a = encryptWithDek(dek, plaintext);
+    const b = encryptWithDek(dek, plaintext);
     expect(a.iv).not.toBe(b.iv);
     expect(a.ciphertext).not.toBe(b.ciphertext);
   });

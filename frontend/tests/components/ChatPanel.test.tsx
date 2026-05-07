@@ -30,17 +30,27 @@ const SAMPLE_MODELS = {
       id: 'venice-uncensored-1.5',
       name: 'Venice Uncensored 1.5',
       contextLength: 32000,
+      maxCompletionTokens: 4096,
       supportsReasoning: false,
       supportsVision: false,
       supportsWebSearch: false,
+      description: null,
+      pricing: null,
+      defaultTemperature: null,
+      defaultTopP: null,
     },
     {
       id: 'llama-3.3-70b',
       name: 'Llama 3.3 70B',
       contextLength: 128000,
+      maxCompletionTokens: 8192,
       supportsReasoning: false,
       supportsVision: false,
       supportsWebSearch: false,
+      description: null,
+      pricing: null,
+      defaultTemperature: null,
+      defaultTopP: null,
     },
   ],
 };
@@ -194,16 +204,22 @@ describe('ChatPanel (F38)', () => {
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('—');
   });
 
-  it('renders the params row from current settings values', () => {
+  it('renders the params row from current settings values', async () => {
     mockModels();
     const qc = seedSettings({
-      chat: { ...DEFAULT_SETTINGS.chat, temperature: 0.7, topP: 0.9, maxTokens: 1200 },
+      chat: {
+        model: 'venice-uncensored-1.5',
+        overrides: { 'venice-uncensored-1.5': { temperature: 0.7, topP: 0.9, maxTokens: 1200 } },
+      },
     });
 
     renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />, qc);
 
+    await waitFor(() => {
+      const params = screen.getByTestId('model-params');
+      expect(params.textContent ?? '').toContain('temp 0.7');
+    });
     const params = screen.getByTestId('model-params');
-    expect(params.textContent ?? '').toContain('temp 0.7');
     expect(params.textContent ?? '').toContain('top_p 0.9');
     expect(params.textContent ?? '').toContain('max 1200');
   });

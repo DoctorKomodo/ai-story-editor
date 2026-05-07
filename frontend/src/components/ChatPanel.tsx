@@ -20,7 +20,8 @@ import { type JSX, type ReactNode, useState } from 'react';
  * intended width without the shell.
  */
 import { type Model, useModelsQuery } from '@/hooks/useModels';
-import { useUserSettings } from '@/hooks/useUserSettings';
+import { resolveChatParams, useUserSettings } from '@/hooks/useUserSettings';
+import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
 
 export interface ChatPanelProps {
   /** Slot for the message list ([F39]). Rendered when the Chat tab is active. */
@@ -163,9 +164,13 @@ export function ChatPanel({
   const settings = useUserSettings();
   const modelId = settings.chat.model;
   const { data: models } = useModelsQuery();
-  const params = settings.chat;
 
   const selectedModel: Model | undefined = models?.find((m) => m.id === modelId);
+
+  // Resolved generation params for the model bar display.
+  const params = selectedModel
+    ? resolveChatParams(settings, selectedModel)
+    : GLOBAL_TEXT_GEN_DEFAULTS;
   const modelName = selectedModel?.name ?? 'No model';
   const ctxLabel = selectedModel ? formatCtxLabel(selectedModel.contextLength) : '—';
   const modelLabel = selectedModel?.name ?? selectedModel?.id ?? modelId ?? '';
