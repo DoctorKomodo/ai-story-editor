@@ -16,7 +16,7 @@
  *    the timer and restores the session visually.
  */
 import type { Editor as TiptapEditor } from '@tiptap/core';
-import { type JSX, useCallback, useEffect, useState } from 'react';
+import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { SceneCandidateCard } from '@/components/SceneCandidateCard';
 import { SceneComposer } from '@/components/SceneComposer';
 import { SceneSessionPicker } from '@/components/SceneSessionPicker';
@@ -136,6 +136,20 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
     Map<string, { title: string; timer: number }>
   >(new Map());
 
+  // Track all pending timer IDs so we can cancel them if the component
+  // unmounts before the undo window expires. Without this, the setTimeout
+  // callback would still fire ~5 s later and call remove() (a real API DELETE)
+  // even though the user navigated away and never consciously confirmed the
+  // deletion.
+  const pendingTimersRef = useRef<number[]>([]);
+  useEffect(() => {
+    return () => {
+      pendingTimersRef.current.forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
+
+  const { generate: transcriptGenerate, retry: transcriptRetry, messages: transcriptMessages } =
+    transcript;
   const onGenerate = useCallback(
     async (text: string) => {
       let chatId = activeId;
@@ -145,8 +159,8 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         chatId = chat.id;
         setActiveId(chatId);
       }
-      const isFirstTurn = transcript.messages.length === 0;
-      await transcript.generate(chatId, text);
+      const isFirstTurn = transcriptMessages.length === 0;
+      await transcriptGenerate(chatId, text);
       if (isFirstTurn) {
         const title = truncateAtWordBoundary(text, TITLE_MAX_CHARS);
         try {
@@ -156,13 +170,13 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         }
       }
     },
-    [activeId, chapterId, create, transcript],
+    [activeId, chapterId, create, transcriptGenerate, transcriptMessages],
   );
 
   const onRetry = useCallback(async () => {
     if (!activeId) return;
-    await transcript.retry(activeId);
-  }, [activeId, transcript]);
+    await transcriptRetry(activeId);
+  }, [activeId, transcriptRetry]);
 
   const onInsert = useCallback(
     (text: string) => {
@@ -182,6 +196,8 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       const session = sessions.find((s) => s.id === id);
       if (!session) return;
       const timer = window.setTimeout(() => {
+        // Remove from the timers ref before executing the deletion.
+        pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== timer);
         void remove(id);
         setPendingDeletes((prev) => {
           const next = new Map(prev);
@@ -189,6 +205,8 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
           return next;
         });
       }, UNDO_TIMEOUT_MS);
+      // Register the timer so unmount cleanup can cancel it.
+      pendingTimersRef.current.push(timer);
       setPendingDeletes((prev) => {
         const next = new Map(prev);
         next.set(id, { title: session.title ?? 'Untitled', timer });
@@ -205,7 +223,11 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   const onUndo = useCallback((id: string) => {
     setPendingDeletes((prev) => {
       const entry = prev.get(id);
-      if (entry) window.clearTimeout(entry.timer);
+      if (entry) {
+        window.clearTimeout(entry.timer);
+        // Also remove from the ref so it won't be double-cleared on unmount.
+        pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== entry.timer);
+      }
       const next = new Map(prev);
       next.delete(id);
       return next;
