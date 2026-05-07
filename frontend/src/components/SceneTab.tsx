@@ -255,6 +255,26 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
     [undoDelete],
   );
 
+  // ── Autoscroll ──────────────────────────────────────────────────────────────
+  // Keep the transcript viewport pinned to the bottom as new messages or
+  // streaming deltas arrive. If the user manually scrolls up (more than 50px
+  // from the bottom), stop auto-scrolling so they can read earlier content.
+  const transcriptRef = useRef<HTMLElement>(null);
+  const stickToBottomRef = useRef(true);
+
+  const handleTranscriptScroll = useCallback(() => {
+    const el = transcriptRef.current;
+    if (!el) return;
+    const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    stickToBottomRef.current = distanceFromBottom < 50;
+  }, []);
+
+  useEffect(() => {
+    if (stickToBottomRef.current && transcriptRef.current) {
+      transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
+    }
+  }, [transcript.messages]);
+
   const visibleSessions = sessions.filter((s) => !isDeletePending(s.id));
 
   const lastUndoEntry = (() => {
@@ -311,7 +331,11 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         </div>
       )}
 
-      <section className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-4">
+      <section
+        ref={transcriptRef}
+        className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-4"
+        onScroll={handleTranscriptScroll}
+      >
         {/* [A1] Venice generation error banner */}
         {transcript.streamState === 'error' && transcript.errorMessage !== null && (
           <InlineErrorBanner
