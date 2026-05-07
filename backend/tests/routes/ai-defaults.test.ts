@@ -62,9 +62,26 @@ describe('[X29] GET /api/ai/default-prompts', () => {
     const res = await request(app)
       .get('/api/ai/default-prompts')
       .set('Authorization', `Bearer ${token}`);
-    for (const key of ['system', 'continue', 'rewrite', 'expand', 'summarise', 'describe']) {
+    for (const key of [
+      'system',
+      'continue',
+      'rewrite',
+      'expand',
+      'summarise',
+      'describe',
+      'scene',
+    ]) {
       expect(typeof res.body.defaults[key]).toBe('string');
       expect(res.body.defaults[key].length).toBeGreaterThan(0);
     }
+  });
+
+  it('exposes the scene default prompt', async () => {
+    const token = await registerAndLogin();
+    const res = await request(app)
+      .get('/api/ai/default-prompts')
+      .set('Authorization', `Bearer ${token}`);
+    expect(res.status).toBe(200);
+    expect(res.body.defaults.scene).toContain('write a passage of prose');
   });
 });

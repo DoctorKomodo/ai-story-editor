@@ -19,6 +19,7 @@ export interface PromptsSettings {
   expand?: string | null;
   summarise?: string | null;
   describe?: string | null;
+  scene?: string | null;
 }
 
 interface UserSettingsShape {
