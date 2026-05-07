@@ -198,7 +198,8 @@ model OutlineItem {
 }
 
 model Chat {
-  id        String   @id @default(cuid())
+  id              String   @id @default(cuid())
+  kind            String   @default("ask")  // "ask" | "scene"
   // [E8] ciphertext triple for the chat title — now the SOLE source of truth.
   // `chapterId` + timestamps remain plaintext (FK + timeline ordering).
   // Plaintext `title` was dropped in [E11].
@@ -214,6 +215,7 @@ model Chat {
   messages  Message[]
 
   @@index([chapterId])
+  @@index([chapterId, kind])
 }
 
 model Message {
