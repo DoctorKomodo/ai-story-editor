@@ -10,7 +10,7 @@
 //   - PATCH 400 on unknown nested key
 //   - PATCH 400 on out-of-range values
 //   - GET response shape contains only { settings } — no passwordHash / ciphertext fields leaked
-//   - chat.temperature: 0 is accepted (boundary)
+//   - chat.overrides shape (X28): per-model overrides accepted, legacy flat shape rejected
 
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -144,17 +144,17 @@ describe('User settings routes [B11]', () => {
       .set('Authorization', `Bearer ${token}`)
       .send({ prose: { lineHeight: 1.8 } });
 
-    // Now PATCH under chat.
+    // Now PATCH under chat (new overrides shape).
     const res = await request(app)
       .patch('/api/users/me/settings')
       .set('Authorization', `Bearer ${token}`)
-      .send({ chat: { temperature: 0.5 } });
+      .send({ chat: { overrides: { 'test-model': { temperature: 0.5 } } } });
 
     expect(res.status).toBe(200);
     // ai.includeVeniceSystemPrompt must still be false — not blown away.
     expect(res.body.settings.ai.includeVeniceSystemPrompt).toBe(false);
     expect(res.body.settings.prose.lineHeight).toBe(1.8);
-    expect(res.body.settings.chat.temperature).toBe(0.5);
+    expect(res.body.settings.chat.overrides['test-model'].temperature).toBe(0.5);
   });
 
   // ── PATCH validation ──────────────────────────────────────────────────────
@@ -241,33 +241,33 @@ describe('User settings routes [B11]', () => {
 
   // ── Boundary ──────────────────────────────────────────────────────────────
 
-  it('PATCH accepts chat.temperature: 0 (boundary)', async () => {
+  it('PATCH accepts chat.overrides temperature: 0 (boundary)', async () => {
     const token = await registerAndLogin('temp-zero-user');
     const res = await request(app)
       .patch('/api/users/me/settings')
       .set('Authorization', `Bearer ${token}`)
-      .send({ chat: { temperature: 0 } });
+      .send({ chat: { overrides: { 'test-model': { temperature: 0 } } } });
 
     expect(res.status).toBe(200);
-    expect(res.body.settings.chat.temperature).toBe(0);
+    expect(res.body.settings.chat.overrides['test-model'].temperature).toBe(0);
   });
 
-  it('accepts chat.maxTokens above the previous 32_768 ceiling (up to 1_000_000)', async () => {
+  it('accepts chat.overrides maxTokens above the previous 32_768 ceiling (up to 1_000_000)', async () => {
     const token = await registerAndLogin('max-tokens-high-user');
     const res = await request(app)
       .patch('/api/users/me/settings')
       .set('Authorization', `Bearer ${token}`)
-      .send({ chat: { maxTokens: 65_536 } });
+      .send({ chat: { overrides: { 'test-model': { maxTokens: 65_536 } } } });
     expect(res.status).toBe(200);
-    expect(res.body.settings.chat.maxTokens).toBe(65_536);
+    expect(res.body.settings.chat.overrides['test-model'].maxTokens).toBe(65_536);
   });
 
-  it('rejects chat.maxTokens above the 1_000_000 sanity ceiling', async () => {
+  it('rejects chat.overrides maxTokens above the 1_000_000 sanity ceiling', async () => {
     const token = await registerAndLogin('max-tokens-tooHigh-user');
     const res = await request(app)
       .patch('/api/users/me/settings')
       .set('Authorization', `Bearer ${token}`)
-      .send({ chat: { maxTokens: 2_000_000 } });
+      .send({ chat: { overrides: { 'test-model': { maxTokens: 2_000_000 } } } });
     expect(res.status).toBe(400);
   });
 });
@@ -368,6 +368,67 @@ describe('[X29] settingsJson.prompts slice', () => {
       .patch('/api/users/me/settings')
       .set('Authorization', `Bearer ${token}`)
       .send({ prompts: { unknownKey: 'x' } });
+    expect(res.status).toBe(400);
+  });
+});
+
+// ─── [X28] chat.overrides shape ──────────────────────────────────────────────
+
+describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  afterEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('accepts a chat.overrides patch with one model', async () => {
+    const token = await registerAndLogin('x28-one-model-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { 'qwen-3-6-plus': { temperature: 0.4 } } } });
+    expect(res.status).toBe(200);
+    expect(res.body.settings.chat.overrides['qwen-3-6-plus']).toEqual({ temperature: 0.4 });
+  });
+
+  it('accepts partial overrides — only set fields are persisted', async () => {
+    const token = await registerAndLogin('x28-partial-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: { topP: 0.6 } } } });
+    expect(res.status).toBe(200);
+    expect(res.body.settings.chat.overrides['m1']).toEqual({ topP: 0.6 });
+  });
+
+  it('rejects unknown fields inside an override', async () => {
+    const token = await registerAndLogin('x28-unknown-field-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: { topK: 40 } } } });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects the legacy flat chat.temperature field', async () => {
+    const token = await registerAndLogin('x28-legacy-flat-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { temperature: 0.5 } });
+    expect(res.status).toBe(400);
+  });
+
+  it('rejects out-of-range override values', async () => {
+    const token = await registerAndLogin('x28-oor-user');
+    const res = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { m1: { temperature: 5 } } } });
     expect(res.status).toBe(400);
   });
 });

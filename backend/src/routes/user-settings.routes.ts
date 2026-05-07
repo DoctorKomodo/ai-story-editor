@@ -53,10 +53,19 @@ const SettingsSchema = z
       .optional(),
     chat: z
       .object({
-        model: z.string().min(1).max(200).optional(),
-        temperature: z.number().min(0).max(2).optional(),
-        topP: z.number().min(0).max(1).optional(),
-        maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+        model: z.string().nullable().optional(),
+        overrides: z
+          .record(
+            z.string(),
+            z
+              .object({
+                temperature: z.number().min(0).max(2).optional(),
+                topP: z.number().min(0).max(1).optional(),
+                maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+              })
+              .strict(),
+          )
+          .optional(),
       })
       .strict()
       .optional(),
