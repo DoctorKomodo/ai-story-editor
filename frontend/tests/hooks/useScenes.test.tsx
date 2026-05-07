@@ -7,11 +7,19 @@ import * as api from '@/lib/api';
 
 vi.mock('@/lib/api');
 
-function makeWrapper() {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  );
+const SCENE_LIST_KEY = (chapterId: string) => ['scenes', chapterId] as const;
+
+function makeWrapper(qc?: QueryClient): {
+  client: QueryClient;
+  wrapper: ({ children }: { children: ReactNode }) => ReactNode;
+} {
+  const client = qc ?? new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  return {
+    client,
+    wrapper: ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    ),
+  };
 }
 
 describe('useScenes', () => {
@@ -29,7 +37,8 @@ describe('useScenes', () => {
   });
 
   it('lists scene sessions for a chapter', async () => {
-    const { result } = renderHook(() => useScenes('c1'), { wrapper: makeWrapper() });
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useScenes('c1'), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
     expect(api.listChats).toHaveBeenCalledWith('c1', { kind: 'scene' });
   });
@@ -43,12 +52,59 @@ describe('useScenes', () => {
       createdAt: '',
       updatedAt: '',
     });
-    const { result } = renderHook(() => useScenes('c1'), { wrapper: makeWrapper() });
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useScenes('c1'), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
     await act(async () => {
       await result.current.create();
     });
     expect(api.createChat).toHaveBeenCalledWith('c1', { kind: 'scene' });
+  });
+
+  it('create() optimistically prepends the new chat to the query cache', async () => {
+    // Bug 1 fix: createMut.onSuccess sets the cache immediately before the
+    // invalidate/refetch completes. This prevents the auto-select effect from
+    // seeing sessions=[] while activeId is set, which would reset activeId to null.
+    const newChat: api.ChatRow = {
+      id: 's2',
+      kind: 'scene',
+      title: null,
+      chapterId: 'c1',
+      createdAt: '',
+      updatedAt: '',
+    };
+    // Delay the refetch so we can observe the optimistic cache state.
+    vi.mocked(api.createChat).mockResolvedValue(newChat);
+    vi.mocked(api.listChats).mockResolvedValueOnce([
+      { id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: '' },
+    ]);
+    // Second call (post-invalidate refetch) never resolves during this test — we
+    // want to observe the optimistic state before the network responds.
+    vi.mocked(api.listChats).mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves */
+        }),
+    );
+
+    const { client, wrapper } = makeWrapper();
+    // Seed the cache so useQuery starts with existing data.
+    client.setQueryData<api.ChatRow[]>(SCENE_LIST_KEY('c1'), [
+      { id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: '' },
+    ]);
+
+    const { result } = renderHook(() => useScenes('c1'), { wrapper });
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.create();
+    });
+
+    // Optimistic update: the new chat must be in the cache immediately, prepended.
+    const cached = client.getQueryData<api.ChatRow[]>(SCENE_LIST_KEY('c1'));
+    expect(cached).toBeDefined();
+    expect(cached?.[0]?.id).toBe('s2');
+    expect(cached?.[1]?.id).toBe('s1');
   });
 
   it('rename() calls api.patchChat', async () => {
@@ -60,7 +116,8 @@ describe('useScenes', () => {
       createdAt: '',
       updatedAt: '',
     });
-    const { result } = renderHook(() => useScenes('c1'), { wrapper: makeWrapper() });
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useScenes('c1'), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
     await act(async () => {
       await result.current.rename('s1', 'New title');
@@ -68,13 +125,87 @@ describe('useScenes', () => {
     expect(api.patchChat).toHaveBeenCalledWith('s1', 'New title');
   });
 
+  it('rename() optimistically updates the title in the query cache', async () => {
+    // Bug 2 fix: the auto-title in SceneTab now calls useScenes.rename()
+    // instead of patchChatApi directly. renameMut.onSuccess must immediately
+    // update the cache so the picker shows the new title without waiting for
+    // the refetch round-trip.
+    vi.mocked(api.patchChat).mockResolvedValue({
+      id: 's1',
+      kind: 'scene',
+      title: 'New title',
+      chapterId: 'c1',
+      createdAt: '',
+      updatedAt: '',
+    });
+    // Keep the refetch pending so we can assert on the optimistic cache state.
+    vi.mocked(api.listChats).mockResolvedValueOnce([
+      { id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: '' },
+    ]);
+    vi.mocked(api.listChats).mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves */
+        }),
+    );
+
+    const { client, wrapper } = makeWrapper();
+    client.setQueryData<api.ChatRow[]>(SCENE_LIST_KEY('c1'), [
+      { id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: '' },
+    ]);
+
+    const { result } = renderHook(() => useScenes('c1'), { wrapper });
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.rename('s1', 'New title');
+    });
+
+    // Optimistic update: title must be reflected in cache immediately.
+    const cached = client.getQueryData<api.ChatRow[]>(SCENE_LIST_KEY('c1'));
+    expect(cached).toBeDefined();
+    expect(cached?.[0]?.title).toBe('New title');
+  });
+
   it('remove() calls api.deleteChat', async () => {
     vi.mocked(api.deleteChat).mockResolvedValue();
-    const { result } = renderHook(() => useScenes('c1'), { wrapper: makeWrapper() });
+    const { wrapper } = makeWrapper();
+    const { result } = renderHook(() => useScenes('c1'), { wrapper });
     await waitFor(() => expect(result.current.sessions).toHaveLength(1));
     await act(async () => {
       await result.current.remove('s1');
     });
     expect(api.deleteChat).toHaveBeenCalledWith('s1');
+  });
+
+  it('remove() optimistically removes the chat from the query cache', async () => {
+    vi.mocked(api.deleteChat).mockResolvedValue();
+    // Keep the refetch pending so we can assert on the optimistic cache state.
+    vi.mocked(api.listChats).mockResolvedValueOnce([
+      { id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: '' },
+    ]);
+    vi.mocked(api.listChats).mockImplementation(
+      () =>
+        new Promise(() => {
+          /* never resolves */
+        }),
+    );
+
+    const { client, wrapper } = makeWrapper();
+    client.setQueryData<api.ChatRow[]>(SCENE_LIST_KEY('c1'), [
+      { id: 's1', kind: 'scene', title: 'Veranda', chapterId: 'c1', createdAt: '', updatedAt: '' },
+    ]);
+
+    const { result } = renderHook(() => useScenes('c1'), { wrapper });
+    await waitFor(() => expect(result.current.sessions).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.remove('s1');
+    });
+
+    // Optimistic update: the deleted chat must be gone from the cache immediately.
+    const cached = client.getQueryData<api.ChatRow[]>(SCENE_LIST_KEY('c1'));
+    expect(cached).toBeDefined();
+    expect(cached?.find((c) => c.id === 's1')).toBeUndefined();
   });
 });

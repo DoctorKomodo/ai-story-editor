@@ -20,21 +20,36 @@ export function useScenes(chapterId: string | null) {
 
   const createMut = useMutation({
     mutationFn: () => createChat(chapterId!, { kind: 'scene' }),
-    onSuccess: () => {
+    onSuccess: (newChat) => {
+      if (chapterId) {
+        // Optimistically prepend so the just-created chat appears in `sessions`
+        // immediately. The invalidate below reconciles with the server.
+        qc.setQueryData<ChatRow[]>(sceneListKey(chapterId), (prev) => [newChat, ...(prev ?? [])]);
+      }
       invalidate();
     },
   });
 
   const renameMut = useMutation({
     mutationFn: ({ id, title }: { id: string; title: string }) => patchChat(id, title),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
+      if (chapterId) {
+        qc.setQueryData<ChatRow[]>(sceneListKey(chapterId), (prev) =>
+          (prev ?? []).map((c) => (c.id === vars.id ? { ...c, title: vars.title } : c)),
+        );
+      }
       invalidate();
     },
   });
 
   const removeMut = useMutation({
     mutationFn: (id: string) => deleteChat(id),
-    onSuccess: () => {
+    onSuccess: (_, deletedId) => {
+      if (chapterId) {
+        qc.setQueryData<ChatRow[]>(sceneListKey(chapterId), (prev) =>
+          (prev ?? []).filter((c) => c.id !== deletedId),
+        );
+      }
       invalidate();
     },
   });
