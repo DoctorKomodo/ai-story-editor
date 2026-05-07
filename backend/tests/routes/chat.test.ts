@@ -368,6 +368,18 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     });
     expect(retryStatus).toBe(200);
   });
+
+  it('400 when retry=true and content is also supplied', async () => {
+    const { agent, chapterId } = await veniceSetup('sc6-retry-u4');
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 's', kind: 'scene' });
+    const chatId = created.body.chat.id as string;
+    await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ retry: true, content: 'extra', modelId: SC5_MODEL_ID })
+      .expect(400);
+  });
 });
 
 // ─── SC7 suite ────────────────────────────────────────────────────────────────
@@ -430,6 +442,10 @@ describe('PATCH /api/chats/:id', () => {
 
     await agent.patch(`/api/chats/${chatId}`).send({ title: '' }).expect(400);
     await agent.patch(`/api/chats/${chatId}`).send({}).expect(400);
+    await agent
+      .patch(`/api/chats/${chatId}`)
+      .send({ title: 'a'.repeat(201) })
+      .expect(400);
   });
 });
 

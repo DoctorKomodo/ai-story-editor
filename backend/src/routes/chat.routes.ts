@@ -87,6 +87,13 @@ const PostMessageBody = z
         path: ['content'],
       });
     }
+    if (body.retry && body.content !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'content must be omitted when retry is true',
+        path: ['content'],
+      });
+    }
   });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
