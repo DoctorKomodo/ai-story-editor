@@ -1,10 +1,8 @@
 // Pure resolvers for User.settingsJson — the JSON blob is opaque from the
 // Prisma side, so each AI/chat route had been re-deriving the same defensive
 // reads from `unknown`. Lifted here so additions live alongside the existing
-// ones. As of X28, `resolveTextGenParams` is the canonical path for AI-call
-// parameters (temperature / top_p / max_completion_tokens); the older
-// `resolveUserMaxCompletionTokens` is being phased out and is marked with a
-// TODO at its definition.
+// ones. `resolveTextGenParams` is the canonical path for AI-call parameters
+// (temperature / top_p / max_completion_tokens) as of X28.
 //
 // Each resolver returns a sane default for unset / non-object / wrong-shape
 // inputs so callers can always pass the resolved value into buildPrompt
@@ -25,7 +23,6 @@ export interface PromptsSettings {
 
 interface UserSettingsShape {
   ai?: { includeVeniceSystemPrompt?: boolean };
-  chat?: { maxTokens?: number };
   prompts?: PromptsSettings;
 }
 
@@ -137,26 +134,4 @@ export function resolveUserPrompts(raw: unknown): PromptsSettings {
   const settings = asSettingsObject(raw);
   if (!settings) return {};
   return settings.prompts ?? {};
-}
-
-/**
- * Resolves settings.chat.maxTokens to a number suitable for `Math.min` against
- * the model's per-model cap. Unset / non-numeric / non-positive values
- * collapse to Number.POSITIVE_INFINITY so the model cap wins by default.
- *
- * X28 TODO (Task 5): the flat `chat.maxTokens` field no longer exists in
- * persisted settings — the Zod schema only accepts `chat.overrides[modelId]`
- * shape now, so this resolver always returns POSITIVE_INFINITY for real
- * stored data. The replacement is `resolveTextGenParams(settings, modelInfo)`
- * (above), which the AI/chat routes will start calling in Task 5. After
- * that wiring lands, delete this function + its tests.
- */
-export function resolveUserMaxCompletionTokens(raw: unknown): number {
-  const settings = asSettingsObject(raw);
-  if (!settings) return Number.POSITIVE_INFINITY;
-  const v = settings.chat?.maxTokens;
-  if (typeof v !== 'number' || !Number.isFinite(v) || v <= 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return v;
 }

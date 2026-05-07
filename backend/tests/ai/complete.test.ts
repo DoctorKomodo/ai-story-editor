@@ -432,17 +432,21 @@ describe('POST /api/ai/complete [V5]', () => {
     expect(requestBody.stream).toBe(true);
   });
 
-  it('max_completion_tokens = min(model_cap, user_setting) — model cap wins', async () => {
+  it('max_completion_tokens: per-model override above model cap → model cap wins (X28)', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
-    // User wants 16k; model caps at 4k → expect 4k.
+    // User sets 16k override for this model; model caps at 4096 → expect 4096.
     const decoded = jwt.decode(accessToken) as AccessTokenPayload;
     await prisma.user.update({
       where: { id: decoded.sub },
-      data: { settingsJson: { chat: { maxTokens: 16_000 } } },
+      data: {
+        settingsJson: {
+          chat: { model: null, overrides: { [BASE_MODEL_ID]: { maxTokens: 16_000 } } },
+        },
+      },
     });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -467,20 +471,24 @@ describe('POST /api/ai/complete [V5]', () => {
     expect(completionCall).toBeTruthy();
     const [, init] = completionCall!;
     const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
-    expect(requestBody.max_completion_tokens).toBe(4096); // model wins (BASE_MODEL_ID has cap 4096)
+    expect(requestBody.max_completion_tokens).toBe(4096); // model cap wins
   });
 
-  it('max_completion_tokens = min(model_cap, user_setting) — user setting wins', async () => {
+  it('max_completion_tokens: per-model override under model cap → override wins (X28)', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
-    // User wants 800; qwen model caps at 16k → expect 800.
+    // User sets 800 override for qwen (cap 16384) → expect 800.
     const decoded = jwt.decode(accessToken) as AccessTokenPayload;
     await prisma.user.update({
       where: { id: decoded.sub },
-      data: { settingsJson: { chat: { maxTokens: 800 } } },
+      data: {
+        settingsJson: {
+          chat: { model: null, overrides: { 'qwen-qwq-32b': { maxTokens: 800 } } },
+        },
+      },
     });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -504,7 +512,53 @@ describe('POST /api/ai/complete [V5]', () => {
     );
     const [, init] = completionCall!;
     const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
-    expect(requestBody.max_completion_tokens).toBe(800); // user wins
+    expect(requestBody.max_completion_tokens).toBe(800); // override wins
+  });
+
+  it('passes resolved temperature and top_p from per-model override to Venice (X28)', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { storyId, chapterId } = await setupStoryAndChapter(req);
+
+    // Set a per-model override for temperature and topP on BASE_MODEL_ID.
+    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    await prisma.user.update({
+      where: { id: decoded.sub },
+      data: {
+        settingsJson: {
+          chat: {
+            model: null,
+            overrides: { [BASE_MODEL_ID]: { temperature: 0.4, topP: 0.6 } },
+          },
+        },
+      },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
+
+    await request(app)
+      .post('/api/ai/complete')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const [, init] = completionCall!;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(requestBody.temperature).toBe(0.4);
+    expect(requestBody.top_p).toBe(0.6);
   });
 
   it('reads includeVeniceSystemPrompt from settingsJson.ai when set to false', async () => {

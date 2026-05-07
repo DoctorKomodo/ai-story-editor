@@ -30,10 +30,11 @@ import {
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
-  resolveUserMaxCompletionTokens,
+  resolveTextGenParams,
   resolveUserPrompts,
 } from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
+import type { UserSettings } from './user-settings.routes';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
 
@@ -223,11 +224,9 @@ export function createChatMessagesRouter() {
         where: { id: userId },
         select: { settingsJson: true },
       });
-      const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(
-        userRow?.settingsJson ?? null,
-      );
-      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
-      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const rawSettings = userRow?.settingsJson ?? null;
+      const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(rawSettings);
+      const userPrompts = resolveUserPrompts(rawSettings);
       const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
         body.modelId,
       );
@@ -280,7 +279,10 @@ export function createChatMessagesRouter() {
         worldNotes,
         modelContextLength,
         modelMaxCompletionTokens,
-        userMaxCompletionTokens,
+        // Pass POSITIVE_INFINITY so the prompt builder uses the model's own cap
+        // for context-budget calculations. The resolved per-user max_completion_tokens
+        // (from resolveTextGenParams below) is what actually goes to Venice.
+        userMaxCompletionTokens: Number.POSITIVE_INFINITY,
         includeVeniceSystemPrompt,
         userPrompts,
         freeformInstruction: body.content,
@@ -355,6 +357,58 @@ export function createChatMessagesRouter() {
         venice_parameters.include_search_results_in_stream = true;
       }
 
+      // ── 9b. Resolve text-gen parameters (X28) ────────────────────────────
+      // Walks the chain: user per-model override → Venice model default →
+      // global default. `modelInfo` may be null if Venice hasn't listed the
+      // model yet (after cache reset); fall back to omitting temperature/top_p
+      // and using buildPrompt's max_completion_tokens so the call still completes.
+      const partialSettings = (rawSettings as Partial<UserSettings>) ?? {};
+      const userSettingsForResolve: UserSettings = {
+        ...partialSettings,
+        chat: {
+          model: null,
+          overrides: {},
+          ...partialSettings.chat,
+        },
+      };
+      const resolvedParams: {
+        temperature: number | undefined;
+        top_p: number | undefined;
+        max_completion_tokens: number;
+        source: { temperature: string; top_p: string; max_completion_tokens: string };
+      } = modelInfo
+        ? resolveTextGenParams(userSettingsForResolve, modelInfo)
+        : {
+            temperature: undefined,
+            top_p: undefined,
+            max_completion_tokens,
+            source: {
+              temperature: 'global-default',
+              top_p: 'global-default',
+              max_completion_tokens: 'global-default',
+            },
+          };
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          '[venice.params]',
+          JSON.stringify({
+            route: 'chat',
+            userId,
+            modelId: body.modelId,
+            temperature: {
+              value: resolvedParams.temperature,
+              source: resolvedParams.source.temperature,
+            },
+            top_p: { value: resolvedParams.top_p, source: resolvedParams.source.top_p },
+            max_completion_tokens: {
+              value: resolvedParams.max_completion_tokens,
+              source: resolvedParams.source.max_completion_tokens,
+            },
+          }),
+        );
+      }
+
       // ── 10. Call Venice with streaming ────────────────────────────────────
       // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
       // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
@@ -366,7 +420,9 @@ export function createChatMessagesRouter() {
           model: body.modelId,
           messages,
           stream: true as const,
-          max_completion_tokens,
+          temperature: resolvedParams.temperature,
+          top_p: resolvedParams.top_p,
+          max_completion_tokens: resolvedParams.max_completion_tokens,
           // Request usage in the final chunk so we can persist token counts.
           stream_options: { include_usage: true },
           prompt_cache_key: chatPromptCacheKey(chatId, body.modelId),
