@@ -280,6 +280,52 @@ picks it up.
 
 ---
 
+## Model selection
+
+`/bd-execute` defaults its dispatched subagents to **Sonnet** — both
+reviewers always, the implementer unless the task opts up. The two
+surface reviewers invoked by `/bd-close-reviewed`
+(`security-reviewer`, `repo-boundary-reviewer`) pin `model: sonnet`
+in their agent frontmatter, so the close gate is consistent.
+
+**Why Sonnet by default.** The bridge's subagents do structured
+work: implementers execute TDD tasks against a plan + rules digest;
+reviewers compare a diff against a spec or a digest. None of that
+is synthesis. Sonnet handles structured execution well; running
+Opus by default (which is what happens with no explicit
+`model:` parameter, since `subagent_type: general-purpose` has no
+agent-definition file to consult) is wasted budget.
+
+### Opting the implementer up to Opus
+
+Some tasks genuinely need Opus — non-obvious algorithm design,
+hairy cross-file refactors, novel API shape decisions. Signal it in
+the **plan**, not in the bridge invocation: add a `model: opus`
+line to the task header before any other body text:
+
+```
+### Task 4: redesign chapter export pipeline
+
+model: opus
+
+[task body…]
+```
+
+The bridge picks the line up when it extracts task text in step 1
+of its loop and uses it as the `model:` parameter for that task's
+implementer dispatch (and any re-dispatch on review failure). The
+spec + code-quality reviewers stay on Sonnet regardless — their
+work shape doesn't change with task difficulty.
+
+If no `model:` line is present, Sonnet is the default. Don't
+speculatively opt up.
+
+The full convention (Haiku considerations, cost rationale, the
+forbidden "no explicit model" pattern) lives in
+`.claude/skills/bd-execute/SKILL.md` "Model selection" section.
+
+---
+
 ## Layer-2 implicit-dependency ruleset
 
 CLAUDE.md's historical "Task Order" section encoded **hard gates**

@@ -35,7 +35,7 @@ Extract the `plan: <path>` line from `.notes`. If absent, stop and tell the user
 Read the plan file at `<path>`. Identify:
 
 - **Touch-set** — the list of files the plan creates or modifies. Plans authored via `superpowers:writing-plans` typically have a "Files to Create / Modify" or "File Map" section. Extract those paths.
-- **Tasks** — the plan's task list (numbered or otherwise). Capture the full text of each task verbatim — implementers must not have to read the plan file.
+- **Tasks** — the plan's task list (numbered or otherwise). Capture the full text of each task verbatim — implementers must not have to read the plan file. While extracting, also look for a `model: <name>` line at the top of each task body; record it as that task's per-task model override (consumed in step 6, see "Model selection").
 
 ### 2. Pick rules digests
 
@@ -90,7 +90,7 @@ Construct the implementer prompt by composing:
 - Work from: [directory] → the repo root absolute path
 ```
 
-Dispatch via the Agent tool, `subagent_type: general-purpose`, with the composed prompt. (Do not pass the plan file path to the subagent — give them the extracted text directly. Subagents do not read the plan file. Reading the plan file would re-cost the entire plan tokens per dispatch and pull in tasks the subagent shouldn't be touching.)
+Dispatch via the Agent tool, `subagent_type: general-purpose`, **`model: "sonnet"`** by default (or per-task override — see "Model selection" below), with the composed prompt. (Do not pass the plan file path to the subagent — give them the extracted text directly. Subagents do not read the plan file. Reading the plan file would re-cost the entire plan tokens per dispatch and pull in tasks the subagent shouldn't be touching.)
 
 #### Implementer status protocol
 
@@ -111,7 +111,7 @@ Compose the spec-reviewer prompt by reading the spec-reviewer template, substitu
 - The task text
 - Git SHAs of the implementer's commits for this task
 
-Dispatch via Agent tool, `subagent_type: general-purpose`. **No project rules digest is prepended to the spec reviewer** — its job is to verify the implementation matches the *spec*, not the project's general rules.
+Dispatch via Agent tool, `subagent_type: general-purpose`, **`model: "sonnet"`** (always — reviewers don't synthesise; see "Model selection"). **No project rules digest is prepended to the spec reviewer** — its job is to verify the implementation matches the *spec*, not the project's general rules.
 
 If the spec reviewer finds gaps: re-dispatch the implementer (same subagent type) with the gaps as fix instructions. Loop until spec-clean.
 
@@ -129,9 +129,9 @@ After spec-clean, compose the code-quality-reviewer prompt with the **same** `<R
 <rest of code-quality-reviewer template>
 ```
 
-Dispatch via Agent tool, `subagent_type: general-purpose`.
+Dispatch via Agent tool, `subagent_type: general-purpose`, **`model: "sonnet"`** (always — same rationale as the spec reviewer; see "Model selection").
 
-If the code-quality reviewer finds issues: re-dispatch the implementer with fix instructions. Loop until quality-clean.
+If the code-quality reviewer finds issues: re-dispatch the implementer with fix instructions (using the same `model:` parameter the original implementer dispatch used). Loop until quality-clean.
 
 ### 9. Mark task complete in TodoWrite, move to next task
 
@@ -172,6 +172,44 @@ Once `/bd-close-reviewed` succeeds:
    - Plaintext leaks (decrypted narrative content in new logs / response shapes — see `docs/agent-rules/repo-boundary.md`).
 3. This is a sanity check, not a re-review. If something stands out, decide whether to fix in this PR or file a follow-up bd issue.
 
+## Model selection
+
+Subagent dispatches in this skill default to **Sonnet** (`model: "sonnet"`):
+
+- **Implementer** — Sonnet by default. The work is structured: the plan + rules digest spell out exactly what to do, and Sonnet executes structured TDD-shaped work well. Per-task override (see below) lifts to Opus when the task is genuinely synthesis-heavy.
+- **Spec reviewer** — Sonnet, **always**. Mechanical comparison: does the diff implement what the task said? No synthesis required.
+- **Code-quality reviewer** — Sonnet, **always**. Same shape: check the diff against the prepended rules digest.
+
+Surface reviewers (`security-reviewer`, `repo-boundary-reviewer`) dispatched by `/bd-close-reviewed` already pin `model: sonnet` in their agent frontmatter (`.claude/agents/`). The bridge does not need to override.
+
+`subagent_type: general-purpose` has **no agent-definition file**, so without an explicit `model:` parameter the dispatched agent inherits the parent session's model (typically Opus). That's the failure mode this section closes.
+
+### When to opt the implementer up to Opus
+
+A task warrants Opus when *what to build* is the hard part rather than *how to express the build*: non-obvious algorithm design, hairy cross-file refactors with many invariants in flight, novel API design, or a task whose "Context" framing genuinely needs cross-domain reasoning to interpret.
+
+Signal it in the **plan**, not in the bridge: add a `model: opus` line to the task header before any other body text, e.g.
+
+```
+### Task 4: redesign chapter export pipeline
+
+model: opus
+
+[task body…]
+```
+
+When the bridge reads the plan in step 1 and extracts each task's text, it also looks for a `model: <name>` line at the top of the task body. If present, that value is used as the `model:` parameter for that task's implementer dispatch (and any subsequent re-dispatch on review failure). If absent, Sonnet is the default.
+
+The reviewer dispatches stay on Sonnet regardless — their work shape doesn't change with task difficulty. Don't speculatively opt up: Opus on a Sonnet-shaped task is wasted budget without measurably better output.
+
+### When to consider Haiku
+
+For exceptionally mechanical tasks (formatting, single-file rename, simple deletion) the spec + code-quality reviewer dispatches *could* drop to Haiku. Don't. Default Sonnet — Haiku misses subtle code-quality issues often enough that the savings rarely repay the missed catches. Reconsider only if Phase 2's cost data shows reviewer dispatches as the dominant line item.
+
+### Cost rationale
+
+The pre-fix default (no `model:` parameter → inherits parent → Opus on a typical session) ran every dispatch on Opus. The Sonnet defaults above cut the spec + code-quality reviewer cost roughly 2–3× per task with no expected loss in catch rate. Implementer cost depends on task mix; Sonnet handles most tasks well, Opus is the exception, not the default.
+
 ## Forbidden
 
 - Skipping the spec reviewer or code-quality reviewer for any task.
@@ -180,6 +218,7 @@ Once `/bd-close-reviewed` succeeds:
 - Calling `bd close` directly from this skill (always go through `/bd-close-reviewed`).
 - Dispatching multiple implementer subagents in parallel for the same plan (conflicts; superpowers' Red Flags rule).
 - Letting the implementer self-review replace the two-stage review (both stages run, in order, every task).
+- Dispatching any subagent without an explicit `model:` parameter (inherits Opus by default; see "Model selection").
 
 ## Verification
 
