@@ -202,7 +202,28 @@ export function createUserSettingsRouter() {
       // Merge the validated PATCH payload into whatever is stored, then persist
       // the merged-over-stored value (NOT merged-over-defaults) — we don't want
       // to write the default tree into every user's row on their first PATCH.
-      const nextStored = deepMerge(stored, parsed.data as Record<string, unknown>);
+      const nextStored = deepMerge(stored, parsed.data as Record<string, unknown>) as Record<
+        string,
+        unknown
+      >;
+
+      // chat.overrides[modelId] is treated as atomic: each per-model entry in
+      // the patch REPLACES the prior entry rather than deep-merging into it.
+      // This is the contract the frontend already speaks (it always sends a
+      // complete entry built by spreading the prior one), and it's what makes
+      // "Reset to defaults" work — sending `{ m1: {} }` clears m1's overrides.
+      // Without this, deepMerge recurses into the empty entry and returns the
+      // prior fields unchanged, making reset a server-side no-op.
+      const patchOverrides = parsed.data.chat?.overrides;
+      if (patchOverrides) {
+        const chat = (nextStored.chat as Record<string, unknown> | undefined) ?? {};
+        const overrides = (chat.overrides as Record<string, unknown> | undefined) ?? {};
+        for (const [modelId, entry] of Object.entries(patchOverrides)) {
+          overrides[modelId] = entry;
+        }
+        chat.overrides = overrides;
+        nextStored.chat = chat;
+      }
 
       await prisma.user.update({
         where: { id: req.user!.id },
