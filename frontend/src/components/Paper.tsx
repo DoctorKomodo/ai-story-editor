@@ -9,7 +9,6 @@ import { useCharRefSuggestionProvider } from '@/hooks/useCharRefSuggestionProvid
 import { useUserSettingsQuery } from '@/hooks/useUserSettings';
 import { formatBarExtensions } from '@/lib/tiptap-extensions';
 import { getTypographyExtensions } from '@/lib/tiptap-typography';
-import { useActiveStoryStore } from '@/store/activeStory';
 
 /**
  * Paper editor layout (F32).
@@ -52,6 +51,10 @@ export interface PaperProps {
   // care about the active chapter, but it's the source of truth for the PATCH.
   chapterId?: string | null;
   onChapterTitleChange?: (chapterId: string, title: string) => void;
+  // Story id for the character suggestion provider — drives
+  // `useCharactersQuery` for the @-trigger menu. Without this, the
+  // menu permanently shows "No characters in this story yet."
+  storyId?: string | null;
 }
 
 const DEFAULT_EMPTY_DOC: JSONContent = {
@@ -198,6 +201,7 @@ export function Paper({
   onUpdate,
   onReady,
   onChapterTitleChange,
+  storyId,
 }: PaperProps): JSX.Element {
   // `useEditor` re-creates options on every render but only re-subscribes
   // its callbacks at mount; route the prop callbacks through refs so the
@@ -214,8 +218,11 @@ export function Paper({
   }, [onReady]);
 
   // [F62] Provide the active story's characters to the @-trigger suggestion.
-  const activeStoryId = useActiveStoryStore((s) => s.activeStoryId);
-  const charactersQuery = useCharactersQuery(activeStoryId ?? undefined);
+  // [X30] storyId comes from the parent (EditorPage threads it from the URL
+  // params) — the previous implementation read from a `useActiveStoryStore`
+  // whose setter was never called anywhere, so the query was always disabled
+  // and the menu always showed "No characters in this story yet."
+  const charactersQuery = useCharactersQuery(storyId ?? undefined);
   useCharRefSuggestionProvider(() =>
     (charactersQuery.data ?? []).map((c) => ({
       id: c.id,
