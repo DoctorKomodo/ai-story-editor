@@ -155,14 +155,10 @@ function buildTaskBlock(input: BuildPromptInput): string {
       const instruction = input.freeformInstruction ?? '';
       return `${instruction}${sel}`;
     }
-    case 'scene': {
-      // Validation only — the scene template goes into the system message, not
-      // the task block. buildPrompt handles scene message construction specially.
-      if (!input.freeformInstruction) {
-        throw new PromptValidationError('freeformInstruction is required for action "scene"');
-      }
+    case 'scene':
+      // Handled entirely in buildPrompt — scene template + freeformInstruction
+      // validation are wired there. This case exists only for switch exhaustiveness.
       return '';
-    }
     case 'ask': {
       if (!input.freeformInstruction) {
         throw new PromptValidationError('freeformInstruction is required for action "ask"');

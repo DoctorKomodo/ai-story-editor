@@ -316,6 +316,7 @@ describe('buildPrompt — scene action', () => {
     const out = buildPrompt(baseSceneInput);
     expect(out.messages[0].role).toBe('system');
     expect(out.messages[0].content).toContain(DEFAULT_PROMPTS.scene);
+    expect(out.messages[0].content).toContain('Jenny'); // character present even with worldNotes: null
     expect(out.messages[1].role).toBe('user');
     expect(out.messages[1].content).toBe(baseSceneInput.freeformInstruction);
   });
