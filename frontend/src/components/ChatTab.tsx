@@ -195,7 +195,12 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
             />
           </div>
         )}
-        <ChatComposer onSend={onSend} disabled={sendChatMessage.isPending} />
+        <ChatComposer
+          onSend={onSend}
+          disabled={sendChatMessage.isPending}
+          state={sendChatMessage.isPending ? 'streaming' : 'idle'}
+          onStop={sendChatMessage.stop}
+        />
       </div>
     </div>
   );

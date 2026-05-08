@@ -187,6 +187,49 @@ describe('useSendChatMessageMutation', () => {
     expect(draft?.error?.code).toBe('venice_error');
   });
 
+  it('stop() aborts the in-flight stream', async () => {
+    // Build an apiStream mock that returns a never-resolving SSE stream so we
+    // can call stop() mid-flight and assert the abort propagates.
+    let abortedSignal: AbortSignal | null = null;
+    const neverEndingStream = new ReadableStream({
+      start(_controller) {
+        // Intentionally don't enqueue anything — the test aborts before any
+        // chunk arrives.
+      },
+    });
+    vi.mocked(apiStream).mockImplementation(async (_path, init) => {
+      abortedSignal = (init as { signal?: AbortSignal } | undefined)?.signal ?? null;
+      return new Response(neverEndingStream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      });
+    });
+
+    const { wrapper } = withClient();
+    const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
+
+    const sendPromise = result.current.mutateAsync({
+      chatId: 'c1',
+      content: 'hello',
+      modelId: 'm1',
+    });
+
+    // Wait until the mutation is in-flight so apiStream has been called and
+    // the AbortController is stashed — deterministic alternative to setTimeout.
+    await waitFor(() => expect(result.current.isPending).toBe(true));
+
+    expect(result.current.stop).toBeDefined();
+    result.current.stop();
+
+    // parseAiSseStream exits cleanly on abort (reader.cancel → internal return),
+    // so the mutation resolves rather than rejects. The meaningful assertion is
+    // that the signal passed to apiStream was aborted.
+    await expect(sendPromise).resolves.toBeUndefined();
+
+    expect(abortedSignal).not.toBeNull();
+    expect(abortedSignal?.aborted).toBe(true);
+  });
+
   it('flips status to streaming on the first non-empty content delta', async () => {
     // Hold the stream open via a controllable enqueue/close so we can
     // observe intermediate state.
