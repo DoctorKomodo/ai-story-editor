@@ -115,6 +115,57 @@ describe('SceneTab — smoke', () => {
       expect(screen.getByText(/no session yet/i)).toBeInTheDocument();
     });
   });
+
+  it('shows the SceneUndoToast when a session is soft-deleted', async () => {
+    // Mock the sessions endpoint to return one deletable session.
+    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/chats/c1/messages')) {
+        return jsonResponse(200, { messages: [] });
+      }
+      if (url.includes('/chats') && !url.includes('/messages')) {
+        return jsonResponse(200, {
+          chats: [
+            {
+              id: 'c1',
+              title: 'Veranda confrontation',
+              chapterId: 'ch1',
+              updatedAt: new Date().toISOString(),
+              createdAt: new Date().toISOString(),
+            },
+          ],
+        });
+      }
+      return jsonResponse(404, { error: 'not_mocked' });
+    }) as FetchMock;
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, makeClient());
+
+    // Open the picker, hover the session row so the delete button is reachable,
+    // then click the delete button.
+    const picker = await screen.findByRole('button', { name: /Scene session: Veranda/ });
+    await user.click(picker);
+    const row = await screen.findByRole('option', { name: /Veranda confrontation/ });
+    await user.hover(row);
+    const deleteBtn = await screen.findByRole('button', { name: /Delete Veranda confrontation/ });
+    await user.click(deleteBtn);
+
+    // The new toast should appear with role=status, the session title in
+    // serif italic, and an Undo button.
+    const toast = await screen.findByRole('status');
+    expect(toast).toHaveTextContent(/Deleted/i);
+    expect(toast).toHaveTextContent(/Veranda confrontation/);
+    const undo = await screen.findByRole('button', { name: /Undo/i });
+    expect(undo).toBeInTheDocument();
+
+    // Clicking Undo cancels the pending delete and dismisses the toast.
+    await user.click(undo);
+    await waitFor(() => {
+      expect(screen.queryByRole('status')).toBeNull();
+    });
+  });
 });
 
 // ─── [A1] Venice generation error ─────────────────────────────────────────────
