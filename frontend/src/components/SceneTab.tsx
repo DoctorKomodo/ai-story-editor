@@ -29,6 +29,7 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import { listMessagesForChat } from '@/lib/api';
 import type { SceneMessage } from '@/store/sceneTranscript';
 import { useSceneTranscriptStore } from '@/store/sceneTranscript';
+import { SceneUndoToast } from './SceneUndoToast';
 
 export interface SceneTabProps {
   chapterId: string | null;
@@ -294,14 +295,11 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
 
   const visibleSessions = sessions.filter((s) => !isDeletePending(s.id));
 
-  const lastUndoEntry = (() => {
-    if (pendingDeletes.size === 0) return null;
-    const entries = Array.from(pendingDeletes.entries());
-    return entries[entries.length - 1];
-  })();
+  const pendingEntries = Array.from(pendingDeletes.entries());
+  const lastPending = pendingEntries.length > 0 ? pendingEntries[pendingEntries.length - 1] : null;
 
   return (
-    <div className="flex flex-col h-full" data-testid="scene-tab">
+    <div className="flex flex-col h-full relative" data-testid="scene-tab">
       {/* [A2] useScenes query error — renders above (or instead of) the picker */}
       {scenesError !== null ? (
         <div className="px-3 py-2">
@@ -328,24 +326,6 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
             });
           }}
         />
-      )}
-
-      {lastUndoEntry !== null && (
-        <div
-          className="mx-3 my-2 bg-ink text-bg rounded-[var(--radius)] px-3 py-2 flex items-center gap-3 text-[12px] shadow-pop"
-          role="status"
-        >
-          <span className="flex-1">Deleted &ldquo;{lastUndoEntry[1].title}&rdquo;</span>
-          <button
-            type="button"
-            onClick={() => {
-              onUndo(lastUndoEntry[0]);
-            }}
-            className="font-mono text-[11px] underline"
-          >
-            Undo
-          </button>
-        </div>
       )}
 
       <section
@@ -414,6 +394,19 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
           renderTranscript(transcript.messages, onInsert, onRetry, onCopy)
         ) : null}
       </section>
+
+      {lastPending !== null && (
+        <div className="absolute left-3 right-3 bottom-[calc(var(--scene-composer-height,56px)+8px)] z-20">
+          <SceneUndoToast
+            key={lastPending[0]}
+            title={lastPending[1].title}
+            onUndo={() => {
+              onUndo(lastPending[0]);
+            }}
+            timeoutMs={5000}
+          />
+        </div>
+      )}
 
       <SceneComposer
         state={transcript.streamState === 'streaming' ? 'streaming' : 'idle'}
