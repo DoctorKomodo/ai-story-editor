@@ -116,7 +116,7 @@ describe('SceneTab — smoke', () => {
     });
   });
 
-  it('shows the SceneUndoToast when a session is soft-deleted', async () => {
+  it('shows the UndoToast when a session is soft-deleted', async () => {
     // Mock the sessions endpoint to return one deletable session.
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();

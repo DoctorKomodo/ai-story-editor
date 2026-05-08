@@ -1,6 +1,6 @@
 import type { CSSProperties, JSX } from 'react';
 
-export interface SceneUndoToastProps {
+export interface UndoToastProps {
   title: string;
   onUndo: () => void;
   timeoutMs?: number;
@@ -26,11 +26,7 @@ function UndoArrowIcon(): JSX.Element {
   );
 }
 
-export function SceneUndoToast({
-  title,
-  onUndo,
-  timeoutMs = 5000,
-}: SceneUndoToastProps): JSX.Element {
+export function UndoToast({ title, onUndo, timeoutMs = 5000 }: UndoToastProps): JSX.Element {
   const countdownStyle = { '--undo-ms': `${timeoutMs}ms` } as CSSProperties;
   return (
     <div
@@ -56,7 +52,7 @@ export function SceneUndoToast({
       </div>
       <div
         aria-hidden="true"
-        className="scene-undo-countdown absolute bottom-0 left-0 right-0 h-px bg-ink-5"
+        className="undo-countdown absolute bottom-0 left-0 right-0 h-px bg-ink-5"
         style={countdownStyle}
       />
     </div>

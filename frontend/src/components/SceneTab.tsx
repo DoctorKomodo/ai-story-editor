@@ -29,7 +29,7 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import { listMessagesForChat } from '@/lib/api';
 import type { SceneMessage } from '@/store/sceneTranscript';
 import { useSceneTranscriptStore } from '@/store/sceneTranscript';
-import { SceneUndoToast } from './SceneUndoToast';
+import { UndoToast } from './UndoToast';
 
 export interface SceneTabProps {
   chapterId: string | null;
@@ -406,7 +406,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       <div className="relative">
         {lastPending !== null && (
           <div className="absolute left-3 right-3 bottom-[calc(100%+8px)] z-20">
-            <SceneUndoToast
+            <UndoToast
               key={lastPending[0]}
               title={lastPending[1].title}
               onUndo={() => {
