@@ -95,7 +95,7 @@ describe('ChatTab — smoke', () => {
     // Picker shows the "no session yet" hint while sessions are empty.
     expect(screen.getByText(/no session yet/i)).toBeInTheDocument();
 
-    // Composer renders (empty-state suggestion chips when chatId is null).
+    // Empty state renders when no chat session is selected.
     expect(screen.getByTestId('chat-empty')).toBeInTheDocument();
   });
 
