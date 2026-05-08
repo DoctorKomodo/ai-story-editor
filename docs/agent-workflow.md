@@ -56,7 +56,7 @@ bd issue:
 - Add `blocked-by` edges (`bd dep add <parent> <sub-id>` for each
   child the parent waits on; or `bd dep add <child> <other-child>`
   if children depend on each other).
-- Each sub-issue gets its own plan via `/bd-link-plan`.
+- Each sub-issue gets its own plan via `bash scripts/bd-link-plan.sh`.
 - The parent bd issue stays plan-less and acts as a **coordinator**.
   `/bd-execute` errors on a parent issue with plan-less children —
   invoke `/bd-execute` on each child in turn (find the unblocked
@@ -107,11 +107,11 @@ bd create \
   --priority=<0-4>
 # → returns story-editor-XXX
 
-/bd-link-plan story-editor-XXX docs/superpowers/plans/YYYY-MM-DD-<slug>.md
+bash scripts/bd-link-plan.sh story-editor-XXX docs/superpowers/plans/YYYY-MM-DD-<slug>.md
 ```
 
-`bd-link-plan` is idempotent and preserves any existing `verify:`
-line in `--notes`. If the plan moves, re-run it.
+`scripts/bd-link-plan.sh` is idempotent and preserves any existing
+`verify:` line in `--notes`. If the plan moves, re-run it.
 
 For sub-issue splits, file each child the same way and add the
 `blocked-by` edges:
@@ -546,11 +546,9 @@ shoehorn them in:
 ## Quick reference
 
 ```
-/bd-link-plan <bd-id> <plan-path>    # link a written plan to a bd issue
-/bd-execute <bd-id>                  # claim, dispatch loop, hand off to close
-/bd-close-reviewed <bd-id>           # typecheck + surface reviewers + bd close
-/task-verify <bd-id>                 # run verify: line for an issue (gate sanity)
-/bd-close <bd-id>                    # close-with-verify gate (the smaller close)
+bash scripts/bd-link-plan.sh <bd-id> <plan-path>   # link a written plan to a bd issue
+/bd-execute <bd-id>                                 # claim, dispatch loop, hand off to close
+/bd-close-reviewed <bd-id>                          # typecheck + surface reviewers + bd close
 ```
 
 ```

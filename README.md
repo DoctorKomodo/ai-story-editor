@@ -14,7 +14,7 @@ A self-hosted, web-based story and text editor with Venice.ai AI integration. Us
 └── docker-compose.yml
 ```
 
-Working task tracker is [**bd** (beads)](https://gastownhall.github.io/beads/) — run `bd ready` to find available work, `bd show <id>` for details. Historical task journal and per-task `verify:` commands live in [TASKS.md](TASKS.md) (still authoritative for closed-task history and the `/task-verify` skill). Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md). Production deployment notes are in [SELF_HOSTING.md](SELF_HOSTING.md).
+Working task tracker is [**bd** (beads)](https://gastownhall.github.io/beads/) — run `bd ready` to find available work, `bd show <id>` for details. The default implementation flow is `/bd-execute <id>` (multi-agent loop with reviewer gates; see [docs/agent-workflow.md](docs/agent-workflow.md)). Historical task journal lives in [TASKS.md](TASKS.md) for closed-task ID lookups. Operating rules for contributors (including Claude Code) are in [CLAUDE.md](CLAUDE.md). Production deployment notes are in [SELF_HOSTING.md](SELF_HOSTING.md).
 
 ## Quick start
 
@@ -75,7 +75,7 @@ All commands are run from the repo root unless otherwise noted.
 | `make test-e2e` | Playwright E2E (requires the stack to be up) |
 | `npm run test:e2e:visual` | Playwright visual-regression sweep (developer-run, not CI-gated) |
 
-Single-task verify: `/task-verify <TASK_ID>` (project-local slash command, see `.claude/skills/task-verify/`) runs the `verify:` from `TASKS.md` for that task and reports the true exit code.
+Single-task verify is part of the close gate: `/bd-close-reviewed <BD_ID>` (project-local slash command, see `.claude/skills/bd-close-reviewed/`) runs the issue's `verify:` line, typechecks affected workspaces, and fans path-matched surface reviewers before calling `bd close`.
 
 ### Lint and format
 
