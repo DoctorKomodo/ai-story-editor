@@ -317,9 +317,11 @@ describe('useCreateChatMutation cache invalidation', () => {
       messageCount: 0,
     };
     // POST returns the new chat; the refetch after invalidation never resolves.
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(201, { chat: newChat }))
-      .mockReturnValue(new Promise(() => { /* never resolves */ }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { chat: newChat })).mockReturnValue(
+      new Promise(() => {
+        /* never resolves */
+      }),
+    );
 
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -390,9 +392,11 @@ describe('useRenameChatMutation', () => {
       messageCount: 3,
     };
     // PATCH returns the server-normalised chat; the invalidate refetch never resolves.
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, { chat: updatedChat }))
-      .mockReturnValue(new Promise(() => { /* never resolves */ }));
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { chat: updatedChat })).mockReturnValue(
+      new Promise(() => {
+        /* never resolves */
+      }),
+    );
 
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -412,10 +416,7 @@ describe('useRenameChatMutation', () => {
     const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
-    const { result } = renderHook(
-      () => useRenameChatMutation(CHAPTER_ID, 'ask'),
-      { wrapper },
-    );
+    const { result } = renderHook(() => useRenameChatMutation(CHAPTER_ID, 'ask'), { wrapper });
 
     await act(async () => {
       await result.current.mutateAsync({ id: 'chat-1', title: 'client title' });
@@ -435,13 +436,6 @@ describe('useRemoveChatMutation', () => {
   let fetchMock: FetchMock;
   const CHAPTER_ID = 'ch-remove-1';
 
-  function jsonResponse(status: number, body: unknown): Response {
-    return new Response(JSON.stringify(body), {
-      status,
-      headers: { 'Content-Type': 'application/json' },
-    });
-  }
-
   beforeEach(() => {
     resetApiClientForTests();
     setAccessToken('tok');
@@ -456,9 +450,11 @@ describe('useRemoveChatMutation', () => {
 
   it('filters the deleted id out of the cache', async () => {
     // DELETE returns 204 no content; the invalidate refetch never resolves.
-    fetchMock
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockReturnValue(new Promise(() => { /* never resolves */ }));
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 })).mockReturnValue(
+      new Promise(() => {
+        /* never resolves */
+      }),
+    );
 
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -487,10 +483,7 @@ describe('useRemoveChatMutation', () => {
     const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
-    const { result } = renderHook(
-      () => useRemoveChatMutation(CHAPTER_ID, 'ask'),
-      { wrapper },
-    );
+    const { result } = renderHook(() => useRemoveChatMutation(CHAPTER_ID, 'ask'), { wrapper });
 
     await act(async () => {
       await result.current.mutateAsync('chat-delete');
