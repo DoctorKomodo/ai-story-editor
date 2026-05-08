@@ -8,7 +8,7 @@ import { type ChatDraft, useChatDraftStore } from '@/store/chatDraft';
 /**
  * [F39] Chat messages list.
  *
- * Renders the message log inside the F38 ChatPanel `messagesBody` slot.
+ * Renders the chat message log for the active chat session inside ChatTab.
  *
  *  - User: 13px sans pill bubble in `--accent-soft`, right-aligned, with an
  *    optional attachment preview above (serif italic quote + mono "FROM CH. N"
