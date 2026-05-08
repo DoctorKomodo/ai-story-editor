@@ -118,12 +118,12 @@ describe('SceneTab — smoke', () => {
 
   it('shows the SceneUndoToast when a session is soft-deleted', async () => {
     // Mock the sessions endpoint to return one deletable session.
-    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       if (url.includes('/api/chats/c1/messages')) {
         return jsonResponse(200, { messages: [] });
       }
-      if (url.endsWith('/api/chats/c1') && (input as Request).method === 'DELETE') {
+      if (url.endsWith('/api/chats/c1') && init?.method === 'DELETE') {
         return jsonResponse(204, null);
       }
       if (url.includes('/chats') && !url.includes('/messages')) {
