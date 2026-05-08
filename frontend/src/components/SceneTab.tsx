@@ -2,7 +2,7 @@
  * [SC17] SceneTab — orchestrator for the scene-generation workflow.
  *
  * Wires together:
- *  - SceneSessionPicker (session CRUD + selection)
+ *  - SessionPicker (session CRUD + selection)
  *  - useScenes (TanStack Query session list + mutations)
  *  - useSceneTranscript (Zustand + SSE streaming transcript)
  *  - SceneCandidateCard (per-turn pair: user direction → AI candidate)
