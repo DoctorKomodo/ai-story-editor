@@ -16,8 +16,6 @@ import { type ChatDraft, useChatDraftStore } from '@/store/chatDraft';
  *  - Assistant: 13.5/1.55 serif body with a 2px `--ai` left border, no
  *    background. A meta row underneath holds Copy / Regenerate buttons and a
  *    mono `412 tok · 1.8s` figure when both metrics are present.
- *  - Suggestion chips (empty state only here): 8/10 sans 12.5px with icon +
- *    label.
  *  - Dashed context chip at the end of the list (mono 11px) summarising the
  *    attached chapter / character / token count.
  *
@@ -31,10 +29,8 @@ import { type ChatDraft, useChatDraftStore } from '@/store/chatDraft';
  * construction and are not part of the user-facing transcript.
  */
 
-export type SuggestionKind = 'rewrite' | 'describe' | 'expand';
-
 export interface ChatMessagesProps {
-  /** When `null`, renders the empty / suggestion-chip state. */
+  /** When `null`, renders the empty state. */
   chatId: string | null;
   /** Used for the trailing context chip and for "FROM CH." attachment captions. */
   chapterTitle?: string | null;
@@ -42,7 +38,6 @@ export interface ChatMessagesProps {
   attachedTokenCount?: number;
   onCopyMessage?: (id: string) => void;
   onRegenerateMessage?: (id: string) => void;
-  onPickSuggestion?: (kind: SuggestionKind) => void;
   /** When set, renders an InlineErrorBanner at the end of the message list. */
   sendError?: Error | null;
   /** Wired to the banner's Retry button. */
@@ -83,70 +78,6 @@ function chapterCaption(
   return '—';
 }
 
-function WandIcon(): JSX.Element {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M15 4V2" />
-      <path d="M15 16v-2" />
-      <path d="M8 9h2" />
-      <path d="M20 9h2" />
-      <path d="M17.8 11.8 19 13" />
-      <path d="M15 9h0" />
-      <path d="M17.8 6.2 19 5" />
-      <path d="m3 21 9-9" />
-      <path d="M12.2 6.2 11 5" />
-    </svg>
-  );
-}
-
-function SparklesIcon(): JSX.Element {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z" />
-    </svg>
-  );
-}
-
-function ExpandIcon(): JSX.Element {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M21 21H3" />
-      <path d="m6 8 6-6 6 6" />
-      <path d="M12 2v15" />
-    </svg>
-  );
-}
-
 function CopyIcon(): JSX.Element {
   return (
     <svg
@@ -184,16 +115,6 @@ function RefreshIcon(): JSX.Element {
     </svg>
   );
 }
-
-const SUGGESTION_DEFS: ReadonlyArray<{
-  kind: SuggestionKind;
-  label: string;
-  Icon: () => JSX.Element;
-}> = [
-  { kind: 'rewrite', label: 'Rewrite this passage', Icon: WandIcon },
-  { kind: 'describe', label: 'Describe a scene', Icon: SparklesIcon },
-  { kind: 'expand', label: 'Expand the next paragraph', Icon: ExpandIcon },
-];
 
 interface ContextChipProps {
   chapterTitle: string | null | undefined;
@@ -386,7 +307,6 @@ export function ChatMessages({
   attachedTokenCount,
   onCopyMessage,
   onRegenerateMessage,
-  onPickSuggestion,
   sendError,
   onRetrySend,
 }: ChatMessagesProps): JSX.Element {
@@ -398,24 +318,6 @@ export function ChatMessages({
     return (
       <div className="flex flex-col gap-3 p-4 text-center" data-testid="chat-empty">
         <p className="text-[13px] text-ink-3 font-sans">Start a conversation</p>
-        <div className="suggestion-chips flex flex-col gap-1.5 items-stretch">
-          {SUGGESTION_DEFS.map(({ kind, label, Icon }) => (
-            <button
-              key={kind}
-              type="button"
-              className="suggestion-chip inline-flex items-center gap-1.5 px-2.5 py-2 rounded-[var(--radius)] text-[12.5px] font-sans bg-[var(--bg-sunken)] hover:bg-[var(--surface-hover)] text-left"
-              onClick={() => {
-                if (onPickSuggestion) onPickSuggestion(kind);
-              }}
-              data-testid={`suggestion-${kind}`}
-            >
-              <span className="text-ink-4 flex-shrink-0">
-                <Icon />
-              </span>
-              <span className="text-ink-2">{label}</span>
-            </button>
-          ))}
-        </div>
       </div>
     );
   }

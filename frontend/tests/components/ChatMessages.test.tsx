@@ -82,27 +82,12 @@ describe('ChatMessages (F39)', () => {
     expect(formatTokens(2400)).toBe('2.4k');
   });
 
-  it('empty state: renders "Start a conversation" + 3 suggestion chips that fire onPickSuggestion', async () => {
-    const onPick = vi.fn();
-    renderWithProviders(<ChatMessages chatId={null} onPickSuggestion={onPick} />);
-
+  it('empty state: renders "Start a conversation" without any suggestion chips', () => {
+    renderWithProviders(<ChatMessages chatId={null} />);
     expect(screen.getByText('Start a conversation')).toBeInTheDocument();
-
-    const rewrite = screen.getByTestId('suggestion-rewrite');
-    const describeBtn = screen.getByTestId('suggestion-describe');
-    const expand = screen.getByTestId('suggestion-expand');
-
-    expect(rewrite).toBeInTheDocument();
-    expect(describeBtn).toBeInTheDocument();
-    expect(expand).toBeInTheDocument();
-
-    await userEvent.click(rewrite);
-    await userEvent.click(describeBtn);
-    await userEvent.click(expand);
-
-    expect(onPick).toHaveBeenNthCalledWith(1, 'rewrite');
-    expect(onPick).toHaveBeenNthCalledWith(2, 'describe');
-    expect(onPick).toHaveBeenNthCalledWith(3, 'expand');
+    expect(screen.queryByRole('button', { name: /Rewrite this passage/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Describe a scene/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Expand the next paragraph/i })).toBeNull();
 
     // No context chip when chatId is null.
     expect(screen.queryByTestId('context-chip')).not.toBeInTheDocument();
