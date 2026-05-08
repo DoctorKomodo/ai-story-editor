@@ -95,7 +95,7 @@ function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
     <div
       data-story-id="in-context"
       className="flex flex-col bg-bg border border-line"
-      style={{ width: 360, height: 520, position: 'relative' }}
+      style={{ width: 360, height: 520 }}
     >
       <SceneSessionPicker
         sessions={sessions}
@@ -120,28 +120,30 @@ function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
         </div>
       </section>
 
-      {/* Toast: pinned just above the composer, inside the SceneTab's relative
-          container. Sits out of the SceneSessionPicker dropdown's downward
-          projection. */}
-      <div className="absolute left-3 right-3" style={{ bottom: 'calc(56px + 8px)' }}>
-        <SceneUndoToast title="Cellar discovery" onUndo={() => {}} timeoutMs={5000} />
-      </div>
+      <div className="relative">
+        <div className="absolute left-3 right-3 bottom-[calc(100%+8px)] z-20">
+          <SceneUndoToast title="Cellar discovery" onUndo={() => {}} timeoutMs={5000} />
+        </div>
 
-      {/* Faux SceneComposer */}
-      <div
-        className="border-t border-line bg-bg-sunken px-3 py-3 flex items-center gap-2"
-        style={{ height: 56 }}
-      >
-        <input
-          className="flex-1 bg-transparent text-[13px] text-ink placeholder:text-ink-4 focus:outline-none"
-          placeholder="Describe the next beat…"
-        />
-        <button
-          type="button"
-          className="font-mono text-[11px] uppercase tracking-[.08em] text-ink-2 hover:text-ink"
-        >
-          Send
-        </button>
+        {/* Faux SceneComposer — mirrors the real component's layout (3-row
+            textarea + footer row) so the in-context preview reflects the
+            actual composer height instead of an underestimate. */}
+        <div className="border-t border-line p-3 bg-bg flex flex-col gap-2">
+          <textarea
+            rows={3}
+            className="resize-none bg-bg-sunken border border-line rounded-[var(--radius)] px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none"
+            placeholder="Describe a scene…"
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-mono text-ink-4">⌘↵ to send</span>
+            <button
+              type="button"
+              className="px-3 py-1 rounded-[var(--radius)] bg-ink text-bg text-[12px]"
+            >
+              Generate
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );

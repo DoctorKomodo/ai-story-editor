@@ -299,7 +299,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   const lastPending = pendingEntries.length > 0 ? pendingEntries[pendingEntries.length - 1] : null;
 
   return (
-    <div className="flex flex-col h-full relative" data-testid="scene-tab">
+    <div className="flex flex-col h-full" data-testid="scene-tab">
       {/* [A2] useScenes query error — renders above (or instead of) the picker */}
       {scenesError !== null ? (
         <div className="px-3 py-2">
@@ -395,24 +395,25 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         ) : null}
       </section>
 
-      {lastPending !== null && (
-        <div className="absolute left-3 right-3 bottom-[calc(var(--scene-composer-height,56px)+8px)] z-20">
-          <SceneUndoToast
-            key={lastPending[0]}
-            title={lastPending[1].title}
-            onUndo={() => {
-              onUndo(lastPending[0]);
-            }}
-            timeoutMs={5000}
-          />
-        </div>
-      )}
-
-      <SceneComposer
-        state={transcript.streamState === 'streaming' ? 'streaming' : 'idle'}
-        onGenerate={onGenerate}
-        onStop={transcript.stop}
-      />
+      <div className="relative">
+        {lastPending !== null && (
+          <div className="absolute left-3 right-3 bottom-[calc(100%+8px)] z-20">
+            <SceneUndoToast
+              key={lastPending[0]}
+              title={lastPending[1].title}
+              onUndo={() => {
+                onUndo(lastPending[0]);
+              }}
+              timeoutMs={5000}
+            />
+          </div>
+        )}
+        <SceneComposer
+          state={transcript.streamState === 'streaming' ? 'streaming' : 'idle'}
+          onGenerate={onGenerate}
+          onStop={transcript.stop}
+        />
+      </div>
     </div>
   );
 }
