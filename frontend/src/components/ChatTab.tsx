@@ -174,7 +174,13 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         onNew={onNew}
       />
 
-      <ChatMessages chatId={activeChatId} sendError={sendChatMessage.error} onRetrySend={onRetry} />
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <ChatMessages
+          chatId={activeChatId}
+          sendError={sendChatMessage.error}
+          onRetrySend={onRetry}
+        />
+      </div>
 
       <div className="relative">
         {lastPending !== null && (
