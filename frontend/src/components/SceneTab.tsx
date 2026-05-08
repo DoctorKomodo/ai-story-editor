@@ -20,7 +20,7 @@ import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { SceneCandidateCard } from '@/components/SceneCandidateCard';
 import { SceneComposer } from '@/components/SceneComposer';
-import { SceneSessionPicker } from '@/components/SceneSessionPicker';
+import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useScenes } from '@/hooks/useScenes';
 import { useSceneTranscript } from '@/hooks/useSceneTranscript';
@@ -112,6 +112,13 @@ function renderTranscript(
   }
   return cards;
 }
+
+const SCENE_LABELS: SessionPickerLabels = {
+  kindLabel: 'SCENE',
+  ariaPrefix: 'Scene session: ',
+  dropdownHeader: 'Scenes in this chapter',
+  newButtonLabel: 'New scene',
+};
 
 export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   const settings = useUserSettings();
@@ -308,7 +315,8 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
           />
         </div>
       ) : (
-        <SceneSessionPicker
+        <SessionPicker
+          labels={SCENE_LABELS}
           sessions={visibleSessions.map((s) => ({
             id: s.id,
             title: s.title ?? 'Untitled',

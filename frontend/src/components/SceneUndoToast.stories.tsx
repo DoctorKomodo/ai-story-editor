@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { type JSX, useEffect, useState } from 'react';
-import { type SceneSession, SceneSessionPicker } from './SceneSessionPicker';
 import { SceneUndoToast } from './SceneUndoToast';
+import { type Session, SessionPicker } from './SessionPicker';
 
 const meta: Meta<typeof SceneUndoToast> = {
   title: 'Chat/SceneUndoToast',
@@ -67,7 +67,7 @@ export const Dark: Story = {
  * dropdown no longer occludes the toast.
  */
 function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
-  const sessions: SceneSession[] = [
+  const sessions: Session[] = [
     {
       id: 's1',
       title: 'Veranda confrontation',
@@ -97,7 +97,13 @@ function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
       className="flex flex-col bg-bg border border-line"
       style={{ width: 360, height: 520 }}
     >
-      <SceneSessionPicker
+      <SessionPicker
+        labels={{
+          kindLabel: 'SCENE',
+          ariaPrefix: 'Scene session: ',
+          dropdownHeader: 'Scenes in this chapter',
+          newButtonLabel: 'New scene',
+        }}
         sessions={sessions}
         activeSessionId={activeId}
         onSelect={setActiveId}
