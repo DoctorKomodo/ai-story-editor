@@ -18,6 +18,7 @@ const mockDefaults = {
   expand: 'Default expand.',
   summarise: 'Default summarise.',
   describe: 'Default describe.',
+  scene: 'Default scene.',
 };
 
 function jsonResponse(body: unknown): Response {

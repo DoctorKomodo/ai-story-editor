@@ -1,6 +1,6 @@
 // frontend/src/components/SettingsPromptsTab.tsx
 //
-// [X29] Settings → Prompts tab. Six rows (system + 5 action templates),
+// [X29] Settings → Prompts tab. Seven rows (system + 6 action templates),
 // each displaying its built-in default read-only by default. Ticking
 // "Override default" enables an editable field seeded with the current
 // default text and PATCHes settings.prompts.{key}. Unticking PATCHes
@@ -50,6 +50,12 @@ const ROWS: ReadonlyArray<RowMeta> = [
     key: 'describe',
     label: 'Describe',
     hint: 'Used when describing the subject of a selection.',
+    multiline: false,
+  },
+  {
+    key: 'scene',
+    label: 'Scene',
+    hint: 'Used by the Scene tab — turns a scene direction into a paragraph of prose.',
     multiline: false,
   },
 ];

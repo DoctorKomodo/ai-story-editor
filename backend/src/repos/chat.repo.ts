@@ -8,6 +8,7 @@ const ENCRYPTED_FIELDS = ['title'] as const;
 export interface ChatCreateInput {
   chapterId: string;
   title?: string | null;
+  kind?: 'ask' | 'scene';
 }
 
 export interface ChatUpdateInput {
@@ -38,6 +39,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     const row = await client.chat.create({
       data: {
         chapterId: input.chapterId,
+        kind: input.kind ?? 'ask',
         // Post-[E11]: `title` is ciphertext-only.
         ...writeEncrypted(req, 'title', input.title ?? null),
       },
@@ -54,11 +56,15 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 
-  async function findManyForChapter(chapterId: string) {
+  async function findManyForChapter(chapterId: string, opts?: { kind?: 'ask' | 'scene' }) {
     const userId = resolveUserId(req);
     await ensureChapterOwned(client, chapterId, userId);
     const rows = await client.chat.findMany({
-      where: { chapterId, chapter: { story: { userId } } },
+      where: {
+        chapterId,
+        chapter: { story: { userId } },
+        ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
+      },
       orderBy: { createdAt: 'asc' },
     });
     return rows.map((r) =>

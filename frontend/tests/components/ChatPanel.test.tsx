@@ -94,21 +94,23 @@ describe('ChatPanel (F38)', () => {
     });
   }
 
-  it('renders header tabs, model bar, body, and composer landmarks', () => {
+  it('renders header tabs, model footer, body, and composer landmarks', () => {
     mockModels();
     renderWithProviders(
       <ChatPanel
         messagesBody={<div data-testid="msg-slot">messages</div>}
         composer={<div data-testid="composer-slot">composer</div>}
+        sceneBody={<div data-testid="scene-slot">scene</div>}
       />,
     );
 
-    // Header — both tabs as role=tab.
+    // Header — all three tabs as role=tab.
     expect(screen.getByRole('tab', { name: 'Chat' })).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: 'Scene' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'History' })).toBeInTheDocument();
 
-    // Model bar — testid + the MODEL label.
-    expect(screen.getByTestId('model-bar')).toBeInTheDocument();
+    // Model footer — testid + the MODEL label.
+    expect(screen.getByTestId('model-footer')).toBeInTheDocument();
     expect(screen.getByText('MODEL')).toBeInTheDocument();
 
     // Scrollable body region.
@@ -125,18 +127,22 @@ describe('ChatPanel (F38)', () => {
       <ChatPanel
         messagesBody={<div data-testid="msg-slot">messages</div>}
         composer={<div data-testid="composer-slot">composer</div>}
+        sceneBody={<div />}
       />,
     );
 
     const chatTab = screen.getByRole('tab', { name: 'Chat' });
+    const sceneTab = screen.getByRole('tab', { name: 'Scene' });
     const historyTab = screen.getByRole('tab', { name: 'History' });
 
     expect(chatTab).toHaveAttribute('aria-selected', 'true');
+    expect(sceneTab).toHaveAttribute('aria-selected', 'false');
     expect(historyTab).toHaveAttribute('aria-selected', 'false');
 
     await userEvent.click(historyTab);
 
     expect(chatTab).toHaveAttribute('aria-selected', 'false');
+    expect(sceneTab).toHaveAttribute('aria-selected', 'false');
     expect(historyTab).toHaveAttribute('aria-selected', 'true');
   });
 
@@ -144,7 +150,12 @@ describe('ChatPanel (F38)', () => {
     mockModels();
     const onNewChat = vi.fn();
     renderWithProviders(
-      <ChatPanel messagesBody={<div />} composer={<div />} onNewChat={onNewChat} />,
+      <ChatPanel
+        messagesBody={<div />}
+        composer={<div />}
+        sceneBody={<div />}
+        onNewChat={onNewChat}
+      />,
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'New chat' }));
@@ -155,7 +166,12 @@ describe('ChatPanel (F38)', () => {
     mockModels();
     const onOpenSettings = vi.fn();
     renderWithProviders(
-      <ChatPanel messagesBody={<div />} composer={<div />} onOpenSettings={onOpenSettings} />,
+      <ChatPanel
+        messagesBody={<div />}
+        composer={<div />}
+        sceneBody={<div />}
+        onOpenSettings={onOpenSettings}
+      />,
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
@@ -166,7 +182,12 @@ describe('ChatPanel (F38)', () => {
     mockModels();
     const onOpenModelPicker = vi.fn();
     renderWithProviders(
-      <ChatPanel messagesBody={<div />} composer={<div />} onOpenModelPicker={onOpenModelPicker} />,
+      <ChatPanel
+        messagesBody={<div />}
+        composer={<div />}
+        sceneBody={<div />}
+        onOpenModelPicker={onOpenModelPicker}
+      />,
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Open model picker' }));
@@ -179,7 +200,10 @@ describe('ChatPanel (F38)', () => {
       chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-uncensored-1.5' },
     });
 
-    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />, qc);
+    renderWithProviders(
+      <ChatPanel messagesBody={<div />} composer={<div />} sceneBody={<div />} />,
+      qc,
+    );
 
     // Wait for the query to resolve and the picker to render the model name.
     await waitFor(() => {
@@ -191,37 +215,17 @@ describe('ChatPanel (F38)', () => {
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('32k');
     // The Venice mark is rendered.
     expect(screen.getByTestId('venice-mark')).toBeInTheDocument();
-    // The right-aligned model label uses the same human name.
-    expect(screen.getByTestId('model-label')).toHaveTextContent('Venice Uncensored 1.5');
   });
 
   it('shows "No model" and "—" ctx chip when no model is selected', () => {
     mockModels();
     // modelId left as null in beforeEach.
-    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />);
+    renderWithProviders(
+      <ChatPanel messagesBody={<div />} composer={<div />} sceneBody={<div />} />,
+    );
 
     expect(screen.getByText('No model')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('—');
-  });
-
-  it('renders the params row from current settings values', async () => {
-    mockModels();
-    const qc = seedSettings({
-      chat: {
-        model: 'venice-uncensored-1.5',
-        overrides: { 'venice-uncensored-1.5': { temperature: 0.7, topP: 0.9, maxTokens: 1200 } },
-      },
-    });
-
-    renderWithProviders(<ChatPanel messagesBody={<div />} composer={<div />} />, qc);
-
-    await waitFor(() => {
-      const params = screen.getByTestId('model-params');
-      expect(params.textContent ?? '').toContain('temp 0.7');
-    });
-    const params = screen.getByTestId('model-params');
-    expect(params.textContent ?? '').toContain('top_p 0.9');
-    expect(params.textContent ?? '').toContain('max 1200');
   });
 
   it('composer is visible on Chat tab and hidden on History tab', async () => {
@@ -230,6 +234,7 @@ describe('ChatPanel (F38)', () => {
       <ChatPanel
         messagesBody={<div data-testid="msg-slot">messages</div>}
         composer={<div data-testid="composer-slot">composer</div>}
+        sceneBody={<div />}
       />,
     );
 
@@ -241,5 +246,47 @@ describe('ChatPanel (F38)', () => {
     expect(screen.queryByTestId('composer-slot')).not.toBeInTheDocument();
     expect(screen.queryByTestId('msg-slot')).not.toBeInTheDocument();
     expect(screen.getByText(/history — coming in a future task/i)).toBeInTheDocument();
+  });
+
+  it('Scene tab becomes aria-selected when clicked and shows sceneBody', async () => {
+    mockModels();
+    renderWithProviders(
+      <ChatPanel
+        messagesBody={<div data-testid="msg-slot">messages</div>}
+        composer={<div data-testid="composer-slot">composer</div>}
+        sceneBody={<div data-testid="scene-slot">scene content</div>}
+      />,
+    );
+
+    const chatTab = screen.getByRole('tab', { name: 'Chat' });
+    const sceneTab = screen.getByRole('tab', { name: 'Scene' });
+
+    // Chat is active by default, scene body not visible.
+    expect(chatTab).toHaveAttribute('aria-selected', 'true');
+    expect(sceneTab).toHaveAttribute('aria-selected', 'false');
+    expect(screen.queryByTestId('scene-slot')).not.toBeInTheDocument();
+
+    await userEvent.click(sceneTab);
+
+    // Scene tab is now active.
+    expect(sceneTab).toHaveAttribute('aria-selected', 'true');
+    expect(chatTab).toHaveAttribute('aria-selected', 'false');
+    // sceneBody renders, messagesBody and composer do not.
+    expect(screen.getByTestId('scene-slot')).toBeInTheDocument();
+    expect(screen.queryByTestId('msg-slot')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('composer-slot')).not.toBeInTheDocument();
+  });
+
+  it('tab order is Chat → Scene → History', () => {
+    mockModels();
+    renderWithProviders(
+      <ChatPanel messagesBody={<div />} composer={<div />} sceneBody={<div />} />,
+    );
+
+    const tabs = screen.getAllByRole('tab');
+    expect(tabs).toHaveLength(3);
+    expect(tabs[0]).toHaveTextContent('Chat');
+    expect(tabs[1]).toHaveTextContent('Scene');
+    expect(tabs[2]).toHaveTextContent('History');
   });
 });

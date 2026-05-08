@@ -17,6 +17,7 @@ export type PromptAction =
   | 'freeform'
   | 'rewrite'
   | 'describe'
+  | 'scene'
   | 'ask';
 
 export interface CharacterContext {
@@ -28,7 +29,14 @@ export interface CharacterContext {
 // [X29] Keys of the user-overridable prompt slice. `rewrite` covers both
 // 'rephrase' and 'rewrite' actions (collapsed at the override layer; the
 // in-builder strings for each surface stay distinct via DEFAULT_PROMPTS).
-export type UserPromptKey = 'system' | 'continue' | 'rewrite' | 'expand' | 'summarise' | 'describe';
+export type UserPromptKey =
+  | 'system'
+  | 'continue'
+  | 'rewrite'
+  | 'expand'
+  | 'summarise'
+  | 'describe'
+  | 'scene';
 
 export type UserPrompts = Partial<Record<UserPromptKey, string | null>>;
 
@@ -89,6 +97,8 @@ export const DEFAULT_PROMPTS = {
   summarise: 'Task: summarise the selection to its essential points. Use 1–3 sentences.',
   describe:
     "Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
+  scene:
+    'Task: write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
 } as const satisfies Record<UserPromptKey, string>;
 
 // Reserved tokens between the response budget and the prompt budget. Covers
@@ -145,6 +155,10 @@ function buildTaskBlock(input: BuildPromptInput): string {
       const instruction = input.freeformInstruction ?? '';
       return `${instruction}${sel}`;
     }
+    case 'scene':
+      // Handled entirely in buildPrompt — scene template + freeformInstruction
+      // validation are wired there. This case exists only for switch exhaustiveness.
+      return '';
     case 'ask': {
       if (!input.freeformInstruction) {
         throw new PromptValidationError('freeformInstruction is required for action "ask"');
@@ -161,13 +175,16 @@ function buildTaskBlock(input: BuildPromptInput): string {
 
 export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
   const responseTokens = Math.min(input.modelMaxCompletionTokens, input.userMaxCompletionTokens);
+  const includeVeniceSystemPrompt = input.includeVeniceSystemPrompt ?? true;
+
+  // ── Shared context blocks (used by all actions) ───────────────────────────
+
   const promptBudgetTokens = Math.max(
     0,
     input.modelContextLength - responseTokens - SAFETY_MARGIN_TOKENS,
   );
 
   const systemContent = resolvePrompt(input.userPrompts, 'system');
-  const includeVeniceSystemPrompt = input.includeVeniceSystemPrompt ?? true;
 
   const worldNotesBlock =
     input.worldNotes && input.worldNotes.length > 0 ? `World notes:\n${input.worldNotes}` : '';
@@ -186,14 +203,16 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
           .join('\n')}`
       : '';
 
-  const taskBlock = buildTaskBlock(input);
+  // For scene, the scene template replaces taskBlock in the fixed-token budget.
+  const sceneTemplate = input.action === 'scene' ? resolvePrompt(input.userPrompts, 'scene') : '';
+  const taskBlock = input.action === 'scene' ? '' : buildTaskBlock(input);
 
   const sysTokens = estimateTokens(systemContent);
   const fixedTokens =
     sysTokens +
     estimateTokens(worldNotesBlock) +
     estimateTokens(charactersBlock) +
-    estimateTokens(taskBlock);
+    (input.action === 'scene' ? estimateTokens(sceneTemplate) : estimateTokens(taskBlock));
 
   const chapterBudgetTokens = promptBudgetTokens - fixedTokens;
 
@@ -208,6 +227,30 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
   }
 
   const chapterBlock = chapterText.length > 0 ? `Chapter so far:\n${chapterText}` : '';
+
+  // ── scene: all context blocks go into the system message; user message is raw direction ──
+  if (input.action === 'scene') {
+    if (!input.freeformInstruction) {
+      throw new PromptValidationError('freeformInstruction is required for action "scene"');
+    }
+    const systemParts = [
+      systemContent,
+      worldNotesBlock,
+      charactersBlock,
+      chapterBlock,
+      sceneTemplate,
+    ].filter((p) => p.length > 0);
+    return {
+      messages: [
+        { role: 'system', content: systemParts.join('\n\n') },
+        { role: 'user', content: input.freeformInstruction },
+      ],
+      venice_parameters: { include_venice_system_prompt: includeVeniceSystemPrompt },
+      max_completion_tokens: responseTokens,
+    };
+  }
+
+  // ── All other actions ──────────────────────────────────────────────────────
 
   const userParts = [worldNotesBlock, charactersBlock, chapterBlock, taskBlock].filter(
     (p) => p.length > 0,

@@ -83,6 +83,7 @@ const SettingsSchema = z
         expand: z.string().max(10_000).nullable().optional(),
         summarise: z.string().max(10_000).nullable().optional(),
         describe: z.string().max(10_000).nullable().optional(),
+        scene: z.string().max(10_000).nullable().optional(),
       })
       .strict()
       .optional(),
@@ -124,6 +125,7 @@ export interface UserSettings {
     expand?: string | null;
     summarise?: string | null;
     describe?: string | null;
+    scene?: string | null;
   };
 }
 
@@ -152,6 +154,7 @@ const DEFAULT_SETTINGS = {
     expand: null as string | null,
     summarise: null as string | null,
     describe: null as string | null,
+    scene: null as string | null,
   },
 } satisfies Record<string, unknown>;
 

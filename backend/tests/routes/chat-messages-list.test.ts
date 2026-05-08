@@ -9,8 +9,6 @@
 //   - projected fields match the contract (id, role, contentJson, attachmentJson,
 //     model, tokens, latencyMs, createdAt) with no ciphertext / *Iv / *AuthTag leak
 
-import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
@@ -18,45 +16,8 @@ import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
-import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function registerAndLogin(
-  username: string,
-  password = 'chat-msgs-pw',
-  name = 'Chat Msgs User',
-): Promise<string> {
-  await request(app).post('/api/auth/register').send({ name, username, password });
-  const login = await request(app).post('/api/auth/login').send({ username, password });
-  expect(login.status).toBe(200);
-  return login.body.accessToken as string;
-}
-
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
-  const session = getSession(sessionId);
-  expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
-  attachDekToRequest(req, session!.dek);
-  return req;
-}
-
-async function resetAll(): Promise<void> {
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
-  await prisma.user.deleteMany();
-}
+import { _resetSessionStore } from '../../src/services/session-store';
+import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
 
 async function setupStoryChapterChat(
   req: Request,

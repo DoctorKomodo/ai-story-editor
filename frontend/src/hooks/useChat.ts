@@ -5,7 +5,8 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { ApiError, api, apiStream } from '@/lib/api';
+import { ApiError, api, apiStream, type ChatRow } from '@/lib/api';
+import { type Citation, isCitationArray } from '@/lib/citations';
 import { parseAiSseStream } from '@/lib/sse';
 import { useChatDraftStore } from '@/store/chatDraft';
 
@@ -38,38 +39,11 @@ export interface ChatMessageAttachment {
   chapterId?: string;
 }
 
-/**
- * [V26][F50] Web-search citation shape returned by the backend on any
- * assistant message that opted into `enableWebSearch`. `null` means the
- * turn did not request search; an empty array is never stored (treated
- * the same as `null` by `<MessageCitations />`).
- */
-export interface Citation {
-  title: string;
-  url: string;
-  snippet: string;
-  publishedAt: string | null;
-}
-
-/**
- * [V26][F50] Defensive runtime guard for citation arrays. Used by the SSE
- * `event: citations` parser so a malformed frame from the wire (or a
- * future schema drift) cannot crash the renderer — we either accept a
- * well-formed array or treat the frame as missing.
- */
-export function isCitationArray(value: unknown): value is Citation[] {
-  if (!Array.isArray(value)) return false;
-  return value.every((item): item is Citation => {
-    if (item === null || typeof item !== 'object') return false;
-    const c = item as Record<string, unknown>;
-    return (
-      typeof c.title === 'string' &&
-      typeof c.url === 'string' &&
-      typeof c.snippet === 'string' &&
-      (c.publishedAt === null || typeof c.publishedAt === 'string')
-    );
-  });
-}
+// Re-export so existing callers (`MessageCitations`, tests, etc.) that
+// import `Citation` / `isCitationArray` from `@/hooks/useChat` keep working
+// without a cascade of import-site changes.
+export type { Citation };
+export { isCitationArray };
 
 export interface ChatMessage {
   id: string;
@@ -84,13 +58,16 @@ export interface ChatMessage {
   createdAt: string;
 }
 
-export interface ChatSummary {
-  id: string;
-  chapterId: string;
-  title: string | null;
-  createdAt: string;
-  messageCount: number;
-}
+/**
+ * Chat list item returned by GET /api/chapters/:chapterId/chats.
+ *
+ * Alias of `ChatRow` from `@/lib/api` with `messageCount` narrowed to
+ * `number` (required) — the list endpoint always enriches each row with
+ * a message count, whereas single-chat endpoints (PATCH/DELETE) do not.
+ * Keeping this as a derived type rather than a parallel interface prevents
+ * the two shapes from drifting independently.
+ */
+export type ChatSummary = Omit<ChatRow, 'messageCount'> & { messageCount: number };
 
 interface ChatMessagesResponse {
   messages: ChatMessage[];
@@ -103,8 +80,21 @@ interface ChatsResponse {
 export const chatMessagesQueryKey = (chatId: string): readonly [string, string, string] =>
   ['chat', chatId, 'messages'] as const;
 
-export const chatsQueryKey = (chapterId: string): readonly [string, string, string] =>
+/**
+ * 3-element prefix key covering all kind variants for a given chapter.
+ * Use this (not `chatsQueryKey`) when invalidating after mutations so that
+ * TanStack Query's prefix-match logic sweeps both `kind='ask'` and
+ * `kind='scene'` cached queries.  `chatsQueryKey` (below) appends the kind
+ * as a 4th slot and is only appropriate for registering individual queries.
+ */
+export const chatsBaseQueryKey = (chapterId: string): readonly [string, string, string] =>
   ['chapter', chapterId, 'chats'] as const;
+
+export const chatsQueryKey = (
+  chapterId: string,
+  kind?: 'ask' | 'scene',
+): readonly [string, string, string, string | undefined] =>
+  ['chapter', chapterId, 'chats', kind] as const;
 
 export function useChatMessagesQuery(chatId: string | null): UseQueryResult<ChatMessage[], Error> {
   return useQuery({
@@ -119,12 +109,17 @@ export function useChatMessagesQuery(chatId: string | null): UseQueryResult<Chat
   });
 }
 
-export function useChatsQuery(chapterId: string | null): UseQueryResult<ChatSummary[], Error> {
+export function useChatsQuery(
+  chapterId: string | null,
+  opts?: { kind?: 'ask' | 'scene' },
+): UseQueryResult<ChatSummary[], Error> {
+  const kind = opts?.kind;
   return useQuery({
-    queryKey: chatsQueryKey(chapterId ?? ''),
+    queryKey: chatsQueryKey(chapterId ?? '', kind),
     queryFn: async (): Promise<ChatSummary[]> => {
+      const params = kind !== undefined ? `?kind=${encodeURIComponent(kind)}` : '';
       const res = await api<ChatsResponse>(
-        `/chapters/${encodeURIComponent(chapterId ?? '')}/chats`,
+        `/chapters/${encodeURIComponent(chapterId ?? '')}/chats${params}`,
       );
       return res.chats;
     },
@@ -137,28 +132,37 @@ export function useChatsQuery(chapterId: string | null): UseQueryResult<ChatSumm
 export interface CreateChatArgs {
   chapterId: string;
   title?: string;
+  kind?: 'ask' | 'scene';
 }
 
 export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, CreateChatArgs> {
   const qc = useQueryClient();
   return useMutation<ChatSummary, Error, CreateChatArgs>({
-    mutationFn: async ({ chapterId, title }) => {
+    mutationFn: async ({ chapterId, title, kind }) => {
+      const body: Record<string, unknown> = {};
+      if (title !== undefined) body.title = title;
+      if (kind !== undefined) body.kind = kind;
       const res = await api<{ chat: ChatSummary }>(
         `/chapters/${encodeURIComponent(chapterId)}/chats`,
-        { method: 'POST', body: title !== undefined ? { title } : {} },
+        { method: 'POST', body },
       );
       return res.chat;
     },
     onSuccess: (chat) => {
-      void qc.invalidateQueries({ queryKey: chatsQueryKey(chat.chapterId) });
+      // Invalidate by the 3-element prefix so ALL kind variants
+      // (ask, scene, undefined) are swept — not just the undefined slot.
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chat.chapterId) });
     },
   });
 }
 
 export interface SendChatMessageArgs {
   chatId: string;
-  content: string;
+  /** Message text. Required unless `retry` is true. */
+  content?: string;
   modelId: string;
+  /** When true, replays the existing trailing user turn without persisting a new message. */
+  retry?: boolean;
   attachment?: { selectionText: string; chapterId: string };
   enableWebSearch?: boolean;
 }
@@ -179,12 +183,14 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
     onMutate: ({ chatId, content, attachment }) => {
       useChatDraftStore.getState().start({
         chatId,
-        userContent: content,
+        userContent: content ?? '',
         attachment: attachment ?? null,
       });
     },
-    mutationFn: async ({ chatId, content, modelId, attachment, enableWebSearch }) => {
-      const body: Record<string, unknown> = { content, modelId };
+    mutationFn: async ({ chatId, content, modelId, retry, attachment, enableWebSearch }) => {
+      const body: Record<string, unknown> = { modelId };
+      if (content !== undefined) body.content = content;
+      if (retry === true) body.retry = true;
       if (attachment) body.attachment = attachment;
       if (enableWebSearch === true) body.enableWebSearch = true;
 
