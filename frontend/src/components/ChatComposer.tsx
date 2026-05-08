@@ -16,30 +16,22 @@ import { useComposerDraftStore } from '@/store/composerDraft';
 /**
  * [F40] Chat composer.
  *
- * - Auto-grow textarea capped at 120px.
- * - When `attachedSelection` is set in the Zustand store, renders the
- *   attachment preview block above the textarea (paperclip + "ATTACHED FROM
- *   CH. N" mono caption + a 2-line-clamped serif italic quote + an X to
- *   clear). The composer reads the store directly (the slice was provisioned
- *   by F22; the F33 selection bubble + F41 routing populate it). On submit
- *   the store is cleared so the next turn starts fresh.
- * - Send button: 28×28 black square with an arrow-up icon. Disabled when the
- *   value is empty AND no attachment is attached.
- * - Below the input: mode tabs (Ask / Rewrite / Describe — sans 11px; active
- *   uses `--accent-soft`) on the left and a right-aligned "⌘↵ send" hint.
- * - `Cmd/Ctrl+Enter` submits.
+ * Visual sibling of SceneComposer: identical container chrome, sunken-paper
+ * textarea, and footer-pill button. Differs in three chat-specific affordances:
+ * the auto-grow textarea (28–120px), the optional attachment preview block,
+ * and the optional web-search toggle.
  *
- * The component is a controlled-input shell — the parent (later
- * EditorPage) supplies `onSend` and is responsible for posting to
- * `/api/chats/:chatId/messages`. F40 never fetches.
+ * State contract (mirrors SceneComposer):
+ * - `state="idle"`      → Send pill, textarea enabled, Cmd/Ctrl+Enter submits.
+ * - `state="streaming"` → Stop pill, textarea disabled, Escape calls onStop.
+ *
+ * Attachment: when `attachedSelection` is set in the Zustand store, renders the
+ * attachment preview block above the textarea. On submit the store is cleared.
  */
-
-export type ChatComposerMode = 'ask' | 'rewrite' | 'describe';
 
 export interface SendArgs {
   content: string;
   attachment: AttachedSelectionValue | null;
-  mode: ChatComposerMode;
   /**
    * [F50] When true, the next `POST /chats/:chatId/messages` should set
    * `enableWebSearch: true`. Per-turn, not session-wide — the composer
@@ -52,15 +44,11 @@ export interface SendArgs {
 export interface ChatComposerProps {
   onSend: (args: SendArgs) => void | Promise<void>;
   disabled?: boolean;
+  state?: 'idle' | 'streaming';
+  onStop?: () => void;
 }
 
 const MAX_TEXTAREA_HEIGHT_PX = 120;
-
-const MODE_TABS: ReadonlyArray<{ id: ChatComposerMode; label: string }> = [
-  { id: 'ask', label: 'Ask' },
-  { id: 'rewrite', label: 'Rewrite' },
-  { id: 'describe', label: 'Describe' },
-];
 
 function PaperclipIcon(): JSX.Element {
   return (
@@ -100,30 +88,21 @@ function XIcon(): JSX.Element {
   );
 }
 
-function ArrowUpIcon(): JSX.Element {
+function StopIcon(): JSX.Element {
   return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.75"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="12" y1="19" x2="12" y2="5" />
-      <polyline points="5 12 12 5 19 12" />
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <rect x="1" y="1" width="8" height="8" rx="1" fill="currentColor" />
     </svg>
   );
 }
 
-export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): JSX.Element {
+export function ChatComposer({
+  onSend,
+  disabled = false,
+  state = 'idle',
+  onStop,
+}: ChatComposerProps): JSX.Element {
   const [value, setValue] = useState<string>('');
-  const [mode, setMode] = useState<ChatComposerMode>('ask');
-  // [F50] Per-turn web-search toggle. Resets to false after every send so
-  // a long conversation cannot silently burn search credits.
   const [useWebSearch, setUseWebSearch] = useState<boolean>(false);
   const attachment = useAttachedSelectionStore((s) => s.attachedSelection);
   const clearAttachment = useAttachedSelectionStore((s) => s.clear);
@@ -140,6 +119,8 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
   const showWebSearchToggle = selectedModel !== null && selectedModel.supportsWebSearch === true;
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+
+  const isStreaming = state === 'streaming';
 
   // Auto-grow: reset to 'auto' so scrollHeight reflects current content,
   // then cap at MAX_TEXTAREA_HEIGHT_PX.
@@ -169,20 +150,18 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
   }, [focusToken]);
 
   const trimmed = value.trim();
-  const isSendDisabled = disabled || (trimmed.length === 0 && attachment === null);
+  const isSendDisabled = disabled || isStreaming || (trimmed.length === 0 && attachment === null);
 
   function handleSend(): void {
     if (isSendDisabled) return;
     const args: SendArgs = {
       content: trimmed,
       attachment,
-      mode,
       enableWebSearch: useWebSearch,
     };
     void onSend(args);
     setValue('');
     clearAttachment();
-    setMode('ask');
     // [F50] Per-turn semantics: reset the toggle so the next message
     // does not inadvertently re-trigger web search.
     setUseWebSearch(false);
@@ -190,6 +169,10 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      if (isStreaming) {
+        e.preventDefault();
+        return;
+      }
       e.preventDefault();
       handleSend();
     }
@@ -199,17 +182,22 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
     setValue(e.target.value);
   }
 
-  const modeTabClass = (isActive: boolean): string =>
-    [
-      'px-2 py-0.5 rounded-[var(--radius)] font-sans text-[11px] transition-colors',
-      isActive ? 'bg-[var(--accent-soft)] text-ink' : 'text-ink-4 hover:text-ink-2',
-    ].join(' ');
+  function onContainerKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
+    if (e.key === 'Escape' && isStreaming && onStop) {
+      e.preventDefault();
+      onStop();
+    }
+  }
 
   return (
-    <div className="composer flex flex-col gap-2 px-3 py-2.5" data-testid="chat-composer-root">
+    <div
+      className="border-t border-line p-3 bg-bg flex flex-col gap-2"
+      data-testid="chat-composer-root"
+      onKeyDown={onContainerKeyDown}
+    >
       {attachment !== null ? (
         <div
-          className="attachment-preview flex items-start gap-2 px-2 py-1.5 rounded-[var(--radius)] bg-[var(--bg-sunken)] border border-line"
+          className="attachment-preview flex items-start gap-2 px-2 py-1.5 rounded-[var(--radius)] bg-bg-sunken border border-line"
           data-testid="composer-attachment"
         >
           <PaperclipIcon />
@@ -234,49 +222,43 @@ export function ChatComposer({ onSend, disabled = false }: ChatComposerProps): J
         </div>
       ) : null}
 
-      <div className="flex items-end gap-2 px-2 py-1.5 rounded-[var(--radius)] border border-line bg-bg focus-within:border-ink-3">
-        <textarea
-          ref={textareaRef}
-          value={value}
-          onChange={onChange}
-          onKeyDown={onKeyDown}
-          placeholder="Ask, rewrite, describe…"
-          rows={1}
-          className="flex-1 resize-none bg-transparent outline-none font-sans text-[13px] py-1 max-h-[120px] min-h-[28px]"
-          aria-label="Message"
-        />
-        <button
-          type="button"
-          onClick={handleSend}
-          disabled={isSendDisabled}
-          className="w-7 h-7 rounded-[var(--radius)] bg-ink text-bg grid place-items-center disabled:opacity-50 flex-shrink-0"
-          aria-label="Send"
-        >
-          <ArrowUpIcon />
-        </button>
-      </div>
+      <textarea
+        ref={textareaRef}
+        value={value}
+        onChange={onChange}
+        onKeyDown={onKeyDown}
+        placeholder="Send a message…"
+        rows={1}
+        readOnly={isStreaming}
+        className={`resize-none bg-bg-sunken border border-line rounded-[var(--radius)] px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none focus:border-ink-3 max-h-[120px] min-h-[28px]${isStreaming ? ' opacity-60 cursor-not-allowed' : ''}`}
+        aria-label="Message"
+      />
 
-      <div className="flex items-center gap-1">
-        <div role="tablist" aria-label="Composer mode" className="flex items-center gap-0.5">
-          {MODE_TABS.map((tab) => {
-            const isActive = mode === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                className={modeTabClass(isActive)}
-                onClick={() => {
-                  setMode(tab.id);
-                }}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </div>
-        <span className="ml-auto font-mono text-[11px] text-ink-4">⌘↵ send</span>
+      <div className="flex items-center justify-between">
+        <span className="text-[11px] font-mono text-ink-4">
+          {isStreaming ? 'generating… ⎋ to stop' : '⌘↵ to send'}
+        </span>
+        {isStreaming ? (
+          <button
+            type="button"
+            onClick={onStop}
+            aria-label="Stop generation"
+            className="px-3 py-1 rounded-[var(--radius)] bg-danger text-bg text-[12px] inline-flex items-center gap-1.5"
+          >
+            <StopIcon />
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={handleSend}
+            disabled={isSendDisabled}
+            aria-label="Send"
+            className="px-3 py-1 rounded-[var(--radius)] bg-ink text-bg text-[12px] disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Send
+          </button>
+        )}
       </div>
 
       {showWebSearchToggle ? (

@@ -51,13 +51,6 @@ describe('ChatComposer (F40)', () => {
     useAttachedSelectionStore.setState({ attachedSelection: null });
   });
 
-  it('renders a textarea with the expected placeholder', () => {
-    renderWithQuery(<ChatComposer onSend={vi.fn()} />);
-    const textarea = screen.getByPlaceholderText('Ask, rewrite, describe…');
-    expect(textarea).toBeInTheDocument();
-    expect(textarea.tagName).toBe('TEXTAREA');
-  });
-
   it('Send button has aria-label "Send"', () => {
     renderWithQuery(<ChatComposer onSend={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
@@ -88,22 +81,6 @@ describe('ChatComposer (F40)', () => {
     expect(textarea.value).toBe('a story about owls');
   });
 
-  it('Send button click calls onSend with content/attachment/mode', async () => {
-    const onSend = vi.fn();
-    renderWithQuery(<ChatComposer onSend={onSend} />);
-    const textarea = screen.getByRole('textbox', { name: 'Message' });
-    await userEvent.type(textarea, 'A question');
-    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
-    expect(onSend).toHaveBeenCalledTimes(1);
-    const args = onSend.mock.calls[0]?.[0] as SendArgs;
-    expect(args).toEqual({
-      content: 'A question',
-      attachment: null,
-      mode: 'ask',
-      enableWebSearch: false,
-    });
-  });
-
   it('Cmd+Enter submits', async () => {
     const onSend = vi.fn();
     renderWithQuery(<ChatComposer onSend={onSend} />);
@@ -114,7 +91,6 @@ describe('ChatComposer (F40)', () => {
     const args = onSend.mock.calls[0]?.[0] as SendArgs;
     expect(args.content).toBe('via meta');
     expect(args.attachment).toBeNull();
-    expect(args.mode).toBe('ask');
   });
 
   it('Ctrl+Enter also submits', async () => {
@@ -168,43 +144,6 @@ describe('ChatComposer (F40)', () => {
     expect(screen.queryByTestId('composer-attachment')).toBeNull();
   });
 
-  it('clicking Rewrite mode tab makes it active and submits with mode: rewrite', async () => {
-    const onSend = vi.fn();
-    renderWithQuery(<ChatComposer onSend={onSend} />);
-
-    const askTab = screen.getByRole('tab', { name: 'Ask' });
-    const rewriteTab = screen.getByRole('tab', { name: 'Rewrite' });
-    const describeTab = screen.getByRole('tab', { name: 'Describe' });
-
-    expect(askTab).toHaveAttribute('aria-selected', 'true');
-    expect(rewriteTab).toHaveAttribute('aria-selected', 'false');
-    expect(describeTab).toHaveAttribute('aria-selected', 'false');
-
-    await userEvent.click(rewriteTab);
-    expect(rewriteTab).toHaveAttribute('aria-selected', 'true');
-    expect(askTab).toHaveAttribute('aria-selected', 'false');
-
-    const textarea = screen.getByRole('textbox', { name: 'Message' });
-    await userEvent.type(textarea, 'shorter please');
-    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-    expect(onSend).toHaveBeenCalledTimes(1);
-    const args = onSend.mock.calls[0]?.[0] as SendArgs;
-    expect(args.mode).toBe('rewrite');
-  });
-
-  it('after submit, mode resets to ask', async () => {
-    const onSend = vi.fn();
-    renderWithQuery(<ChatComposer onSend={onSend} />);
-    await userEvent.click(screen.getByRole('tab', { name: 'Describe' }));
-    const textarea = screen.getByRole('textbox', { name: 'Message' });
-    await userEvent.type(textarea, 'describe it');
-    await userEvent.click(screen.getByRole('button', { name: 'Send' }));
-
-    expect(screen.getByRole('tab', { name: 'Ask' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getByRole('tab', { name: 'Describe' })).toHaveAttribute('aria-selected', 'false');
-  });
-
   it('after submit, attachment is cleared from the store', async () => {
     const onSend = vi.fn();
     useAttachedSelectionStore.setState({ attachedSelection: SAMPLE_ATTACHMENT });
@@ -240,9 +179,85 @@ describe('ChatComposer (F40)', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it('renders the ⌘↵ send hint', () => {
+  it('renders the ⌘↵ to send hint', () => {
     renderWithQuery(<ChatComposer onSend={vi.fn()} />);
-    expect(screen.getByText('⌘↵ send')).toBeInTheDocument();
+    expect(screen.getByText('⌘↵ to send')).toBeInTheDocument();
+  });
+
+  it('renders a textarea with the new placeholder', () => {
+    renderWithQuery(<ChatComposer onSend={vi.fn()} />);
+    const textarea = screen.getByPlaceholderText('Send a message…');
+    expect(textarea).toBeInTheDocument();
+  });
+
+  it('Send button click calls onSend with content + attachment (no mode field)', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    renderWithQuery(<ChatComposer onSend={onSend} />);
+    await user.type(screen.getByLabelText('Message'), 'hello');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+    expect(onSend).toHaveBeenCalledTimes(1);
+    const args = onSend.mock.calls[0]?.[0] as SendArgs;
+    expect(args.content).toBe('hello');
+    expect(args.attachment).toBeNull();
+    expect(args.enableWebSearch).toBe(false);
+    expect((args as { mode?: unknown }).mode).toBeUndefined();
+  });
+
+  it('idle state: shows the Send button and hides Stop', () => {
+    renderWithQuery(<ChatComposer onSend={vi.fn()} state="idle" onStop={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Send' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Stop generation' })).toBeNull();
+  });
+
+  it('streaming state: shows the Stop button and hides Send', () => {
+    renderWithQuery(<ChatComposer onSend={vi.fn()} state="streaming" onStop={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Send' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Stop generation' })).toBeInTheDocument();
+  });
+
+  it('streaming state: textarea is read-only', () => {
+    renderWithQuery(<ChatComposer onSend={vi.fn()} state="streaming" onStop={vi.fn()} />);
+    expect(screen.getByLabelText('Message')).toHaveAttribute('readonly');
+  });
+
+  it('streaming state: clicking Stop invokes onStop', async () => {
+    const user = userEvent.setup();
+    const onStop = vi.fn();
+    renderWithQuery(<ChatComposer onSend={vi.fn()} state="streaming" onStop={onStop} />);
+    await user.click(screen.getByRole('button', { name: 'Stop generation' }));
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('streaming state: pressing Escape inside the textarea invokes onStop', async () => {
+    const user = userEvent.setup();
+    const onStop = vi.fn();
+    renderWithQuery(<ChatComposer onSend={vi.fn()} state="streaming" onStop={onStop} />);
+    const textarea = screen.getByLabelText('Message');
+    textarea.focus();
+    await user.keyboard('{Escape}');
+    expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it('idle state: pressing Escape does NOT invoke onStop', async () => {
+    const user = userEvent.setup();
+    const onStop = vi.fn();
+    renderWithQuery(<ChatComposer onSend={vi.fn()} state="idle" onStop={onStop} />);
+    const textarea = screen.getByLabelText('Message');
+    textarea.focus();
+    await user.keyboard('{Escape}');
+    expect(onStop).not.toHaveBeenCalled();
+  });
+
+  it('streaming state: Cmd+Enter does NOT invoke onSend', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn();
+    renderWithQuery(<ChatComposer onSend={onSend} state="streaming" onStop={vi.fn()} />);
+    // Streaming state disables the textarea so we can't type, but we can still
+    // dispatch the keydown directly on the document to ensure no global handler
+    // submits.
+    await user.keyboard('{Meta>}{Enter}{/Meta}');
+    expect(onSend).not.toHaveBeenCalled();
   });
 });
 
@@ -287,7 +302,7 @@ describe('ChatComposer web-search toggle (F50)', () => {
   it('hides the toggle when the selected model does not support web search', async () => {
     renderWithQuery(<ChatComposer onSend={vi.fn()} />, clientWithModel('m-no-search'));
     // wait for query to settle, then assert absence
-    await screen.findByPlaceholderText('Ask, rewrite, describe…');
+    await screen.findByPlaceholderText('Send a message…');
     expect(screen.queryByLabelText(/web search/i)).toBeNull();
   });
 
