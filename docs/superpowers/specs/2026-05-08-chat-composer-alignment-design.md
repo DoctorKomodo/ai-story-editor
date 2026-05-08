@@ -117,13 +117,15 @@ The `disabled` prop is now structurally redundant with `state === 'streaming'` (
 
 ## Storybook Updates
 
-`ChatComposer.stories.tsx` — drop the existing mode-tab story if present; add three explicit variants:
+**`ChatComposer.stories.tsx` does not exist today.** Create it with four variants:
 - **`Idle`** — empty value, attachment null, web-search-supporting model NOT selected.
 - **`IdleWithAttachment`** — same, but with a seeded attachment via the `useAttachedSelectionStore` decorator.
 - **`Streaming`** — `state="streaming"`, textarea pre-populated with a long message, Stop button visible.
 - **`WebSearchToggleVisible`** — same as Idle but with a model that has `supportsWebSearch === true`.
 
-`ChatMessages.stories.tsx` — if it exists, drop the `EmptyWithSuggestions` story or rename to `Empty` to reflect the simplified empty state.
+The decorator pattern lives in the existing `SceneComposer.stories.tsx` (read it for the `useAttachedSelectionStore` setup), the `useUserSettings` / `useModelsQuery` mocks, and the `QueryClientProvider` wrapper. Mirror it.
+
+`ChatMessages.stories.tsx` does not exist today; no story changes needed for the suggestion-chip removal.
 
 ## Test Updates
 
@@ -167,7 +169,7 @@ The `disabled` prop is now structurally redundant with `state === 'streaming'` (
 | `frontend/src/hooks/useChat.ts` | `useSendChatMessageMutation` adds AbortController + `stop()`. |
 | `frontend/src/components/ChatTab.tsx` | Pass `state` and `onStop` to composer. |
 | `frontend/src/components/ChatMessages.tsx` | Remove dead suggestion chips + their helpers + the `onPickSuggestion` prop. |
-| `frontend/src/components/ChatComposer.stories.tsx` | Variant set updated. |
+| `frontend/src/components/ChatComposer.stories.tsx` | **Create** with four variants (file does not exist today). |
 | `frontend/tests/components/ChatComposer.test.tsx` | Drop dead-UI tests; add idle/streaming tests. |
 | `frontend/tests/hooks/useChat.test.tsx` | Add stop() abort test. |
 | `frontend/tests/components/ChatTab.test.tsx` | Add streaming-state composer test. |
