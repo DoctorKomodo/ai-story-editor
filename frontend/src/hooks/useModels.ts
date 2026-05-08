@@ -21,11 +21,16 @@ export interface Model {
   id: string;
   name: string;
   contextLength: number;
+  maxCompletionTokens: number;
   supportsReasoning: boolean;
   supportsVision: boolean;
   supportsWebSearch: boolean;
   description: string | null;
   pricing: ModelPricing | null;
+  /** Venice-supplied default; null means Venice doesn't expose one for this model. */
+  defaultTemperature: number | null;
+  /** Venice-supplied default; null means Venice doesn't expose one for this model. */
+  defaultTopP: number | null;
 }
 
 export interface ModelsResponse {

@@ -592,7 +592,7 @@ describe('Chat persistence [V15]', () => {
     expect(assistantTurn).toBeDefined();
   });
 
-  it('max_completion_tokens = min(model_cap, user_setting) — user setting wins', async () => {
+  it('max_completion_tokens: per-model override under model cap → override wins (X28)', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
@@ -600,11 +600,15 @@ describe('Chat persistence [V15]', () => {
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
 
-    // User wants 1234; model caps at 4096 → expect 1234 (user wins).
+    // User sets 1234 override; model caps at 4096 → expect 1234 (override wins).
     const decoded = jwt.decode(accessToken) as AccessTokenPayload;
     await prisma.user.update({
       where: { id: decoded.sub },
-      data: { settingsJson: { chat: { maxTokens: 1234 } } },
+      data: {
+        settingsJson: {
+          chat: { model: null, overrides: { [BASE_MODEL_ID]: { maxTokens: 1234 } } },
+        },
+      },
     });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -629,10 +633,10 @@ describe('Chat persistence [V15]', () => {
     expect(completionCall).toBeTruthy();
     const [, init] = completionCall!;
     const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
-    expect(requestBody.max_completion_tokens).toBe(1234); // user wins
+    expect(requestBody.max_completion_tokens).toBe(1234); // override wins
   });
 
-  it('max_completion_tokens = min(model_cap, user_setting) — model cap wins', async () => {
+  it('max_completion_tokens: per-model override above model cap → model cap wins (X28)', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
@@ -640,11 +644,15 @@ describe('Chat persistence [V15]', () => {
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
 
-    // User wants 16000; model caps at 4096 → expect 4096 (model wins).
+    // User sets 16000 override; model caps at 4096 → expect 4096 (model cap wins).
     const decoded = jwt.decode(accessToken) as AccessTokenPayload;
     await prisma.user.update({
       where: { id: decoded.sub },
-      data: { settingsJson: { chat: { maxTokens: 16_000 } } },
+      data: {
+        settingsJson: {
+          chat: { model: null, overrides: { [BASE_MODEL_ID]: { maxTokens: 16_000 } } },
+        },
+      },
     });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -669,7 +677,55 @@ describe('Chat persistence [V15]', () => {
     expect(completionCall).toBeTruthy();
     const [, init] = completionCall!;
     const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
-    expect(requestBody.max_completion_tokens).toBe(4096); // model wins (BASE_MODEL_ID has cap 4096)
+    expect(requestBody.max_completion_tokens).toBe(4096); // model cap wins
+  });
+
+  it('passes resolved temperature and top_p from per-model override to Venice (X28)', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { chapterId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chatId = chat.id as string;
+
+    // Set a per-model override for temperature and topP on BASE_MODEL_ID.
+    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    await prisma.user.update({
+      where: { id: decoded.sub },
+      data: {
+        settingsJson: {
+          chat: {
+            model: null,
+            overrides: { [BASE_MODEL_ID]: { temperature: 0.3, topP: 0.7 } },
+          },
+        },
+      },
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
+
+    await request(app)
+      .post(`/api/chats/${chatId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ content: 'Tell me a story.', modelId: BASE_MODEL_ID });
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const [, init] = completionCall!;
+    const requestBody = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(requestBody.temperature).toBe(0.3);
+    expect(requestBody.top_p).toBe(0.7);
   });
 
   it('[V23] sends prompt_cache_key at top level, not inside venice_parameters', async () => {

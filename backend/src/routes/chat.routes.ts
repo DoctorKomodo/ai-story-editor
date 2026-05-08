@@ -30,10 +30,11 @@ import {
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
-  resolveUserMaxCompletionTokens,
+  resolveTextGenParams,
   resolveUserPrompts,
 } from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
+import type { UserSettings } from './user-settings.routes';
 
 // ─── Role type ────────────────────────────────────────────────────────────────
 
@@ -41,16 +42,29 @@ type MessageRole = 'user' | 'assistant' | 'system';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
+const ChatKind = z.enum(['ask', 'scene']);
+
 const CreateChatBody = z
   .object({
     title: z.string().optional(),
+    kind: ChatKind.optional(),
+  })
+  .strict();
+
+const ListChatsQuery = z
+  .object({
+    kind: ChatKind.optional(),
   })
   .strict();
 
 const PostMessageBody = z
   .object({
-    content: z.string().min(1),
+    content: z.string().min(1).optional(),
     modelId: z.string().min(1),
+    // [SC6] When retry=true the handler replays the existing trailing user
+    // turn against a fresh Venice completion without persisting a new user
+    // message. `content` is not required in this case.
+    retry: z.boolean().optional(),
     // [V16] Optional attachment — selection from the current chapter.
     attachment: z
       .object({
@@ -64,7 +78,23 @@ const PostMessageBody = z
     // false/omitted, the stream behaves exactly as today.
     enableWebSearch: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((body, ctx) => {
+    if (!body.retry && !body.content) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'content is required unless retry is true',
+        path: ['content'],
+      });
+    }
+    if (body.retry && body.content !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'content must be omitted when retry is true',
+        path: ['content'],
+      });
+    }
+  });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -101,6 +131,7 @@ export function createChapterChatsRouter() {
       const chat = await createChatRepo(req).create({
         chapterId,
         title: body.title ?? null,
+        kind: body.kind ?? 'ask',
       });
 
       res.status(201).json({ chat });
@@ -113,6 +144,14 @@ export function createChapterChatsRouter() {
   // GET /api/chapters/:chapterId/chats — list chats for the chapter.
   router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     const chapterId = req.params.chapterId as string;
+
+    const parsedQuery = ListChatsQuery.safeParse(req.query);
+    if (!parsedQuery.success) {
+      badRequestFromZod(res, parsedQuery.error);
+      return;
+    }
+    const { kind } = parsedQuery.data;
+
     try {
       // Ownership: chapter must exist and belong to req.user.
       const chapter = await createChapterRepo(req).findById(chapterId);
@@ -121,7 +160,7 @@ export function createChapterChatsRouter() {
         return;
       }
 
-      const chats = await createChatRepo(req).findManyForChapter(chapterId);
+      const chats = await createChatRepo(req).findManyForChapter(chapterId, { kind });
 
       // Enrich each chat with its message count (via repo layer — ownership enforced).
       const enriched = await Promise.all(
@@ -134,6 +173,72 @@ export function createChapterChatsRouter() {
       res.status(200).json({ chats: enriched });
     } catch (err) {
       console.error('[chat.list]', err);
+      next(err);
+    }
+  });
+
+  return router;
+}
+
+// ─── Router 3: chat-level CRUD (rename, etc.) ────────────────────────────────
+
+const PatchChatBody = z
+  .object({
+    title: z.string().min(1).max(200),
+  })
+  .strict();
+
+export function createChatCrudRouter() {
+  const router = Router();
+  router.use(requireAuth);
+
+  router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params.id as string;
+    const parsed = PatchChatBody.safeParse(req.body);
+    if (!parsed.success) {
+      badRequestFromZod(res, parsed.error);
+      return;
+    }
+    try {
+      const repo = createChatRepo(req);
+      // findById enforces ownership via the repo's chapter→story→user chain;
+      // null = not found OR not owned (intentionally indistinguishable).
+      const existing = await repo.findById(id);
+      if (!existing) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      const updated = await repo.update(id, { title: parsed.data.title });
+      // Belt-and-suspenders: row deleted between the ownership-check findById and
+      // the update (TOCTOU). Treated identically to "not found".
+      if (!updated) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      res.status(200).json({ chat: updated });
+    } catch (err) {
+      console.error('[chat.patch]', err);
+      next(err);
+    }
+  });
+
+  router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+    const id = req.params.id as string;
+    try {
+      const repo = createChatRepo(req);
+      const existing = await repo.findById(id);
+      if (!existing) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      const ok = await repo.remove(id);
+      if (!ok) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+      res.status(204).send();
+    } catch (err) {
+      console.error('[chat.delete]', err);
       next(err);
     }
   });
@@ -214,6 +319,26 @@ export function createChatMessagesRouter() {
         return;
       }
 
+      // ── 1b. Load message history early for retry validation ──────────────
+      // Done here — before any external calls — so an invalid retry state
+      // returns 400 without touching the Venice API or user settings.
+      const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
+
+      // ── [SC6] Retry validation ────────────────────────────────────────────
+      // Compute lastUserMsg once; reused below for trailingUserContent.
+      // Retry replays the last user turn; there must be at least one user
+      // message in the history (regardless of what the trailing message is).
+      const lastUserMsg = priorMessages.findLast((m) => m.role === 'user');
+      if (body.retry && !lastUserMsg) {
+        res.status(400).json({
+          error: {
+            message: 'Cannot retry: no user message exists in this chat.',
+            code: 'retry_invalid_state',
+          },
+        });
+        return;
+      }
+
       // ── 2. Prime models cache (throws NoVeniceKeyError if no BYOK) ────────
       await veniceModelsService.fetchModels(userId);
       const modelContextLength = veniceModelsService.getModelContextLength(body.modelId);
@@ -223,11 +348,9 @@ export function createChatMessagesRouter() {
         where: { id: userId },
         select: { settingsJson: true },
       });
-      const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(
-        userRow?.settingsJson ?? null,
-      );
-      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
-      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const rawSettings = userRow?.settingsJson ?? null;
+      const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(rawSettings);
+      const userPrompts = resolveUserPrompts(rawSettings);
       const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
         body.modelId,
       );
@@ -268,36 +391,54 @@ export function createChatMessagesRouter() {
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
       const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
 
+      // Route by chat.kind: scene chats use the scene action (raw direction as
+      // user message, scene template in system); ask chats use the ask action.
+      const action: 'ask' | 'scene' = chat.kind === 'scene' ? 'scene' : 'ask';
+
+      // [SC6] On retry, use the last user turn's content as the freeform
+      // instruction so the prompt builder assembles the system message
+      // correctly. On a normal turn, use body.content (guaranteed non-empty
+      // by superRefine when retry is false/omitted).
+      // lastUserMsg is guaranteed non-null here for retry (checked above).
+      const trailingUserContent: string = body.retry
+        ? typeof lastUserMsg!.contentJson === 'string'
+          ? lastUserMsg!.contentJson
+          : JSON.stringify(lastUserMsg!.contentJson)
+        : (body.content as string);
+
       const {
         messages: baseMessages,
         venice_parameters: baseVeniceParams,
         max_completion_tokens,
       } = buildPrompt({
-        action: 'ask',
+        action,
         selectedText: body.attachment?.selectionText ?? '',
         chapterContent,
         characters,
         worldNotes,
         modelContextLength,
         modelMaxCompletionTokens,
-        userMaxCompletionTokens,
+        // Pass POSITIVE_INFINITY so the prompt builder uses the model's own cap
+        // for context-budget calculations. The resolved per-user max_completion_tokens
+        // (from resolveTextGenParams below) is what actually goes to Venice.
+        userMaxCompletionTokens: Number.POSITIVE_INFINITY,
         includeVeniceSystemPrompt,
         userPrompts,
-        freeformInstruction: body.content,
+        freeformInstruction: trailingUserContent,
       });
 
-      // ── 7. Load + prepend message history ────────────────────────────────
-      const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
+      // ── 8. Build messages array for Venice ───────────────────────────────
       const systemMsg = baseMessages[0];
       const synthesisedUserMsg = baseMessages[1];
       const history = priorMessages.map((m) => {
         const rawContent =
           typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
 
-        // For prior user turns that carried an attachment, re-synthesise the
-        // same framing that the prompt builder emits for the `ask` action so
-        // that Venice sees consistent context across turns.
-        if (m.role === 'user' && m.attachmentJson != null) {
+        // For prior user turns in an `ask` chat that carried an attachment,
+        // re-synthesise the framing the prompt builder emits for the `ask`
+        // action so Venice sees consistent context across turns.
+        // Scene chats take the raw direction — no "User question:" framing.
+        if (action === 'ask' && m.role === 'user' && m.attachmentJson != null) {
           const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
           if (typeof att.selectionText === 'string') {
             return {
@@ -315,25 +456,28 @@ export function createChatMessagesRouter() {
           content: rawContent,
         };
       });
-      const messages: Array<{ role: MessageRole; content: string }> = [
-        systemMsg,
-        ...history,
-        synthesisedUserMsg,
-      ];
+      // [SC6] On retry the trailing user turn is already in `history`; do
+      // NOT append synthesisedUserMsg again or the model would see a
+      // duplicate user turn. On a normal turn, append as usual.
+      const messages: Array<{ role: MessageRole; content: string }> = body.retry
+        ? [systemMsg, ...history]
+        : [systemMsg, ...history, synthesisedUserMsg];
 
-      // ── 8. Persist the user message BEFORE calling Venice ────────────────
+      // ── 9a. Persist the user message BEFORE calling Venice (normal turn only)
       const messageRepo = createMessageRepo(req);
-      await messageRepo.create({
-        chatId,
-        role: 'user' as MessageRole,
-        contentJson: body.content,
-        attachmentJson: body.attachment ?? null,
-        model: null,
-        tokens: null,
-        latencyMs: null,
-      });
+      if (!body.retry) {
+        await messageRepo.create({
+          chatId,
+          role: 'user' as MessageRole,
+          contentJson: body.content as string,
+          attachmentJson: body.attachment ?? null,
+          model: null,
+          tokens: null,
+          latencyMs: null,
+        });
+      }
 
-      // ── 9. Get Venice client + enrich params ──────────────────────────────
+      // ── 9b. Get Venice client + enrich params ─────────────────────────────
       const client = await getVeniceClient(userId);
 
       const venice_parameters: Record<string, unknown> = { ...baseVeniceParams };
@@ -355,6 +499,58 @@ export function createChatMessagesRouter() {
         venice_parameters.include_search_results_in_stream = true;
       }
 
+      // ── 9b. Resolve text-gen parameters (X28) ────────────────────────────
+      // Walks the chain: user per-model override → Venice model default →
+      // global default. `modelInfo` may be null if Venice hasn't listed the
+      // model yet (after cache reset); fall back to omitting temperature/top_p
+      // and using buildPrompt's max_completion_tokens so the call still completes.
+      const partialSettings = (rawSettings as Partial<UserSettings>) ?? {};
+      const userSettingsForResolve: UserSettings = {
+        ...partialSettings,
+        chat: {
+          model: null,
+          overrides: {},
+          ...partialSettings.chat,
+        },
+      };
+      const resolvedParams: {
+        temperature: number | undefined;
+        top_p: number | undefined;
+        max_completion_tokens: number;
+        source: { temperature: string; top_p: string; max_completion_tokens: string };
+      } = modelInfo
+        ? resolveTextGenParams(userSettingsForResolve, modelInfo)
+        : {
+            temperature: undefined,
+            top_p: undefined,
+            max_completion_tokens,
+            source: {
+              temperature: 'global-default',
+              top_p: 'global-default',
+              max_completion_tokens: 'global-default',
+            },
+          };
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          '[venice.params]',
+          JSON.stringify({
+            route: 'chat',
+            userId,
+            modelId: body.modelId,
+            temperature: {
+              value: resolvedParams.temperature,
+              source: resolvedParams.source.temperature,
+            },
+            top_p: { value: resolvedParams.top_p, source: resolvedParams.source.top_p },
+            max_completion_tokens: {
+              value: resolvedParams.max_completion_tokens,
+              source: resolvedParams.source.max_completion_tokens,
+            },
+          }),
+        );
+      }
+
       // ── 10. Call Venice with streaming ────────────────────────────────────
       // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
       // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
@@ -366,7 +562,9 @@ export function createChatMessagesRouter() {
           model: body.modelId,
           messages,
           stream: true as const,
-          max_completion_tokens,
+          temperature: resolvedParams.temperature,
+          top_p: resolvedParams.top_p,
+          max_completion_tokens: resolvedParams.max_completion_tokens,
           // Request usage in the final chunk so we can persist token counts.
           stream_options: { include_usage: true },
           prompt_cache_key: chatPromptCacheKey(chatId, body.modelId),

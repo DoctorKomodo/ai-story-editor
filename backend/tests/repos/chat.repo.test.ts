@@ -30,3 +30,65 @@ describe('[E9] chat.repo', () => {
     await expect(bobChats.findManyForChapter(ch.id as string)).rejects.toThrow();
   });
 });
+
+describe('[SC3] chat.repo — kind support', () => {
+  beforeEach(resetAllTables);
+  afterEach(resetAllTables);
+
+  it('creates a chat with kind="scene" when specified', async () => {
+    const u = await makeUserContext('sc3-1');
+    const s = await createStoryRepo(u.req).create({ title: 's' });
+    const ch = await createChapterRepo(u.req).create({
+      storyId: s.id as string,
+      title: 'ch1',
+      orderIndex: 0,
+    });
+    const repo = createChatRepo(u.req);
+    const chat = await repo.create({
+      chapterId: ch.id as string,
+      title: 'first scene',
+      kind: 'scene',
+    });
+    expect(chat.kind).toBe('scene');
+
+    const fetched = await repo.findById(chat.id as string);
+    expect(fetched?.kind).toBe('scene');
+  });
+
+  it('defaults kind to "ask" when not specified', async () => {
+    const u = await makeUserContext('sc3-2');
+    const s = await createStoryRepo(u.req).create({ title: 's' });
+    const ch = await createChapterRepo(u.req).create({
+      storyId: s.id as string,
+      title: 'ch1',
+      orderIndex: 0,
+    });
+    const repo = createChatRepo(u.req);
+    const chat = await repo.create({ chapterId: ch.id as string, title: 'first chat' });
+    expect(chat.kind).toBe('ask');
+  });
+
+  it('filters by kind in findManyForChapter', async () => {
+    const u = await makeUserContext('sc3-3');
+    const s = await createStoryRepo(u.req).create({ title: 's' });
+    const ch = await createChapterRepo(u.req).create({
+      storyId: s.id as string,
+      title: 'ch1',
+      orderIndex: 0,
+    });
+    const repo = createChatRepo(u.req);
+    await repo.create({ chapterId: ch.id as string, title: 'a1', kind: 'ask' });
+    await repo.create({ chapterId: ch.id as string, title: 'a2', kind: 'ask' });
+    await repo.create({ chapterId: ch.id as string, title: 's1', kind: 'scene' });
+
+    const all = await repo.findManyForChapter(ch.id as string);
+    const scenesOnly = await repo.findManyForChapter(ch.id as string, { kind: 'scene' });
+    const asksOnly = await repo.findManyForChapter(ch.id as string, { kind: 'ask' });
+
+    expect(all.length).toBe(3);
+    expect(scenesOnly.length).toBe(1);
+    expect(scenesOnly[0].kind).toBe('scene');
+    expect(asksOnly.length).toBe(2);
+    expect(asksOnly.every((c) => c.kind === 'ask')).toBe(true);
+  });
+});

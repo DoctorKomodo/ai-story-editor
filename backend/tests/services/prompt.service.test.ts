@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import {
   type BuildPromptInput,
   buildPrompt,
+  DEFAULT_PROMPTS,
   DEFAULT_SYSTEM_PROMPT,
   estimateTokens,
+  PromptValidationError,
 } from '../../src/services/prompt.service';
 
 // ─── estimateTokens ──────────────────────────────────────────────────────────
@@ -292,5 +294,70 @@ describe('buildPrompt — chapterContent truncation', () => {
     );
     const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
     expect(userContent).toContain(fatTraits);
+  });
+});
+
+// ─── scene action ─────────────────────────────────────────────────────────────
+
+describe('buildPrompt — scene action', () => {
+  const baseSceneInput = {
+    action: 'scene' as const,
+    selectedText: '',
+    chapterContent: 'The veranda was empty when she arrived.',
+    characters: [{ name: 'Jenny', role: 'protagonist', keyTraits: 'curious' }],
+    worldNotes: null,
+    modelContextLength: 32_000,
+    modelMaxCompletionTokens: 4096,
+    userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+    freeformInstruction: 'Jenny approaches Linda on the veranda and they talk about cheese.',
+  };
+
+  it('uses the default scene template when no override is supplied', () => {
+    const out = buildPrompt(baseSceneInput);
+    expect(out.messages[0].role).toBe('system');
+    expect(out.messages[0].content).toContain(DEFAULT_PROMPTS.scene);
+    expect(out.messages[0].content).toContain('Jenny'); // character present even with worldNotes: null
+    expect(out.messages[1].role).toBe('user');
+    expect(out.messages[1].content).toBe(baseSceneInput.freeformInstruction);
+  });
+
+  it('uses the user override when provided', () => {
+    const out = buildPrompt({
+      ...baseSceneInput,
+      userPrompts: { scene: 'CUSTOM SCENE TEMPLATE' },
+    });
+    expect(out.messages[0].content).toContain('CUSTOM SCENE TEMPLATE');
+    expect(out.messages[0].content).not.toContain(DEFAULT_PROMPTS.scene);
+  });
+
+  it('throws when freeformInstruction is missing', () => {
+    expect(() => buildPrompt({ ...baseSceneInput, freeformInstruction: undefined })).toThrow(
+      PromptValidationError,
+    );
+  });
+
+  it('does not synthesise an "Attached selection" framing — scene takes raw direction', () => {
+    const out = buildPrompt(baseSceneInput);
+    expect(out.messages[1].content).not.toContain('Attached selection');
+    expect(out.messages[1].content).not.toContain('User question');
+  });
+
+  it('includes world notes, characters, and chapter content in the system message for scene', () => {
+    const out = buildPrompt({
+      ...baseSceneInput,
+      worldNotes: 'The town is haunted.',
+      characters: [
+        { name: 'Jenny', role: 'protagonist', keyTraits: 'curious' },
+        { name: 'Linda', role: null, keyTraits: 'reserved' },
+      ],
+      chapterContent: 'The veranda was empty when she arrived.',
+    });
+    expect(out.messages[0].role).toBe('system');
+    expect(out.messages[0].content).toContain('The town is haunted.');
+    expect(out.messages[0].content).toContain('Jenny');
+    expect(out.messages[0].content).toContain('Linda');
+    expect(out.messages[0].content).toContain('The veranda was empty when she arrived.');
+    // The user message stays raw.
+    expect(out.messages[1].content).toBe(baseSceneInput.freeformInstruction);
   });
 });

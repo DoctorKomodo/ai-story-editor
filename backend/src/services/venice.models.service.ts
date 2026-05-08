@@ -25,6 +25,8 @@ export interface ModelInfo {
   supportsWebSearch: boolean;
   description: string | null;
   pricing: ModelPricing | null;
+  defaultTemperature: number | null;
+  defaultTopP: number | null;
 }
 
 export class UnknownModelError extends Error {
@@ -59,6 +61,10 @@ interface VeniceRawModelSpec {
     input?: { usd?: number };
     output?: { usd?: number };
   };
+  constraints?: {
+    temperature?: { default?: number };
+    top_p?: { default?: number };
+  };
 }
 
 interface VeniceRawModel {
@@ -67,7 +73,7 @@ interface VeniceRawModel {
   model_spec?: VeniceRawModelSpec;
 }
 
-function mapModel(raw: VeniceRawModel): ModelInfo {
+export function mapModel(raw: VeniceRawModel): ModelInfo {
   const spec = raw.model_spec ?? {};
   const caps = spec.capabilities ?? {};
 
@@ -92,6 +98,12 @@ function mapModel(raw: VeniceRawModel): ModelInfo {
     );
   }
 
+  const constraints = spec.constraints ?? {};
+  const dt = constraints.temperature?.default;
+  const dp = constraints.top_p?.default;
+  const defaultTemperature = typeof dt === 'number' ? dt : null;
+  const defaultTopP = typeof dp === 'number' ? dp : null;
+
   return {
     id: raw.id,
     name: spec.name ?? raw.id,
@@ -103,6 +115,8 @@ function mapModel(raw: VeniceRawModel): ModelInfo {
     supportsWebSearch: Boolean(caps.supportsWebSearch),
     description,
     pricing,
+    defaultTemperature,
+    defaultTopP,
   };
 }
 

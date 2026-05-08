@@ -39,7 +39,7 @@ function defaultSettings(opts: DefaultSettingsOptions = {}): unknown {
         focusMode: false,
         dailyWordGoal: 500,
       },
-      chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
+      chat: { model: null, overrides: {} },
       ai: {
         includeVeniceSystemPrompt: opts.includeVeniceSystemPrompt ?? true,
       },

@@ -12,10 +12,11 @@ import { buildPrompt, type CharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
-  resolveUserMaxCompletionTokens,
+  resolveTextGenParams,
   resolveUserPrompts,
 } from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
+import type { UserSettings } from './user-settings.routes';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -113,11 +114,9 @@ export function createAiRouter() {
         where: { id: userId },
         select: { settingsJson: true },
       });
-      const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(
-        userRow?.settingsJson ?? null,
-      );
-      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
-      const userMaxCompletionTokens = resolveUserMaxCompletionTokens(userRow?.settingsJson ?? null);
+      const rawSettings = userRow?.settingsJson ?? null;
+      const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(rawSettings);
+      const userPrompts = resolveUserPrompts(rawSettings);
       const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
         body.modelId,
       );
@@ -175,7 +174,10 @@ export function createAiRouter() {
         worldNotes,
         modelContextLength,
         modelMaxCompletionTokens,
-        userMaxCompletionTokens,
+        // Pass POSITIVE_INFINITY so the prompt builder uses the model's own cap
+        // for context-budget calculations. The resolved per-user max_completion_tokens
+        // (from resolveTextGenParams below) is what actually goes to Venice.
+        userMaxCompletionTokens: Number.POSITIVE_INFINITY,
         includeVeniceSystemPrompt,
         userPrompts,
         freeformInstruction: body.freeformInstruction,
@@ -194,6 +196,60 @@ export function createAiRouter() {
       if (body.enableWebSearch === true) {
         venice_parameters.enable_web_search = 'auto';
         venice_parameters.enable_web_citations = true;
+      }
+
+      // ── 10b. Resolve text-gen parameters (X28) ────────────────────────────
+      // Walks the chain: user per-model override → Venice model default →
+      // global default. `modelInfo` may be null if Venice hasn't listed the
+      // model yet (after cache reset); fall back to omitting temperature/top_p
+      // and using buildPrompt's max_completion_tokens so the call still completes.
+      // `rawSettings` is typed `unknown` from Prisma; coerce safely — the
+      // resolver already guards every field with typeof checks.
+      const partialSettings = (rawSettings as Partial<UserSettings>) ?? {};
+      const userSettingsForResolve: UserSettings = {
+        ...partialSettings,
+        chat: {
+          model: null,
+          overrides: {},
+          ...partialSettings.chat,
+        },
+      };
+      const resolvedParams: {
+        temperature: number | undefined;
+        top_p: number | undefined;
+        max_completion_tokens: number;
+        source: { temperature: string; top_p: string; max_completion_tokens: string };
+      } = modelInfo
+        ? resolveTextGenParams(userSettingsForResolve, modelInfo)
+        : {
+            temperature: undefined,
+            top_p: undefined,
+            max_completion_tokens,
+            source: {
+              temperature: 'global-default',
+              top_p: 'global-default',
+              max_completion_tokens: 'global-default',
+            },
+          };
+
+      if (process.env.NODE_ENV !== 'production') {
+        console.log(
+          '[venice.params]',
+          JSON.stringify({
+            route: 'ai-complete',
+            userId,
+            modelId: body.modelId,
+            temperature: {
+              value: resolvedParams.temperature,
+              source: resolvedParams.source.temperature,
+            },
+            top_p: { value: resolvedParams.top_p, source: resolvedParams.source.top_p },
+            max_completion_tokens: {
+              value: resolvedParams.max_completion_tokens,
+              source: resolvedParams.source.max_completion_tokens,
+            },
+          }),
+        );
       }
 
       // ── 11. Get the Venice client ─────────────────────────────────────────
@@ -215,7 +271,9 @@ export function createAiRouter() {
           model: body.modelId,
           messages,
           stream: true as const,
-          max_completion_tokens,
+          temperature: resolvedParams.temperature,
+          top_p: resolvedParams.top_p,
+          max_completion_tokens: resolvedParams.max_completion_tokens,
           prompt_cache_key: promptCacheKey(body.storyId, body.modelId),
           venice_parameters,
         } as unknown as Parameters<typeof client.chat.completions.create>[0])

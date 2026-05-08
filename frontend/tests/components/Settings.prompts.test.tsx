@@ -35,6 +35,7 @@ const DEFAULTS = {
   expand: 'Task: expand (default).',
   summarise: 'Task: summarise (default).',
   describe: 'Task: describe (default).',
+  scene: 'Task: scene (default).',
 };
 
 interface SettingsState {
@@ -57,6 +58,7 @@ interface SettingsState {
     expand: string | null;
     summarise: string | null;
     describe: string | null;
+    scene: string | null;
   };
 }
 
@@ -81,6 +83,7 @@ function makeSettings(prompts: Partial<SettingsState['prompts']> = {}): Settings
       expand: null,
       summarise: null,
       describe: null,
+      scene: null,
       ...prompts,
     },
   };

@@ -29,7 +29,7 @@
  * F16 later consumes response headers (rate-limit counters) separately; it
  * does not change the frame shape this parser produces.
  */
-import { type Citation, isCitationArray } from '@/hooks/useChat';
+import { type Citation, isCitationArray } from '@/lib/citations';
 
 export interface AiDelta {
   content?: string;

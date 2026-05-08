@@ -13,7 +13,11 @@ import { createAiDefaultsRouter } from './routes/ai-defaults.routes';
 import { createAuthRouter } from './routes/auth.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
-import { createChapterChatsRouter, createChatMessagesRouter } from './routes/chat.routes';
+import {
+  createChapterChatsRouter,
+  createChatCrudRouter,
+  createChatMessagesRouter,
+} from './routes/chat.routes';
 import { createOutlineRouter } from './routes/outline.routes';
 import { createStoriesRouter } from './routes/stories.routes';
 import { createUserSettingsRouter } from './routes/user-settings.routes';
@@ -100,7 +104,9 @@ app.use('/api/stories/:storyId/characters', createCharactersRouter());
 app.use('/api/stories/:storyId/outline', createOutlineRouter());
 // [V15] Chat + message routes — two separate router mounts (option A: mergeParams).
 app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
+// [SC7] Mount messages before CRUD so /:chatId/messages doesn't collide with /:id.
 app.use('/api/chats/:chatId/messages', createChatMessagesRouter());
+app.use('/api/chats', createChatCrudRouter());
 
 // [B6] Health check with DB connectivity probe. `SELECT 1` is ~1ms against a
 // healthy Postgres and fails fast when the pool can't reach the server. No

@@ -28,7 +28,7 @@ const SAMPLE_SETTINGS: UserSettings = {
     smartQuotes: true,
     emDashExpansion: true,
   },
-  chat: { model: 'llama-3.3-70b', temperature: 0.7, topP: 1, maxTokens: 2048 },
+  chat: { model: 'llama-3.3-70b', overrides: {} },
   ai: { includeVeniceSystemPrompt: true },
   prompts: {
     system: null,
@@ -37,6 +37,7 @@ const SAMPLE_SETTINGS: UserSettings = {
     expand: null,
     summarise: null,
     describe: null,
+    scene: null,
   },
 };
 
@@ -45,21 +46,27 @@ const SAMPLE_MODELS: Model[] = [
     id: 'venice-uncensored',
     name: 'Venice Uncensored',
     contextLength: 32_768,
+    maxCompletionTokens: 8_192,
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: false,
     description: 'An uncensored model tuned for creative and adult content.',
     pricing: { inputUsdPerMTok: 0.18, outputUsdPerMTok: 0.18 },
+    defaultTemperature: null,
+    defaultTopP: null,
   },
   {
     id: 'llama-3.3-70b',
     name: 'Llama 3.3 70B',
     contextLength: 128_000,
+    maxCompletionTokens: 16_384,
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: true,
     description: "Meta's Llama 3.3 70B — fast and capable general-purpose model.",
     pricing: { inputUsdPerMTok: 0.12, outputUsdPerMTok: 0.36 },
+    defaultTemperature: null,
+    defaultTopP: null,
   },
 ];
 

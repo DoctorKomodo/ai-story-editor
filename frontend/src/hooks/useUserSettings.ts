@@ -6,7 +6,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import type { Model } from '@/hooks/useModels';
 import { api } from '@/lib/api';
+import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
 import { useErrorStore } from '@/store/errors';
 
 /**
@@ -37,11 +39,15 @@ export interface UserWritingSettings {
   emDashExpansion: boolean;
 }
 
+export interface UserChatOverride {
+  temperature?: number;
+  topP?: number;
+  maxTokens?: number;
+}
+
 export interface UserChatSettings {
   model: string | null;
-  temperature: number;
-  topP: number;
-  maxTokens: number;
+  overrides: Record<string, UserChatOverride>;
 }
 
 export interface UserAiSettings {
@@ -56,6 +62,7 @@ export interface UserPromptsSettings {
   expand: string | null;
   summarise: string | null;
   describe: string | null;
+  scene: string | null;
 }
 
 export interface UserSettings {
@@ -136,7 +143,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     smartQuotes: true,
     emDashExpansion: true,
   },
-  chat: { model: null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
+  chat: { model: null, overrides: {} },
   ai: { includeVeniceSystemPrompt: true },
   prompts: {
     system: null,
@@ -145,6 +152,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     expand: null,
     summarise: null,
     describe: null,
+    scene: null,
   },
 };
 
@@ -214,4 +222,110 @@ export function useUpdateUserSetting(): UseUpdateUserSettingResult {
     }),
     [mutation, qc],
   );
+}
+
+// ---------------------------------------------------------------------------
+// resolveChatParams — frontend mirror of backend resolveTextGenParams
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a resolved parameter value came from.
+ *
+ * - `'override'`        — the user set a per-model override; the value is used
+ *                         as-is (within model limits).
+ * - `'override-capped'` — the user's override exceeded the model's
+ *                         `maxCompletionTokens` cap; the cap was applied.
+ * - `'venice-default'`  — Venice exposes a default for the field on this model;
+ *                         no user override exists.
+ * - `'global-default'`  — Venice has no default; the app's built-in fallback
+ *                         (`GLOBAL_TEXT_GEN_DEFAULTS`) was used.
+ */
+export type ChatParamSource = 'override' | 'override-capped' | 'venice-default' | 'global-default';
+
+/** Fully resolved chat generation parameters for a specific model + settings pair. */
+export interface ResolvedChatParams {
+  temperature: number;
+  topP: number;
+  maxTokens: number;
+  /** Indicates the source of each resolved value. Drives UI provenance hints. */
+  source: {
+    temperature: ChatParamSource;
+    topP: ChatParamSource;
+    maxTokens: ChatParamSource;
+  };
+  /**
+   * Whether the user has set an explicit per-model override for each field.
+   * Drives Reset button enablement: a Reset button should be disabled when
+   * `overridden` is all-false.
+   */
+  overridden: {
+    temperature: boolean;
+    topP: boolean;
+    maxTokens: boolean;
+  };
+}
+
+/**
+ * Resolve effective chat generation parameters for `modelInfo` given the
+ * current `settings`.
+ *
+ * Priority (highest → lowest):
+ *   1. User per-model override (settings.chat.overrides[model.id])
+ *   2. Venice-supplied model default (model.defaultTemperature / defaultTopP)
+ *   3. App global default (GLOBAL_TEXT_GEN_DEFAULTS)
+ *
+ * For `maxTokens`, the model's `maxCompletionTokens` cap is always enforced:
+ * a user override that exceeds the cap is silently clamped to the cap
+ * (source becomes `'override-capped'`). When there is no user override, the
+ * effective value is `min(GLOBAL_TEXT_GEN_DEFAULTS.maxTokens, cap)` and the
+ * source is `'venice-default'` — the model cap is the authoritative bound.
+ */
+export function resolveChatParams(settings: UserSettings, modelInfo: Model): ResolvedChatParams {
+  const override = settings.chat.overrides[modelInfo.id] ?? {};
+
+  const tempOverride = typeof override.temperature === 'number';
+  const topPOverride = typeof override.topP === 'number';
+  const maxOverride = typeof override.maxTokens === 'number';
+
+  const temperature = tempOverride
+    ? override.temperature
+    : (modelInfo.defaultTemperature ?? GLOBAL_TEXT_GEN_DEFAULTS.temperature);
+  const tempSource: ChatParamSource = tempOverride
+    ? 'override'
+    : modelInfo.defaultTemperature !== null
+      ? 'venice-default'
+      : 'global-default';
+
+  const topP = topPOverride
+    ? override.topP
+    : (modelInfo.defaultTopP ?? GLOBAL_TEXT_GEN_DEFAULTS.topP);
+  const topPSource: ChatParamSource = topPOverride
+    ? 'override'
+    : modelInfo.defaultTopP !== null
+      ? 'venice-default'
+      : 'global-default';
+
+  const cap = modelInfo.maxCompletionTokens;
+  let maxTokens: number;
+  let maxSource: ChatParamSource;
+  if (maxOverride) {
+    if ((override.maxTokens as number) > cap) {
+      maxTokens = cap;
+      maxSource = 'override-capped';
+    } else {
+      maxTokens = override.maxTokens as number;
+      maxSource = 'override';
+    }
+  } else {
+    maxTokens = Math.min(GLOBAL_TEXT_GEN_DEFAULTS.maxTokens, cap);
+    maxSource = 'venice-default';
+  }
+
+  return {
+    temperature: temperature as number,
+    topP: topP as number,
+    maxTokens,
+    source: { temperature: tempSource, topP: topPSource, maxTokens: maxSource },
+    overridden: { temperature: tempOverride, topP: topPOverride, maxTokens: maxOverride },
+  };
 }

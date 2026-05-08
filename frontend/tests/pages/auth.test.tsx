@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
-import { useSessionStore } from '@/store/session';
+import { handleUnauthorizedAccess, useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -44,13 +44,14 @@ describe('auth pages (F4)', () => {
     resetApiClientForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    // Re-install the unauthorized handler — resetApiClientForTests cleared
-    // the one session.ts wired at module load, and the import from earlier
-    // in the process does not re-run.
-    setUnauthorizedHandler(() => {
-      useSessionStore.getState().clearSession();
-    });
-    useSessionStore.setState({ user: null, status: 'idle' });
+    // Re-install the production unauthorized handler — resetApiClientForTests
+    // cleared the one session.ts wired at module load, and the import from
+    // earlier in the process does not re-run. Using `handleUnauthorizedAccess`
+    // (rather than a hand-rolled stub) ensures every test exercises the same
+    // wiring as production; if the handler body changes, every F65 test
+    // catches the drift, not just the explicit production-wiring case.
+    setUnauthorizedHandler(handleUnauthorizedAccess);
+    useSessionStore.setState({ user: null, status: 'idle', sessionExpired: false });
   });
 
   afterEach(() => {
@@ -61,7 +62,7 @@ describe('auth pages (F4)', () => {
     // so this fires before setup.ts's cleanup() unmounts; otherwise the state
     // change notifies still-mounted subscribers outside act.
     act(() => {
-      useSessionStore.setState({ user: null, status: 'idle' });
+      useSessionStore.setState({ user: null, status: 'idle', sessionExpired: false });
     });
   });
 
@@ -305,5 +306,125 @@ describe('auth pages (F4)', () => {
     });
     const link = screen.getByRole('link', { name: /sign in/i });
     expect(link).toHaveAttribute('href', '/login');
+  });
+
+  // F65 — Terminal-401 redirect to login + "session expired" banner.
+  describe('terminal-401 session-expired banner (F65)', () => {
+    it('shows the "session expired" banner when sessionExpired is true on /login', async () => {
+      primeUnauthenticatedInit(fetchMock);
+      renderAt('/login');
+
+      // initAuth's failed refresh runs clearSession, which (per the
+      // invariant in store/session.ts) resets sessionExpired to false. Set
+      // the flag AFTER initAuth has resolved so the LoginPage subscriber
+      // sees the post-init value, mirroring the real terminal-401 sequence
+      // (initAuth completes → user is in-app → terminal 401 → handler sets
+      // flag → /login renders banner).
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+      });
+      act(() => {
+        useSessionStore.setState({ sessionExpired: true });
+      });
+
+      const banner = await screen.findByRole('status', { name: /session expired/i });
+      expect(banner).toHaveTextContent(/session has expired/i);
+    });
+
+    it('does not show the session-expired banner when the flag is false', async () => {
+      primeUnauthenticatedInit(fetchMock);
+      renderAt('/login');
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+      });
+
+      expect(screen.queryByRole('status', { name: /session expired/i })).not.toBeInTheDocument();
+    });
+
+    it('terminal-401 mid-session: production handler flips the store and redirects /login → banner', async () => {
+      // beforeEach already installed `handleUnauthorizedAccess` as the
+      // handler, so this test exercises the production wiring end-to-end via
+      // a real fetch-401 chain (rather than asserting against a hand-rolled
+      // stub).
+
+      // Pre-seed an authenticated session so RequireAuth admits the dashboard.
+      act(() => {
+        useSessionStore
+          .getState()
+          .setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
+      });
+
+      // Stage machine: /auth/refresh succeeds the first time (initAuth keeps
+      // us authenticated) and 401s thereafter (terminal). Any /api/* call
+      // returns 401, which drives the api client into the refresh-and-retry
+      // path → terminal handler → store flip.
+      let refreshCalls = 0;
+      fetchMock.mockImplementation((input: RequestInfo | URL) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        if (url.endsWith('/auth/refresh')) {
+          refreshCalls += 1;
+          if (refreshCalls === 1) {
+            return Promise.resolve(jsonResponse(200, { accessToken: 'tok-1' }));
+          }
+          return Promise.resolve(jsonResponse(401, { error: { message: 'no session' } }));
+        }
+        if (url.endsWith('/auth/me')) {
+          return Promise.resolve(
+            jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+          );
+        }
+        return Promise.resolve(jsonResponse(401, { error: { message: 'expired' } }));
+      });
+
+      renderAt('/');
+
+      // RequireAuth flips on the production handler's setState, redirects to
+      // /login, and the LoginPage renders the banner from the store flag.
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+      });
+      const banner = screen.getByRole('status', { name: /session expired/i });
+      expect(banner).toHaveTextContent(/session has expired/i);
+
+      const finalState = useSessionStore.getState();
+      expect(finalState.user).toBeNull();
+      expect(finalState.status).toBe('unauthenticated');
+      expect(finalState.sessionExpired).toBe(true);
+    });
+
+    it('successful login clears the sessionExpired flag', async () => {
+      primeUnauthenticatedInit(fetchMock);
+      fetchMock.mockResolvedValueOnce(
+        jsonResponse(200, {
+          user: { id: 'u1', username: 'alice', name: 'Alice' },
+          accessToken: 'tok-1',
+        }),
+      );
+
+      const user = userEvent.setup();
+      renderAt('/login');
+
+      // Set sessionExpired AFTER initAuth completes — clearSession (called
+      // when init's refresh 401s) resets the flag, so any pre-render set
+      // would be wiped.
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /sign in/i })).toBeInTheDocument();
+      });
+      act(() => {
+        useSessionStore.setState({ sessionExpired: true });
+      });
+      // Banner is visible at first.
+      expect(await screen.findByRole('status', { name: /session expired/i })).toBeInTheDocument();
+
+      await user.type(screen.getByLabelText(/username/i), 'alice');
+      await user.type(screen.getByLabelText(/password/i), 'hunter2hunter2');
+      await user.click(screen.getByRole('button', { name: /sign in/i }));
+
+      await waitFor(() => {
+        expect(screen.getByRole('heading', { name: /your stories/i })).toBeInTheDocument();
+      });
+      expect(useSessionStore.getState().sessionExpired).toBe(false);
+    });
   });
 });

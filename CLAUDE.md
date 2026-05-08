@@ -57,11 +57,10 @@ npm --prefix backend run typecheck    # tsc --noEmit (backend)
 npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
 
 # Working tracker (bd) — see "Task Completion Protocol" below
-bd ready                    # list available tasks (no blockers)
-bd show <id>                # detailed view (description + verify: in --notes)
-bd update <id> --claim      # claim work atomically
-/task-verify <id>           # gate — runs verify: from bd notes with pipefail
-/bd-close <id>              # closes only if verify exits 0
+bd ready                       # list available tasks (no blockers)
+bd show <id>                   # detailed view (description + verify: + plan: in --notes)
+/bd-execute <id>               # default flow: implement → review → close (requires plan: link)
+/bd-close-reviewed <id>        # close-gate skill (called by /bd-execute, or directly for non-loop work)
 ```
 
 ---
@@ -70,32 +69,43 @@ bd update <id> --claim      # claim work atomically
 
 **Working tracker is bd. All open tasks live in bd; `TASKS.md` is a historical ID-mapping table that maps `[A-Z]\d+` IDs (referenced by plan docs, commit messages, and agent prompts) to their bd issues.** New tasks file directly into bd (`bd create …`); there are no checkboxes to tick.
 
-**NEVER `bd close` a task until its verify command exits 0.** `/bd-close <id>` enforces this — it's the only way to close a task with an automated verify. Tasks with `TBD` / `design decision` / empty verify lines require `--force` to close.
+**Default implementation flow is `/bd-execute <id>`** — the bridge skill that claims the issue, dispatches superpowers' implementer + spec-reviewer + code-quality-reviewer loop with project-rule digests prepended at every dispatch, then hands off to `/bd-close-reviewed`. Operating doc: `docs/agent-workflow.md`.
+
+**`/bd-execute` requires a `plan: <path>` link in the issue's `--notes`.** That's the brainstorm gate: every task gets a written plan before it gets implemented. The plan can be terse if the work is trivial — but it has to exist, and the bd issue has to point at it.
 
 For every task:
-1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line in `--notes`.
-2. Confirm `--notes` has a `plan:` link or a `trivial:` justification. If neither, stop and write the plan first (or justify the `trivial:` exception inline). Tasks with only a description are *proposed*, not implementable.
-3. `bd update <id> --claim` before writing code.
-4. Write the implementation.
-5. Write the test if one is required by the task.
-6. `/task-verify <id>` — runs the verify with `bash -o pipefail` and reports true exit code. (Optional sanity-check; `/bd-close` runs the same gate internally.)
-7. If verify fails: fix the code — do not modify the test to make it pass.
-8. `/bd-close <id>` — closes only if verify exits 0.
-9. Move to the next task immediately — do not refactor or add scope.
+
+1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line + `plan:` link in `--notes`.
+2. **If `--notes` has no `plan:` link:** run `superpowers:brainstorming` first, then `superpowers:writing-plans` (writes a plan under `docs/superpowers/plans/YYYY-MM-DD-<slug>.md`), then `bash scripts/bd-link-plan.sh <id> <plan-path>` to record the link.
+3. `/bd-execute <id>` — runs the full implement → spec-review → quality-review loop, claims the issue along the way, and hands off to `/bd-close-reviewed` at the end.
+4. `/bd-close-reviewed` runs typecheck on affected workspaces, fans path-matched surface reviewers (`security-reviewer`, `repo-boundary-reviewer`), and refuses close on `BLOCK` / `FIX_BEFORE_MERGE` findings. If a reviewer blocks: fix the code (not the test, not the verify) and re-loop. Override requires `--override-block "<reviewer> — <reason>"` plus explicit user-ack.
+5. Move to the next task immediately — do not refactor or add scope.
+
+**NEVER `bd close` a task directly.** Always go through `/bd-close-reviewed` so the verify gate, typecheck, and surface reviewers all run. Tasks with `TBD` / `design decision` / empty verify lines require the override path with explicit user-ack to close.
 
 If a task has no verify command, add one to `--notes` (`bd update <id> --notes "verify: <command>\n…"`) before starting.
 
+### When to skip `/bd-execute`
+
+Three cases skip the loop:
+
+- **One-off fix not worth a plan** (typo, dependency bump, doc tweak). Edit, commit, run `/bd-close-reviewed <id>` directly — the close-gate skill works standalone. Use sparingly: if you're skipping the plan more than rarely, the brainstorm gate isn't being respected.
+- **Plan-less coordinator parent with plan-bearing children** (brainstorming-split convention). The parent stays plan-less and closes automatically when every child closes. Run `/bd-execute` on each child via `bd ready`, not on the parent.
+- **Trivial task with `plan: trivial` + inline rationale in `--notes`.** Same flow as a real plan; `/bd-execute` accepts the trivial form.
+
 ### Verify-line convention in bd `--notes`
 
-A single line starting with `verify:`, the runnable command on the rest of that line. Multi-line commands go on one line via `&&` / `;`. The first matching line wins. Non-runnable verifies (`TBD …`, `design decision …`, empty) are accepted but the runner exits 2 with a "no automated verify" message; closing those requires `--force`.
+A single line starting with `verify:`, the runnable command on the rest of that line. Multi-line commands go on one line via `&&` / `;`. The first matching line wins. Non-runnable verifies (`TBD …`, `design decision …`, empty) are accepted but `/bd-close-reviewed` exits non-zero with a "no automated verify" message; closing those requires the override path.
 
 ### Historical archives
 
 Closed work from the original bring-up letters lives in immutable `docs/done/done-<section>.md` archives. To find a historical task ID, grep both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. Closed `[x]` rows still in TASKS.md (F Phase 4, a few X tasks) are pending rotation into their respective `done-*.md` archives — leave them alone unless you're doing the rotation.
 
 ### Local tooling
-- **`/task-verify <BD_ID>`** — project-local slash-command skill (`.claude/skills/task-verify/`) that extracts `verify:` from `bd show <id> --json` notes and runs it with `bash -o pipefail`. Stricter than raw `npm run` because it resists pipeline tricks like `| grep -iv error` masking failures.
-- **`/bd-close <BD_ID>`** — slash-command skill (`.claude/skills/bd-close/`) that runs the verify gate, then calls `bd close` only if it passes. Replaces the retired `pre-tasks-edit.sh` auto-tick hook with a close-time gate. Wraps `scripts/bd-close-verified.sh`.
+
+- **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + spec-reviewer + code-quality-reviewer (Sonnet by default; per-task `model: opus` opt-in) per task, hands off to `/bd-close-reviewed` after the loop reports CLEAN.
+- **`/bd-close-reviewed <BD_ID>`** — `.claude/skills/bd-close-reviewed/`. Gates close on typecheck + path-matched surface reviewers + verify-line. Wraps `scripts/bd-close-reviewed.sh` for the mechanical phases.
+- **`scripts/bd-link-plan.sh <id> <plan-path>`** — links a plan file to a bd issue's `--notes`. Idempotent; preserves the `verify:` line. Called as a step in the protocol above when the issue lacks a plan link.
 
 ---
 
@@ -239,7 +249,7 @@ The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a re
 - **I7** — env swap (`VENICE_API_KEY` removed, `APP_ENCRYPTION_KEY` added — no `CONTENT_ENCRYPTION_KEY`).
 - Any change to: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/ai.service.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`.
 
-Invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope in the prompt (e.g. "review AU9–AU10 as currently implemented" or "review the repo-layer boundary for E9"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box — if the hook (see `.claude/hooks/pre-tasks-edit.sh`) says the verify passed but the reviewer says `BLOCK`, do not tick.
+Invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope in the prompt (e.g. "review AU9–AU10 as currently implemented" or "review the repo-layer boundary for E9"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before closing the bd issue — `/bd-close-reviewed` already enforces this; do not bypass with `--override-block` unless explicitly authorised by the user.
 
 **Example invocation:**
 ```

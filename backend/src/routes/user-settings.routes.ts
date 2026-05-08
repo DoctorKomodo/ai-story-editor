@@ -53,10 +53,19 @@ const SettingsSchema = z
       .optional(),
     chat: z
       .object({
-        model: z.string().min(1).max(200).optional(),
-        temperature: z.number().min(0).max(2).optional(),
-        topP: z.number().min(0).max(1).optional(),
-        maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+        model: z.string().nullable().optional(),
+        overrides: z
+          .record(
+            z.string(),
+            z
+              .object({
+                temperature: z.number().min(0).max(2).optional(),
+                topP: z.number().min(0).max(1).optional(),
+                maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+              })
+              .strict(),
+          )
+          .optional(),
       })
       .strict()
       .optional(),
@@ -74,11 +83,51 @@ const SettingsSchema = z
         expand: z.string().max(10_000).nullable().optional(),
         summarise: z.string().max(10_000).nullable().optional(),
         describe: z.string().max(10_000).nullable().optional(),
+        scene: z.string().max(10_000).nullable().optional(),
       })
       .strict()
       .optional(),
   })
   .strict();
+
+// ─── Exported type ────────────────────────────────────────────────────────────
+
+// X28: per-model generation parameters. `overrides` is keyed by Venice model
+// ID; each entry carries only the fields the user has explicitly changed so
+// that absent fields fall through to the Venice-default → global-default chain
+// in `resolveTextGenParams`.
+export interface UserSettings {
+  theme?: string;
+  prose?: { font?: string; size?: number; lineHeight?: number };
+  writing?: {
+    spellcheck?: boolean;
+    typewriterMode?: boolean;
+    focusMode?: boolean;
+    dailyWordGoal?: number;
+    smartQuotes?: boolean;
+    emDashExpansion?: boolean;
+  };
+  chat: {
+    model: string | null;
+    overrides: {
+      [modelId: string]: {
+        temperature?: number;
+        topP?: number;
+        maxTokens?: number;
+      };
+    };
+  };
+  ai?: { includeVeniceSystemPrompt?: boolean };
+  prompts?: {
+    system?: string | null;
+    continue?: string | null;
+    rewrite?: string | null;
+    expand?: string | null;
+    summarise?: string | null;
+    describe?: string | null;
+    scene?: string | null;
+  };
+}
 
 // ─── Defaults ─────────────────────────────────────────────────────────────────
 
@@ -93,7 +142,10 @@ const DEFAULT_SETTINGS = {
     smartQuotes: true,
     emDashExpansion: true,
   },
-  chat: { model: null as string | null, temperature: 0.85, topP: 0.95, maxTokens: 800 },
+  chat: {
+    model: null as string | null,
+    overrides: {} as Record<string, { temperature?: number; topP?: number; maxTokens?: number }>,
+  },
   ai: { includeVeniceSystemPrompt: true },
   prompts: {
     system: null as string | null,
@@ -102,6 +154,7 @@ const DEFAULT_SETTINGS = {
     expand: null as string | null,
     summarise: null as string | null,
     describe: null as string | null,
+    scene: null as string | null,
   },
 } satisfies Record<string, unknown>;
 
@@ -152,7 +205,28 @@ export function createUserSettingsRouter() {
       // Merge the validated PATCH payload into whatever is stored, then persist
       // the merged-over-stored value (NOT merged-over-defaults) — we don't want
       // to write the default tree into every user's row on their first PATCH.
-      const nextStored = deepMerge(stored, parsed.data as Record<string, unknown>);
+      const nextStored = deepMerge(stored, parsed.data as Record<string, unknown>) as Record<
+        string,
+        unknown
+      >;
+
+      // chat.overrides[modelId] is treated as atomic: each per-model entry in
+      // the patch REPLACES the prior entry rather than deep-merging into it.
+      // This is the contract the frontend already speaks (it always sends a
+      // complete entry built by spreading the prior one), and it's what makes
+      // "Reset to defaults" work — sending `{ m1: {} }` clears m1's overrides.
+      // Without this, deepMerge recurses into the empty entry and returns the
+      // prior fields unchanged, making reset a server-side no-op.
+      const patchOverrides = parsed.data.chat?.overrides;
+      if (patchOverrides) {
+        const chat = (nextStored.chat as Record<string, unknown> | undefined) ?? {};
+        const overrides = (chat.overrides as Record<string, unknown> | undefined) ?? {};
+        for (const [modelId, entry] of Object.entries(patchOverrides)) {
+          overrides[modelId] = entry;
+        }
+        chat.overrides = overrides;
+        nextStored.chat = chat;
+      }
 
       await prisma.user.update({
         where: { id: req.user!.id },

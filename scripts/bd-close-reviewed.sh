@@ -4,6 +4,11 @@
 # Mechanical helper for /bd-close-reviewed. Owns the parts that are
 # better in shell than in a Claude prompt:
 #   --phase=typecheck    Run path-matched typecheck across affected workspaces.
+#   --phase=verify       Run the issue's verify: line via bash -o pipefail.
+#                        Exits 2 with a "no automated verify" message when the
+#                        verify line is TBD / design decision / empty; in that
+#                        case the skill must request user-ack and re-invoke
+#                        with --allow-no-verify to proceed.
 #   --phase=affected     Print which surface reviewers should fire ("auth",
 #                        "repo-boundary", or both, or nothing). Read by the
 #                        skill to decide which Agent dispatches to make.
@@ -20,6 +25,7 @@
 #
 # Usage:
 #   bash scripts/bd-close-reviewed.sh <bd-id> --phase=typecheck
+#   bash scripts/bd-close-reviewed.sh <bd-id> --phase=verify [--allow-no-verify]
 #   bash scripts/bd-close-reviewed.sh <bd-id> --phase=affected
 #   bash scripts/bd-close-reviewed.sh <bd-id> --phase=close [--reason="..."]
 #   bash scripts/bd-close-reviewed.sh <bd-id> --phase=close --override-block="<reviewer> — <reason>"
@@ -35,6 +41,7 @@ ID="$1"; shift
 PHASE=""
 REASON=""
 OVERRIDE=""
+ALLOW_NO_VERIFY=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -43,6 +50,7 @@ while [ $# -gt 0 ]; do
     --reason)           REASON="$2"; shift ;;
     --override-block=*) OVERRIDE="${1#*=}" ;;
     --override-block)   OVERRIDE="$2"; shift ;;
+    --allow-no-verify)  ALLOW_NO_VERIFY=1 ;;
     *) echo "unknown arg: $1" >&2; exit 64 ;;
   esac
   shift
@@ -85,6 +93,40 @@ case "$PHASE" in
       echo "→ frontend untouched, skipping typecheck"
     fi
     exit $EXIT
+    ;;
+
+  verify)
+    NOTES="$(bd show "$ID" --json 2>/dev/null \
+      | jq -r 'if type == "array" and length > 0 then (.[0].notes // "") else (.notes // "") end' 2>/dev/null)"
+    if [ -z "$NOTES" ]; then
+      echo "✘ no such issue or empty notes: $ID" >&2
+      exit 2
+    fi
+    CMD="$(printf '%s\n' "$NOTES" | awk '/^verify:/ {sub(/^verify:[ \t]*/, ""); print; exit}')"
+    case "$CMD" in
+      ""|"TBD"*|"design decision"*|"<TBD>"*)
+        if [ "$ALLOW_NO_VERIFY" -ne 1 ]; then
+          echo "✘ no automated verify for $ID (got: ${CMD:-<empty>})" >&2
+          echo "  re-invoke with --allow-no-verify after user-ack to proceed." >&2
+          exit 2
+        fi
+        echo "▶ no automated verify for $ID; --allow-no-verify accepted, continuing"
+        exit 0
+        ;;
+    esac
+    echo "▶ bd-close-reviewed verify [$ID]"
+    echo "▶ cmd: $CMD"
+    echo "──────────────────────────────────────────────"
+    if bash -o pipefail -c "$CMD"; then
+      echo "──────────────────────────────────────────────"
+      echo "✔ verify passed"
+      exit 0
+    else
+      rc=$?
+      echo "──────────────────────────────────────────────"
+      echo "✘ verify FAILED for $ID (exit $rc); refusing to close" >&2
+      exit "$rc"
+    fi
     ;;
 
   affected)
@@ -132,6 +174,18 @@ case "$PHASE" in
     ;;
 
   close)
+    # Idempotency: if the issue is already closed, exit 0 silently with a
+    # one-line stdout note. Don't call `bd close` again, don't append
+    # another override line, don't create another trailer commit.
+    # Protects against double-invocation from interrupted sessions or
+    # manual re-runs.
+    EXISTING_STATUS="$(bd show "$ID" --json 2>/dev/null \
+      | jq -r 'if type == "array" and length > 0 then (.[0].status // "") else (.status // "") end' 2>/dev/null)"
+    if [ "$EXISTING_STATUS" = "closed" ]; then
+      echo "▶ $ID already closed; skipping (idempotent close)."
+      exit 0
+    fi
+
     if [ -n "$OVERRIDE" ]; then
       # Read existing notes, append override line, write back.
       EXISTING="$(bd show "$ID" --json 2>/dev/null \
@@ -162,7 +216,7 @@ Reviewer-Override: $OVERRIDE
     ;;
 
   *)
-    echo "✘ unknown phase: $PHASE (use typecheck|affected|close)" >&2
+    echo "✘ unknown phase: $PHASE (use typecheck|verify|affected|close)" >&2
     exit 64
     ;;
 esac

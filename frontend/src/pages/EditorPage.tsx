@@ -46,6 +46,7 @@ import { FormatBar } from '@/components/FormatBar';
 import { InlineAIResult } from '@/components/InlineAIResult';
 import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
+import { SceneTab } from '@/components/SceneTab';
 import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
 import { SettingsModal, type SettingsTab } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
@@ -615,6 +616,7 @@ export function EditorPage(): JSX.Element {
                   // the in-place setContent effect skips empty bodies — the
                   // user sees the old chapter's text under the new title.
                   key={activeChapterId}
+                  storyId={story.id}
                   storyTitle={story.title}
                   storyGenre={story.genre}
                   storyWordCount={totalWordCount}
@@ -678,6 +680,7 @@ export function EditorPage(): JSX.Element {
               />
             }
             composer={<ChatComposer onSend={handleChatSend} disabled={sendChatMessage.isPending} />}
+            sceneBody={<SceneTab chapterId={activeChapterId} editor={editor} />}
             onOpenModelPicker={() => {
               setSettingsInitialTab('models');
               setSettingsOpen(true);

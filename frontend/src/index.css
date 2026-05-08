@@ -502,6 +502,22 @@ body {
   animation: inkwell-popover-in 140ms ease-out;
 }
 
+/* Undo-toast countdown hairline — animates from 100% → 0% width over the
+   undo window. Duration is set per-instance via the `--undo-ms` custom
+   property on the toast root (defaults to 5000ms). */
+@keyframes inkwell-undo-countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.scene-undo-countdown {
+  transform-origin: left center;
+  animation: inkwell-undo-countdown var(--undo-ms, 5000ms) linear forwards;
+}
+
 /* [F35] Continue-writing affordance — purple tint for streaming output and
    any committed-but-not-yet-discarded continuation spans inside the editor
    (TipTap mark `aiContinuation`). Drops back to inherited prose color when
