@@ -5,7 +5,7 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { ApiError, api, apiStream, type ChatRow } from '@/lib/api';
+import { ApiError, api, apiStream, type ChatRow, deleteChat } from '@/lib/api';
 import { type Citation, isCitationArray } from '@/lib/citations';
 import { parseAiSseStream } from '@/lib/sse';
 import { useChatDraftStore } from '@/store/chatDraft';
@@ -165,10 +165,10 @@ export function useRenameChatMutation(
   const qc = useQueryClient();
   return useMutation<ChatSummary, Error, { id: string; title: string }>({
     mutationFn: async ({ id, title }) => {
-      const res = await api<{ chat: ChatSummary }>(
-        `/chats/${encodeURIComponent(id)}`,
-        { method: 'PATCH', body: { title } },
-      );
+      const res = await api<{ chat: ChatSummary }>(`/chats/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: { title },
+      });
       return res.chat;
     },
     onSuccess: (updated, vars) => {
@@ -188,9 +188,7 @@ export function useRemoveChatMutation(
 ): UseMutationResult<void, Error, string> {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({
-    mutationFn: async (id: string) => {
-      await api<void>(`/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    },
+    mutationFn: (id: string) => deleteChat(id),
     onSuccess: (_void, id) => {
       if (chapterId === null) return;
       const key = chatsQueryKey(chapterId, kind);
