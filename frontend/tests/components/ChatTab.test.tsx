@@ -12,11 +12,24 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatTab } from '@/components/ChatTab';
 import { modelsQueryKey } from '@/hooks/useModels';
 import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import {
+  apiStream,
+  resetApiClientForTests,
+  setAccessToken,
+  setUnauthorizedHandler,
+} from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { truncateAtWordBoundary } from '@/lib/strings';
 import { useChatDraftStore } from '@/store/chatDraft';
 import { useSessionStore } from '@/store/session';
+
+// Partially mock @/lib/api so we can intercept `apiStream` for the SSE send
+// in test 4 without affecting the other exports (api, resetApiClientForTests, etc).
+// The mock is hoisted by Vite/Vitest, so it takes effect before any imports.
+vi.mock('@/lib/api', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
+  return { ...actual, apiStream: vi.fn(actual.apiStream) };
+});
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -150,5 +163,131 @@ describe('ChatTab — smoke', () => {
     expect(title.endsWith('…')).toBe(true);
     // Cuts at a word boundary: no partial word at the end.
     expect(title).toMatch(/^Could you describe in vivid sensory detail a/);
+  });
+
+  it('auto-renames an explicitly-created new chat after the first send', async () => {
+    // Regression for: isFirstTurn was evaluated before the inline-create block,
+    // so clicking "+ New chat" set activeChatId and caused isFirstTurn to be
+    // false on the subsequent send — rename never fired.
+
+    // Build a minimal SSE response (same helper pattern as useChat.test.tsx).
+    function sseResponse(): Response {
+      const encoder = new TextEncoder();
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          const chunk = JSON.stringify({ choices: [{ delta: { content: 'hi' } }] });
+          controller.enqueue(encoder.encode(`data: ${chunk}\n\n`));
+          controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+          controller.close();
+        },
+      });
+      return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+    }
+
+    const now = new Date().toISOString();
+    const newChat = {
+      id: 'c1',
+      chapterId: 'ch1',
+      title: null,
+      kind: 'ask',
+      messageCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    // Stateful mock: after the POST create, GET /chats returns the new session.
+    let chatCreated = false;
+    fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method?.toUpperCase() ?? 'GET';
+
+      // List chats — returns the created chat once it exists
+      if (url.includes('/chapters/ch1/chats') && method === 'GET') {
+        return jsonResponse(200, { chats: chatCreated ? [newChat] : [] });
+      }
+      // Create chat
+      if (url.includes('/chapters/ch1/chats') && method === 'POST') {
+        chatCreated = true;
+        return jsonResponse(201, { chat: newChat });
+      }
+      // GET messages for the active chat
+      if (url.includes('/chats/c1/messages') && method === 'GET') {
+        return jsonResponse(200, { messages: [] });
+      }
+      // PATCH rename (apiStream handles the POST /messages separately via spy)
+      if (url.includes('/chats/c1') && !url.includes('/messages') && method === 'PATCH') {
+        return jsonResponse(200, { chat: { ...newChat, title: 'Hello world' } });
+      }
+      return jsonResponse(404, { error: 'not_mocked' });
+    }) as FetchMock;
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Configure the module-level apiStream mock to return the SSE response once.
+    // This mirrors useChat.test.tsx's approach: mock apiStream rather than fetch
+    // so the ReadableStream body is consumed correctly inside jsdom.
+    vi.mocked(apiStream).mockResolvedValueOnce(sseResponse());
+
+    const user = userEvent.setup();
+    // Need a model selected so checkChatSendGuards doesn't block the send.
+    const qc = makeClient();
+    qc.setQueryData(userSettingsQueryKey, {
+      ...DEFAULT_SETTINGS,
+      chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-model-1' },
+    });
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+
+    // Wait for initial render — no sessions yet
+    await waitFor(() => expect(screen.getByTestId('chat-tab')).toBeInTheDocument());
+
+    // Open the session picker dropdown, then click "+ New chat".
+    // The "New chat" button lives inside the dropdown which only mounts when open.
+    const pickerTrigger = await screen.findByRole('button', { name: /Chat: none selected/i });
+    await user.click(pickerTrigger);
+    const newButton = await screen.findByRole('button', { name: /New chat/i });
+    await user.click(newButton);
+
+    // Wait for the create mutation's onSuccess to fire: the picker trigger
+    // changes once activeChatId is set and sessions has the new chat prepended.
+    await waitFor(() => {
+      expect(screen.queryByRole('button', { name: /Chat: none selected/i })).toBeNull();
+    });
+
+    // Type a message and send it (Ctrl+Enter is the submit shortcut)
+    const textarea = await screen.findByRole('textbox');
+    await user.click(textarea);
+    await user.type(textarea, 'Hello world');
+    await user.keyboard('{Control>}{Enter}{/Control}');
+
+    // The rename PATCH should fire once the send stream completes because
+    // isFirstTurn is now computed from messageCount after chatId is resolved,
+    // not from chatId === null.
+    await waitFor(
+      () => {
+        const patchCalls = (fetchMock.mock.calls as [string, RequestInit?][]).filter(
+          ([url, init]) =>
+            typeof url === 'string' &&
+            url.includes('/chats/c1') &&
+            !url.includes('/messages') &&
+            (init?.method?.toUpperCase() ?? 'GET') === 'PATCH',
+        );
+        expect(patchCalls.length).toBeGreaterThan(0);
+      },
+      { timeout: 3000 },
+    );
+
+    // Confirm the PATCH carried a non-empty title
+    const patchCall = (fetchMock.mock.calls as [string, RequestInit?][]).find(
+      ([url, init]) =>
+        typeof url === 'string' &&
+        url.includes('/chats/c1') &&
+        !url.includes('/messages') &&
+        (init?.method?.toUpperCase() ?? 'GET') === 'PATCH',
+    );
+    expect(patchCall).toBeDefined();
+    const body = JSON.parse(patchCall![1]?.body as string) as Record<string, unknown>;
+    expect(typeof body.title).toBe('string');
+    expect((body.title as string).length).toBeGreaterThan(0);
+
+    vi.mocked(apiStream).mockReset();
   });
 });

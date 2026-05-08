@@ -80,12 +80,16 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
       const mId = selectedModelId as string;
 
       let chatId = activeChatId;
-      const isFirstTurn = chatId === null;
       if (chatId === null) {
         const created = await createChat.mutateAsync({ chapterId: cId, kind: 'ask' });
         chatId = created.id;
         setActiveChatId(chatId);
       }
+      // Evaluate isFirstTurn AFTER chatId is resolved so explicit-create-then-send
+      // is also caught. `undefined` covers the inline-create case where the local
+      // sessions snapshot hasn't yet seen the optimistic prepend.
+      const currentSession = sessions.find((s) => s.id === chatId);
+      const isFirstTurn = currentSession === undefined || currentSession.messageCount === 0;
 
       lastChatSendArgsRef.current = args;
       const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
@@ -113,7 +117,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
       // Composer keeps its own state; clear the attached selection chip after success.
       useAttachedSelectionStore.getState().clear();
     },
-    [chapterId, selectedModelId, activeChatId, createChat, renameChat, sendChatMessage],
+    [chapterId, selectedModelId, activeChatId, sessions, createChat, renameChat, sendChatMessage],
   );
 
   const onRetry = useCallback((): void => {
