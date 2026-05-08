@@ -13,7 +13,7 @@
 //   - useSidebarTabStore                  → active tab
 //   - <CharacterSheet> modal              → page-root, id-driven
 //   - <FormatBar> + <Paper>               → editor slot (F52 — replaces F8)
-//   - <ChatPanel> (ChatMessages + ChatComposer + model trigger) → chat slot (F55)
+//   - <ChatPanel> + <ChatTab> (chat session picker + messages + composer) → chat slot
 //   - <Export>                            → rendered below Paper (until F52 promote)
 //
 // Modal-mount convention (locked in F51 for the rest of the F-series):
@@ -37,9 +37,8 @@ import {
   type CharacterPopoverHostHandle,
 } from '@/components/CharacterPopoverHost';
 import { CharacterSheet } from '@/components/CharacterSheet';
-import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
-import { ChatMessages } from '@/components/ChatMessages';
 import { ChatPanel } from '@/components/ChatPanel';
+import { ChatTab } from '@/components/ChatTab';
 import { ContinueWriting } from '@/components/ContinueWriting';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
@@ -63,21 +62,12 @@ import {
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
 import { useCharactersQuery } from '@/hooks/useCharacters';
-import {
-  useChatMessagesQuery,
-  useChatsQuery,
-  useCreateChatMutation,
-  useSendChatMessageMutation,
-} from '@/hooks/useChat';
 import { useStoryQuery } from '@/hooks/useStories';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
-import { checkChatSendGuards } from '@/lib/chatSendGuards';
 import { useActiveChapterStore } from '@/store/activeChapter';
-import { useAttachedSelectionStore } from '@/store/attachedSelection';
-import { useErrorStore } from '@/store/errors';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
@@ -167,86 +157,6 @@ export function EditorPage(): JSX.Element {
 
   const selectedModelId = useUserSettings().chat.model;
   const completion = useAICompletion();
-
-  // [F55] Chat surface wiring. Active chat = first chat for the active chapter
-  // (until a per-chapter "remembered chat" slice is added). Sending a message
-  // creates a chat on the fly when none exists.
-  const chatsQuery = useChatsQuery(activeChapterId ?? null);
-  const activeChatId = chatsQuery.data?.[0]?.id ?? null;
-  const chatMessages = useChatMessagesQuery(activeChatId);
-  void chatMessages; // ChatMessages reads from the cache directly via chatId
-  const createChat = useCreateChatMutation();
-  const sendChatMessage = useSendChatMessageMutation();
-  const attachedSelection = useAttachedSelectionStore((s) => s.attachedSelection);
-  const clearAttachedSelection = useAttachedSelectionStore((s) => s.clear);
-
-  const handleNewChat = useCallback(async (): Promise<void> => {
-    if (!activeChapterId) return;
-    await createChat.mutateAsync({ chapterId: activeChapterId });
-  }, [activeChapterId, createChat]);
-
-  const lastChatSendArgsRef = useRef<ChatSendArgs | null>(null);
-
-  const handleChatSend = useCallback(
-    async (args: ChatSendArgs): Promise<void> => {
-      const guard = checkChatSendGuards({ activeChapterId, selectedModelId });
-      if (guard) {
-        useErrorStore.getState().push(guard);
-        return;
-      }
-      // After the guard, both fields are non-null. Narrow for TS.
-      const chapterId = activeChapterId as string;
-      const modelId = selectedModelId as string;
-
-      let chatId = activeChatId;
-      if (!chatId) {
-        const created = await createChat.mutateAsync({ chapterId });
-        chatId = created.id;
-      }
-      if (!chatId) {
-        useErrorStore.getState().push({
-          severity: 'warn',
-          source: 'chat.send',
-          code: 'no_chat',
-          message: 'Could not create a chat — try again.',
-        });
-        return;
-      }
-
-      lastChatSendArgsRef.current = args;
-      const attachment = args.attachment
-        ? {
-            selectionText: args.attachment.text,
-            chapterId: args.attachment.chapter.id,
-          }
-        : undefined;
-      const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
-        chatId,
-        content: args.content,
-        modelId,
-        enableWebSearch: args.enableWebSearch,
-      };
-      if (attachment) sendArgs.attachment = attachment;
-      await sendChatMessage.mutateAsync(sendArgs);
-      // Composer keeps its own state; clear the attached selection chip after
-      // a successful send so the next turn starts fresh.
-      clearAttachedSelection();
-    },
-    [
-      activeChapterId,
-      activeChatId,
-      createChat,
-      selectedModelId,
-      sendChatMessage,
-      clearAttachedSelection,
-    ],
-  );
-
-  const handleRetryChatSend = useCallback((): void => {
-    const last = lastChatSendArgsRef.current;
-    if (!last) return;
-    void handleChatSend(last);
-  }, [handleChatSend]);
 
   const handleStoryPickerSelect = useCallback(
     (id: string): void => {
@@ -669,23 +579,12 @@ export function EditorPage(): JSX.Element {
         }
         chat={
           <ChatPanel
-            messagesBody={
-              <ChatMessages
-                chatId={activeChatId}
-                chapterTitle={activeChapter?.title ?? null}
-                attachedCharacterCount={attachedSelection?.text.length ?? 0}
-                attachedTokenCount={Math.ceil((attachedSelection?.text.length ?? 0) / 4)}
-                sendError={sendChatMessage.error}
-                onRetrySend={handleRetryChatSend}
-              />
-            }
-            composer={<ChatComposer onSend={handleChatSend} disabled={sendChatMessage.isPending} />}
+            chatBody={<ChatTab chapterId={activeChapterId} editor={editor} />}
             sceneBody={<SceneTab chapterId={activeChapterId} editor={editor} />}
             onOpenModelPicker={() => {
               setSettingsInitialTab('models');
               setSettingsOpen(true);
             }}
-            onNewChat={handleNewChat}
             onOpenSettings={() => {
               setSettingsOpen(true);
             }}
