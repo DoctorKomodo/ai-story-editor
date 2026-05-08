@@ -123,6 +123,9 @@ describe('SceneTab — smoke', () => {
       if (url.includes('/api/chats/c1/messages')) {
         return jsonResponse(200, { messages: [] });
       }
+      if (url.endsWith('/api/chats/c1') && (input as Request).method === 'DELETE') {
+        return jsonResponse(204, null);
+      }
       if (url.includes('/chats') && !url.includes('/messages')) {
         return jsonResponse(200, {
           chats: [
