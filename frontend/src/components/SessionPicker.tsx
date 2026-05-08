@@ -3,7 +3,7 @@ import { type JSX, type KeyboardEvent, useCallback, useEffect, useRef, useState 
 export interface SessionPickerLabels {
   /** Short uppercase tag rendered next to the active session title in the trigger (e.g. "SCENE", "CHAT"). */
   kindLabel: string;
-  /** Prefix for the trigger button's aria-label (e.g. "Scene session: ", "Chat: "). */
+  /** Prefix (including trailing space) for the trigger button's aria-label (e.g. "Scene session: ", "Chat: "). */
   ariaPrefix: string;
   /** Header text inside the open dropdown (e.g. "Scenes in this chapter", "Chats in this chapter"). */
   dropdownHeader: string;
@@ -245,7 +245,7 @@ export function SessionPicker({
         <div
           className="absolute left-3 right-3 top-[calc(100%-2px)] z-10 bg-bg border border-line rounded shadow-pop overflow-hidden"
           role="listbox"
-          aria-label="Scene sessions"
+          aria-label={labels.dropdownHeader}
         >
           <div className="px-3 py-1.5 text-[10px] uppercase tracking-[.08em] text-ink-4 font-sans border-b border-line bg-bg-sunken">
             {labels.dropdownHeader}
