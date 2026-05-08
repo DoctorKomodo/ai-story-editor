@@ -88,6 +88,7 @@ describe('User settings routes [B11]', () => {
           expand: null,
           summarise: null,
           describe: null,
+          scene: null,
         },
       },
     });
@@ -298,7 +299,25 @@ describe('[X29] settingsJson.prompts slice', () => {
       expand: null,
       summarise: null,
       describe: null,
+      scene: null,
     });
+  });
+
+  it('PATCH { prompts: { scene: "X" } } round-trips, and { scene: null } clears it', async () => {
+    const token = await registerAndLogin('prompts-scene-user');
+    const set = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { scene: 'Direct the scene.' } });
+    expect(set.status).toBe(200);
+    expect(set.body.settings.prompts.scene).toBe('Direct the scene.');
+
+    const cleared = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ prompts: { scene: null } });
+    expect(cleared.status).toBe(200);
+    expect(cleared.body.settings.prompts.scene).toBeNull();
   });
 
   it('PATCH { prompts: { system: "X" } } round-trips', async () => {
