@@ -290,4 +290,70 @@ describe('ChatTab — smoke', () => {
 
     vi.mocked(apiStream).mockReset();
   });
+
+  it('renders the Stop button while a chat send is in flight', async () => {
+    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/chapters/ch1/chats') && !url.includes('/messages')) {
+        return jsonResponse(200, {
+          chats: [
+            {
+              id: 'c1',
+              chapterId: 'ch1',
+              title: 'Existing chat',
+              kind: 'ask',
+              messageCount: 0,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+          ],
+        });
+      }
+      if (
+        url.includes('/api/chats/c1/messages') &&
+        (input as Request | { method?: string })?.method === undefined
+      ) {
+        return jsonResponse(200, { messages: [] });
+      }
+      return jsonResponse(404, { error: 'not_mocked' });
+    }) as FetchMock;
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Make apiStream return a never-finishing SSE stream so isPending stays true.
+    const neverEndingStream = new ReadableStream({
+      start(_c) {
+        /* no-op */
+      },
+    });
+    vi.mocked(apiStream).mockResolvedValueOnce(
+      new Response(neverEndingStream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    );
+
+    const user = userEvent.setup();
+    // Need a model selected so checkChatSendGuards doesn't block the send.
+    const qc = makeClient();
+    qc.setQueryData(userSettingsQueryKey, {
+      ...DEFAULT_SETTINGS,
+      chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-model-1' },
+    });
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+
+    // Wait for the chat list to load + auto-select.
+    await screen.findByRole('button', { name: /Chat: Existing chat/ });
+
+    // Type and submit.
+    const textarea = await screen.findByLabelText('Message');
+    await user.type(textarea, 'hello world');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    // While the SSE never resolves, the composer should show Stop.
+    const stopBtn = await screen.findByRole('button', { name: 'Stop generation' });
+    expect(stopBtn).toBeInTheDocument();
+
+    // Cleanup: abort the in-flight stream so the test doesn't leak.
+    await user.click(stopBtn);
+  });
 });
