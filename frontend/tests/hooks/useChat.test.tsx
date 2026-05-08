@@ -214,8 +214,9 @@ describe('useSendChatMessageMutation', () => {
       modelId: 'm1',
     });
 
-    // Give the mutationFn a tick to invoke apiStream and stash the controller.
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    // Wait until the mutation is in-flight so apiStream has been called and
+    // the AbortController is stashed — deterministic alternative to setTimeout.
+    await waitFor(() => expect(result.current.isPending).toBe(true));
 
     expect(result.current.stop).toBeDefined();
     result.current.stop();

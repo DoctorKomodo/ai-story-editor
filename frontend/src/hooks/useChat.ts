@@ -257,6 +257,11 @@ export function useSendChatMessageMutation(): UseMutationResult<
         });
       } catch (err) {
         if (abortRef.current === controller) abortRef.current = null;
+        if ((err as { name?: string }).name === 'AbortError') {
+          // Clean stop — don't show an error banner, just clear the draft.
+          useChatDraftStore.getState().clear();
+          return;
+        }
         const message = err instanceof Error ? err.message : 'Chat send failed';
         const code = err instanceof ApiError ? (err.code ?? null) : null;
         useChatDraftStore.getState().markError({ code, message });
