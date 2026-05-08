@@ -168,6 +168,11 @@ export function ChatComposer({
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {
+    if (e.key === 'Escape' && isStreaming && onStop) {
+      e.preventDefault();
+      onStop();
+      return;
+    }
     if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
       if (isStreaming) {
         e.preventDefault();
@@ -182,18 +187,10 @@ export function ChatComposer({
     setValue(e.target.value);
   }
 
-  function onContainerKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
-    if (e.key === 'Escape' && isStreaming && onStop) {
-      e.preventDefault();
-      onStop();
-    }
-  }
-
   return (
     <div
       className="border-t border-line p-3 bg-bg flex flex-col gap-2"
       data-testid="chat-composer-root"
-      onKeyDown={onContainerKeyDown}
     >
       {attachment !== null ? (
         <div
@@ -229,8 +226,8 @@ export function ChatComposer({
         onKeyDown={onKeyDown}
         placeholder="Send a message…"
         rows={1}
-        readOnly={isStreaming}
-        className={`resize-none bg-bg-sunken border border-line rounded-[var(--radius)] px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none focus:border-ink-3 max-h-[120px] min-h-[28px]${isStreaming ? ' opacity-60 cursor-not-allowed' : ''}`}
+        disabled={isStreaming}
+        className="resize-none bg-bg-sunken border border-line rounded-[var(--radius)] px-3 py-2 text-[13px] text-ink placeholder:text-ink-4 focus:outline-none focus:border-ink-3 disabled:opacity-60 max-h-[120px] min-h-[28px]"
         aria-label="Message"
       />
 
