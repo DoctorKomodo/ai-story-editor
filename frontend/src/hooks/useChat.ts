@@ -148,10 +148,54 @@ export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, C
       );
       return res.chat;
     },
-    onSuccess: (chat) => {
+    onSuccess: (chat, vars) => {
+      const key = chatsQueryKey(chat.chapterId, vars.kind);
+      qc.setQueryData<ChatSummary[]>(key, (prev) => [chat, ...(prev ?? [])]);
       // Invalidate by the 3-element prefix so ALL kind variants
       // (ask, scene, undefined) are swept — not just the undefined slot.
       void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chat.chapterId) });
+    },
+  });
+}
+
+export function useRenameChatMutation(
+  chapterId: string | null,
+  kind: 'ask' | 'scene' = 'ask',
+): UseMutationResult<ChatSummary, Error, { id: string; title: string }> {
+  const qc = useQueryClient();
+  return useMutation<ChatSummary, Error, { id: string; title: string }>({
+    mutationFn: async ({ id, title }) => {
+      const res = await api<{ chat: ChatSummary }>(
+        `/chats/${encodeURIComponent(id)}`,
+        { method: 'PATCH', body: { title } },
+      );
+      return res.chat;
+    },
+    onSuccess: (updated, vars) => {
+      if (chapterId === null) return;
+      const key = chatsQueryKey(chapterId, kind);
+      qc.setQueryData<ChatSummary[]>(key, (prev) =>
+        (prev ?? []).map((c) => (c.id === vars.id ? { ...c, title: updated.title } : c)),
+      );
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
+    },
+  });
+}
+
+export function useRemoveChatMutation(
+  chapterId: string | null,
+  kind: 'ask' | 'scene' = 'ask',
+): UseMutationResult<void, Error, string> {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: async (id: string) => {
+      await api<void>(`/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    },
+    onSuccess: (_void, id) => {
+      if (chapterId === null) return;
+      const key = chatsQueryKey(chapterId, kind);
+      qc.setQueryData<ChatSummary[]>(key, (prev) => (prev ?? []).filter((c) => c.id !== id));
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
     },
   });
 }
