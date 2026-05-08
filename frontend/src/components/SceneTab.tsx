@@ -27,6 +27,7 @@ import { useSceneTranscript } from '@/hooks/useSceneTranscript';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { listMessagesForChat } from '@/lib/api';
+import { truncateAtWordBoundary } from '@/lib/strings';
 import type { SceneMessage } from '@/store/sceneTranscript';
 import { useSceneTranscriptStore } from '@/store/sceneTranscript';
 import { UndoToast } from './UndoToast';
@@ -37,14 +38,6 @@ export interface SceneTabProps {
 }
 
 const TITLE_MAX_CHARS = 50;
-
-function truncateAtWordBoundary(text: string, max: number): string {
-  if (text.length <= max) return text.replace(/\s+/g, ' ').trim();
-  const slice = text.slice(0, max);
-  const lastSpace = slice.lastIndexOf(' ');
-  const cut = lastSpace > 20 ? slice.slice(0, lastSpace) : slice;
-  return `${cut.trim().replace(/[.,;:!?]+$/, '')}…`;
-}
 
 /**
  * Walk assistant-first so every assistant message — including a retry's new
