@@ -4,7 +4,7 @@ import { parseAiSseStream } from '@/lib/sse';
 
 export interface StreamingAIOptions {
   endpoint: string;
-  body: Record<string, unknown>;
+  body: object;
   signal: AbortSignal;
   onChunk: (delta: string) => void;
   onCitations?: (citations: Citation[]) => void;
@@ -25,10 +25,10 @@ export async function runStreamingAI(opts: StreamingAIOptions): Promise<void> {
     body: opts.body,
     signal: opts.signal,
   });
-  if (opts.onResponseHeaders) opts.onResponseHeaders(res);
   if (!res.body) {
     throw new ApiError(502, 'Empty response body');
   }
+  if (opts.onResponseHeaders) opts.onResponseHeaders(res);
   for await (const event of parseAiSseStream(res.body, opts.signal)) {
     if (event.type === 'chunk') {
       const delta = event.chunk.choices?.[0]?.delta?.content;
