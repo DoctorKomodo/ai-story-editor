@@ -16,14 +16,8 @@ function getMessageText(contentJson: unknown): string {
   }
 }
 
-function chapterCaption(
-  attachment: { chapterId?: string },
-  chapterTitle: string | null | undefined,
-): string {
+function chapterCaption(chapterTitle: string | null | undefined): string {
   if (chapterTitle && chapterTitle.length > 0) return chapterTitle.toUpperCase();
-  if (attachment.chapterId !== undefined && attachment.chapterId.length > 0) {
-    return '—';
-  }
   return '—';
 }
 
@@ -43,7 +37,7 @@ export function UserMessageRow({ message, chapterTitle }: UserMessageRowProps): 
           data-testid={`attachment-${message.id}`}
         >
           <span className="text-[10px] uppercase tracking-[.08em] font-mono text-[var(--ink-4)] block">
-            {`FROM CH. ${chapterCaption(attachment, chapterTitle)}`}
+            {`FROM CH. ${chapterCaption(chapterTitle)}`}
           </span>
           <blockquote className="font-serif italic text-[13px] text-[var(--ink-3)] line-clamp-2">
             {attachment.selectionText}
