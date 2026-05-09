@@ -38,7 +38,11 @@ export async function runStreamingAI(opts: StreamingAIOptions): Promise<void> {
     } else if (event.type === 'citations') {
       if (opts.onCitations) opts.onCitations(event.citations);
     } else if (event.type === 'error') {
-      throw new ApiError(502, event.error.error, event.error.code ?? 'stream_error');
+      throw new ApiError(
+        502,
+        event.error.error || 'Stream failed',
+        event.error.code ?? 'stream_error',
+      );
     } else if (event.type === 'done') {
       return;
     }

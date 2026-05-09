@@ -127,4 +127,36 @@ describe('runStreamingAI', () => {
       }),
     ).resolves.toBeUndefined();
   });
+
+  it('falls back to "Stream failed" when error frame has empty message string', async () => {
+    vi.mocked(apiStream).mockResolvedValue(
+      makeSseResponse([`event: error\ndata: ${JSON.stringify({ error: '', code: 'oops' })}\n\n`]),
+    );
+    await expect(
+      runStreamingAI({
+        endpoint: '/test',
+        body: {},
+        signal: new AbortController().signal,
+        onChunk: () => {},
+      }),
+    ).rejects.toMatchObject({ status: 502, message: 'Stream failed', code: 'oops' });
+  });
+
+  it('silently skips citations frame when onCitations is not provided', async () => {
+    vi.mocked(apiStream).mockResolvedValue(
+      makeSseResponse([
+        `event: citations\ndata: ${JSON.stringify([{ url: 'https://x', title: 'X', snippet: 's', publishedAt: null }])}\n\n`,
+        `data: ${JSON.stringify({ choices: [{ delta: { content: 'ok' } }] })}\n\n`,
+      ]),
+    );
+    await expect(
+      runStreamingAI({
+        endpoint: '/test',
+        body: {},
+        signal: new AbortController().signal,
+        onChunk: () => {},
+        // onCitations omitted
+      }),
+    ).resolves.toBeUndefined();
+  });
 });
