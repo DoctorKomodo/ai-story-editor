@@ -117,7 +117,6 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       const isFirstTurn = currentSession === undefined || currentSession.messageCount === 0;
 
       lastSceneSendArgsRef.current = args;
-      let sendSucceeded = false;
       try {
         await sendChatMessage.mutateAsync({
           chatId,
@@ -125,14 +124,13 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
           modelId: mId,
           enableWebSearch: args.enableWebSearch,
         });
-        sendSucceeded = true;
       } catch {
         // Error is already reflected in sendChatMessage.error and the draft store.
         // Don't propagate — ChatComposer calls onSend via `void onSend(args)`.
         return;
       }
 
-      if (sendSucceeded && isFirstTurn) {
+      if (isFirstTurn) {
         const title = truncateAtWordBoundary(args.content, TITLE_MAX_CHARS);
         try {
           await renameChat.mutateAsync({ id: chatId, title });
