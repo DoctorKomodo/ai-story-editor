@@ -322,7 +322,11 @@ export function createChatMessagesRouter() {
       // ── 1b. Load message history early for retry validation ──────────────
       // Done here — before any external calls — so an invalid retry state
       // returns 400 without touching the Venice API or user settings.
-      const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
+      // messageRepo is hoisted here so it can also be used for deleteAllAfter
+      // in the retry branch below (step 1c) and for persisting the user/assistant
+      // messages later (step 9a / stream handler).
+      const messageRepo = createMessageRepo(req);
+      const priorMessages = await messageRepo.findManyForChat(chatId);
 
       // ── [SC6] Retry validation ────────────────────────────────────────────
       // Compute lastUserMsg once; reused below for trailingUserContent.
@@ -337,6 +341,16 @@ export function createChatMessagesRouter() {
           },
         });
         return;
+      }
+
+      // ── 1c. [ai-surfaces-v1] On retry, delete trailing-after-lastUser rows ─
+      // Delete any rows that came after the last user turn (typically a prior
+      // assistant turn this retry is replacing), then re-fetch so history is
+      // correct. On a normal turn this block is skipped entirely.
+      let priorMessagesForHistory = priorMessages;
+      if (body.retry && lastUserMsg) {
+        await messageRepo.deleteAllAfter(chatId, lastUserMsg.id as string);
+        priorMessagesForHistory = await messageRepo.findManyForChat(chatId);
       }
 
       // ── 2. Prime models cache (throws NoVeniceKeyError if no BYOK) ────────
@@ -430,7 +444,7 @@ export function createChatMessagesRouter() {
       // ── 8. Build messages array for Venice ───────────────────────────────
       const systemMsg = baseMessages[0];
       const synthesisedUserMsg = baseMessages[1];
-      const history = priorMessages.map((m) => {
+      const history = priorMessagesForHistory.map((m) => {
         const rawContent =
           typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
 
@@ -464,7 +478,6 @@ export function createChatMessagesRouter() {
         : [systemMsg, ...history, synthesisedUserMsg];
 
       // ── 9a. Persist the user message BEFORE calling Venice (normal turn only)
-      const messageRepo = createMessageRepo(req);
       if (!body.retry) {
         await messageRepo.create({
           chatId,

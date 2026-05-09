@@ -66,7 +66,7 @@ describe('ChatTab — smoke', () => {
       user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
-    useChatDraftStore.getState().clear();
+    useChatDraftStore.setState({ drafts: {} });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

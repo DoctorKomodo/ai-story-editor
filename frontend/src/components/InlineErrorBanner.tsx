@@ -12,12 +12,15 @@ export interface InlineErrorBannerProps {
   error: InlineErrorBannerError | null;
   onRetry?: () => void;
   onDismiss?: () => void;
+  /** When true, the Retry button is rendered in a disabled state and click events are suppressed. */
+  disabled?: boolean;
 }
 
 export function InlineErrorBanner({
   error,
   onRetry,
   onDismiss,
+  disabled,
 }: InlineErrorBannerProps): JSX.Element | null {
   const [showRaw, setShowRaw] = useState(false);
 
@@ -45,6 +48,7 @@ export function InlineErrorBanner({
           <button
             type="button"
             onClick={onRetry}
+            disabled={disabled}
             className="px-2 py-0.5 rounded-[var(--radius)] border border-[var(--danger)] hover:bg-[var(--danger)] hover:text-bg text-[12px]"
           >
             Retry

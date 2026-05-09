@@ -19,8 +19,8 @@
  *    selection bubble + inline-AI card; F38/F42 redesign the chat pane.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, apiStream } from '@/lib/api';
-import { parseAiSseStream } from '@/lib/sse';
+import { ApiError } from '@/lib/api';
+import { runStreamingAI } from '@/lib/streamingAI';
 import { useErrorStore } from '@/store/errors';
 
 export type AICompletionStatus = 'idle' | 'thinking' | 'streaming' | 'done' | 'error';
@@ -110,13 +110,10 @@ export function useAICompletion(): UseAICompletion {
 
   const run = useCallback(
     async (args: RunArgs): Promise<void> => {
-      // Abort any in-flight request before starting a new one.
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
 
-      // Keep the prior `usage` snapshot on run-start — we only overwrite it
-      // when the new response carries at least one header value.
       safeSetState((prev) => ({
         status: 'thinking',
         text: '',
@@ -149,15 +146,41 @@ export function useAICompletion(): UseAICompletion {
         body.enableWebSearch = args.enableWebSearch;
       }
 
-      let res: Response;
       try {
-        res = await apiStream('/ai/complete', {
-          method: 'POST',
+        await runStreamingAI({
+          endpoint: '/ai/complete',
           body,
           signal: controller.signal,
+          onChunk: (delta) => {
+            safeSetState((prev) => ({
+              ...prev,
+              status: prev.status === 'thinking' ? 'streaming' : prev.status,
+              text: prev.text + delta,
+            }));
+          },
+          // Inline-AI doesn't render citations — opt-out by omitting onCitations.
+          onResponseHeaders: (res) => {
+            // F16: harvest Venice rate-limit headers before reading the body. If
+            // both are absent (tests / older Venice responses), leave the prior
+            // snapshot intact rather than wiping it with `null`s.
+            const remainingRequests = parseIntHeader(
+              res.headers.get('x-venice-remaining-requests'),
+            );
+            const remainingTokens = parseIntHeader(res.headers.get('x-venice-remaining-tokens'));
+            if (remainingRequests !== null || remainingTokens !== null) {
+              safeSetState((prev) => ({
+                ...prev,
+                usage: { remainingRequests, remainingTokens },
+              }));
+            }
+          },
         });
+        // Stream completed normally. Skip the done-flip if cancel() ran:
+        // it already reset state to idle via INITIAL_STATE, and parseAiSseStream
+        // returns normally (not throws) on signal.aborted.
+        if (controller.signal.aborted) return;
+        safeSetState((prev) => (prev.status === 'error' ? prev : { ...prev, status: 'done' }));
       } catch (err) {
-        // Ignore abort-triggered errors — `cancel()` already reset state.
         if (controller.signal.aborted) return;
         const apiErr =
           err instanceof ApiError
@@ -165,82 +188,9 @@ export function useAICompletion(): UseAICompletion {
             : new ApiError(0, err instanceof Error ? err.message : 'Request failed');
         safeSetState((prev) => ({
           status: 'error',
-          text: '',
-          error: apiErr,
-          usage: prev.usage,
-        }));
-        publish(apiErr);
-        return;
-      }
-
-      // F16: harvest Venice rate-limit headers before reading the body. If
-      // both are absent (tests / older Venice responses), leave the prior
-      // snapshot intact rather than wiping it with `null`s.
-      const remainingRequests = parseIntHeader(res.headers.get('x-venice-remaining-requests'));
-      const remainingTokens = parseIntHeader(res.headers.get('x-venice-remaining-tokens'));
-      if (remainingRequests !== null || remainingTokens !== null) {
-        safeSetState((prev) => ({
-          ...prev,
-          usage: { remainingRequests, remainingTokens },
-        }));
-      }
-
-      if (!res.body) {
-        const apiErr = new ApiError(502, 'Empty response body');
-        safeSetState((prev) => ({
-          status: 'error',
-          text: '',
-          error: apiErr,
-          usage: prev.usage,
-        }));
-        publish(apiErr);
-        return;
-      }
-
-      try {
-        for await (const event of parseAiSseStream(res.body, controller.signal)) {
-          if (controller.signal.aborted) return;
-          if (event.type === 'chunk') {
-            const delta = event.chunk.choices?.[0]?.delta?.content;
-            if (typeof delta === 'string' && delta.length > 0) {
-              safeSetState((prev) => ({
-                ...prev,
-                status: prev.status === 'thinking' ? 'streaming' : prev.status,
-                text: prev.text + delta,
-              }));
-            }
-          } else if (event.type === 'error') {
-            const code = event.error.code ?? 'stream_error';
-            const apiErr = new ApiError(502, event.error.error, code);
-            safeSetState((prev) => ({
-              status: 'error',
-              text: prev.text,
-              error: apiErr,
-              usage: prev.usage,
-            }));
-            publish(apiErr);
-            return;
-          } else if (event.type === 'citations') {
-            // [V26][F50] Inline-AI completions don't render citations
-            // today; ignore the frame here. The chat path handles them.
-          } else {
-            // done
-            safeSetState((prev) => (prev.status === 'error' ? prev : { ...prev, status: 'done' }));
-            return;
-          }
-        }
-        // Stream ended without explicit [DONE] — treat as done unless aborted.
-        if (!controller.signal.aborted) {
-          safeSetState((prev) => (prev.status === 'error' ? prev : { ...prev, status: 'done' }));
-        }
-      } catch (err) {
-        if (controller.signal.aborted) return;
-        const apiErr =
-          err instanceof ApiError
-            ? err
-            : new ApiError(502, err instanceof Error ? err.message : 'Stream failed');
-        safeSetState((prev) => ({
-          status: 'error',
+          // prev.text is '' for pre-stream failures (the opening safeSetState reset
+          // it before runStreamingAI was awaited) and preserves partial output for
+          // mid-stream errors.
           text: prev.text,
           error: apiErr,
           usage: prev.usage,

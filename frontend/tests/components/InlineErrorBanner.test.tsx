@@ -80,4 +80,22 @@ describe('<InlineErrorBanner>', () => {
     render(<InlineErrorBanner error={{ code: 'x', message: 'y', detail: { foo: 1 } }} />);
     expect(screen.queryByRole('button', { name: /show raw/i })).toBeNull();
   });
+
+  it('disables the Retry button when disabled prop is true', async () => {
+    const onRetry = vi.fn();
+    render(
+      <InlineErrorBanner error={{ code: null, message: 'oops' }} onRetry={onRetry} disabled />,
+    );
+    const btn = screen.getByRole('button', { name: /retry/i });
+    expect(btn).toBeDisabled();
+    await userEvent.click(btn);
+    expect(onRetry).not.toHaveBeenCalled();
+  });
+
+  it('Retry button is enabled when disabled prop is omitted/false', async () => {
+    const onRetry = vi.fn();
+    render(<InlineErrorBanner error={{ code: null, message: 'oops' }} onRetry={onRetry} />);
+    await userEvent.click(screen.getByRole('button', { name: /retry/i }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
+  });
 });
