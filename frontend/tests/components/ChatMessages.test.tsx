@@ -62,7 +62,7 @@ describe('ChatMessages (F39)', () => {
     setUnauthorizedHandler(null);
     resetApiClientForTests();
     useSessionStore.setState({ user: null, status: 'idle' });
-    useChatDraftStore.getState().clear();
+    useChatDraftStore.setState({ drafts: {} });
   });
 
   function mockMessages(messages: ChatMessage[]): void {
@@ -312,8 +312,8 @@ describe('ChatMessages (F39)', () => {
       userContent: 'q',
       attachment: null,
     });
-    useChatDraftStore.getState().markStreaming();
-    useChatDraftStore.getState().appendDelta('Hello');
+    useChatDraftStore.getState().markStreaming('c1');
+    useChatDraftStore.getState().appendDelta('c1', 'Hello');
 
     renderWithProviders(<ChatMessages chatId="c1" chapterTitle="Ch. 1" />);
 

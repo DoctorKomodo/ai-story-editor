@@ -257,21 +257,21 @@ export function useSendChatMessageMutation(): UseMutationResult<
           onChunk: (delta) => {
             if (!firstChunkSeen) {
               firstChunkSeen = true;
-              useChatDraftStore.getState().markStreaming();
+              useChatDraftStore.getState().markStreaming(chatId);
             }
-            useChatDraftStore.getState().appendDelta(delta);
+            useChatDraftStore.getState().appendDelta(chatId, delta);
           },
           // citations forwarded but ignored — refetched message carries citationsJson.
         });
-        useChatDraftStore.getState().markDone();
+        useChatDraftStore.getState().markDone(chatId);
       } catch (err) {
         if ((err as { name?: string }).name === 'AbortError') {
-          useChatDraftStore.getState().clear();
+          useChatDraftStore.getState().clear(chatId);
           return;
         }
         const message = err instanceof Error ? err.message : 'Chat send failed';
         const code = err instanceof ApiError ? (err.code ?? null) : null;
-        useChatDraftStore.getState().markError({ code, message });
+        useChatDraftStore.getState().markError(chatId, { code, message });
         throw err;
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
@@ -280,16 +280,16 @@ export function useSendChatMessageMutation(): UseMutationResult<
     onSuccess: (_void, vars) => {
       // Clear the draft before invalidating so we never briefly show both
       // the optimistic draft bubble and the persisted assistant message.
-      useChatDraftStore.getState().clear();
+      useChatDraftStore.getState().clear(vars.chatId);
       void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
     },
-    onSettled: () => {
+    onSettled: (_void, _err, vars) => {
       // Safety net for any path that didn't clear in onSuccess (i.e. failed
       // mutations land here after onError). Preserve error drafts so the
       // error banner stays visible until the next send overwrites them.
-      const currentStatus = useChatDraftStore.getState().draft?.status;
+      const currentStatus = useChatDraftStore.getState().drafts[vars.chatId]?.status;
       if (currentStatus === 'error') return;
-      useChatDraftStore.getState().clear();
+      useChatDraftStore.getState().clear(vars.chatId);
     },
   });
 

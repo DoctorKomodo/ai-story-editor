@@ -49,11 +49,11 @@ function withClient(): { wrapper: (p: { children: ReactNode }) => JSX.Element; q
 
 beforeEach(() => {
   vi.mocked(apiStream).mockReset();
-  useChatDraftStore.getState().clear();
+  useChatDraftStore.setState({ drafts: {} });
 });
 
 afterEach(() => {
-  useChatDraftStore.getState().clear();
+  useChatDraftStore.setState({ drafts: {} });
 });
 
 describe('useSendChatMessageMutation', () => {
@@ -83,7 +83,7 @@ describe('useSendChatMessageMutation', () => {
 
     // onMutate fires before mutationFn; draft starts in 'thinking'.
     await waitFor(() => {
-      expect(useChatDraftStore.getState().draft).toMatchObject({
+      expect(useChatDraftStore.getState().drafts['c1']).toMatchObject({
         chatId: 'c1',
         userContent: 'hello',
         assistantText: '',
@@ -99,7 +99,7 @@ describe('useSendChatMessageMutation', () => {
     // draft so the refetched messages take over.
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: chatMessagesQueryKey('c1') });
     await waitFor(() => {
-      expect(useChatDraftStore.getState().draft).toBeNull();
+      expect(useChatDraftStore.getState().drafts['c1']).toBeUndefined();
     });
   });
 
@@ -119,7 +119,7 @@ describe('useSendChatMessageMutation', () => {
     });
 
     await waitFor(() => {
-      expect(useChatDraftStore.getState().draft?.attachment).toEqual({
+      expect(useChatDraftStore.getState().drafts['c1']?.attachment).toEqual({
         selectionText: 'sel',
         chapterId: 'ch1',
       });
@@ -157,7 +157,7 @@ describe('useSendChatMessageMutation', () => {
 
     // On error, the draft is preserved so <ChatMessages /> can render the error banner.
     await waitFor(() => {
-      const d = useChatDraftStore.getState().draft;
+      const d = useChatDraftStore.getState().drafts['c1'];
       expect(d?.status).toBe('error');
       expect(d?.error?.message).toBe('rate limited');
       expect(d?.error?.code).toBe('rate_limited');
@@ -182,7 +182,7 @@ describe('useSendChatMessageMutation', () => {
       ).rejects.toBeDefined();
     });
 
-    const draft = useChatDraftStore.getState().draft;
+    const draft = useChatDraftStore.getState().drafts['c1'];
     expect(draft?.status).toBe('error');
     expect(draft?.error?.code).toBe('venice_error');
   });
@@ -257,16 +257,16 @@ describe('useSendChatMessageMutation', () => {
     // Emit a role-only chunk first — must NOT flip status to 'streaming'.
     enqueue('data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n');
     await waitFor(() => {
-      expect(useChatDraftStore.getState().draft?.assistantText).toBe('');
+      expect(useChatDraftStore.getState().drafts['c1']?.assistantText).toBe('');
     });
-    expect(useChatDraftStore.getState().draft?.status).toBe('thinking');
+    expect(useChatDraftStore.getState().drafts['c1']?.status).toBe('thinking');
 
     // Now a content chunk — flips to 'streaming' and appends.
     enqueue('data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n');
     await waitFor(() => {
-      expect(useChatDraftStore.getState().draft?.assistantText).toBe('Hi');
+      expect(useChatDraftStore.getState().drafts['c1']?.assistantText).toBe('Hi');
     });
-    expect(useChatDraftStore.getState().draft?.status).toBe('streaming');
+    expect(useChatDraftStore.getState().drafts['c1']?.status).toBe('streaming');
 
     enqueue('data: [DONE]\n\n');
     close();
