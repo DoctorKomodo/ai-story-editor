@@ -6,7 +6,7 @@
 
 **Goal:** Collapse Chat and Scene's parallel transcript implementations into one shared layer (streaming utility, draft store, transcript container, row primitives, row components) and add backend `deleteAllAfter` so retry has clean linear semantics.
 
-**Architecture:** Backend gains one repo method (`deleteAllAfter`) that the retry route calls before regeneration. Frontend extracts a stateless streaming utility (`runStreamingAI`), reshapes the chat draft store to be keyed by chatId (cross-tab concurrent streaming), introduces shared row primitives + row components in `frontend/src/components/messageRow/`, and a render-prop `<TranscriptView>` container that owns scroll/autoscroll/session-reset/data-fetch/error-UX. Both ChatTab and SceneTab consume the same shared layer; banner-retry dispatch uses cache inspection (against a tracked `lastIdBefore`) to choose between `retry: true` and fresh-send so the case-D corner case is handled correctly. Scene's transcript store + hook + candidate card delete entirely.
+**Architecture:** Backend gains one repo method (`deleteAllAfter`) that the retry route calls before regeneration. Frontend extracts a stateless streaming utility (`runStreamingAI`), reshapes the chat draft store to be keyed by chatId (cross-tab concurrent streaming), introduces shared row primitives + row components in `frontend/src/components/messageRow/`, and a render-prop `<TranscriptView>` container that owns scroll/autoscroll/session-reset/data-fetch/error-UX. Both ChatTab and SceneTab consume the same shared layer; banner-retry dispatch lives in a small `useBannerRetry` hook that refetches the messages query unconditionally and reads the cache's trailing-message role to choose between `{retry: true}` (trailing user — case B) and fresh send (trailing assistant or undefined — cases A/D/E + rapid-fire). Scene's transcript store + hook + candidate card delete entirely.
 
 **Tech Stack:** Express + Prisma (backend), React 19 + Vite + TypeScript strict + TailwindCSS + TipTap + Zustand + TanStack Query 5 + Vitest + Testing Library + Storybook 9 (frontend).
 
@@ -52,7 +52,7 @@
 
 - `frontend/src/store/chatDraft.ts` — refactor to keyed-by-chatId shape.
 - `frontend/tests/store/chatDraft.test.tsx` (or equivalent) — keyed-slot isolation tests.
-- `frontend/src/hooks/useChat.ts` — `useSendChatMessageMutation` uses `runStreamingAI`, tracks `lastIdBefore`, calls keyed draft methods. Exposes `lastIdBeforeRef` (or equivalent) for banner-retry dispatch.
+- `frontend/src/hooks/useChat.ts` — `useSendChatMessageMutation` uses `runStreamingAI`, calls keyed draft methods.
 - `frontend/src/hooks/useAICompletion.ts` — uses `runStreamingAI`.
 - `frontend/src/components/ChatTab.tsx` — replaces `<ChatMessages>` with `<TranscriptView>` + row components; banner-retry dispatch handler.
 - `frontend/src/components/SceneTab.tsx` — replaces inline scroll/transcript with `<TranscriptView>` + row components; uses `useSendChatMessageMutation`; banner-retry dispatch handler.
@@ -74,7 +74,7 @@ Phases land as separate commits within the single PR. Each phase is testable on 
 
 1. **Phase 1 — Backend retry change** (Tasks 1-3): `deleteAllAfter` repo method + route call + test updates. Backend ships independently green.
 2. **Phase 2 — `runStreamingAI` utility** (Tasks 4-7): extract + migrate both consumers. No UX change.
-3. **Phase 3 — Keyed draft store** (Tasks 8-9): `useChatDraftStore` shape change + mutation rewiring + `lastIdBefore` tracking.
+3. **Phase 3 — Keyed draft store** (Task 8): `useChatDraftStore` shape change + mutation rewiring.
 4. **Phase 4 — Row primitives** (Tasks 10-13): primitives, then row components.
 5. **Phase 5 — `<TranscriptView>` container** (Task 14): with unified hydration error UX.
 6. **Phase 6 — Chat integration** (Tasks 15-16): ChatTab uses TranscriptView + rows; banner-retry dispatch.
@@ -1260,145 +1260,7 @@ git commit -m "[ai-surfaces-v1] frontend: useChatDraftStore keyed by chatId (cro
 
 ---
 
-## Task 9: Add `lastIdBefore` tracking to `useSendChatMessageMutation`
-
-**Files:**
-- Modify: `frontend/src/hooks/useChat.ts`
-- Modify: `frontend/tests/hooks/useChat.test.tsx`
-
-**Context:** Banner-retry dispatch (Task 16 + 19) needs to know the id of the trailing message at send-start, so that after a failure it can detect whether a NEW user message persisted (case B). Tracked as a ref on the mutation, captured in `onMutate`, exposed as a public field on the mutation result.
-
-- [ ] **Step 1: Write a failing test for the lastIdBefore capture**
-
-Append to `frontend/tests/hooks/useChat.test.tsx`:
-
-```ts
-it('captures lastIdBefore on send (the trailing message id from cache pre-send)', async () => {
-  const qc = new QueryClient();
-  // Seed the cache with two messages.
-  qc.setQueryData(chatMessagesQueryKey('chat-1'), [
-    { id: 'msg-1', role: 'user', contentJson: 'hi', /* ... */ } as ChatMessage,
-    { id: 'msg-2', role: 'assistant', contentJson: 'hello', /* ... */ } as ChatMessage,
-  ]);
-  // Seed user settings with a chat model so checkChatSendGuards passes.
-  qc.setQueryData(userSettingsQueryKey, {
-    ...DEFAULT_SETTINGS,
-    chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-test' },
-  });
-
-  // Mock apiStream to error pre-stream.
-  vi.mocked(apiStream).mockRejectedValueOnce(new ApiError(500, 'oops'));
-
-  const { result } = renderHook(() => useSendChatMessageMutation(), {
-    wrapper: ({ children }) => <QueryClientProvider client={qc}>{children}</QueryClientProvider>,
-  });
-
-  await act(async () => {
-    await result.current.mutateAsync({
-      chatId: 'chat-1',
-      content: 'new message',
-      modelId: 'venice-test',
-    }).catch(() => {}); // expected to reject
-  });
-
-  expect(result.current.lastIdBefore).toBe('msg-2');
-});
-```
-
-- [ ] **Step 2: Run the test to verify it fails**
-
-```bash
-cd frontend && npx vitest run tests/hooks/useChat.test.tsx -t lastIdBefore
-```
-
-Expected: FAIL — `result.current.lastIdBefore` is undefined.
-
-- [ ] **Step 3: Add `lastIdBeforeRef` to the mutation hook**
-
-In `frontend/src/hooks/useChat.ts`, inside `useSendChatMessageMutation`:
-
-```ts
-const abortRef = useRef<AbortController | null>(null);
-const lastIdBeforeRef = useRef<string | null>(null);
-```
-
-In `onMutate`:
-
-```ts
-onMutate: ({ chatId, content, attachment }) => {
-  // Capture the id of the trailing persisted message before the send fires.
-  // Banner-retry dispatch reads this to detect whether a new user message
-  // persisted between send-start and failure (case B vs cases A/D/E).
-  const messages = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey(chatId)) ?? [];
-  lastIdBeforeRef.current = messages[messages.length - 1]?.id ?? null;
-
-  useChatDraftStore.getState().start({
-    chatId,
-    userContent: content ?? '',
-    attachment: attachment ?? null,
-  });
-},
-```
-
-Expose it on the return:
-
-```ts
-return {
-  ...mutation,
-  stop: () => abortRef.current?.abort(),
-  get lastIdBefore() {
-    return lastIdBeforeRef.current;
-  },
-};
-```
-
-(The getter pattern keeps the value live across re-reads without re-rendering.)
-
-Update the return type:
-
-```ts
-export function useSendChatMessageMutation(): UseMutationResult<
-  void,
-  Error,
-  SendChatMessageArgs
-> & {
-  stop: () => void;
-  readonly lastIdBefore: string | null;
-} {
-  // ...
-}
-```
-
-- [ ] **Step 4: Run the test**
-
-```bash
-cd frontend && npx vitest run tests/hooks/useChat.test.tsx -t lastIdBefore
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Run all useChat tests**
-
-```bash
-cd frontend && npx vitest run tests/hooks/useChat.test.tsx
-```
-
-Expected: All pass.
-
-- [ ] **Step 6: Run typecheck**
-
-```bash
-cd frontend && npm run typecheck
-```
-
-Expected: No errors.
-
-- [ ] **Step 7: Commit**
-
-```bash
-git add frontend/src/hooks/useChat.ts frontend/tests/hooks/useChat.test.tsx
-git commit -m "[ai-surfaces-v1] frontend: useSendChatMessageMutation tracks lastIdBefore for banner-retry dispatch"
-```
+> **(Task 9 deferred and ultimately removed.)** An earlier draft of this plan added `lastIdBefore` tracking to the mutation hook (capturing the trailing message id at `onMutate` time, used by banner-retry dispatch to detect whether a new user message had persisted). Spec review caught a stale-cache hole: under rapid-fire send-after-success, the captured value pointed at the trailing message from BEFORE the prior successful send (because the post-success refetch hadn't landed yet). Banner-retry would then false-positive case B, deleting the prior good assistant. The trailing-role dispatch (Task 14, formerly Task 15) doesn't need this ref — the cache's trailing-message role after refetch is the authoritative signal.
 
 ---
 
@@ -2597,7 +2459,7 @@ describe('TranscriptView', () => {
     expect(screen.getByTestId('draft-assistant')).toHaveTextContent('streaming response');
   });
 
-  it('suppresses draft-user when persisted trailing user matches draft userContent', () => {
+  it('suppresses draft-user when persisted trailing user matches draft userContent (mid-stream-error path)', () => {
     // Simulates the moment after server persistence + cache refetch — the
     // persisted user matches the draft's userContent; the draft-user is
     // redundant and would cause a duplicate flicker.
@@ -2629,6 +2491,43 @@ describe('TranscriptView', () => {
     );
     expect(screen.getByTestId('persisted')).toBeInTheDocument();
     expect(screen.queryByTestId('draft-user')).toBeNull();
+  });
+
+  it('suppresses draft-user when draft.userContent is empty (retry path)', () => {
+    // Simulates the retry path: mutateAsync({retry: true}) calls start()
+    // with userContent: ''. The user is already persisted; rendering an
+    // empty synthetic user bubble would be ugly.
+    const qc = makeQc();
+    qc.setQueryData(chatMessagesQueryKey('c-1'), [
+      makeMessage({ id: 'persisted-user', role: 'user', contentJson: 'previously sent' }),
+    ]);
+    useChatDraftStore.getState().start({
+      chatId: 'c-1',
+      userContent: '',
+      attachment: null,
+    });
+    useChatDraftStore.getState().appendDelta('c-1', 'regenerated reply');
+    render(
+      <QueryClientProvider client={qc}>
+        <TranscriptView chatId="c-1" emptyState={<div>EMPTY</div>}>
+          {(rows) => (
+            <>
+              {rows.map((r, i) => {
+                if (r.kind === 'persisted')
+                  return <li key={i} data-testid="persisted">{String(r.message.contentJson)}</li>;
+                if (r.kind === 'draft-user')
+                  return <li key={i} data-testid="draft-user">{r.userContent}</li>;
+                return <li key={i} data-testid="draft-assistant">{r.assistantText}</li>;
+              })}
+            </>
+          )}
+        </TranscriptView>
+      </QueryClientProvider>,
+    );
+    // The persisted user is shown; no synthetic empty-user bubble.
+    expect(screen.getByTestId('persisted')).toBeInTheDocument();
+    expect(screen.queryByTestId('draft-user')).toBeNull();
+    expect(screen.getByTestId('draft-assistant')).toHaveTextContent('regenerated reply');
   });
 
   it('renders error state with Retry button when query.isError', () => {
@@ -2715,11 +2614,22 @@ function getMessageText(contentJson: unknown): string {
 function buildRows(messages: ChatMessage[], draft: ChatDraft | undefined): TranscriptRow[] {
   const rows: TranscriptRow[] = messages.map((m) => ({ kind: 'persisted', message: m }));
   if (!draft) return rows;
+
+  // Suppress draft-user when EITHER:
+  //   (a) draft.userContent === '' — retry path (mutateAsync with retry: true
+  //       calls start() with empty userContent; the user message is already
+  //       persisted on the backend, so a synthetic empty bubble would be ugly).
+  //   (b) the trailing persisted user message's content matches draft.userContent
+  //       — mid-stream-error → banner-retry path, where the post-refetch cache
+  //       catches up while the error draft is still in the store. Without this,
+  //       there's a brief duplicate-user flicker.
+  // Either rule on its own leaves a duplicate-user flicker in the other case.
   const trailingUser = [...messages].reverse().find((m) => m.role === 'user');
   const trailingUserMatches =
     trailingUser !== undefined &&
     getMessageText(trailingUser.contentJson) === draft.userContent;
-  if (!trailingUserMatches) {
+  const skipDraftUser = draft.userContent === '' || trailingUserMatches;
+  if (!skipDraftUser) {
     rows.push({
       kind: 'draft-user',
       userContent: draft.userContent,
@@ -2872,7 +2782,7 @@ If `<InlineErrorBanner>` doesn't already accept a `disabled?: boolean` prop, ext
 cd frontend && npx vitest run tests/components/messageRow/TranscriptView.test.tsx
 ```
 
-Expected: All 6 pass.
+Expected: All 7 pass (empty when null chatId, empty when no messages, persisted rendering, draft merge, mid-stream-error suppression, retry-path empty-userContent suppression, hydration error UX).
 
 - [ ] **Step 5: Add to index**
 
@@ -3233,14 +3143,16 @@ git commit -m "[ai-surfaces-v1] frontend: ChatTab uses TranscriptView + shared r
 
 ---
 
-## Task 15: Extract `useBannerRetry` hook (banner-retry dispatch logic) + four-case unit tests + wire into ChatTab
+## Task 15: Extract `useBannerRetry` hook (trailing-role dispatch) + dispatch table unit tests + wire into ChatTab
 
 **Files:**
 - Create: `frontend/src/hooks/useBannerRetry.ts`
 - Create: `frontend/tests/hooks/useBannerRetry.test.tsx`
 - Modify: `frontend/src/components/ChatTab.tsx` (replace `onRetry` with the new hook)
 
-**Context:** Per spec's "Retry routing" section. The dispatch logic (cache inspect → refetch if needed → `retry: true` or fresh-send) lives in a small reusable hook so ChatTab and SceneTab use the same logic, and the four-case dispatch table can be unit-tested deterministically against the hook (no full-component render needed).
+**Context:** Per spec's "Retry routing" section. The dispatch logic (refetch → read cache trailing-role → `{retry: true}` if user, else fresh send) lives in a small reusable hook so ChatTab and SceneTab use the same logic and the dispatch table is unit-tested deterministically.
+
+The hook does NOT use `lastIdBefore`. An earlier draft did, but it had a stale-cache hole under rapid-fire send-after-success: captured-at-onMutate could point at the trailing message from BEFORE a prior successful send (because the post-success refetch hadn't landed). After failure, the inspect would false-positive case B and destroy the prior good assistant. Trailing-role doesn't have this failure mode — the cache's trailing message after refetch is the authoritative signal. See spec § "Why trailing-role beats lastIdBefore".
 
 - [ ] **Step 1: Write failing tests for `useBannerRetry`**
 
@@ -3272,12 +3184,10 @@ function makeMessage(over: Partial<ChatMessage> & { id: string }): ChatMessage {
 function makeFakeMutation(): {
   mutateAsync: ReturnType<typeof vi.fn>;
   isPending: boolean;
-  lastIdBefore: string | null;
 } {
   return {
     mutateAsync: vi.fn().mockResolvedValue(undefined),
     isPending: false,
-    lastIdBefore: null,
   };
 }
 
@@ -3287,10 +3197,10 @@ function withQc(qc: QueryClient) {
   );
 }
 
-describe('useBannerRetry — four-case dispatch table', () => {
+describe('useBannerRetry — trailing-role dispatch table', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('case A — empty cache, no new user → fresh send (calls onSend)', async () => {
+  it('case A — empty cache (trailing undefined) → fresh send', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), []);
     const onSend = vi.fn().mockResolvedValue(undefined);
@@ -3318,7 +3228,7 @@ describe('useBannerRetry — four-case dispatch table', () => {
     expect(mutation.mutateAsync).not.toHaveBeenCalled();
   });
 
-  it('case B — cache shows new user after lastIdBefore → retry: true (no onSend)', async () => {
+  it('case B — cache trailing is user (X persisted, no following assistant) → retry: true', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), [
       makeMessage({ id: 'old-user', role: 'user', contentJson: 'past' }),
@@ -3327,7 +3237,6 @@ describe('useBannerRetry — four-case dispatch table', () => {
     ]);
     const onSend = vi.fn();
     const mutation = makeFakeMutation();
-    mutation.lastIdBefore = 'old-asst';
     const lastSendArgs = { content: 'new question', enableWebSearch: false };
 
     const { result } = renderHook(
@@ -3356,7 +3265,7 @@ describe('useBannerRetry — four-case dispatch table', () => {
     expect(onSend).not.toHaveBeenCalled();
   });
 
-  it('case D — prior turn exists; no new user; X failed pre-persist → fresh send (assistant-1 untouched)', async () => {
+  it('case D — prior turn exists; trailing is assistant-1 → fresh send (assistant-1 untouched)', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), [
       makeMessage({ id: 'user-1', role: 'user', contentJson: 'hi' }),
@@ -3364,7 +3273,6 @@ describe('useBannerRetry — four-case dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    mutation.lastIdBefore = 'assistant-1';
     const lastSendArgs = { content: 'X', enableWebSearch: false };
 
     const { result } = renderHook(
@@ -3387,12 +3295,11 @@ describe('useBannerRetry — four-case dispatch table', () => {
 
     expect(onSend).toHaveBeenCalledWith(lastSendArgs);
     expect(mutation.mutateAsync).not.toHaveBeenCalled();
-    // assistant-1 still in cache (we didn't touch the cache).
     const after = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey('chat-1'));
     expect(after?.some((m) => m.id === 'assistant-1')).toBe(true);
   });
 
-  it('case E — content collision; lastIdBefore = assistant-1; cache has no new user → fresh send (id-based detection)', async () => {
+  it('case E — content collision; trailing is assistant; "hello" matches user-1 content → fresh send (role-based)', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), [
       makeMessage({ id: 'user-1', role: 'user', contentJson: 'hello' }),
@@ -3400,7 +3307,6 @@ describe('useBannerRetry — four-case dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    mutation.lastIdBefore = 'assistant-1';
     const lastSendArgs = { content: 'hello', enableWebSearch: false };
 
     const { result } = renderHook(
@@ -3421,10 +3327,49 @@ describe('useBannerRetry — four-case dispatch table', () => {
       await result.current.onRetry();
     });
 
-    // id-based detection beats content matching: even though "hello" matches
-    // user-1's content, the id walk shows no NEW user after assistant-1.
+    // Role-based detection: trailing is assistant, regardless of content matching.
     expect(onSend).toHaveBeenCalledWith(lastSendArgs);
     expect(mutation.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('rapid-fire edge — X1 succeeded, X2 sent + failed pre-persist; trailing is X1-assistant after refetch → fresh send X2', async () => {
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // After the post-X1 refetch lands and X2 fails pre-persist, the cache
+    // trailing is X1's assistant. Trailing-role correctly picks fresh send;
+    // a captured-at-onMutate lastIdBefore would have falsely fired retry: true.
+    qc.setQueryData(chatMessagesQueryKey('chat-1'), [
+      makeMessage({ id: 'older-user', role: 'user', contentJson: 'older' }),
+      makeMessage({ id: 'older-asst', role: 'assistant', contentJson: 'older-reply' }),
+      makeMessage({ id: 'X1-user', role: 'user', contentJson: 'X1' }),
+      makeMessage({ id: 'X1-assistant', role: 'assistant', contentJson: 'X1-reply' }),
+    ]);
+    const onSend = vi.fn().mockResolvedValue(undefined);
+    const mutation = makeFakeMutation();
+    const lastSendArgs = { content: 'X2', enableWebSearch: false };
+
+    const { result } = renderHook(
+      () => {
+        const ref = useRef(lastSendArgs);
+        return useBannerRetry({
+          chatId: 'chat-1',
+          selectedModelId: 'venice-test',
+          mutation,
+          lastSendArgsRef: ref,
+          onSend,
+        });
+      },
+      { wrapper: withQc(qc) },
+    );
+
+    await act(async () => {
+      await result.current.onRetry();
+    });
+
+    expect(onSend).toHaveBeenCalledWith(lastSendArgs);
+    expect(mutation.mutateAsync).not.toHaveBeenCalled();
+    // X1's assistant is preserved.
+    const after = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey('chat-1'));
+    expect(after?.some((m) => m.id === 'X1-assistant')).toBe(true);
   });
 
   it('isDispatching is true during the inspect-and-decide window', async () => {
@@ -3455,7 +3400,6 @@ describe('useBannerRetry — four-case dispatch table', () => {
     act(() => {
       promise = result.current.onRetry();
     });
-    // After the synchronous setIsDispatching(true) but before onSend resolves.
     expect(result.current.isDispatching).toBe(true);
     await act(async () => {
       await promise;
@@ -3469,7 +3413,7 @@ describe('useBannerRetry — four-case dispatch table', () => {
     const mutation = makeFakeMutation();
     const { result } = renderHook(
       () => {
-        const ref = useRef<typeof onSend extends Function ? null : null>(null);
+        const ref = useRef(null);
         return useBannerRetry({
           chatId: null,
           selectedModelId: null,
@@ -3497,7 +3441,7 @@ cd frontend && npx vitest run tests/hooks/useBannerRetry.test.tsx
 
 Expected: FAIL — module not found.
 
-- [ ] **Step 3: Implement `useBannerRetry` hook**
+- [ ] **Step 3: Implement `useBannerRetry` hook (trailing-role)**
 
 Create `frontend/src/hooks/useBannerRetry.ts`:
 
@@ -3525,18 +3469,25 @@ export interface UseBannerRetryResult {
 }
 
 /**
- * Banner-retry dispatch logic shared by ChatTab and SceneTab. Inspects the
- * messages cache (against `mutation.lastIdBefore`) to decide between
- * `mutateAsync({retry: true})` (case B — user persisted before failure) and
- * `onSend(lastSendArgs)` (cases A/D/E — user didn't persist; id-based
- * detection avoids content-collision false positives).
+ * Banner-retry dispatch logic shared by ChatTab and SceneTab.
  *
- * Optimization: inspect current cache first; refetch only when no new user
- * is visible (could mean truly-not-persisted OR stale-cache-after-persistence).
+ * Refetches the messages query unconditionally, then reads the cache's
+ * trailing-message role. If trailing is a user message, the user just
+ * persisted with no following assistant (case B — mid-stream error) and
+ * the right call is `{retry: true}` to regenerate. If trailing is an
+ * assistant or undefined, the user did not persist (cases A/D/E +
+ * rapid-fire-edge) and the right call is a fresh `onSend(lastSendArgs)`.
  *
- * `isDispatching` is true during the synchronous-onward window, including
- * the optional refetch — banner button uses this to disable itself during
- * the click-to-decision window.
+ * The refetch is unconditional because the cache is stale on the error
+ * path (invalidateQueries fires from `onSuccess`, not `onError`); a
+ * "skip the refetch" fast-path can't reliably distinguish stale from
+ * fresh, so consistent behavior beats a hypothetical optimization.
+ *
+ * `isDispatching` is true synchronously after click and stays true
+ * through the refetch + dispatch decision; the banner button uses
+ * this to disable itself during the click-to-decision window in
+ * addition to gating on `mutation.isPending` once the actual mutation
+ * fires.
  */
 export function useBannerRetry({
   chatId,
@@ -3553,28 +3504,12 @@ export function useBannerRetry({
     if (last === null || chatId === null || selectedModelId === null) return;
     setIsDispatching(true);
     try {
-      const inspect = (): boolean => {
-        const after =
-          qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey(chatId)) ?? [];
-        const lastBefore = mutation.lastIdBefore;
-        const startIdx = lastBefore
-          ? after.findIndex((m) => m.id === lastBefore) + 1
-          : 0;
-        return after.slice(startIdx).some((m) => m.role === 'user');
-      };
-
-      // Optimization: cache may already reflect server state (case B common).
-      if (inspect()) {
-        await mutation.mutateAsync({
-          chatId,
-          modelId: selectedModelId,
-          retry: true,
-        });
-        return;
-      }
-      // Disambiguate stale-cache vs truly-not-persisted.
       await qc.refetchQueries({ queryKey: chatMessagesQueryKey(chatId) });
-      if (inspect()) {
+      const after =
+        qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey(chatId)) ?? [];
+      const trailing = after[after.length - 1];
+
+      if (trailing?.role === 'user') {
         await mutation.mutateAsync({
           chatId,
           modelId: selectedModelId,
@@ -3598,7 +3533,7 @@ export function useBannerRetry({
 cd frontend && npx vitest run tests/hooks/useBannerRetry.test.tsx
 ```
 
-Expected: All 6 pass.
+Expected: All 7 pass (A, B, D, E, rapid-fire-edge, isDispatching, no-op).
 
 - [ ] **Step 5: Wire `useBannerRetry` into ChatTab**
 
