@@ -8,3 +8,5 @@ export {
   RegenerateAction,
   ThinkingBubble,
 } from './primitives';
+export type { UserMessageRowProps } from './UserMessageRow';
+export { UserMessageRow } from './UserMessageRow';
