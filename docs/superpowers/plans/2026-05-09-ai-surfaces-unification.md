@@ -44,7 +44,6 @@
 - `frontend/src/components/messageRow/TranscriptView.tsx` — render-prop transcript container.
 - `frontend/src/components/messageRow/TranscriptView.stories.tsx`.
 - `frontend/tests/components/messageRow/TranscriptView.test.tsx`.
-- `frontend/tests/components/messageRow/TranscriptView.banner-retry.test.tsx` — the four-case banner-retry dispatch table.
 - `frontend/src/components/ChatEmptyState.tsx` — Chat-specific empty state element.
 - `frontend/src/components/SceneEmptyState.tsx` — Scene-specific empty state element.
 
@@ -70,16 +69,16 @@
 
 ## Build sequence
 
-Phases land as separate commits within the single PR. Each phase is testable on its own.
+Phases land as separate commits within the single PR. Each phase is testable on its own. Task numbers below match the bodies in the rest of this doc — Tasks 7 and 9 are deferred placeholders explaining historical revisions, not work; effective task count is **18**.
 
 1. **Phase 1 — Backend retry change** (Tasks 1-3): `deleteAllAfter` repo method + route call + test updates. Backend ships independently green.
-2. **Phase 2 — `runStreamingAI` utility** (Tasks 4-7): extract + migrate both consumers. No UX change.
-3. **Phase 3 — Keyed draft store** (Task 8): `useChatDraftStore` shape change + mutation rewiring.
-4. **Phase 4 — Row primitives** (Tasks 10-13): primitives, then row components.
-5. **Phase 5 — `<TranscriptView>` container** (Task 14): with unified hydration error UX.
-6. **Phase 6 — Chat integration** (Tasks 15-16): ChatTab uses TranscriptView + rows; banner-retry dispatch.
-7. **Phase 7 — Scene migration** (Tasks 17-19): SceneTab uses the same; delete dead Scene code.
-8. **Phase 8 — Cleanup** (Tasks 20-22): delete ChatMessages, drop dead context-chip props, final sweep.
+2. **Phase 2 — `runStreamingAI` utility** (Tasks 4-6): extract + migrate both consumers. No UX change. (Task 7 deferred — `streamMessage` deletion happens in Task 18 once Scene migration completes.)
+3. **Phase 3 — Keyed draft store** (Task 8): `useChatDraftStore` shape change + mutation rewiring. (Task 9 was lastIdBefore tracking; removed entirely after spec review caught a stale-cache hole.)
+4. **Phase 4 — Row primitives + row components** (Tasks 10-12): primitives, UserMessageRow, AssistantMessageRow.
+5. **Phase 5 — `<TranscriptView>` container** (Task 13): autoscroll, session-reset, unified hydration error UX, merge logic.
+6. **Phase 6 — Chat integration** (Tasks 14-15): ChatTab uses TranscriptView + rows; `useBannerRetry` hook with trailing-role dispatch.
+7. **Phase 7 — Scene migration** (Tasks 16-17): SceneTab uses the shared layer; delete dead Scene code.
+8. **Phase 8 — Cleanup** (Tasks 18-20): delete `streamMessage`, ChatMessages, ContextChip, final integration sweep + smoke.
 
 ---
 
@@ -818,7 +817,7 @@ Add the import at the top of the file:
 import { runStreamingAI } from '@/lib/streamingAI';
 ```
 
-Remove imports that are no longer used: `apiStream` (still used elsewhere in the file? grep), `parseAiSseStream`. Run `npm run typecheck` after to clean unused imports.
+Remove unused symbols from the existing imports — DO NOT delete the import lines themselves. `useChat.ts` imports several things from `@/lib/api` (e.g. `ApiError`, `api`, `ChatRow`, `deleteChat`) that other functions in the file still need. Just drop `apiStream` from the named-import destructure (and `parseAiSseStream` from the `@/lib/sse` import; if it was the only named import from that module, the whole line goes). Run `npm run typecheck` after — TypeScript flags any unused imports that need cleanup.
 
 - [ ] **Step 4: Run the chat hook tests**
 
@@ -2102,23 +2101,57 @@ describe('AssistantMessageRow', () => {
     expect(screen.getByRole('button', { name: 'Custom Action' })).toBeInTheDocument();
   });
 
-  it('renders thinking bubble when content is empty and streamingLabel given', () => {
+  it('renders thinking bubble when isStreaming + empty content + label given (Scene)', () => {
     withQc(
       <AssistantMessageRow
         message={makeAssistant({ contentJson: '' })}
         actions={null}
+        isStreaming
         thinkingLabel="Generating scene…"
       />,
     );
     expect(screen.getByText('Generating scene…')).toBeInTheDocument();
+    // Bubble (with AI border-left) is NOT rendered.
+    expect(screen.queryByText('Sure, here are some thoughts.')).toBeNull();
   });
 
-  it('renders empty assistant content as the bubble (not thinking) when not streaming', () => {
-    // Persisted message could in theory have empty content; render bubble with empty.
-    withQc(
+  it('renders thinking bubble when isStreaming + empty content + no label (Chat)', () => {
+    const { container } = withQc(
+      <AssistantMessageRow
+        message={makeAssistant({ contentJson: '' })}
+        actions={null}
+        isStreaming
+      />,
+    );
+    // ThinkingDots default (no custom label).
+    expect(screen.queryByText('Generating scene…')).toBeNull();
+    // The thinking bubble has the AI border-left class but no text content.
+    expect(container.querySelector('.border-l-2.border-\\[var\\(--ai\\)\\]')).toBeTruthy();
+  });
+
+  it('renders empty assistant content as a regular bubble when NOT streaming', () => {
+    // Persisted message with empty content shouldn't render thinking dots.
+    const { container } = withQc(
       <AssistantMessageRow message={makeAssistant({ contentJson: '' })} actions={null} />,
     );
     expect(screen.queryByText(/Generating/)).toBeNull();
+    // Has the bubble's border-l class, not the thinking variant.
+    expect(container.querySelector('.border-l-2.border-\\[var\\(--ai\\)\\]')).toBeTruthy();
+  });
+
+  it('renders bubble (not thinking) when isStreaming AND content non-empty (transition state)', () => {
+    // Once streaming starts producing tokens, the bubble takes over from the
+    // thinking dots. Tests the predicate's AND condition.
+    withQc(
+      <AssistantMessageRow
+        message={makeAssistant({ contentJson: 'partial reply' })}
+        actions={null}
+        isStreaming
+        thinkingLabel="Generating scene…"
+      />,
+    );
+    expect(screen.getByText('partial reply')).toBeInTheDocument();
+    expect(screen.queryByText('Generating scene…')).toBeNull();
   });
 
   it('mounts citations slot for each message id', () => {
@@ -2156,7 +2189,17 @@ import type { ChatMessage } from '@/hooks/useChat';
 export interface AssistantMessageRowProps {
   message: ChatMessage;
   actions: ReactNode;
-  /** When set AND content is empty, renders a ThinkingBubble with this label. */
+  /**
+   * When true AND content is empty, render a ThinkingBubble instead of
+   * the AssistantBubble. Default false (persisted assistants render as
+   * a bubble even if content happens to be empty).
+   */
+  isStreaming?: boolean;
+  /**
+   * Optional label inside the ThinkingBubble. Only consulted when
+   * `isStreaming` is true. Chat passes nothing → default dots-only;
+   * Scene passes "Generating scene…".
+   */
   thinkingLabel?: string;
 }
 
@@ -2173,10 +2216,11 @@ function getMessageText(contentJson: unknown): string {
 export function AssistantMessageRow({
   message,
   actions,
+  isStreaming = false,
   thinkingLabel,
 }: AssistantMessageRowProps): JSX.Element {
   const text = getMessageText(message.contentJson);
-  const showThinking = text.length === 0 && thinkingLabel !== undefined;
+  const showThinking = isStreaming && text.length === 0;
 
   return (
     <li
@@ -2186,7 +2230,7 @@ export function AssistantMessageRow({
       data-testid={`assistant-${message.id}`}
     >
       {showThinking ? (
-        <ThinkingBubble label={thinkingLabel} />
+        <ThinkingBubble {...(thinkingLabel !== undefined ? { label: thinkingLabel } : {})} />
       ) : (
         <AssistantBubble>{text}</AssistantBubble>
       )}
@@ -2208,7 +2252,7 @@ export function AssistantMessageRow({
 cd frontend && npx vitest run tests/components/messageRow/AssistantMessageRow.test.tsx
 ```
 
-Expected: All 4 pass.
+Expected: All 6 pass (content+meta+actions, thinking-Scene, thinking-Chat-no-label, empty-not-streaming, transition-with-content, citations-slot).
 
 - [ ] **Step 5: Add to index**
 
@@ -2288,18 +2332,20 @@ export const SceneVariant: Story = {
   },
 };
 
-export const Streaming: Story = {
+export const StreamingChat: Story = {
   args: {
     message: { ...baseMessage, contentJson: '', tokens: null, latencyMs: null },
     actions: null,
-    thinkingLabel: 'Generating…',
+    isStreaming: true,
+    // Chat doesn't pass a thinkingLabel; ThinkingDots renders dots-only.
   },
 };
 
-export const SceneStreaming: Story = {
+export const StreamingScene: Story = {
   args: {
     message: { ...baseMessage, contentJson: '', tokens: null, latencyMs: null },
     actions: null,
+    isStreaming: true,
     thinkingLabel: 'Generating scene…',
   },
 };
@@ -2318,6 +2364,107 @@ Expected: No errors.
 ```bash
 git add frontend/src/components/messageRow/AssistantMessageRow.tsx frontend/src/components/messageRow/AssistantMessageRow.stories.tsx frontend/tests/components/messageRow/AssistantMessageRow.test.tsx frontend/src/components/messageRow/index.ts
 git commit -m "[ai-surfaces-v1] frontend: AssistantMessageRow shared component + stories + tests"
+```
+
+---
+
+## Task 12.5: Add `disabled` prop to `<InlineErrorBanner>`
+
+**Files:**
+- Modify: `frontend/src/components/InlineErrorBanner.tsx`
+- Modify: `frontend/tests/components/InlineErrorBanner.test.tsx` (or equivalent — find via grep)
+
+**Context:** `<TranscriptView>` (next task) and the banner-retry hook (Task 15) need to disable the banner's Retry button during the dispatch decision window. Today the component doesn't accept a `disabled` prop. Small standalone change with its own commit so the diff is self-describing.
+
+- [ ] **Step 1: Read the existing component**
+
+```bash
+cat frontend/src/components/InlineErrorBanner.tsx
+```
+
+Note the props shape and where the Retry button renders.
+
+- [ ] **Step 2: Write a failing test for the disabled behavior**
+
+Locate the existing test file (`grep -rl "InlineErrorBanner" frontend/tests/`). Append:
+
+```tsx
+it('disables the Retry button when disabled prop is true', () => {
+  const onRetry = vi.fn();
+  render(
+    <InlineErrorBanner
+      error={{ code: null, message: 'oops' }}
+      onRetry={onRetry}
+      disabled
+    />,
+  );
+  const btn = screen.getByRole('button', { name: /retry/i });
+  expect(btn).toBeDisabled();
+  fireEvent.click(btn);
+  expect(onRetry).not.toHaveBeenCalled();
+});
+
+it('Retry button is enabled when disabled prop is omitted/false', () => {
+  const onRetry = vi.fn();
+  render(
+    <InlineErrorBanner error={{ code: null, message: 'oops' }} onRetry={onRetry} />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /retry/i }));
+  expect(onRetry).toHaveBeenCalledOnce();
+});
+```
+
+- [ ] **Step 3: Run tests — FAIL on the disabled case**
+
+```bash
+cd frontend && npx vitest run tests/components/InlineErrorBanner.test.tsx
+```
+
+Expected: the new "disables the Retry button" test fails (prop ignored — button is still clickable).
+
+- [ ] **Step 4: Add the prop to the component**
+
+In `frontend/src/components/InlineErrorBanner.tsx`:
+
+```tsx
+export interface InlineErrorBannerProps {
+  // ... existing props ...
+  /** Disables the Retry button. Used by TranscriptView while banner-retry dispatch decides. */
+  disabled?: boolean;
+}
+
+export function InlineErrorBanner({
+  // ... existing destructure ...
+  disabled,
+}: InlineErrorBannerProps): JSX.Element {
+  // ... existing JSX ...
+  // On the existing Retry button:
+  // <button type="button" onClick={onRetry} disabled={disabled} ...>Retry</button>
+  // (Match the existing button's other attributes; just add the disabled passthrough.)
+}
+```
+
+- [ ] **Step 5: Run tests**
+
+```bash
+cd frontend && npx vitest run tests/components/InlineErrorBanner.test.tsx
+```
+
+Expected: All pass.
+
+- [ ] **Step 6: Run typecheck + lint:design**
+
+```bash
+cd frontend && npm run typecheck && npm run lint:design
+```
+
+Expected: No errors.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add frontend/src/components/InlineErrorBanner.tsx frontend/tests/components/InlineErrorBanner.test.tsx
+git commit -m "[ai-surfaces-v1] frontend: InlineErrorBanner accepts disabled prop (consumed by TranscriptView banner-retry)"
 ```
 
 ---
@@ -2774,7 +2921,7 @@ export function TranscriptView({
 }
 ```
 
-If `<InlineErrorBanner>` doesn't already accept a `disabled?: boolean` prop, extend it: add `disabled` to its props interface and pass through to the Retry button (the existing button gets `disabled={disabled}`). Same one-line change in `frontend/src/components/InlineErrorBanner.tsx`.
+(Task 12.5 — see separator below — adds `disabled` to `<InlineErrorBanner>`. This step's `<TranscriptView>` body assumes that prop already exists.)
 
 - [ ] **Step 4: Run tests**
 
@@ -2978,17 +3125,24 @@ const onCopy = useCallback((message: ChatMessage) => {
 }, []);
 
 const onRegenerate = useCallback(() => {
-  if (activeChatId === null) return;
-  if (selectedModelId === null) {
-    useErrorStore.getState().push({ /* same guard pattern as onSend */ });
+  // Reuse the same guard `onSend` runs through; this catches "no chapter" /
+  // "no model selected" the same way and surfaces the canonical error to
+  // useErrorStore.
+  const guard = checkChatSendGuards({
+    activeChapterId: chapterId,
+    selectedModelId,
+  });
+  if (guard) {
+    useErrorStore.getState().push(guard);
     return;
   }
+  if (activeChatId === null) return;
   void sendChatMessage.mutateAsync({
     chatId: activeChatId,
-    modelId: selectedModelId,
+    modelId: selectedModelId as string,
     retry: true,
   });
-}, [activeChatId, selectedModelId, sendChatMessage]);
+}, [chapterId, selectedModelId, activeChatId, sendChatMessage]);
 
 return (
   <div className="flex flex-col h-full" data-testid="chat-tab">
@@ -3073,7 +3227,9 @@ return (
                   createdAt: new Date().toISOString(),
                 }}
                 actions={null}
-                {...(r.assistantText.length === 0 ? { thinkingLabel: '' } : {})}
+                isStreaming
+                // Chat passes no label — ThinkingDots renders its default
+                // dots-only animation. (Scene passes "Generating scene…".)
               />
             );
           }
@@ -3105,8 +3261,6 @@ return (
   </div>
 );
 ```
-
-Note: `thinkingLabel: ''` for Chat is intentional — empty string is still defined, triggering the ThinkingBubble branch in AssistantMessageRow (which uses `<ThinkingDots>` with default text). For Scene we'd pass `'Generating scene…'`.
 
 Remove the `<ChatMessages>` import + JSX usage. Keep ChatMessages.tsx file (deleted in Phase 8).
 
@@ -3374,10 +3528,19 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
 
   it('isDispatching is true during the inspect-and-decide window', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    // Register a slow queryFn so qc.refetchQueries actually awaits something
+    // observable — without this, refetch on a populated cache could resolve
+    // synchronously, leaving the timing of the isDispatching=true assertion
+    // dependent on internal microtask ordering rather than the explicit
+    // refetch step.
+    qc.setQueryDefaults(chatMessagesQueryKey('chat-1'), {
+      queryFn: () =>
+        new Promise<ChatMessage[]>((resolve) => setTimeout(() => resolve([]), 30)),
+      retry: false,
+    });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), []);
-    const onSend = vi.fn().mockImplementation(
-      () => new Promise<void>((resolve) => setTimeout(resolve, 30)),
-    );
+
+    const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
     const lastSendArgs = { content: 'X', enableWebSearch: false };
 
@@ -3400,6 +3563,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     act(() => {
       promise = result.current.onRetry();
     });
+    // Synchronous setIsDispatching(true) ran; refetch is still in flight.
     expect(result.current.isDispatching).toBe(true);
     await act(async () => {
       await promise;
@@ -3732,6 +3896,11 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         chatId,
         content: args.content,
         modelId: mId,
+        // Thread enableWebSearch from the composer through to the backend.
+        // ChatComposer surfaces the toggle in both Chat and Scene tabs; not
+        // forwarding it here would silently disable web search in Scene
+        // even when the user has the toggle on.
+        enableWebSearch: args.enableWebSearch,
       });
 
       if (isFirstTurn) {
@@ -3899,7 +4068,8 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
                     createdAt: new Date().toISOString(),
                   }}
                   actions={null}
-                  thinkingLabel={r.assistantText.length === 0 ? 'Generating scene…' : undefined}
+                  isStreaming
+                  thinkingLabel="Generating scene…"
                 />
               );
             }
@@ -3947,11 +4117,25 @@ Expected: No errors.
 cd frontend && npx vitest run tests/components/SceneTab.test.tsx
 ```
 
-Expected: Existing scene tests will likely fail because the harness is mocking `useSceneTranscript` or asserting `SceneCandidateCard` rendering. Update them:
-- Replace mocks of `useSceneTranscript` with TanStack Query cache seeding (`qc.setQueryData(chatMessagesQueryKey(...), [...])` and `useChatDraftStore.setState(...)`).
-- Replace `SceneCandidateCard` assertions with `AssistantMessageRow` selectors via `data-testid="assistant-..."`.
+Expected: Existing scene tests will likely fail because the harness is mocking `useSceneTranscript` or asserting `SceneCandidateCard` rendering. Update them.
 
-Where ambiguous, refer to existing ChatTab tests as templates.
+**Test cases that MUST be preserved** (rewritten to use the new layer; coverage is load-bearing for Scene's UX):
+
+1. **Session picker integration** — create scene → session appears; rename inline → updates; delete → soft-delete with undo toast; click switches active.
+2. **Auto-rename on first turn** — first scene direction generates a session title via `truncateAtWordBoundary`. Both for explicit-create-then-send and inline-create-on-send paths.
+3. **Hydration error UX** — failed messages query renders `<TranscriptView>`'s unified error banner with a Retry button that calls `query.refetch()`. (Replaces today's bespoke "Couldn't load transcript. Try switching sessions." copy.)
+4. **Insert-at-end** — clicking the action on an assistant row inserts the candidate text into the editor at doc-end via `editor.chain().focus().insertContentAt(docEnd, text).run()`. Verify with a mock editor.
+5. **Retry semantics** — clicking Regenerate on a trailing assistant fires `mutateAsync({retry: true})` (linear). Older "two candidates persist after retry" assertions go away.
+6. **Stop during streaming** — clicking Stop aborts the in-flight stream; subsequent Regenerate works.
+7. **Soft-delete with undo** — undo cancels the pending delete; previously-active session becomes restorable.
+8. **`enableWebSearch` propagation** — composer's web-search toggle passes through to `mutateAsync({enableWebSearch: true})`. New coverage; previously absent.
+9. **Send error → banner retry** — failed send shows `<InlineErrorBanner>` via `sendError`; the banner's Retry button drives `useBannerRetry` dispatch.
+
+**Test refactor patterns:**
+- Replace `useSceneTranscript` mocks with TanStack Query cache seeding (`qc.setQueryData(chatMessagesQueryKey(...), [...])` and `useChatDraftStore.setState({ drafts: { ... } })`).
+- Replace `SceneCandidateCard`-internal assertions with `AssistantMessageRow` selectors via `data-testid="assistant-${id}"` and the action buttons' `aria-label`s.
+- The "superseded" marker test deletes outright — semantic gone.
+- Where rewriting is genuinely tricky, look at the corresponding ChatTab test for the same pattern (banner retry, send guards, mutation isPending gating).
 
 - [ ] **Step 5: Commit**
 
@@ -4132,9 +4316,11 @@ make dev
 Open http://localhost:3000. Sign in. In a story:
 - Send a Chat message; confirm assistant appears, autoscroll pins to bottom, model badge + tokens·latency render under the assistant turn.
 - Click Regenerate on the assistant; confirm the prior assistant is replaced (not duplicated).
-- Trigger a send error (disconnect network briefly) and click banner Retry; confirm fresh send happens.
+- Trigger a send error (disconnect network briefly) and click banner Retry; confirm fresh send happens (case A/D shape — fresh content arrives).
 - Switch to Scene tab; describe a scene; confirm Generate works, Insert at end works, autoscroll works, Regenerate works (single linear replacement, no candidates).
-- Open two tabs (Chat in tab A, Scene in tab B). Send in Chat; while streaming, generate in Scene. Confirm both stream concurrently without clobbering each other's drafts.
+- Verify Scene's web-search toggle propagates: enable the composer's web-search toggle, generate; backend logs / response shows `enableWebSearch=true` reached the route.
+- **Stop-during-retry transient state.** Click Regenerate on a Chat assistant, then immediately click Stop while streaming. Confirm the chat ends with `[user, no trailing assistant]` (route's `deleteAllAfter` ran before the abort cancelled the replacement). Click Regenerate again; confirm a new assistant is generated. No data loss beyond the partial generation.
+- **Cross-tab concurrent streaming.** Open two tabs in the same story (Chat in tab A, Scene in tab B). Send in Chat; while it's streaming, switch to Scene and Generate. Confirm both stream concurrently without clobbering each other's drafts (verify by seeing draft-assistant text grow in both tabs over time).
 
 - [ ] **Step 4: Commit any test fixture cleanups discovered during smoke**
 
@@ -4168,7 +4354,7 @@ Plan: docs/superpowers/plans/2026-05-09-ai-surfaces-unification.md
 
 - [ ] All existing backend tests green
 - [ ] All existing frontend tests green
-- [ ] New tests: deleteAllAfter repo, runStreamingAI utility, keyed draft store isolation, lastIdBefore tracking, all primitives, UserMessageRow, AssistantMessageRow, TranscriptView (autoscroll/session-reset/merge/error UX), banner-retry four-case dispatch table
+- [ ] New tests: `deleteAllAfter` repo (id-based + tiebreaker + ownership), `runStreamingAI` utility (chunk/citations/error/empty-body/headers/no-DONE), keyed draft store isolation (per-chatId slot), all primitives, UserMessageRow, AssistantMessageRow (with thinking-bubble gating), TranscriptView (autoscroll/session-reset/merge/error UX/draft-user suppression cases), `useBannerRetry` dispatch (cases A/B/D/E + rapid-fire-edge + isDispatching + null-args)
 - [ ] Encryption leak test ([E12]) green
 - [ ] Manual smoke: Chat send + retry + regenerate; Scene generate + insert + retry + regenerate; cross-tab concurrent streaming
 
@@ -4181,7 +4367,7 @@ EOF
 
 ## Plan summary
 
-20 tasks across 8 phases, each with TDD-shaped steps + a commit. Sequential execution preserves green-test states between phases. Each phase is reviewable in its own commit.
+18 tasks across 8 phases (numbered 1-20 with Tasks 7 and 9 as deferred-placeholder gaps explaining historical revisions, not work). Each task has TDD-shaped steps + a commit. Sequential execution preserves green-test states between phases. Each phase is reviewable in its own commit.
 
 **Per-task model selection:** All tasks default to Sonnet (per `bd-execute`'s defaults). No tasks need Opus — the design synthesis happened during the spec's brainstorm; implementation here is structured TDD work.
 
