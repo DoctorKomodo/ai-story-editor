@@ -1,3 +1,5 @@
+export type { AssistantMessageRowProps } from './AssistantMessageRow';
+export { AssistantMessageRow } from './AssistantMessageRow';
 export {
   AssistantBubble,
   CitationsSlot,
