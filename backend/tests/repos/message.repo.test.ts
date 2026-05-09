@@ -219,11 +219,34 @@ describe('MessageRepo.deleteAllAfter', () => {
       contentJson: 'reply',
     });
 
-    // userA's repo asked to delete after userMsgB — should be a no-op.
-    const result = await repoA.deleteAllAfter(chatB.id as string, userMsgB.id as string);
-
-    expect(result.count).toBe(0);
+    // userA's repo asked to delete after userMsgB — ensureChatOwned throws (consistent with siblings).
+    await expect(
+      repoA.deleteAllAfter(chatB.id as string, userMsgB.id as string),
+    ).rejects.toThrow('message.repo: chat not owned by caller');
     const stillThere = await repoBviaB.findManyForChat(chatB.id as string);
     expect(stillThere.length).toBe(2);
+  });
+
+  it('does not delete when afterMessageId belongs to a different chat owned by same user', async () => {
+    const { user, chapterId } = await createUserWithChapter();
+    const chatRepo = createChatRepo(user.req);
+    const repo = createMessageRepo(user.req);
+    const chatA = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+    const chatB = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+
+    // Two messages in chat A — they should survive.
+    const userMsgA = await repo.create({ chatId: chatA.id as string, role: 'user', contentJson: 'A user' });
+    await new Promise((r) => setTimeout(r, 2));
+    await repo.create({ chatId: chatA.id as string, role: 'assistant', contentJson: 'A assistant' });
+
+    // One message in chat B.
+    const userMsgB = await repo.create({ chatId: chatB.id as string, role: 'user', contentJson: 'B user' });
+
+    // Asking to delete in chat A with a ref id from chat B → no-op.
+    const result = await repo.deleteAllAfter(chatA.id as string, userMsgB.id as string);
+
+    expect(result.count).toBe(0);
+    const stillThereA = await repo.findManyForChat(chatA.id as string);
+    expect(stillThereA.length).toBe(2);
   });
 });

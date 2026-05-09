@@ -97,6 +97,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     afterMessageId: string,
   ): Promise<{ count: number }> {
     const userId = resolveUserId(req);
+    await ensureChatOwned(client, chatId, userId);
     const ref = await client.message.findFirst({
       where: {
         id: afterMessageId,
