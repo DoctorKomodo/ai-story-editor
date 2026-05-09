@@ -292,9 +292,10 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     const after = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
     expect(after.body.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(1);
-    expect(
-      after.body.messages.filter((m: { role: string }) => m.role === 'assistant'),
-    ).toHaveLength(2);
+    // Linear retry: old assistant is replaced; exactly one assistant survives with the new content.
+    const assistants = after.body.messages.filter((m: { role: string }) => m.role === 'assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].contentJson).toBe('Retry reply.');
   });
 
   it('400 when retry=true and the trailing message is not a user turn', async () => {
