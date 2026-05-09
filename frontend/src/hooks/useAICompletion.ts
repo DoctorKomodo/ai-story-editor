@@ -185,6 +185,9 @@ export function useAICompletion(): UseAICompletion {
             : new ApiError(0, err instanceof Error ? err.message : 'Request failed');
         safeSetState((prev) => ({
           status: 'error',
+          // prev.text is '' for pre-stream failures (the opening safeSetState reset
+          // it before runStreamingAI was awaited) and preserves partial output for
+          // mid-stream errors.
           text: prev.text,
           error: apiErr,
           usage: prev.usage,
