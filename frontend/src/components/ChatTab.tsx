@@ -2,7 +2,6 @@ import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
 import { ChatEmptyState } from '@/components/ChatEmptyState';
-import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import {
   AssistantMessageRow,
   CopyAction,
@@ -11,6 +10,7 @@ import {
   TranscriptView,
   UserMessageRow,
 } from '@/components/messageRow';
+import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import {
   type ChatMessage,
   useChatsQuery,
@@ -218,14 +218,9 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         onRetrySend={onRetry}
       >
         {(rows) =>
-          rows.map((r, i) => {
+          rows.map((r) => {
             if (r.kind === 'persisted' && r.message.role === 'user') {
-              return (
-                <UserMessageRow
-                  key={r.message.id}
-                  message={r.message}
-                />
-              );
+              return <UserMessageRow key={r.message.id} message={r.message} />;
             }
             if (r.kind === 'persisted' && r.message.role === 'assistant') {
               return (
@@ -247,7 +242,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
             if (r.kind === 'draft-user') {
               return (
                 <UserMessageRow
-                  key={`draft-user-${i}`}
+                  key="draft-user"
                   message={{
                     id: 'draft-user',
                     role: 'user',
@@ -265,7 +260,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
             if (r.kind === 'draft-assistant') {
               return (
                 <AssistantMessageRow
-                  key={`draft-assistant-${i}`}
+                  key="draft-assistant"
                   message={{
                     id: 'draft-assistant',
                     role: 'assistant',
