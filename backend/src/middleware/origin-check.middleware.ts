@@ -23,7 +23,8 @@ import type { NextFunction, Request, Response } from 'express';
  * GET/HEAD/OPTIONS are exempt — they should be idempotent. If a handler
  * mutates on GET that's a bug elsewhere, not this middleware's concern.
  */
-export function requireAllowedOrigin(allowedOrigin: string) {
+export function requireAllowedOrigin(allowedOrigin: string | readonly string[]) {
+  const allowedOrigins = Array.isArray(allowedOrigin) ? [...allowedOrigin] : [allowedOrigin];
   return function originCheckMiddleware(req: Request, res: Response, next: NextFunction): void {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
       next();
@@ -43,7 +44,7 @@ export function requireAllowedOrigin(allowedOrigin: string) {
       return;
     }
 
-    if (origin === allowedOrigin) {
+    if (origin !== null && allowedOrigins.includes(origin)) {
       next();
       return;
     }
@@ -52,7 +53,7 @@ export function requireAllowedOrigin(allowedOrigin: string) {
     // proxies) may strip Origin but retain Referer; check with a
     // startsWith+'/' guard so `https://evil.com?victim=https://allowed/…`
     // cannot sneak past a naive prefix match.
-    if (referer?.startsWith(`${allowedOrigin}/`)) {
+    if (referer !== null && allowedOrigins.some((o) => referer.startsWith(`${o}/`))) {
       next();
       return;
     }
