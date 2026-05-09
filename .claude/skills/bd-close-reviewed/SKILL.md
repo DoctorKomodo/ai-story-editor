@@ -1,6 +1,6 @@
 ---
 name: bd-close-reviewed
-description: Close a bd issue through the project's review gate — typecheck affected workspaces, fan path-matched surface reviewers (security-reviewer, repo-boundary-reviewer), refuse close on BLOCK / FIX_BEFORE_MERGE unless `--override-block "<reason>"` with user ack. Called by `/bd-execute` at end-of-loop, or directly when work didn't go through `/bd-execute`. User-invocable as `/bd-close-reviewed <BD_ID>`.
+description: Close a bd issue through the project's review gate — typecheck affected workspaces, run the issue's verify: line, fan path-matched surface reviewers (security-reviewer, repo-boundary-reviewer), refuse close on BLOCK / FIX_BEFORE_MERGE unless `--override-block "<reason>"` with user ack. Called by `/bd-execute` at end-of-loop, or directly when work didn't go through `/bd-execute`. User-invocable as `/bd-close-reviewed <BD_ID>`.
 ---
 
 # bd-close-reviewed
@@ -16,6 +16,7 @@ One required: bd issue ID (e.g. `story-editor-9vm`).
 Optional flags forwarded to the script:
 - `--reason="..."` — recorded on `bd close`.
 - `--override-block="<reviewer> — <reason>"` — accept a surface reviewer's BLOCK / FIX_BEFORE_MERGE (after user ack). Records on bd notes **and** creates an empty commit with a `Reviewer-Override:` trailer.
+- `--allow-no-verify` — proceed past the verify-line gate when the issue's `verify:` line is `TBD` / `design decision` / empty. Requires explicit user-ack; the skill must confirm before passing this flag.
 
 ## Steps
 
@@ -29,7 +30,21 @@ bash scripts/bd-close-reviewed.sh <id> --phase=typecheck
 
 The script runs `npm --prefix backend run typecheck` and / or `npm --prefix frontend run typecheck` based on which workspace(s) appear in the branch diff. If exit code is non-zero, **stop and refuse close** — the issue stays open and the typecheck failure is the user's next action.
 
-### 2. Compute path-matched reviewers
+### 2. Run the verify line
+
+Run:
+
+```bash
+bash scripts/bd-close-reviewed.sh <id> --phase=verify
+```
+
+The script extracts the first `verify:` line from the issue's `--notes` and runs it under `bash -o pipefail`. Exit codes:
+
+- `0` — verify passed; proceed to step 3.
+- `2` with "no automated verify" message — the line is `TBD` / `design decision` / empty. **Stop and ask the user to ack** that closing without an automated check is OK. On `yes`, re-invoke with `--allow-no-verify`. On `no`, refuse close.
+- non-zero (other) — verify ran and failed. **Refuse close.** The issue stays open; the user fixes the code (not the test, not the verify) and re-invokes.
+
+### 3. Compute path-matched reviewers
 
 Run:
 
@@ -42,9 +57,9 @@ The script prints zero or more reviewer names, one per line:
 - `security-reviewer` — when the diff touches auth / crypto / middleware / Venice-key routes.
 - `repo-boundary-reviewer` — when the diff touches the narrative-entity boundary (repos, narrative routes, content-crypto, prompt-service, or migrations on narrative tables).
 
-If the output is empty, both reviewers are SKIPPED-OUT-OF-LANE for this diff. Proceed straight to step 5.
+If the output is empty, both reviewers are SKIPPED-OUT-OF-LANE for this diff. Proceed straight to step 6.
 
-### 3. Dispatch matching reviewers in parallel
+### 4. Dispatch matching reviewers in parallel
 
 For each printed reviewer name, dispatch via the Agent tool **in a single message with multiple tool calls** (parallel). Use the matching `subagent_type`:
 
@@ -68,19 +83,19 @@ and `file:line` evidence. CLEAN means no `BLOCK` and no
 
 (Both reviewer agent definitions already enforce their own scope; the prompt above just sets the boundary.)
 
-### 4. Decide on override (if any reviewer returns BLOCK / FIX_BEFORE_MERGE)
+### 5. Decide on override (if any reviewer returns BLOCK / FIX_BEFORE_MERGE)
 
 If any reviewer returns BLOCK or FIX_BEFORE_MERGE: **refuse close** by default.
 
 The user can request override with `--override-block "<reviewer> — <reason>"`. If they do:
 
 1. Confirm with the user: "OK to override `<reviewer>` BLOCK with reason: '`<reason>`'? [yes / no]". Wait for confirmation. Frequent overrides indicate reviewer prompt drift, not normal flow — say so if it's the second override in the same week.
-2. On `yes`: proceed to step 5 with the override flag.
+2. On `yes`: proceed to step 6 with the override flag.
 3. On `no` or anything else: stop, leave the bd issue open.
 
 Do not silently override. Do not assume `--override-block` was authorised in advance — the flag arms the override; user ack pulls the trigger.
 
-### 5. Run the close
+### 6. Run the close
 
 ```bash
 bash scripts/bd-close-reviewed.sh <id> --phase=close \

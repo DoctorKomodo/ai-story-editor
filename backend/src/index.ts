@@ -33,28 +33,37 @@ const app = express();
 // CORS origin is explicit. In production we refuse to boot without FRONTEND_URL
 // so a forgotten env var can't silently leave the cookie-backed endpoints open
 // to credentialed requests from http://localhost:3000 (security review finding).
-function resolveFrontendOrigin(): string {
+// FRONTEND_URL accepts a comma-separated list so a dev box can serve both
+// http://localhost:3000 and http://<lan-ip>:3000 without re-editing env vars.
+function resolveFrontendOrigins(): string[] {
   const raw = process.env.FRONTEND_URL;
-  if (raw && raw.length > 0) return raw;
+  if (raw && raw.length > 0) {
+    const parsed = raw
+      .split(',')
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    if (parsed.length > 0) return parsed;
+  }
   if (process.env.NODE_ENV === 'production') {
     throw new Error(
       'FRONTEND_URL must be set in production — CORS credentials=true will not fall back to localhost.',
     );
   }
-  return 'http://localhost:3000';
+  return ['http://localhost:3000'];
 }
 
 app.use(helmet());
-// Function-based origin: only echo Access-Control-Allow-Origin for the exact
-// configured FRONTEND_URL. Static-string form of cors() would echo the allowed
-// origin on every response regardless of request origin, relying entirely on
-// the browser to compare — function form keeps the header off non-matching
-// responses and leaves same-origin requests with no extra CORS headers.
-const allowedOrigin = resolveFrontendOrigin();
+// Function-based origin: only echo Access-Control-Allow-Origin for an exact
+// configured FRONTEND_URL match. Static-string form of cors() would echo the
+// allowed origin on every response regardless of request origin, relying
+// entirely on the browser to compare — function form keeps the header off
+// non-matching responses and leaves same-origin requests with no extra CORS
+// headers.
+const allowedOrigins = resolveFrontendOrigins();
 app.use(
   cors({
     origin: (origin, callback) => {
-      if (!origin || origin === allowedOrigin) {
+      if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
         return;
       }
@@ -88,7 +97,7 @@ app.use(
   }),
 );
 
-app.use('/api/auth', cookieParser(), requireAllowedOrigin(allowedOrigin), createAuthRouter());
+app.use('/api/auth', cookieParser(), requireAllowedOrigin(allowedOrigins), createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/venice-account', createVeniceAccountRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
