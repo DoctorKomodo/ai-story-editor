@@ -6,9 +6,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useRef } from 'react';
-import { ApiError, api, apiStream, type ChatRow, deleteChat } from '@/lib/api';
+import { ApiError, api, type ChatRow, deleteChat } from '@/lib/api';
 import { type Citation, isCitationArray } from '@/lib/citations';
-import { parseAiSseStream } from '@/lib/sse';
+import { runStreamingAI } from '@/lib/streamingAI';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 /**
@@ -248,64 +248,30 @@ export function useSendChatMessageMutation(): UseMutationResult<
       if (attachment) body.attachment = attachment;
       if (enableWebSearch === true) body.enableWebSearch = true;
 
-      let res: Response;
+      let firstChunkSeen = false;
       try {
-        res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
-          method: 'POST',
+        await runStreamingAI({
+          endpoint: `/chats/${encodeURIComponent(chatId)}/messages`,
           body,
           signal: controller.signal,
+          onChunk: (delta) => {
+            if (!firstChunkSeen) {
+              firstChunkSeen = true;
+              useChatDraftStore.getState().markStreaming();
+            }
+            useChatDraftStore.getState().appendDelta(delta);
+          },
+          // citations forwarded but ignored — refetched message carries citationsJson.
         });
+        useChatDraftStore.getState().markDone();
       } catch (err) {
-        if (abortRef.current === controller) abortRef.current = null;
         if ((err as { name?: string }).name === 'AbortError') {
-          // Clean stop — don't show an error banner, just clear the draft.
           useChatDraftStore.getState().clear();
           return;
         }
         const message = err instanceof Error ? err.message : 'Chat send failed';
         const code = err instanceof ApiError ? (err.code ?? null) : null;
         useChatDraftStore.getState().markError({ code, message });
-        throw err;
-      }
-
-      if (!res.body) {
-        if (abortRef.current === controller) abortRef.current = null;
-        const message = 'Empty response body';
-        useChatDraftStore.getState().markError({ code: null, message });
-        throw new Error(message);
-      }
-
-      let firstChunkSeen = false;
-      try {
-        for await (const event of parseAiSseStream(res.body, controller.signal)) {
-          if (event.type === 'chunk') {
-            const delta = event.chunk.choices?.[0]?.delta?.content;
-            if (typeof delta === 'string' && delta.length > 0) {
-              if (!firstChunkSeen) {
-                firstChunkSeen = true;
-                useChatDraftStore.getState().markStreaming();
-              }
-              useChatDraftStore.getState().appendDelta(delta);
-            }
-          } else if (event.type === 'error') {
-            const message = event.error.error || 'Chat send failed';
-            useChatDraftStore.getState().markError({
-              code: event.error.code ?? null,
-              message,
-            });
-            throw new Error(message);
-          } else if (event.type === 'done') {
-            useChatDraftStore.getState().markDone();
-            break;
-          }
-          // citations frame: ignored — refetched message carries citationsJson.
-        }
-      } catch (err) {
-        if (useChatDraftStore.getState().draft?.status !== 'error') {
-          const message = err instanceof Error ? err.message : 'Chat stream failed';
-          const code = err instanceof ApiError ? (err.code ?? null) : null;
-          useChatDraftStore.getState().markError({ code, message });
-        }
         throw err;
       } finally {
         if (abortRef.current === controller) abortRef.current = null;
