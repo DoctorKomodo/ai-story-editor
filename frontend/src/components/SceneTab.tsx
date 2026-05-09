@@ -20,15 +20,15 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
+import { AssistantMessageRow } from '@/components/messageRow/AssistantMessageRow';
 import {
-  AssistantMessageRow,
   CopyAction,
   InsertAtEndAction,
   MessageActions,
   RegenerateAction,
-  TranscriptView,
-  UserMessageRow,
-} from '@/components/messageRow';
+} from '@/components/messageRow/primitives';
+import { TranscriptView } from '@/components/messageRow/TranscriptView';
+import { UserMessageRow } from '@/components/messageRow/UserMessageRow';
 import { SceneEmptyState } from '@/components/SceneEmptyState';
 import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import { useBannerRetry } from '@/hooks/useBannerRetry';

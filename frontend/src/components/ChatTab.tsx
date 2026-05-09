@@ -2,14 +2,10 @@ import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
 import { ChatEmptyState } from '@/components/ChatEmptyState';
-import {
-  AssistantMessageRow,
-  CopyAction,
-  MessageActions,
-  RegenerateAction,
-  TranscriptView,
-  UserMessageRow,
-} from '@/components/messageRow';
+import { AssistantMessageRow } from '@/components/messageRow/AssistantMessageRow';
+import { CopyAction, MessageActions, RegenerateAction } from '@/components/messageRow/primitives';
+import { TranscriptView } from '@/components/messageRow/TranscriptView';
+import { UserMessageRow } from '@/components/messageRow/UserMessageRow';
 import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
 import {
