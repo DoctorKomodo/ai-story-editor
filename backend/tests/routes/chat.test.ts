@@ -6,16 +6,17 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
-import { prisma } from '../setup';
 import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
 
-// Returns a supertest agent (with auth header set) and a chapterId for use in tests.
+// Returns a supertest agent (with auth header set), a chapterId, and the raw
+// accessToken (for constructing repo instances in tests that need them).
 async function setup(
   username: string,
-): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string }> {
+): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; accessToken: string }> {
   const accessToken = await registerAndLogin(username);
   const req = makeFakeReq(accessToken);
 
@@ -33,7 +34,7 @@ async function setup(
   const agent = request.agent(app);
   agent.set('Authorization', `Bearer ${accessToken}`);
 
-  return { agent, chapterId };
+  return { agent, chapterId, accessToken };
 }
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
@@ -403,7 +404,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
   // [ai-surfaces-v1] Case B: retry with no trailing assistant (mid-stream error scenario).
   it('on retry with no trailing assistant, generates cleanly with no deletions (case B)', async () => {
-    const { agent, chapterId } = await setup('sc6-retry-caseB');
+    const { agent, chapterId, accessToken } = await setup('sc6-retry-caseB');
     const fetchSpy = stubVeniceFetch();
     await storeKey(agent, fetchSpy);
 
@@ -412,13 +413,10 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
       .send({ title: 'case-b', kind: 'ask' });
     const chatId = created.body.chat.id as string;
 
-    // Seed a normal first turn to persist a user message via the route layer.
-    queueSseResponse(fetchSpy, 'ignored reply');
-    await sendMessage(agent, chatId, { content: 'hello', modelId: MODEL_ID });
-
-    // Simulate a mid-stream error by removing the assistant row directly from the
-    // test DB (the retry path must handle having no trailing assistant gracefully).
-    await prisma.message.deleteMany({ where: { chatId, role: 'assistant' } });
+    // Seed only a user message via the repo layer — no assistant is ever created,
+    // modelling a mid-stream error where the server died before persisting the reply.
+    const messageRepo = createMessageRepo(makeFakeReq(accessToken));
+    await messageRepo.create({ chatId, role: 'user', contentJson: 'hello' });
 
     // Confirm we are at user-only state.
     const midState = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
@@ -426,6 +424,8 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     expect(midState.body.messages[0].role).toBe('user');
 
     // Retry: no trailing assistant to delete; should just generate cleanly.
+    // Queue model-list fetch first (warms the cache) then the SSE reply.
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
       sseStreamResponse([
         {
