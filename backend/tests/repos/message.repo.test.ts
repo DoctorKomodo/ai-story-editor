@@ -6,6 +6,17 @@ import { createStoryRepo } from '../../src/repos/story.repo';
 import { prisma } from '../setup';
 import { makeUserContext, resetAllTables } from './_req';
 
+async function createUserWithChapter() {
+  const ctx = await makeUserContext();
+  const story = await createStoryRepo(ctx.req).create({ title: 's' });
+  const chapter = await createChapterRepo(ctx.req).create({
+    storyId: story.id as string,
+    title: 'ch',
+    orderIndex: 0,
+  });
+  return { user: ctx, chapterId: chapter.id as string };
+}
+
 describe('[E9] message.repo', () => {
   beforeEach(resetAllTables);
   afterEach(resetAllTables);
@@ -113,5 +124,106 @@ describe('[E9] message.repo', () => {
     expect(list).toHaveLength(2);
     expect((list[0]!.contentJson as { parts: string[] }).parts).toEqual(['q1']);
     expect((list[1]!.contentJson as { parts: string[] }).parts).toEqual(['a1']);
+  });
+});
+
+describe('MessageRepo.deleteAllAfter', () => {
+  beforeEach(resetAllTables);
+  afterEach(resetAllTables);
+
+  it('deletes only rows whose createdAt > reference.createdAt', async () => {
+    const { user, chapterId } = await createUserWithChapter();
+    const repo = createMessageRepo(user.req);
+    const chatRepo = createChatRepo(user.req);
+    const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+
+    const userMsg = await repo.create({
+      chatId: chat.id as string,
+      role: 'user',
+      contentJson: 'first',
+    });
+    // Force later createdAt by sleeping 2ms (Prisma's createdAt has ms precision).
+    await new Promise((r) => setTimeout(r, 2));
+    await repo.create({
+      chatId: chat.id as string,
+      role: 'assistant',
+      contentJson: 'reply',
+    });
+
+    const result = await repo.deleteAllAfter(chat.id as string, userMsg.id as string);
+
+    expect(result.count).toBe(1);
+    const remaining = await repo.findManyForChat(chat.id as string);
+    expect(remaining.map((m) => m.id)).toEqual([userMsg.id]);
+  });
+
+  it('deletes same-millisecond sibling with different id', async () => {
+    const { user, chapterId } = await createUserWithChapter();
+    const repo = createMessageRepo(user.req);
+    const chatRepo = createChatRepo(user.req);
+    const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+
+    // Two messages at exactly the same instant via raw Prisma to construct the
+    // same-millisecond collision case. Post-[E11] there is no plaintext
+    // `contentJson` column — only ciphertext triples, which we leave null here
+    // since we are only testing the deletion predicate, not content round-trips.
+    const ts = new Date();
+    const userMsg = await prisma.message.create({
+      data: {
+        chatId: chat.id as string,
+        role: 'user',
+        createdAt: ts,
+      },
+    });
+    await prisma.message.create({
+      data: {
+        chatId: chat.id as string,
+        role: 'assistant',
+        createdAt: ts, // same millisecond
+      },
+    });
+
+    const result = await repo.deleteAllAfter(chat.id as string, userMsg.id);
+
+    expect(result.count).toBe(1);
+    const remaining = await repo.findManyForChat(chat.id as string);
+    expect(remaining.map((m) => m.id)).toEqual([userMsg.id]);
+  });
+
+  it('returns count 0 when reference message does not exist', async () => {
+    const { user, chapterId } = await createUserWithChapter();
+    const repo = createMessageRepo(user.req);
+    const chatRepo = createChatRepo(user.req);
+    const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+
+    const result = await repo.deleteAllAfter(chat.id as string, 'nonexistent-id');
+    expect(result.count).toBe(0);
+  });
+
+  it("does not delete messages from another user's chat", async () => {
+    const { user: userA } = await createUserWithChapter();
+    const { user: userB, chapterId: chapterBId } = await createUserWithChapter();
+    const repoA = createMessageRepo(userA.req);
+    const chatRepoB = createChatRepo(userB.req);
+    const chatB = await chatRepoB.create({ chapterId: chapterBId, kind: 'ask', title: null });
+    const repoBviaB = createMessageRepo(userB.req);
+    const userMsgB = await repoBviaB.create({
+      chatId: chatB.id as string,
+      role: 'user',
+      contentJson: 'b',
+    });
+    await new Promise((r) => setTimeout(r, 2));
+    await repoBviaB.create({
+      chatId: chatB.id as string,
+      role: 'assistant',
+      contentJson: 'reply',
+    });
+
+    // userA's repo asked to delete after userMsgB — should be a no-op.
+    const result = await repoA.deleteAllAfter(chatB.id as string, userMsgB.id as string);
+
+    expect(result.count).toBe(0);
+    const stillThere = await repoBviaB.findManyForChat(chatB.id as string);
+    expect(stillThere.length).toBe(2);
   });
 });

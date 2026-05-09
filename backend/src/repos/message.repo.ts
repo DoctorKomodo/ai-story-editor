@@ -92,9 +92,36 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     });
   }
 
-  // No update / delete: Message is append-only (CLAUDE.md).
+  async function deleteAllAfter(
+    chatId: string,
+    afterMessageId: string,
+  ): Promise<{ count: number }> {
+    const userId = resolveUserId(req);
+    const ref = await client.message.findFirst({
+      where: {
+        id: afterMessageId,
+        chatId,
+        chat: { chapter: { story: { userId } } },
+      },
+      select: { id: true, createdAt: true },
+    });
+    if (!ref) {
+      return { count: 0 };
+    }
+    const result = await client.message.deleteMany({
+      where: {
+        chatId,
+        chat: { chapter: { story: { userId } } },
+        OR: [
+          { createdAt: { gt: ref.createdAt } },
+          { AND: [{ createdAt: ref.createdAt }, { id: { not: ref.id } }] },
+        ],
+      },
+    });
+    return { count: result.count };
+  }
 
-  return { create, findById, findManyForChat, countForChat };
+  return { create, findById, findManyForChat, countForChat, deleteAllAfter };
 }
 
 function shape(row: unknown, req: Request) {
