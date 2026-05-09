@@ -12,8 +12,6 @@
  * The access token is held in a module-level variable so the session store can
  * push updates (`setAccessToken`) without creating a circular import.
  */
-import { parseAiSseStream } from '@/lib/sse';
-
 const DEFAULT_BASE_URL = '/api';
 
 function resolveBaseUrl(): string {
@@ -384,96 +382,4 @@ export async function listMessagesForChat(chatId: string): Promise<MessageRow[]>
     `/chats/${encodeURIComponent(chatId)}/messages`,
   );
   return res.messages;
-}
-
-export interface StreamMessageBody {
-  /** Message text. Required unless `retry` is true. */
-  content?: string;
-  modelId: string;
-  /**
-   * [SC6] When true, replays the existing trailing user turn against a fresh
-   * Venice completion without persisting a new user message.
-   */
-  retry?: boolean;
-  enableWebSearch?: boolean;
-  attachment?: { selectionText: string; chapterId: string };
-}
-
-export interface StreamMessageOpts {
-  signal?: AbortSignal;
-  onDelta: (chunk: string) => void;
-  onDone: () => void;
-  onError: (err: unknown) => void;
-}
-
-/**
- * [SC14] POST /api/chats/:chatId/messages (SSE streaming)
- *
- * Opens the SSE stream for a chat message send or retry and drives the caller
- * via `opts.onDelta` / `opts.onDone` / `opts.onError`. Delegates SSE parsing
- * to `parseAiSseStream` (from `@/lib/sse`) so that named-event frames
- * (e.g. `event: citations`) and abort-signal propagation are handled
- * consistently with `useSendChatMessageMutation`.
- *
- * NOTE: `event: citations` frames are consumed by the parser but not
- * forwarded to the caller here — `streamMessage` is used by scene-tab
- * components that read citations from the persisted message after the stream
- * completes. If a caller needs in-flight citation delivery, use
- * `useSendChatMessageMutation` instead (it handles the `citations` event).
- * TODO: expose an `onCitations` callback when a scene-tab caller needs it.
- *
- * Callers that need React / TanStack Query integration should use
- * `useSendChatMessageMutation` from `@/hooks/useChat` instead.
- */
-export async function streamMessage(
-  chatId: string,
-  body: StreamMessageBody,
-  opts: StreamMessageOpts,
-): Promise<void> {
-  const requestBody: Record<string, unknown> = { modelId: body.modelId };
-  if (body.content !== undefined) requestBody.content = body.content;
-  if (body.retry === true) requestBody.retry = true;
-  if (body.enableWebSearch === true) requestBody.enableWebSearch = true;
-  if (body.attachment) requestBody.attachment = body.attachment;
-
-  let res: Response;
-  try {
-    res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
-      method: 'POST',
-      body: requestBody,
-      signal: opts.signal,
-    });
-  } catch (err) {
-    opts.onError(err);
-    return;
-  }
-
-  if (!res.body) {
-    opts.onError(new Error('Empty response body'));
-    return;
-  }
-
-  try {
-    // `parseAiSseStream` handles abort-signal propagation, blank-line frame
-    // delimiters (correct SSE semantics), and named-event frames (citations).
-    for await (const event of parseAiSseStream(res.body, opts.signal)) {
-      if (event.type === 'chunk') {
-        const delta = event.chunk.choices?.[0]?.delta?.content;
-        if (typeof delta === 'string' && delta.length > 0) {
-          opts.onDelta(delta);
-        }
-      } else if (event.type === 'error') {
-        opts.onError(new Error(event.error.error));
-        return;
-      } else if (event.type === 'done') {
-        opts.onDone();
-        return;
-      }
-      // citations frame: not forwarded — caller reads from persisted message.
-    }
-    // Stream exhausted without a [DONE] frame — treat as completion.
-    opts.onDone();
-  } catch (err) {
-    opts.onError(err);
-  }
 }
