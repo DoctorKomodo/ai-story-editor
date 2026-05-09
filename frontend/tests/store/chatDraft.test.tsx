@@ -40,6 +40,17 @@ describe('useChatDraftStore (keyed by chatId)', () => {
     expect(drafts['chat-2']).toBeDefined();
   });
 
+  it('start() overwrites an existing slot (no merge of stale state)', () => {
+    useChatDraftStore.getState().start({ chatId: 'c1', userContent: 'first', attachment: null });
+    useChatDraftStore.getState().markError('c1', { code: 'err', message: 'oops' });
+    useChatDraftStore.getState().start({ chatId: 'c1', userContent: 'retry', attachment: null });
+    const d = useChatDraftStore.getState().drafts['c1'];
+    expect(d?.userContent).toBe('retry');
+    expect(d?.status).toBe('thinking');
+    expect(d?.error).toBeNull();
+    expect(d?.assistantText).toBe('');
+  });
+
   it('markError(chatId, ...) sets error on that slot only', () => {
     useChatDraftStore.getState().start({ chatId: 'chat-1', userContent: 'a', attachment: null });
     useChatDraftStore.getState().start({ chatId: 'chat-2', userContent: 'b', attachment: null });

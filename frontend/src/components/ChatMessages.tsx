@@ -311,8 +311,9 @@ export function ChatMessages({
   onRetrySend,
 }: ChatMessagesProps): JSX.Element {
   const query = useChatMessagesQuery(chatId);
-  const draft = useChatDraftStore((s) => (chatId !== null ? (s.drafts[chatId] ?? null) : null));
-  const draftForThisChat = draft;
+  const draftForThisChat = useChatDraftStore((s) =>
+    chatId !== null ? (s.drafts[chatId] ?? null) : null,
+  );
 
   if (chatId === null) {
     return (
