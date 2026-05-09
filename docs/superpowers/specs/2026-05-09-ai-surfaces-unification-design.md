@@ -1,6 +1,6 @@
 # AI Surfaces Unification v1 — Design
 
-**Status:** Brainstormed 2026-05-09; spec authored same day; revised same day after external review (folded changes covering cross-tab concurrency, error UX unification, retry leniency, and several invariants).
+**Status:** Brainstormed 2026-05-09; spec authored same day; revised same day after external review (folded changes covering cross-tab concurrency, error UX unification, several invariants); revised again after second review caught a destructive corner case in the previously-spec'd lenient retry — backend rolled back to strict semantics and the retry-routing moved to the frontend where it can use cache state to disambiguate.
 
 **Goal:** Collapse the parallel implementations of Chat and Scene transcripts into one shared layer at three levels — streaming, transcript container, per-message rows — and fix the latent retry-prompt-construction quirk in the backend along the way.
 
@@ -41,7 +41,7 @@ The PR is large by review standards but each of its phases is self-contained and
 | **Persisted message data** | Chat: TanStack Query; Scene: hand-rolled `useSceneTranscriptStore` (Zustand) | Both: TanStack Query (`useChatMessagesQuery`). `useSceneTranscriptStore` deletes. |
 | **Optimistic in-flight** | Chat: `useChatDraftStore` single-slot (`draft: ChatDraft \| null`); Scene: appends pseudo-message into transcript store | Both: `useChatDraftStore`, **keyed by chatId** (`drafts: Record<string, ChatDraft>`). Cross-tab concurrent streaming supported. |
 | **Per-message rows** | `ChatMessages.tsx` (assistant: serif body + meta + chip; user: bubble + attachment); `SceneCandidateCard.tsx` (article wrapper + isLatest semantics + Insert-at-end) | Shared `<UserMessageRow>` / `<AssistantMessageRow>` composed of primitives, `actions` slot for tab-specific buttons. |
-| **Retry semantics** | Both backends append; Chat regenerate not wired; Scene shows old + new as parallel candidates; banner-retry on Chat replays as fresh send (`retry: false`) regardless of whether user persisted | Linear in both. Backend `retry: true` becomes lenient: deletes trailing-after-lastUser then regenerates if `lastUserMsg` exists; falls through to fresh-send semantics if not (and `content` provided). One retry semantic at user level; both surfaces (banner + per-message Regenerate) call `mutateAsync({retry: true, content?})`. |
+| **Retry semantics** | Both backends append; Chat regenerate not wired; Scene shows old + new as parallel candidates; banner-retry on Chat replays as fresh send regardless of whether user persisted (case-B duplicate-user bug) | Linear in both. Backend `retry: true` stays strict (today's validation: requires `lastUserMsg`, rejects `content`) and gains `deleteAllAfter(chatId, lastUserMsg.id)` before regenerating. Frontend resolves "what did the failed send leave in the DB?" by tracking `lastIdBefore` per-send + cache inspection; banner-retry dispatches `{retry: true}` (case B) or fresh send (cases A/D/E) accordingly. Per-message Regenerate is always `{retry: true}`. One user-level retry intent ("click retry") with the wire-format dispatch hidden inside the mutation hook. |
 
 ### What stays divergent (and why)
 
@@ -54,9 +54,10 @@ The PR is large by review standards but each of its phases is self-contained and
 ### Data flow after unification
 
 ```
-   POST /chats/:chatId/messages       ←── chat.routes.ts (lenient retry: true; deletes-trailing or falls through to fresh-send)
+   POST /chats/:chatId/messages       ←── chat.routes.ts (strict retry: true + deleteAllAfter; fresh send unchanged)
                 ↑
    useSendChatMessageMutation         ←── shared by Chat + Scene tabs
+        │ - tracks lastIdBefore per send (for banner-retry dispatch)
         │ uses
         ▼
    runStreamingAI(opts)               ←── stateless utility, ~30-40 lines
@@ -72,6 +73,79 @@ The PR is large by review standards but each of its phases is self-contained and
         ↑                                  per-chat slot — Chat + Scene can stream concurrently
    read by <TranscriptView>           ←── merges drafts[chatId] with persisted messages → render-prop
 ```
+
+### Retry routing (banner-retry vs per-message Regenerate)
+
+The user-visible model is **one** "Retry" intent across two surfaces. Wire-format dispatch happens inside the mutation hook + a small banner-retry handler — invisible to the user.
+
+**Why dispatch is needed:** there are four error scenarios the frontend has to route correctly. Pre-stream errors (network failure, validation, models-cache fetch failure) leave the DB unchanged. Mid-stream errors persist the user message but no assistant. The frontend can't reliably tell which happened from the error alone — the route persists the user *before* writing SSE headers, so `apiStream()` rejecting tells the frontend "non-200 response" without disclosing whether the user persisted (e.g. a Venice-key-missing error fires post-persistence-pre-stream-headers from the route's perspective and looks identical to a validation error from the frontend's). The cache, before-and-after the failed send, is the authoritative signal.
+
+**The four cases:**
+
+| Case | Setup | What's in DB | Right call |
+|---|---|---|---|
+| A | Pre-stream error; no prior turn | `[]` | Fresh send X |
+| B | Mid-stream error; X just persisted | `[…, user-X]` | `{retry: true}` regenerates from user-X |
+| C | Per-message Regenerate (no banner; trailing assistant exists) | `[…, user-N, assistant-N]` | `{retry: true}` deletes assistant-N, regenerates |
+| D | Pre-stream error; prior turn `[user-1, assistant-1]` exists; X failed pre-persist | `[user-1, assistant-1]` | Fresh send X (DO NOT delete assistant-1; DO NOT regenerate from user-1) |
+
+(Case E — "user re-sends 'hello' that happens to match a prior 'hello' but the new send fails pre-persist" — is handled correctly by id-based detection, not content matching.)
+
+**Mutation tracks `lastIdBefore` in `onMutate`:**
+```ts
+const lastIdBeforeRef = useRef<string | null>(null);
+
+onMutate: ({ chatId, content, attachment }) => {
+  const messages = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey(chatId)) ?? [];
+  lastIdBeforeRef.current = messages[messages.length - 1]?.id ?? null;
+  // existing draft.start(...) call
+}
+```
+
+**Banner-retry dispatch:**
+```ts
+const onBannerRetry = useCallback(async () => {
+  const last = lastSendArgsRef.current;
+  if (!last || activeChatId === null) return;
+
+  // Optimization: inspect current cache first. If a new user is already
+  // visible, dispatch retry: true immediately without refetching (common
+  // mid-stream-error case — the persisted user is in cache because the
+  // route ACK'd it before failing).
+  const inspect = (): boolean => {
+    const after = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey(activeChatId)) ?? [];
+    const startIdx = lastIdBeforeRef.current
+      ? after.findIndex((m) => m.id === lastIdBeforeRef.current) + 1
+      : 0;
+    return after.slice(startIdx).some((m) => m.role === 'user');
+  };
+
+  if (inspect()) {
+    void sendChatMessage.mutateAsync({ chatId: activeChatId, modelId, retry: true });
+    return;
+  }
+  // Cache shows no new user. Could be truly-not-persisted OR stale-cache.
+  // Refetch to disambiguate.
+  await qc.refetchQueries({ queryKey: chatMessagesQueryKey(activeChatId) });
+  if (inspect()) {
+    void sendChatMessage.mutateAsync({ chatId: activeChatId, modelId, retry: true });
+  } else {
+    void onSend(last);  // fresh send (cases A/D/E)
+  }
+}, [activeChatId, modelId, sendChatMessage, qc, onSend]);
+```
+
+**Per-message Regenerate** is unconditional:
+```ts
+const onRegenerate = useCallback(() => {
+  if (activeChatId === null) return;
+  void sendChatMessage.mutateAsync({ chatId: activeChatId, modelId, retry: true });
+}, [activeChatId, modelId, sendChatMessage]);
+```
+
+(Per-message Regenerate appears only on the trailing assistant — same isLatest constraint as Scene's existing implementation. By construction, the trailing user is the message we want to regenerate from, so no explicit id parameter is needed.)
+
+**UX detail worth pinning:** while the banner-retry dispatch decision runs (refetch + inspect), there's a small "click registered, nothing yet" window. The banner's Retry button must `disabled` itself during this window in addition to gating on `mutation.isPending` once the actual mutation fires. Implementer can use a local `isDispatching` ref/state for the inspection window.
 
 ### Cross-tab streaming concurrency
 
@@ -103,29 +177,29 @@ interface ChatDraftState {
 ```ts
 deleteAllAfter(chatId: string, afterMessageId: string): Promise<{ count: number }>
 ```
-Deletes every message owned by `chatId` whose `createdAt > ref.createdAt`, OR `(createdAt = ref.createdAt AND id != ref.id)` — id-based tiebreaker so a same-millisecond sibling (rare but possible if a prior retry persisted assistant in the same ms as the user) gets cleaned up too. Reference message itself is preserved. Enforces ownership through chat → chapter → story → userId chain (matching the existing `findManyForChat` pattern). Used by the lenient retry handler. `repo-boundary-reviewer` scope at close-reviewed time.
+Deletes every message owned by `chatId` whose ordering is "after" the reference message — strict `createdAt > ref.createdAt`, OR `(createdAt = ref.createdAt AND id != ref.id)` for the same-millisecond tiebreaker (rare but possible if a prior retry persisted assistant in the same ms as the user). Reference message itself is preserved. Enforces ownership through chat → chapter → story → userId chain (matching the existing `findManyForChat` pattern). Used by the retry handler. `repo-boundary-reviewer` scope at close-reviewed time.
 
-**`backend/src/routes/chat.routes.ts`** — modify retry validation + branch (lenient retry semantics):
+**`backend/src/routes/chat.routes.ts`** — modify retry branch only:
 
-*Validation changes:*
-- Today: `if (body.retry && body.content !== undefined)` → reject 400 "content must be omitted when retry is true". **Remove** — `retry: true` now permits optional `content`.
-- Today: `if (body.retry && !lastUserMsg)` → reject 400 `retry_invalid_state`. **Loosen** to `if (body.retry && !lastUserMsg && !body.content)` — `retry: true` without `content` AND without prior user is still `retry_invalid_state`; with `content` provided it falls through to fresh-send semantics.
-- Today: `if (!body.retry && !body.content)` → reject 400 "content is required". **Unchanged.**
+*Validation: unchanged from today's strict semantics.*
+- `if (!body.retry && !body.content)` → reject 400 "content is required" (today; unchanged).
+- `if (body.retry && body.content !== undefined)` → reject 400 "content must be omitted when retry is true" (today; unchanged).
+- `if (body.retry && !lastUserMsg)` → reject 400 `retry_invalid_state` (today; unchanged).
+
+(Earlier spec revision proposed loosening these to make `retry: true` accept optional `content` and fall through to fresh-send when no `lastUserMsg`. That introduced a destructive corner case — Case D — where a banner-retry of a pre-stream-failed send would silently destroy a prior good assistant and lose the new input. The frontend doesn't have enough information to know whether the user persisted before failure, but the *cache* does. Routing moves to the frontend instead. Backend stays strict.)
 
 *Branch behavior:*
-- `retry: true` AND `lastUserMsg` exists: `deleteAllAfter(chatId, lastUserMsg.id)`. Continue with existing retry flow (prompt = `[systemMsg, ...history]`; history naturally ends at `lastUserMsg` after deletion). `body.content` is ignored if provided (the persisted user is the source of truth). Covers cases B + C (mid-stream error with persisted user; user clicks per-message Regenerate).
-- `retry: true` AND `!lastUserMsg` AND `body.content` provided: fall through to fresh-send. Persist `body.content` as user, generate assistant. Covers case A (pre-stream error — banner-retry replays the original send through the retry path).
+- `retry: true` (with `lastUserMsg` guaranteed by validation): `deleteAllAfter(chatId, lastUserMsg.id)` to remove any trailing assistant(s) from a prior retry attempt. Continue with existing retry flow (prompt = `[systemMsg, ...history]`; history naturally ends at `lastUserMsg` after deletion). Covers cases B + C uniformly.
 - `retry: false` (or omitted): existing fresh-send flow, unchanged.
 
-The prompt construction (`messages = [systemMsg, ...history]` on retry) becomes correct as a side effect when retry runs against a deleted-trailing state: history ends at `lastUserMsg`, Venice gets a clean "respond to the last user turn" prompt instead of the current "continue from this assistant" quirk.
+The prompt construction (`messages = [systemMsg, ...history]` on retry) becomes correct as a side effect: history ends at `lastUserMsg` after `deleteAllAfter`, Venice gets a clean "respond to the last user turn" prompt instead of the current "continue from this assistant" quirk.
 
 **Tests:**
-- New: `MessageRepo.deleteAllAfter` deletes only rows owned by the chat's chain; preserves reference message; deletes same-millisecond sibling with different id.
+- New: `MessageRepo.deleteAllAfter` deletes only rows owned by the chat's chain; preserves reference message; deletes same-millisecond sibling with different id; ownership-gated through chat→chapter→story→userId.
 - New: retry deletes prior trailing assistant + creates new one (case C).
 - New: retry deletes multiple trailing rows if a prior retry was interrupted (defensive).
-- New: retry with `lastUserMsg` and matching/mismatching `content` ignores body.content; uses persisted lastUserMsg as source.
-- New: retry without `lastUserMsg` AND with `content` → fresh-send path (case A — banner-retry after pre-stream error).
-- New: retry without `lastUserMsg` AND without `content` → 400 `retry_invalid_state`.
+- New: retry with no trailing assistant (case B — user just persisted but no assistant yet) generates assistant cleanly with no deletions.
+- Existing `retry_invalid_state` rejection tests stay green (no `lastUserMsg` → 400). `body.content with retry: true` rejection test stays green (validation unchanged).
 - Updated: existing tests asserting "after retry, both old and new assistants persist" rewrite to assert "after retry, only the new assistant persists." These were exercising the candidate semantics we're removing.
 
 ### Frontend — streaming
@@ -265,21 +339,15 @@ When `message` is in a draft-streaming state with empty content, renders `<Think
 </TranscriptView>
 ```
 
-**Retry call shapes** (one user-level semantic; two surfaces; backend is lenient — see Backend section):
+**Retry call shapes** (one user-level semantic; two surfaces; backend stays strict — frontend dispatches based on cache state. Full mechanism in the "Retry routing" section above):
 
-- **Banner-retry** (`onBannerRetry`, fires from `<InlineErrorBanner>` retry button): replays the last failed send. Calls
-  ```ts
-  sendChatMessage.mutateAsync({ chatId, modelId, retry: true, content: lastSendArgs.content, attachment: lastSendArgs.attachment })
-  ```
-  Backend handles both pre-stream-error (case A — no lastUserMsg, falls through to fresh-send using provided `content`) and mid-stream-error (case B — lastUserMsg persisted, deletes any partial trailing assistant, regenerates).
+- **Banner-retry** (`onBannerRetry`, fires from `<InlineErrorBanner>` retry button): inspects the cache against `lastIdBeforeRef.current` (captured by the mutation's `onMutate`); refetches if necessary; dispatches either `mutateAsync({chatId, modelId, retry: true})` (case B — user persisted) or `onSend(lastSendArgsRef.current)` (cases A/D/E — fresh send). Closes the case-D regression cleanly.
 
-- **Per-message Regenerate** (`onRegenerate`, fires from `<RegenerateAction>` on the trailing assistant): the user message is by definition persisted. Calls
-  ```ts
-  sendChatMessage.mutateAsync({ chatId, modelId, retry: true })
-  ```
-  No `content` — backend uses `lastUserMsg.content` from DB. Closes `story-editor-458`.
+- **Per-message Regenerate** (`onRegenerate`, fires from `<RegenerateAction>` on the trailing assistant): unconditional `mutateAsync({chatId, modelId, retry: true})`. Backend uses `lastUserMsg` from DB. Closes `story-editor-458`. Per-message button appears only on the trailing assistant (matches Scene's existing isLatest gating).
 
-Both surfaces gate `disabled` on `sendChatMessage.isPending` (banner button is inside `<InlineErrorBanner>`; per-message button is on the row).
+**Disabled-state gating** for both Retry surfaces:
+- Per-message `<RegenerateAction>`: `disabled={sendChatMessage.isPending}`.
+- Banner Retry: `disabled={sendChatMessage.isPending || isDispatching}` where `isDispatching` is true during the brief refetch+inspect window (before the mutation actually fires). One small local state in the banner-retry handler.
 
 **`SceneTab.tsx`** — orchestrator:
 - Replaces inline scroll/autoscroll/session-reset/hydration-error UX with `<TranscriptView>` consumption.
@@ -287,7 +355,7 @@ Both surfaces gate `disabled` on `sendChatMessage.isPending` (banner button is i
 - Replaces `renderTranscript` walker with the same render-prop pattern as Chat, plus Scene-specific actions (`<InsertAtEndAction>`).
 - The `direction` de-duplication logic, `lastAssistantIdx` walk, `isLatest` flag, "superseded" marker — all gone (linear retry semantics).
 - Per-message `<RegenerateAction>` gates `disabled` on `sendChatMessage.isPending` (same as Chat). `<InsertAtEndAction>` does not — Insert doesn't fire a mutation, just inserts editor text.
-- Banner-retry uses the same `mutateAsync({retry: true, content: lastSendArgs.content})` shape as Chat.
+- Mirrors Chat's `lastChatSendArgsRef` with `lastSceneSendArgsRef` for banner-retry. Same dispatch logic — the cache-inspection routing is implemented identically (probably worth lifting to a small shared helper, e.g. `useBannerRetry({chatId, mutation, lastSendArgsRef, lastIdBeforeRef, onSend})`, but a direct mirror is fine for the first cut).
 
 **Deleted entirely:**
 - `frontend/src/components/ChatMessages.tsx` (replaced by `TranscriptView` + row components in ChatTab).
@@ -319,22 +387,31 @@ Both surfaces gate `disabled` on `sendChatMessage.isPending` (banner button is i
 
 ## Testing
 
-**Backend:**
-- New repo test: `MessageRepo.deleteManyAfter` deletes only rows owned by the chat's chain, respects the `createdAt` boundary.
-- New retry test: deletes trailing assistant before regenerating; new assistant is the only assistant after the last user.
-- Updated retry tests: drop assertions about parallel candidates persisting.
-- Encryption leak test ([E12]) re-runs (deletes are touching narrative columns).
+**Backend:** (full enumeration in the Backend Components section above; summary here)
+- `MessageRepo.deleteAllAfter` repo tests (id-based; same-millisecond tiebreaker; ownership-gated).
+- Retry route tests: deletes trailing-after-lastUser before regenerating; case-B (no trailing assistant) generates cleanly with no deletions.
+- Existing strict-validation tests (`retry_invalid_state` when no `lastUserMsg`; reject `content with retry: true`) stay green — validation unchanged.
+- Updated existing tests: drop assertions about parallel candidates persisting.
+- Encryption leak test ([E12]) re-runs (deletes touch narrative columns).
 
 **Frontend — new tests:**
 - `runStreamingAI` unit tests with mocked fetch + canned SSE chunks. Cover: chunk delivery, citations forwarding, error mapping (asserting `ApiError.code` survives through throw), stream-exhausted-without-DONE, abort propagation.
 - `useChatDraftStore` keyed-slot tests: concurrent `start()` for two different chatIds keeps both drafts isolated; `clear(chatId)` only clears that slot; `appendDelta(chatId, ...)` doesn't leak to other slots.
+- `useSendChatMessageMutation` `lastIdBefore` capture: `onMutate` records the trailing message id from the cache before the send fires; ref persists through mutation lifecycle.
 - Each primitive renders correctly (snapshot-style).
 - `<TranscriptView>` autoscroll pins to bottom while within 50px; releases on scroll-up; resets on session change.
 - `<TranscriptView>` correctly merges persisted + draft from the keyed slot for `chatId`; ignores other slots.
 - `<TranscriptView>` hydration error renders single-line + Retry button; Retry calls `query.refetch()`.
 - `<TranscriptView>` clear-before-invalidate ordering preserved on mutation success — no flicker frame showing both draft and persisted.
 - Row components render with all variants (attachment, citations, model, streaming, done, error).
-- Backend retry leniency end-to-end (frontend mocks the backend): banner-retry with `content` after pre-stream error → fresh send; banner-retry with `content` after mid-stream error → `retry: true` deletes-trailing; per-message Regenerate without `content` → `retry: true` regenerates.
+- **Banner-retry dispatch table** (the case-D fix; integration-shaped tests using mocked mutation + cache fixtures):
+  - Case A (no prior turn; X failed pre-persist; cache stays empty after refetch) → fresh send X.
+  - Case B (X persisted then mid-stream error; cache shows new user-X after `lastIdBefore`) → `retry: true`, no fresh send.
+  - Case D (`[user-1, assistant-1]` exists; X failed pre-persist; cache shows no new user after `lastIdBefore = assistant-1.id`) → fresh send X; assistant-1 untouched.
+  - Case E (content collision: X = "hello" submitted while `[…, user-N: "hello", assistant-N]` exists, X failed pre-persist) → fresh send X; id-based detection dodges the content match.
+  - Optimization fast-path: when current cache already shows a new user, dispatch immediately without refetch.
+  - `isDispatching` disables the banner button during the inspection window even before the mutation fires.
+- Per-message Regenerate (only on trailing assistant) calls `mutateAsync({retry: true})` unconditionally.
 
 **Frontend — deleted/rewritten tests:**
 - `frontend/tests/store/sceneTranscript.test.ts` (or equivalent): deletes entirely with the store.
@@ -343,6 +420,7 @@ Both surfaces gate `disabled` on `sendChatMessage.isPending` (banner button is i
 - `SceneCandidateCard.test.tsx`-style tests asserting "superseded" marker rendering, isLatest semantics, retry-only-on-latest behavior: deletes entirely with the component.
 - Any frontend test asserting "two assistant candidates render after retry" on Scene: rewrites to assert one assistant after retry (linear semantics).
 - `useSendChatMessageMutation` tests using single-slot draft assumptions: rewrite to use keyed-slot reads (`s.drafts[chatId]`).
+- Any test that previously exercised "banner-retry sends fresh `{content: X}`" as the always-correct shape: rewrites to the four-case dispatch table above.
 
 **E2E:**
 - Existing chat send + scene generate flows pass with new components.
@@ -358,7 +436,7 @@ These are properties the implementation must preserve. Each has been a real bug 
 1. **`clear()` before `invalidateQueries()` in `onSuccess`.** Clearing the draft AFTER invalidating would produce a frame where `<TranscriptView>` renders the persisted assistant + the draft assistant simultaneously (duplicate flicker). The order at `useChat.ts:317-318` today is correct; preserve it through the keyed-store refactor.
 2. **`runStreamingAI` ApiError code propagation.** Error-event frames produce `ApiError(502, message, code)`; consumers extract `code` from the thrown error in their catch block, NOT from the original event. Losing the code degrades error-banner specificity.
 3. **Per-message Regenerate gates `disabled` on mutation `isPending`.** Both Chat and Scene. Banner-retry button (inside `<InlineErrorBanner>`) gates the same way. Prevents double-fire while a mutation is in flight.
-4. **Backend retry leniency: optional `content` permitted with `retry: true`.** When `lastUserMsg` exists, `content` is ignored and lastUserMsg is the source of truth. When `lastUserMsg` doesn't exist AND `content` is provided, falls through to fresh-send. When neither: 400 `retry_invalid_state`.
+4. **Backend retry stays strict; frontend dispatches.** `retry: true` requires `lastUserMsg` and rejects `content` (today's validation, unchanged). What changes is the addition of `deleteAllAfter(chatId, lastUserMsg.id)` before regeneration. Banner-retry dispatch (the case-A vs case-B vs case-D vs case-E disambiguation) lives in the frontend, where the cache before-and-after the failed send is the authoritative signal. The earlier-spec'd "lenient backend" was attractive but introduced Case D (destructive: deleted prior good assistant + lost new input on pre-stream-error retries) — the backend lacks the information it would need to disambiguate, the frontend has it.
 5. **`deleteAllAfter` is reference-id-based, not createdAt-based.** Same-millisecond sibling case is real; id tiebreaker prevents incorrect preservation. Reference message itself is always preserved.
 6. **Keyed draft store isolation.** Methods take `chatId`; reads scope to `s.drafts[chatId]`. No method accidentally writes to or clears another slot. Concurrent streams across tabs are independently progressable.
 
@@ -366,7 +444,7 @@ These are properties the implementation must preserve. Each has been a real bug 
 
 The unified PR will be one branch with logical commits. Suggested order:
 
-1. **Backend retry change** (`deleteAllAfter` + route leniency + tests). Self-contained; ships independently if needed.
+1. **Backend retry change** (`deleteAllAfter` repo method + route's retry branch gains the deletion call before regeneration; validation unchanged + tests). Self-contained; ships independently if needed.
 2. **`runStreamingAI` utility + consumer migration** (closes a0s). Both `useSendChatMessageMutation` and `useAICompletion` start using it; tests pass with no UX change. Includes ApiError code-propagation invariant (#2 above).
 3. **Keyed draft store refactor** (`useChatDraftStore` from `draft: ChatDraft | null` → `drafts: Record<string, ChatDraft>`). All call sites updated. Tests for slot isolation. Pure refactor — no UX change because Chat is still the only consumer.
 4. **Row primitives + row components** (Storybook stories first; then wire into ChatMessages by composition without removing it yet).
@@ -387,6 +465,8 @@ The plan that follows this spec will break each phase into bite-sized tasks per 
 | `<TranscriptView>` autoscroll edge cases (very long chapter context loading mid-stream, etc.) | Same algorithm as Scene's existing implementation — already battle-tested. New regression tests cover the merge with draft pair. |
 | Larger PR diff than typical | Each phase is self-contained in its commits; reviewer can read commit-by-commit. |
 | Storybook story count grows | Each new primitive gets a tiny focused story (consistent with primitives/Tokens convention). Stories make future divergence visible at a glance. |
+| **Stop during in-flight retry leaves a transient `[…, user]` state** (no trailing assistant). The route's `deleteAllAfter` ran before Venice was called; abort cancels the replacement assistant before it can be persisted. | Recoverable by clicking Regenerate on the trailing user (or by sending a new message — the existing user becomes part of conversation history). Worth a one-line implementer note + a manual E2E check. Not a data-loss bug: only the partial/replacement assistant is lost; the user message survives. |
+| **Banner-retry refetch latency** introduces a small "click registered, nothing yet" window before the dispatch decision fires. | The optimization in the Retry routing section (inspect cache first, refetch only when cache shows no new user) makes the common mid-stream-error case immediate. The banner button gates `disabled` on a local `isDispatching` flag during the window. Sub-100ms in practice for fast backends. |
 
 ---
 
@@ -397,9 +477,10 @@ The plan that follows this spec will break each phase into bite-sized tasks per 
 - One set of row components (`<UserMessageRow>`, `<AssistantMessageRow>`) consumed by both tabs.
 - Scene reads from TanStack Query + the keyed shared draft store. `useSceneTranscriptStore` deleted.
 - `useChatDraftStore` is keyed by chatId. Cross-tab concurrent streaming works without clobbering.
-- Backend `retry: true` is lenient: deletes trailing-after-lastUser via `deleteAllAfter` (id-based tiebreaker) and regenerates if `lastUserMsg` exists; falls through to fresh-send when `lastUserMsg` absent AND `content` provided; rejects with `retry_invalid_state` only when neither holds.
-- One retry semantic at the user level: banner-retry and per-message Regenerate both call `mutateAsync({retry: true, content?})`; both gate `disabled` on `mutation.isPending`.
+- Backend `retry: true` stays strict (today's validation: requires `lastUserMsg`, rejects `content`) and gains `deleteAllAfter(chatId, lastUserMsg.id)` (id-based tiebreaker) before regeneration.
+- One retry semantic at the user level. Frontend dispatches per-call-site: per-message Regenerate is unconditional `mutateAsync({retry: true})`; banner-retry inspects `lastIdBefore` against the (refetched-if-needed) cache to choose between `mutateAsync({retry: true})` (case B) and a fresh `onSend(lastSendArgs)` (cases A/D/E). Closes the case-D destructive-rewrite hole that lenient-backend would have left open.
+- Both Retry surfaces gate `disabled` on `mutation.isPending`. Banner adds local `isDispatching` gating during the inspect-and-decide window.
 - Chat Regenerate is wired (closes 458). Context chip + dead props removed (closes 7at).
 - Storybook coverage for each new primitive and row component.
-- All existing tests pass (after updates for new shapes); the keyed-store, retry-leniency, and hydration-error tests are green; leak test ([E12]) green.
+- All existing tests pass (after updates for new shapes); the keyed-store, banner-retry dispatch table (cases A/B/D/E), and hydration-error tests are green; leak test ([E12]) green.
 - `lint:design` green (token-only Tailwind + composition).
