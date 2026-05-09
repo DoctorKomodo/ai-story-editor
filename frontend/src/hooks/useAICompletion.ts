@@ -175,7 +175,10 @@ export function useAICompletion(): UseAICompletion {
             }
           },
         });
-        // Stream completed normally.
+        // Stream completed normally. Skip the done-flip if cancel() ran:
+        // it already reset state to idle via INITIAL_STATE, and parseAiSseStream
+        // returns normally (not throws) on signal.aborted.
+        if (controller.signal.aborted) return;
         safeSetState((prev) => (prev.status === 'error' ? prev : { ...prev, status: 'done' }));
       } catch (err) {
         if (controller.signal.aborted) return;
