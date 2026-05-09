@@ -61,4 +61,20 @@ describe('useChatDraftStore (keyed by chatId)', () => {
     expect(drafts['chat-2'].status).toBe('thinking');
     expect(drafts['chat-2'].error).toBeNull();
   });
+
+  it('markStreaming(chatId) is a no-op when slot does not exist', () => {
+    // Don't start() — slot is absent.
+    useChatDraftStore.getState().markStreaming('absent-chat');
+    expect(useChatDraftStore.getState().drafts['absent-chat']).toBeUndefined();
+  });
+
+  it('markDone(chatId) is a no-op when slot does not exist', () => {
+    useChatDraftStore.getState().markDone('absent-chat');
+    expect(useChatDraftStore.getState().drafts['absent-chat']).toBeUndefined();
+  });
+
+  it('markError(chatId, error) is a no-op when slot does not exist', () => {
+    useChatDraftStore.getState().markError('absent-chat', { code: 'x', message: 'y' });
+    expect(useChatDraftStore.getState().drafts['absent-chat']).toBeUndefined();
+  });
 });
