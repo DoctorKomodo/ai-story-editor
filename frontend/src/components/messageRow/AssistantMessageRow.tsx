@@ -1,22 +1,13 @@
 import type { JSX, ReactNode } from 'react';
 import type { ChatMessage } from '@/hooks/useChat';
 import { AssistantBubble, CitationsSlot, MessageMeta, ThinkingBubble } from './primitives';
+import { getMessageText } from './utils';
 
 export interface AssistantMessageRowProps {
   message: ChatMessage;
   actions: ReactNode;
   isStreaming?: boolean;
   thinkingLabel?: string;
-}
-
-function getMessageText(contentJson: unknown): string {
-  if (typeof contentJson === 'string') return contentJson;
-  if (contentJson === null || contentJson === undefined) return '';
-  try {
-    return JSON.stringify(contentJson);
-  } catch {
-    return '';
-  }
 }
 
 export function AssistantMessageRow({

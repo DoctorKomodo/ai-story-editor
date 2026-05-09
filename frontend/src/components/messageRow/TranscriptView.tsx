@@ -7,6 +7,7 @@ import {
   type ChatDraftStatus,
   useChatDraftStore,
 } from '@/store/chatDraft';
+import { getMessageText } from './utils';
 
 export type TranscriptRow =
   | { kind: 'persisted'; message: ChatMessage }
@@ -31,16 +32,6 @@ export interface TranscriptViewProps {
   disableRetrySend?: boolean;
   /** Render-prop receives the merged row stream. */
   children: (rows: TranscriptRow[]) => ReactNode;
-}
-
-function getMessageText(contentJson: unknown): string {
-  if (typeof contentJson === 'string') return contentJson;
-  if (contentJson === null || contentJson === undefined) return '';
-  try {
-    return JSON.stringify(contentJson);
-  } catch {
-    return '';
-  }
 }
 
 function buildRows(

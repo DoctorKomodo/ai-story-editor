@@ -1,19 +1,10 @@
 import type { JSX } from 'react';
 import type { ChatMessage } from '@/hooks/useChat';
+import { getMessageText } from './utils';
 
 export interface UserMessageRowProps {
   message: ChatMessage;
   chapterTitle?: string | null;
-}
-
-function getMessageText(contentJson: unknown): string {
-  if (typeof contentJson === 'string') return contentJson;
-  if (contentJson === null || contentJson === undefined) return '';
-  try {
-    return JSON.stringify(contentJson);
-  } catch {
-    return '';
-  }
 }
 
 function chapterCaption(chapterTitle: string | null | undefined): string {
