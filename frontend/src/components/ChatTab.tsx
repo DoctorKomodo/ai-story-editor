@@ -11,6 +11,7 @@ import {
   UserMessageRow,
 } from '@/components/messageRow';
 import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
+import { useBannerRetry } from '@/hooks/useBannerRetry';
 import {
   type ChatMessage,
   useChatsQuery,
@@ -129,11 +130,13 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
     [chapterId, selectedModelId, activeChatId, sessions, createChat, renameChat, sendChatMessage],
   );
 
-  const onRetry = useCallback((): void => {
-    const last = lastChatSendArgsRef.current;
-    if (last === null) return;
-    void onSend(last);
-  }, [onSend]);
+  const { onRetry, isDispatching } = useBannerRetry({
+    chatId: activeChatId,
+    selectedModelId,
+    mutation: sendChatMessage,
+    lastSendArgsRef: lastChatSendArgsRef,
+    onSend,
+  });
 
   const onDelete = useCallback(
     (id: string) => {
@@ -215,7 +218,10 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         chatId={activeChatId}
         emptyState={<ChatEmptyState />}
         sendError={sendChatMessage.error}
-        onRetrySend={onRetry}
+        onRetrySend={() => {
+          void onRetry();
+        }}
+        disableRetrySend={sendChatMessage.isPending || isDispatching}
       >
         {(rows) =>
           rows.map((r) => {
