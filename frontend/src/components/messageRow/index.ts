@@ -10,7 +10,8 @@ export {
   RegenerateAction,
   ThinkingBubble,
 } from './primitives';
+export type { TranscriptRow, TranscriptViewProps } from './TranscriptView';
+export { TranscriptView } from './TranscriptView';
 export type { UserMessageRowProps } from './UserMessageRow';
 export { UserMessageRow } from './UserMessageRow';
-export { TranscriptView } from './TranscriptView';
-export type { TranscriptRow, TranscriptViewProps } from './TranscriptView';
+export { getMessageText } from './utils';
