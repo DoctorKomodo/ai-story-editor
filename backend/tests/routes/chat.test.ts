@@ -9,6 +9,7 @@ import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
+import { prisma } from '../setup';
 import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
 
 // Returns a supertest agent (with auth header set) and a chapterId for use in tests.
@@ -355,6 +356,93 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
       .post(`/api/chats/${chatId}/messages`)
       .send({ retry: true, content: 'extra', modelId: MODEL_ID })
       .expect(400);
+  });
+
+  // [ai-surfaces-v1] Case C: retry deletes prior trailing assistant before regenerating.
+  it('on retry, deletes prior trailing assistant before regenerating (case C — linear retry)', async () => {
+    const { agent, chapterId } = await setup('sc6-retry-caseC');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'case-c', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // First normal turn: user message + assistant reply.
+    queueSseResponse(fetchSpy, 'first reply');
+    await sendMessage(agent, chatId, { content: 'hello', modelId: MODEL_ID });
+
+    // Verify starting state: 1 user + 1 assistant.
+    const before = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(before.body.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(1);
+    expect(
+      before.body.messages.filter((m: { role: string }) => m.role === 'assistant'),
+    ).toHaveLength(1);
+
+    // Retry: old assistant should be deleted, new one created. Models cache warm.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-caseC',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'second reply' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, { retry: true, modelId: MODEL_ID });
+    expect(retryStatus).toBe(200);
+
+    const after = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const assistants = after.body.messages.filter((m: { role: string }) => m.role === 'assistant');
+    // Exactly one assistant — the old one was deleted before the new one was created.
+    expect(assistants).toHaveLength(1);
+    // The surviving assistant carries the new reply content.
+    expect(assistants[0].contentJson).toBe('second reply');
+  });
+
+  // [ai-surfaces-v1] Case B: retry with no trailing assistant (mid-stream error scenario).
+  it('on retry with no trailing assistant, generates cleanly with no deletions (case B)', async () => {
+    const { agent, chapterId } = await setup('sc6-retry-caseB');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'case-b', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // Seed a normal first turn to persist a user message via the route layer.
+    queueSseResponse(fetchSpy, 'ignored reply');
+    await sendMessage(agent, chatId, { content: 'hello', modelId: MODEL_ID });
+
+    // Simulate a mid-stream error by removing the assistant row directly from the
+    // test DB (the retry path must handle having no trailing assistant gracefully).
+    await prisma.message.deleteMany({ where: { chatId, role: 'assistant' } });
+
+    // Confirm we are at user-only state.
+    const midState = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(midState.body.messages).toHaveLength(1);
+    expect(midState.body.messages[0].role).toBe('user');
+
+    // Retry: no trailing assistant to delete; should just generate cleanly.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-caseB',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'reply' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, { retry: true, modelId: MODEL_ID });
+    expect(retryStatus).toBe(200);
+
+    const after = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    // user + new assistant = 2
+    expect(after.body.messages).toHaveLength(2);
+    expect(after.body.messages[1].role).toBe('assistant');
+    expect(after.body.messages[1].contentJson).toBe('reply');
   });
 });
 
