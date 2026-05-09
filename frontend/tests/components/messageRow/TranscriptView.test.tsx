@@ -1,10 +1,11 @@
-import { describe, it, expect, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { render, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it } from 'vitest';
+import type { TranscriptRow } from '@/components/messageRow/TranscriptView';
 import { TranscriptView } from '@/components/messageRow/TranscriptView';
+import type { ChatMessage } from '@/hooks/useChat';
 import { chatMessagesQueryKey } from '@/hooks/useChat';
 import { useChatDraftStore } from '@/store/chatDraft';
-import type { ChatMessage } from '@/hooks/useChat';
 
 function makeQc(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -23,6 +24,11 @@ function makeMessage(over: Partial<ChatMessage> & { id: string }): ChatMessage {
     createdAt: new Date().toISOString(),
     ...over,
   };
+}
+
+function rowKey(r: TranscriptRow): string {
+  if (r.kind === 'persisted') return r.message.id;
+  return r.kind;
 }
 
 describe('TranscriptView', () => {
@@ -66,9 +72,11 @@ describe('TranscriptView', () => {
         <TranscriptView chatId="c-1" emptyState={<div>EMPTY</div>}>
           {(rows) => (
             <>
-              {rows.map((r, i) =>
+              {rows.map((r) =>
                 r.kind === 'persisted' ? (
-                  <li key={i} data-testid="persisted">{String(r.message.contentJson)}</li>
+                  <li key={rowKey(r)} data-testid="persisted">
+                    {String(r.message.contentJson)}
+                  </li>
                 ) : null,
               )}
             </>
@@ -99,12 +107,24 @@ describe('TranscriptView', () => {
         <TranscriptView chatId="c-1" emptyState={<div>EMPTY</div>}>
           {(rows) => (
             <>
-              {rows.map((r, i) => {
+              {rows.map((r) => {
                 if (r.kind === 'persisted')
-                  return <li key={i} data-testid="persisted">{String(r.message.contentJson)}</li>;
+                  return (
+                    <li key={rowKey(r)} data-testid="persisted">
+                      {String(r.message.contentJson)}
+                    </li>
+                  );
                 if (r.kind === 'draft-user')
-                  return <li key={i} data-testid="draft-user">{r.userContent}</li>;
-                return <li key={i} data-testid="draft-assistant">{r.assistantText}</li>;
+                  return (
+                    <li key={rowKey(r)} data-testid="draft-user">
+                      {r.userContent}
+                    </li>
+                  );
+                return (
+                  <li key={rowKey(r)} data-testid="draft-assistant">
+                    {r.assistantText}
+                  </li>
+                );
               })}
             </>
           )}
@@ -134,12 +154,24 @@ describe('TranscriptView', () => {
         <TranscriptView chatId="c-1" emptyState={<div>EMPTY</div>}>
           {(rows) => (
             <>
-              {rows.map((r, i) => {
+              {rows.map((r) => {
                 if (r.kind === 'persisted')
-                  return <li key={i} data-testid="persisted">{String(r.message.contentJson)}</li>;
+                  return (
+                    <li key={rowKey(r)} data-testid="persisted">
+                      {String(r.message.contentJson)}
+                    </li>
+                  );
                 if (r.kind === 'draft-user')
-                  return <li key={i} data-testid="draft-user">{r.userContent}</li>;
-                return <li key={i} data-testid="draft-assistant">{r.assistantText}</li>;
+                  return (
+                    <li key={rowKey(r)} data-testid="draft-user">
+                      {r.userContent}
+                    </li>
+                  );
+                return (
+                  <li key={rowKey(r)} data-testid="draft-assistant">
+                    {r.assistantText}
+                  </li>
+                );
               })}
             </>
           )}
@@ -169,12 +201,24 @@ describe('TranscriptView', () => {
         <TranscriptView chatId="c-1" emptyState={<div>EMPTY</div>}>
           {(rows) => (
             <>
-              {rows.map((r, i) => {
+              {rows.map((r) => {
                 if (r.kind === 'persisted')
-                  return <li key={i} data-testid="persisted">{String(r.message.contentJson)}</li>;
+                  return (
+                    <li key={rowKey(r)} data-testid="persisted">
+                      {String(r.message.contentJson)}
+                    </li>
+                  );
                 if (r.kind === 'draft-user')
-                  return <li key={i} data-testid="draft-user">{r.userContent}</li>;
-                return <li key={i} data-testid="draft-assistant">{r.assistantText}</li>;
+                  return (
+                    <li key={rowKey(r)} data-testid="draft-user">
+                      {r.userContent}
+                    </li>
+                  );
+                return (
+                  <li key={rowKey(r)} data-testid="draft-assistant">
+                    {r.assistantText}
+                  </li>
+                );
               })}
             </>
           )}

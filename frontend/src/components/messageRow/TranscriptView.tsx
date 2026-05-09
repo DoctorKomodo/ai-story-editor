@@ -1,19 +1,12 @@
-import {
-  type JSX,
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-} from 'react';
+import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
+import { type ChatMessage, useChatMessagesQuery } from '@/hooks/useChat';
 import {
   type ChatDraftAttachment,
   type ChatDraftError,
   type ChatDraftStatus,
   useChatDraftStore,
 } from '@/store/chatDraft';
-import { type ChatMessage, useChatMessagesQuery } from '@/hooks/useChat';
 
 export type TranscriptRow =
   | { kind: 'persisted'; message: ChatMessage }
@@ -52,7 +45,15 @@ function getMessageText(contentJson: unknown): string {
 
 function buildRows(
   messages: ChatMessage[],
-  draft: { userContent: string; attachment: ChatDraftAttachment | null; assistantText: string; status: ChatDraftStatus; error: ChatDraftError | null } | undefined,
+  draft:
+    | {
+        userContent: string;
+        attachment: ChatDraftAttachment | null;
+        assistantText: string;
+        status: ChatDraftStatus;
+        error: ChatDraftError | null;
+      }
+    | undefined,
 ): TranscriptRow[] {
   const rows: TranscriptRow[] = messages.map((m) => ({ kind: 'persisted', message: m }));
   if (!draft) return rows;
@@ -68,8 +69,7 @@ function buildRows(
   // Either rule on its own leaves a duplicate-user flicker in the other case.
   const trailingUser = [...messages].reverse().find((m) => m.role === 'user');
   const trailingUserMatches =
-    trailingUser !== undefined &&
-    getMessageText(trailingUser.contentJson) === draft.userContent;
+    trailingUser !== undefined && getMessageText(trailingUser.contentJson) === draft.userContent;
   const skipDraftUser = draft.userContent === '' || trailingUserMatches;
   if (!skipDraftUser) {
     rows.push({
@@ -106,6 +106,7 @@ export function TranscriptView({
   const transcriptRef = useRef<HTMLElement>(null);
   const stickToBottomRef = useRef(true);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: chatId change triggers session-reset (stick-to-bottom reset); biome misidentifies ref mutation as unnecessary dep
   useEffect(() => {
     stickToBottomRef.current = true;
   }, [chatId]);
@@ -117,6 +118,7 @@ export function TranscriptView({
     stickToBottomRef.current = distanceFromBottom < 50;
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rows change triggers autoscroll; biome misidentifies ref mutation as unnecessary dep
   useEffect(() => {
     if (stickToBottomRef.current && transcriptRef.current) {
       transcriptRef.current.scrollTop = transcriptRef.current.scrollHeight;
@@ -162,9 +164,7 @@ export function TranscriptView({
           error={{
             code: null,
             message:
-              query.error instanceof Error
-                ? query.error.message
-                : "Couldn't load transcript.",
+              query.error instanceof Error ? query.error.message : "Couldn't load transcript.",
           }}
           onRetry={() => {
             void query.refetch();

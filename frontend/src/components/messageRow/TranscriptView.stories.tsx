@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { chatMessagesQueryKey } from '@/hooks/useChat';
 import type { ChatMessage } from '@/hooks/useChat';
-import { modelsQueryKey } from '@/hooks/useModels';
+import { chatMessagesQueryKey } from '@/hooks/useChat';
 import type { Model } from '@/hooks/useModels';
+import { modelsQueryKey } from '@/hooks/useModels';
 import { AssistantMessageRow } from './AssistantMessageRow';
 import { CopyAction, MessageActions, RegenerateAction } from './primitives';
 import { TranscriptView } from './TranscriptView';
@@ -77,14 +77,14 @@ export const WithMessages: Story = {
             emptyState={<div className="m-auto text-ink-3">Start a conversation</div>}
           >
             {(rows) =>
-              rows.map((r, i) => {
+              rows.map((r) => {
                 if (r.kind === 'persisted' && r.message.role === 'user') {
-                  return <UserMessageRow key={i} message={r.message} />;
+                  return <UserMessageRow key={r.message.id} message={r.message} />;
                 }
                 if (r.kind === 'persisted') {
                   return (
                     <AssistantMessageRow
-                      key={i}
+                      key={r.message.id}
                       message={r.message}
                       actions={
                         <MessageActions>
