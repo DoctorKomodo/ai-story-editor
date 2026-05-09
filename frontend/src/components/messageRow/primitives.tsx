@@ -105,7 +105,7 @@ export function CopyAction({ onClick, disabled }: CopyActionProps): JSX.Element 
       aria-label="Copy"
       title="Copy"
       onClick={onClick}
-      {...(disabled ? { disabled: true } : {})}
+      disabled={disabled}
     >
       <CopyIcon />
     </button>
@@ -151,7 +151,7 @@ export function RegenerateAction({
       aria-label={label}
       title={label}
       onClick={onClick}
-      {...(disabled ? { disabled: true } : {})}
+      disabled={disabled}
     >
       <RegenerateIcon />
     </button>
@@ -171,7 +171,7 @@ export function InsertAtEndAction({ onClick, disabled }: InsertAtEndActionProps)
       type="button"
       className="px-2 py-1 rounded-[var(--radius)] text-[var(--ai)] border border-[var(--ai)] hover:bg-[var(--ai-soft)] transition-colors disabled:opacity-60"
       onClick={onClick}
-      {...(disabled ? { disabled: true } : {})}
+      disabled={disabled}
     >
       Insert at end
     </button>

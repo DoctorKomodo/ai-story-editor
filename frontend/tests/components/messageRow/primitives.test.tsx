@@ -11,12 +11,12 @@ import {
   RegenerateAction,
   ThinkingBubble,
 } from '@/components/messageRow/primitives';
+import { modelsQueryKey } from '@/hooks/useModels';
 
-// modelsQueryKey = ['ai-models'] per useModels.ts
 function withQc(node: React.ReactNode, opts: { models?: { id: string; name: string }[] } = {}) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   if (opts.models) {
-    qc.setQueryData(['ai-models'], opts.models);
+    qc.setQueryData(modelsQueryKey, opts.models);
   }
   return render(<QueryClientProvider client={qc}>{node}</QueryClientProvider>);
 }
@@ -101,7 +101,9 @@ describe('RegenerateAction', () => {
   it('respects disabled', () => {
     const onClick = vi.fn();
     withQc(<RegenerateAction onClick={onClick} disabled />);
-    fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+    const btn = screen.getByRole('button', { name: /regenerate/i });
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
     expect(onClick).not.toHaveBeenCalled();
   });
 });
@@ -113,6 +115,15 @@ describe('InsertAtEndAction', () => {
     const btn = screen.getByRole('button', { name: /insert at end/i });
     fireEvent.click(btn);
     expect(onClick).toHaveBeenCalledOnce();
+  });
+
+  it('respects disabled', () => {
+    const onClick = vi.fn();
+    withQc(<InsertAtEndAction onClick={onClick} disabled />);
+    const btn = screen.getByRole('button', { name: /insert at end/i });
+    expect(btn).toBeDisabled();
+    fireEvent.click(btn);
+    expect(onClick).not.toHaveBeenCalled();
   });
 });
 

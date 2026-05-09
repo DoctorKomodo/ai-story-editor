@@ -1,7 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type Model, modelsQueryKey } from '@/hooks/useModels';
 import {
   AssistantBubble,
+  CitationsSlot,
   CopyAction,
   InsertAtEndAction,
   MessageActions,
@@ -10,8 +12,22 @@ import {
   ThinkingBubble,
 } from './primitives';
 
+const FIXTURE_MODEL: Model = {
+  id: 'venice-test',
+  name: 'Venice Test 70B',
+  contextLength: 32_000,
+  maxCompletionTokens: 4096,
+  supportsReasoning: false,
+  supportsVision: false,
+  supportsWebSearch: false,
+  description: null,
+  pricing: null,
+  defaultTemperature: 0.7,
+  defaultTopP: 1,
+};
+
 const qc = new QueryClient();
-qc.setQueryData(['ai-models'], [{ id: 'venice-test', name: 'Venice Test 70B' }]);
+qc.setQueryData<Model[]>(modelsQueryKey, [FIXTURE_MODEL]);
 
 const decorator = (Story: () => React.ReactNode) => (
   <QueryClientProvider client={qc}>
@@ -76,5 +92,25 @@ export const ActionsDisabled: StoryT = {
       <RegenerateAction onClick={() => {}} disabled />
       <InsertAtEndAction onClick={() => {}} disabled />
     </MessageActions>
+  ),
+};
+
+export const CitationsSlotStory: StoryT = {
+  name: 'CitationsSlot',
+  render: () => (
+    <div className="flex flex-col gap-3">
+      <CitationsSlot citations={null} messageId="msg-empty" />
+      <CitationsSlot
+        citations={[
+          {
+            title: 'Example source',
+            url: 'https://example.com',
+            snippet: 'A representative snippet of relevant text.',
+            publishedAt: null,
+          },
+        ]}
+        messageId="msg-with"
+      />
+    </div>
   ),
 };
