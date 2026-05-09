@@ -1,14 +1,21 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type SceneSession, SceneSessionPicker } from '@/components/SceneSessionPicker';
+import { type Session, SessionPicker } from '@/components/SessionPicker';
 
-const sessions: SceneSession[] = [
+const LABELS = {
+  kindLabel: 'SCENE',
+  ariaPrefix: 'Scene session: ',
+  dropdownHeader: 'Scenes in this chapter',
+  newButtonLabel: 'New scene',
+} as const;
+
+const sessions: Session[] = [
   { id: 's1', title: 'Veranda', updatedAt: '2026-05-07T12:00:00Z' },
   { id: 's2', title: 'Cellar', updatedAt: '2026-05-06T12:00:00Z' },
 ];
 
-describe('SceneSessionPicker', () => {
+describe('SessionPicker', () => {
   let onSelect: ReturnType<typeof vi.fn>;
   let onRename: ReturnType<typeof vi.fn>;
   let onDelete: ReturnType<typeof vi.fn>;
@@ -22,10 +29,11 @@ describe('SceneSessionPicker', () => {
   });
 
   function renderPicker(
-    overrides: Partial<{ sessions: SceneSession[]; activeSessionId: string | null }> = {},
+    overrides: Partial<{ sessions: Session[]; activeSessionId: string | null }> = {},
   ) {
     return render(
-      <SceneSessionPicker
+      <SessionPicker
+        labels={LABELS}
         sessions={overrides.sessions ?? sessions}
         activeSessionId={overrides.activeSessionId ?? 's1'}
         onSelect={onSelect}

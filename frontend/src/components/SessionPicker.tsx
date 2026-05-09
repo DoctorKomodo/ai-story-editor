@@ -1,13 +1,25 @@
 import { type JSX, type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 
-export interface SceneSession {
+export interface SessionPickerLabels {
+  /** Short uppercase tag rendered next to the active session title in the trigger (e.g. "SCENE", "CHAT"). */
+  kindLabel: string;
+  /** Prefix (including trailing space) for the trigger button's aria-label (e.g. "Scene session: ", "Chat: "). */
+  ariaPrefix: string;
+  /** Header text inside the open dropdown (e.g. "Scenes in this chapter", "Chats in this chapter"). */
+  dropdownHeader: string;
+  /** Label on the "+ New" entry at the bottom of the dropdown (e.g. "New scene", "New chat"). */
+  newButtonLabel: string;
+}
+
+export interface Session {
   id: string;
   title: string;
   updatedAt: string;
 }
 
-export interface SceneSessionPickerProps {
-  sessions: SceneSession[];
+export interface SessionPickerProps {
+  labels: SessionPickerLabels;
+  sessions: Session[];
   activeSessionId: string | null;
   onSelect: (id: string) => void;
   onRename: (id: string, title: string) => void;
@@ -107,14 +119,15 @@ function TrashIcon(): JSX.Element {
   );
 }
 
-export function SceneSessionPicker({
+export function SessionPicker({
+  labels,
   sessions,
   activeSessionId,
   onSelect,
   onRename,
   onDelete,
   onNew,
-}: SceneSessionPickerProps): JSX.Element {
+}: SessionPickerProps): JSX.Element {
   const [open, setOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState('');
@@ -160,7 +173,7 @@ export function SceneSessionPicker({
     };
   }, [open]);
 
-  const beginRename = useCallback((s: SceneSession): void => {
+  const beginRename = useCallback((s: Session): void => {
     cancelledRef.current = false;
     setRenamingId(s.id);
     setRenameDraft(s.title);
@@ -206,14 +219,16 @@ export function SceneSessionPicker({
     <div ref={containerRef} className="px-3 py-2 border-b border-line bg-bg relative">
       <button
         type="button"
-        aria-label={active ? `Scene session: ${active.title}` : 'Scene session: none selected'}
+        aria-label={
+          active ? `${labels.ariaPrefix}${active.title}` : `${labels.ariaPrefix}none selected`
+        }
         onClick={() => {
           setOpen((o) => !o);
         }}
         className="flex items-center gap-2 w-full px-2 py-1 rounded text-left hover:bg-surface-hover"
       >
         <span className="text-[10px] uppercase tracking-[.08em] text-ink-4 font-sans flex-shrink-0">
-          SCENE
+          {labels.kindLabel}
         </span>
         <span className="font-mono text-[12px] text-ink truncate flex-1 min-w-0">
           {active?.title ?? 'No session yet'}
@@ -230,10 +245,10 @@ export function SceneSessionPicker({
         <div
           className="absolute left-3 right-3 top-[calc(100%-2px)] z-10 bg-bg border border-line rounded shadow-pop overflow-hidden"
           role="listbox"
-          aria-label="Scene sessions"
+          aria-label={labels.dropdownHeader}
         >
           <div className="px-3 py-1.5 text-[10px] uppercase tracking-[.08em] text-ink-4 font-sans border-b border-line bg-bg-sunken">
-            Scenes in this chapter
+            {labels.dropdownHeader}
           </div>
 
           {sessions.map((s) => (
@@ -321,7 +336,7 @@ export function SceneSessionPicker({
             className="flex items-center gap-2 w-full px-3 py-2 border-t border-line text-[13px] text-ink-2 hover:bg-surface-hover"
           >
             <PlusIcon />
-            New scene
+            {labels.newButtonLabel}
           </button>
         </div>
       )}

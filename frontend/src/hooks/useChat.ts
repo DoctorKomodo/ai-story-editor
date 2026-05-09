@@ -5,7 +5,8 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
-import { ApiError, api, apiStream, type ChatRow } from '@/lib/api';
+import { useRef } from 'react';
+import { ApiError, api, apiStream, type ChatRow, deleteChat } from '@/lib/api';
 import { type Citation, isCitationArray } from '@/lib/citations';
 import { parseAiSseStream } from '@/lib/sse';
 import { useChatDraftStore } from '@/store/chatDraft';
@@ -148,10 +149,52 @@ export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, C
       );
       return res.chat;
     },
-    onSuccess: (chat) => {
+    onSuccess: (chat, vars) => {
+      const key = chatsQueryKey(chat.chapterId, vars.kind);
+      qc.setQueryData<ChatSummary[]>(key, (prev) => [chat, ...(prev ?? [])]);
       // Invalidate by the 3-element prefix so ALL kind variants
       // (ask, scene, undefined) are swept — not just the undefined slot.
       void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chat.chapterId) });
+    },
+  });
+}
+
+export function useRenameChatMutation(
+  chapterId: string | null,
+  kind: 'ask' | 'scene' = 'ask',
+): UseMutationResult<ChatSummary, Error, { id: string; title: string }> {
+  const qc = useQueryClient();
+  return useMutation<ChatSummary, Error, { id: string; title: string }>({
+    mutationFn: async ({ id, title }) => {
+      const res = await api<{ chat: ChatSummary }>(`/chats/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: { title },
+      });
+      return res.chat;
+    },
+    onSuccess: (updated, vars) => {
+      if (chapterId === null) return;
+      const key = chatsQueryKey(chapterId, kind);
+      qc.setQueryData<ChatSummary[]>(key, (prev) =>
+        (prev ?? []).map((c) => (c.id === vars.id ? { ...c, title: updated.title } : c)),
+      );
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
+    },
+  });
+}
+
+export function useRemoveChatMutation(
+  chapterId: string | null,
+  kind: 'ask' | 'scene' = 'ask',
+): UseMutationResult<void, Error, string> {
+  const qc = useQueryClient();
+  return useMutation<void, Error, string>({
+    mutationFn: (id: string) => deleteChat(id),
+    onSuccess: (_void, id) => {
+      if (chapterId === null) return;
+      const key = chatsQueryKey(chapterId, kind);
+      qc.setQueryData<ChatSummary[]>(key, (prev) => (prev ?? []).filter((c) => c.id !== id));
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
     },
   });
 }
@@ -177,9 +220,17 @@ export interface SendChatMessageArgs {
  * standard optimistic-update hook. This fires for both `mutate()` and
  * `mutateAsync()` callers without any manual wrapping.
  */
-export function useSendChatMessageMutation(): UseMutationResult<void, Error, SendChatMessageArgs> {
+export function useSendChatMessageMutation(): UseMutationResult<
+  void,
+  Error,
+  SendChatMessageArgs
+> & {
+  stop: () => void;
+} {
   const qc = useQueryClient();
-  return useMutation<void, Error, SendChatMessageArgs>({
+  const abortRef = useRef<AbortController | null>(null);
+
+  const mutation = useMutation<void, Error, SendChatMessageArgs>({
     onMutate: ({ chatId, content, attachment }) => {
       useChatDraftStore.getState().start({
         chatId,
@@ -188,6 +239,9 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
       });
     },
     mutationFn: async ({ chatId, content, modelId, retry, attachment, enableWebSearch }) => {
+      const controller = new AbortController();
+      abortRef.current = controller;
+
       const body: Record<string, unknown> = { modelId };
       if (content !== undefined) body.content = content;
       if (retry === true) body.retry = true;
@@ -199,8 +253,15 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
         res = await apiStream(`/chats/${encodeURIComponent(chatId)}/messages`, {
           method: 'POST',
           body,
+          signal: controller.signal,
         });
       } catch (err) {
+        if (abortRef.current === controller) abortRef.current = null;
+        if ((err as { name?: string }).name === 'AbortError') {
+          // Clean stop — don't show an error banner, just clear the draft.
+          useChatDraftStore.getState().clear();
+          return;
+        }
         const message = err instanceof Error ? err.message : 'Chat send failed';
         const code = err instanceof ApiError ? (err.code ?? null) : null;
         useChatDraftStore.getState().markError({ code, message });
@@ -208,6 +269,7 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
       }
 
       if (!res.body) {
+        if (abortRef.current === controller) abortRef.current = null;
         const message = 'Empty response body';
         useChatDraftStore.getState().markError({ code: null, message });
         throw new Error(message);
@@ -215,7 +277,7 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
 
       let firstChunkSeen = false;
       try {
-        for await (const event of parseAiSseStream(res.body)) {
+        for await (const event of parseAiSseStream(res.body, controller.signal)) {
           if (event.type === 'chunk') {
             const delta = event.chunk.choices?.[0]?.delta?.content;
             if (typeof delta === 'string' && delta.length > 0) {
@@ -245,6 +307,8 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
           useChatDraftStore.getState().markError({ code, message });
         }
         throw err;
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
       }
     },
     onSuccess: (_void, vars) => {
@@ -262,4 +326,11 @@ export function useSendChatMessageMutation(): UseMutationResult<void, Error, Sen
       useChatDraftStore.getState().clear();
     },
   });
+
+  return {
+    ...mutation,
+    stop: () => {
+      abortRef.current?.abort();
+    },
+  };
 }

@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { type JSX, useEffect, useState } from 'react';
-import { type SceneSession, SceneSessionPicker } from './SceneSessionPicker';
-import { SceneUndoToast } from './SceneUndoToast';
+import { type Session, SessionPicker } from './SessionPicker';
+import { UndoToast } from './UndoToast';
 
-const meta: Meta<typeof SceneUndoToast> = {
-  title: 'Chat/SceneUndoToast',
-  component: SceneUndoToast,
+const meta: Meta<typeof UndoToast> = {
+  title: 'Chat/UndoToast',
+  component: UndoToast,
   args: {
     title: 'Veranda confrontation',
     onUndo: () => {},
@@ -20,7 +20,7 @@ const meta: Meta<typeof SceneUndoToast> = {
   ],
 };
 export default meta;
-type Story = StoryObj<typeof SceneUndoToast>;
+type Story = StoryObj<typeof UndoToast>;
 
 export const Default: Story = {};
 
@@ -67,7 +67,7 @@ export const Dark: Story = {
  * dropdown no longer occludes the toast.
  */
 function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
-  const sessions: SceneSession[] = [
+  const sessions: Session[] = [
     {
       id: 's1',
       title: 'Veranda confrontation',
@@ -97,7 +97,13 @@ function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
       className="flex flex-col bg-bg border border-line"
       style={{ width: 360, height: 520 }}
     >
-      <SceneSessionPicker
+      <SessionPicker
+        labels={{
+          kindLabel: 'SCENE',
+          ariaPrefix: 'Scene session: ',
+          dropdownHeader: 'Scenes in this chapter',
+          newButtonLabel: 'New scene',
+        }}
         sessions={sessions}
         activeSessionId={activeId}
         onSelect={setActiveId}
@@ -122,7 +128,7 @@ function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
 
       <div className="relative">
         <div className="absolute left-3 right-3 bottom-[calc(100%+8px)] z-20">
-          <SceneUndoToast title="Cellar discovery" onUndo={() => {}} timeoutMs={5000} />
+          <UndoToast title="Cellar discovery" onUndo={() => {}} timeoutMs={5000} />
         </div>
 
         {/* Faux SceneComposer — mirrors the real component's layout (3-row
@@ -182,7 +188,7 @@ export const Comparison: Story = {
         <div className="text-[10px] uppercase tracking-[.08em] font-sans text-ink-4 mb-1.5">
           After
         </div>
-        <SceneUndoToast title="Veranda confrontation" onUndo={() => {}} timeoutMs={5000} />
+        <UndoToast title="Veranda confrontation" onUndo={() => {}} timeoutMs={5000} />
       </div>
     </div>
   ),

@@ -2,7 +2,7 @@
  * [SC17] SceneTab — orchestrator for the scene-generation workflow.
  *
  * Wires together:
- *  - SceneSessionPicker (session CRUD + selection)
+ *  - SessionPicker (session CRUD + selection)
  *  - useScenes (TanStack Query session list + mutations)
  *  - useSceneTranscript (Zustand + SSE streaming transcript)
  *  - SceneCandidateCard (per-turn pair: user direction → AI candidate)
@@ -20,16 +20,17 @@ import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { SceneCandidateCard } from '@/components/SceneCandidateCard';
 import { SceneComposer } from '@/components/SceneComposer';
-import { SceneSessionPicker } from '@/components/SceneSessionPicker';
+import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useScenes } from '@/hooks/useScenes';
 import { useSceneTranscript } from '@/hooks/useSceneTranscript';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { listMessagesForChat } from '@/lib/api';
+import { truncateAtWordBoundary } from '@/lib/strings';
 import type { SceneMessage } from '@/store/sceneTranscript';
 import { useSceneTranscriptStore } from '@/store/sceneTranscript';
-import { SceneUndoToast } from './SceneUndoToast';
+import { UndoToast } from './UndoToast';
 
 export interface SceneTabProps {
   chapterId: string | null;
@@ -37,14 +38,6 @@ export interface SceneTabProps {
 }
 
 const TITLE_MAX_CHARS = 50;
-
-function truncateAtWordBoundary(text: string, max: number): string {
-  if (text.length <= max) return text.replace(/\s+/g, ' ').trim();
-  const slice = text.slice(0, max);
-  const lastSpace = slice.lastIndexOf(' ');
-  const cut = lastSpace > 20 ? slice.slice(0, lastSpace) : slice;
-  return `${cut.trim().replace(/[.,;:!?]+$/, '')}…`;
-}
 
 /**
  * Walk assistant-first so every assistant message — including a retry's new
@@ -112,6 +105,13 @@ function renderTranscript(
   }
   return cards;
 }
+
+const SCENE_LABELS: SessionPickerLabels = {
+  kindLabel: 'SCENE',
+  ariaPrefix: 'Scene session: ',
+  dropdownHeader: 'Scenes in this chapter',
+  newButtonLabel: 'New scene',
+};
 
 export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   const settings = useUserSettings();
@@ -308,7 +308,8 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
           />
         </div>
       ) : (
-        <SceneSessionPicker
+        <SessionPicker
+          labels={SCENE_LABELS}
           sessions={visibleSessions.map((s) => ({
             id: s.id,
             title: s.title ?? 'Untitled',
@@ -398,7 +399,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       <div className="relative">
         {lastPending !== null && (
           <div className="absolute left-3 right-3 bottom-[calc(100%+8px)] z-20">
-            <SceneUndoToast
+            <UndoToast
               key={lastPending[0]}
               title={lastPending[1].title}
               onUndo={() => {
