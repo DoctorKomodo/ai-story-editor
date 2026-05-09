@@ -10,16 +10,13 @@
  *     `data-testid="assistant-${id}"` and action button `aria-label`s.
  */
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SceneTab } from '@/components/SceneTab';
+import { chatMessagesQueryKey, chatsQueryKey } from '@/hooks/useChat';
 import { modelsQueryKey } from '@/hooks/useModels';
-import {
-  chatMessagesQueryKey,
-  chatsQueryKey,
-} from '@/hooks/useChat';
 import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import {
   apiStream,
@@ -599,10 +596,7 @@ describe('SceneTab — [4] insert-at-end', () => {
     } as unknown as Parameters<typeof SceneTab>[0]['editor'];
 
     const user = userEvent.setup();
-    renderWithProviders(
-      <SceneTab chapterId="c1" editor={mockEditor} />,
-      qc,
-    );
+    renderWithProviders(<SceneTab chapterId="c1" editor={mockEditor} />, qc);
 
     // Wait for the assistant row to appear.
     await screen.findByTestId('assistant-a1');
@@ -762,7 +756,9 @@ describe('SceneTab — [6] stop during streaming', () => {
 
     // Never-ending SSE stream keeps isPending=true.
     const neverEndingStream = new ReadableStream({
-      start(_c) { /* no-op */ },
+      start(_c) {
+        /* no-op */
+      },
     });
     vi.mocked(apiStream).mockResolvedValueOnce(
       new Response(neverEndingStream, {

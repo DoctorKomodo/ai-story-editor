@@ -241,7 +241,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         disableRetrySend={sendChatMessage.isPending || isDispatching}
       >
         {(rows) =>
-          rows.map((r, i) => {
+          rows.map((r) => {
             if (r.kind === 'persisted' && r.message.role === 'user') {
               return <UserMessageRow key={r.message.id} message={r.message} />;
             }
@@ -252,8 +252,16 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
                   message={r.message}
                   actions={
                     <MessageActions>
-                      <InsertAtEndAction onClick={() => { onInsert(r.message); }} />
-                      <CopyAction onClick={() => { onCopy(r.message); }} />
+                      <InsertAtEndAction
+                        onClick={() => {
+                          onInsert(r.message);
+                        }}
+                      />
+                      <CopyAction
+                        onClick={() => {
+                          onCopy(r.message);
+                        }}
+                      />
                       <RegenerateAction
                         onClick={onRegenerate}
                         disabled={sendChatMessage.isPending}
@@ -266,7 +274,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
             if (r.kind === 'draft-user') {
               return (
                 <UserMessageRow
-                  key={`draft-user-${i}`}
+                  key="draft-user"
                   message={{
                     id: 'draft-user',
                     role: 'user',
@@ -284,7 +292,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
             if (r.kind === 'draft-assistant') {
               return (
                 <AssistantMessageRow
-                  key={`draft-assistant-${i}`}
+                  key="draft-assistant"
                   message={{
                     id: 'draft-assistant',
                     role: 'assistant',
