@@ -249,7 +249,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     await resetAll();
   });
 
-  it('does not persist a new user message when retry=true', async () => {
+  it('does not persist a new user message on retry=true; prior assistant is replaced with new content', async () => {
     const { agent, chapterId } = await setup('sc6-retry-u1');
     const fetchSpy = stubVeniceFetch();
     await storeKey(agent, fetchSpy);
