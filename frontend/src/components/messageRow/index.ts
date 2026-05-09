@@ -12,3 +12,5 @@ export {
 } from './primitives';
 export type { UserMessageRowProps } from './UserMessageRow';
 export { UserMessageRow } from './UserMessageRow';
+export { TranscriptView } from './TranscriptView';
+export type { TranscriptRow, TranscriptViewProps } from './TranscriptView';
