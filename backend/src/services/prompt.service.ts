@@ -115,22 +115,6 @@ export function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4);
 }
 
-// ─── Ask-action user content renderer (DEPRECATED — k1r removes this in Task 10) ──
-//
-// Kept temporarily so chat.routes.ts continues to compile during the
-// task sequence. Remove once chat.routes.ts no longer imports it.
-
-export function renderAskUserContent({
-  freeformInstruction,
-  selectionText,
-}: {
-  freeformInstruction: string;
-  selectionText?: string | null;
-}): string {
-  const attached = selectionText ? `\n\nAttached selection: «${selectionText}»` : '';
-  return `User question: ${freeformInstruction}${attached}`;
-}
-
 // ─── Resolution helper ────────────────────────────────────────────────────────
 
 function resolvePrompt(userPrompts: UserPrompts | undefined, key: UserPromptKey): string {
