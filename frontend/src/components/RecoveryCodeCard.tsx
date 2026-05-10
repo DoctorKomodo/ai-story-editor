@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
 import { useState } from 'react';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { downloadTxt } from '@/lib/downloadTxt';
 
 export interface RecoveryCodeCardProps {
@@ -13,8 +14,6 @@ export interface RecoveryCodeCardProps {
    */
   onDownload?: (filename: string, content: string) => void;
 }
-
-const COPIED_FLASH_MS = 2000;
 
 function buildDownloadBody(username: string, recoveryCode: string): string {
   return [
@@ -37,25 +36,7 @@ export function RecoveryCodeCard({
   onDownload,
 }: RecoveryCodeCardProps): JSX.Element {
   const [confirmed, setConfirmed] = useState(false);
-  const [copied, setCopied] = useState(false);
-  const [copyFailed, setCopyFailed] = useState(false);
-
-  const copy = async (): Promise<void> => {
-    if (!navigator.clipboard?.writeText) {
-      setCopyFailed(true);
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(recoveryCode);
-      setCopied(true);
-      setCopyFailed(false);
-      window.setTimeout(() => {
-        setCopied(false);
-      }, COPIED_FLASH_MS);
-    } catch {
-      setCopyFailed(true);
-    }
-  };
+  const { status: copyStatus, copy: copyToClipboard } = useCopyToClipboard({ resetMs: 2000 });
 
   const download = (): void => {
     const filename = `inkwell-recovery-code-${username}.txt`;
@@ -77,12 +58,12 @@ export function RecoveryCodeCard({
         <button
           type="button"
           onClick={() => {
-            void copy();
+            void copyToClipboard(recoveryCode);
           }}
           className="inline-flex items-center justify-center px-3 py-2 text-[12.5px] font-medium font-sans bg-[var(--bg-elevated)] text-[var(--ink)] border border-[var(--line-2)] rounded-[var(--radius)] hover:bg-[var(--surface-hover)] transition-colors"
         >
           <span aria-live="polite" aria-atomic="true">
-            {copied ? 'Copied' : 'Copy'}
+            {copyStatus === 'copied' ? 'Copied' : 'Copy'}
           </span>
         </button>
         <button
@@ -94,9 +75,9 @@ export function RecoveryCodeCard({
         </button>
       </div>
 
-      {copyFailed ? (
+      {copyStatus === 'failed' ? (
         <p role="status" className="text-[12px] text-[var(--ink-3)] m-0">
-          Copy isn’t available in this browser. Use Download, or select the code above and copy it
+          Copy isn't available in this browser. Use Download, or select the code above and copy it
           manually.
         </p>
       ) : null}
