@@ -25,6 +25,33 @@ export interface CharacterContext {
   keyTraits?: string | null;
 }
 
+// [h0z] Permissive shape that matches the decrypted character row returned by
+// the character repo. Kept loose (`unknown` per field) so the pure prompt
+// service stays decoupled from the repo's narrative-character type.
+export interface CharacterRecord {
+  name?: unknown;
+  role?: unknown;
+  personality?: unknown;
+  arc?: unknown;
+  appearance?: unknown;
+  voice?: unknown;
+}
+
+// [h0z] Pure projection of a decrypted character row into the trimmed shape
+// the prompt builder consumes. Previously inlined in ai.routes.ts and
+// chat.routes.ts (byte-for-byte duplicate, modulo one stray comment).
+// The 120-char cap from the inlined version is removed by design.
+export function toCharacterContext(c: CharacterRecord): CharacterContext {
+  const name = typeof c.name === 'string' ? c.name : '';
+  const role = typeof c.role === 'string' ? c.role : null;
+  const traits: string[] = [];
+  for (const f of ['personality', 'arc', 'appearance', 'voice'] as const) {
+    const v = c[f];
+    if (typeof v === 'string' && v.trim().length > 0) traits.push(v.trim());
+  }
+  return { name, role, keyTraits: traits.join('; ') || null };
+}
+
 // [X29] Keys of the user-overridable prompt slice. `rewrite` covers both
 // 'rephrase' and 'rewrite' actions (collapsed at the override layer; the
 // in-builder strings for each surface stay distinct via DEFAULT_PROMPTS).

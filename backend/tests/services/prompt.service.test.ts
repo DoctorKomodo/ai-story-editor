@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   type BuildPromptInput,
   buildPrompt,
+  type CharacterRecord,
   DEFAULT_PROMPTS,
   DEFAULT_SYSTEM_PROMPT,
   estimateTokens,
   PromptValidationError,
+  toCharacterContext,
 } from '../../src/services/prompt.service';
 
 // ─── estimateTokens ──────────────────────────────────────────────────────────
@@ -396,4 +398,58 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
       expect(userContent).not.toContain('CHAR_TRAIT_SENTINEL');
     });
   }
+});
+
+// ─── toCharacterContext (h0z) ────────────────────────────────────────────────
+
+describe('toCharacterContext (h0z)', () => {
+  it('all four trait fields populated → joined with "; "; no truncation even when result > 200 chars', () => {
+    const long = 'x'.repeat(80);
+    const c: CharacterRecord = {
+      name: 'Imogen Thorne',
+      role: 'protagonist',
+      personality: long,
+      arc: long,
+      appearance: long,
+      voice: 'auburn hair',
+    };
+    const out = toCharacterContext(c);
+    expect(out.name).toBe('Imogen Thorne');
+    expect(out.role).toBe('protagonist');
+    expect(out.keyTraits).not.toBeNull();
+    expect(out.keyTraits!.length).toBeGreaterThan(200);
+    expect(out.keyTraits).toBe(`${long}; ${long}; ${long}; auburn hair`);
+  });
+
+  it('only personality populated → single value, no separator', () => {
+    expect(toCharacterContext({ name: 'Bystander', personality: 'shy' })).toEqual({
+      name: 'Bystander',
+      role: null,
+      keyTraits: 'shy',
+    });
+  });
+
+  it('whitespace-only trait fields are skipped', () => {
+    const out = toCharacterContext({
+      name: 'X',
+      personality: '   ',
+      arc: '\t\n',
+      appearance: 'tall',
+    });
+    expect(out.keyTraits).toBe('tall');
+  });
+
+  it('all trait fields missing/null → keyTraits is null', () => {
+    expect(toCharacterContext({ name: 'X' }).keyTraits).toBeNull();
+  });
+
+  it('role missing or empty → role is null', () => {
+    expect(toCharacterContext({ name: 'X' }).role).toBeNull();
+    expect(toCharacterContext({ name: 'X', role: '' }).role).toBe(''); // empty string is preserved as-is per typeof check
+  });
+
+  it('name missing or non-string → empty string', () => {
+    expect(toCharacterContext({}).name).toBe('');
+    expect(toCharacterContext({ name: 42 as unknown }).name).toBe('');
+  });
 });
