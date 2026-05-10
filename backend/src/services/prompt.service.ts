@@ -236,8 +236,10 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
 
   const systemContent = resolvePrompt(input.userPrompts, 'system');
 
-  const worldNotesBlock =
-    input.worldNotes && input.worldNotes.length > 0 ? `World notes:\n${input.worldNotes}` : '';
+  const worldNotesBlock = (() => {
+    const trimmed = input.worldNotes ? input.worldNotes.trimEnd() : '';
+    return trimmed.length > 0 ? `<world_notes>\n${escapeXmlText(trimmed)}\n</world_notes>` : '';
+  })();
 
   const charactersBlock =
     input.characters.length > 0

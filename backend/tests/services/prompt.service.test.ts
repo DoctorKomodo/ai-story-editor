@@ -531,3 +531,51 @@ describe('toCharacterContext (h0z)', () => {
     expect(toCharacterContext({ name: 42 as unknown }).name).toBe('');
   });
 });
+
+// ─── worldNotesBlock XML rendering (h0z) ────────────────────────────────────
+
+describe('worldNotesBlock XML rendering (h0z)', () => {
+  function baseInput(worldNotes: string | null) {
+    return {
+      action: 'continue' as const,
+      selectedText: '',
+      chapterContent: '',
+      characters: [],
+      worldNotes,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  it('renders <world_notes>...</world_notes> when world notes present', () => {
+    const out = buildPrompt(baseInput('Late-Victorian London.'));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<world_notes>\nLate-Victorian London.\n</world_notes>');
+  });
+
+  it('omits the wrapper entirely when world notes are null or empty', () => {
+    expect(buildPrompt(baseInput(null)).messages[0].content).not.toContain('<world_notes>');
+    expect(buildPrompt(baseInput('')).messages[0].content).not.toContain('<world_notes>');
+  });
+
+  it('escapes & < > in world-notes content', () => {
+    const out = buildPrompt(baseInput('AT&T then <html> there'));
+    expect(out.messages[0].content).toContain(
+      '<world_notes>\nAT&amp;T then &lt;html&gt; there\n</world_notes>',
+    );
+  });
+
+  it('collision test: world notes containing </world_notes> renders escaped', () => {
+    const out = buildPrompt(baseInput('text </world_notes> more text'));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('text &lt;/world_notes&gt; more text');
+  });
+
+  it('trailing whitespace inside the wrapper is normalised (no trailing \\n\\n before closer)', () => {
+    const out = buildPrompt(baseInput('content\n\n   '));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<world_notes>\ncontent\n</world_notes>');
+    expect(sys).not.toContain('content\n\n');
+  });
+});
