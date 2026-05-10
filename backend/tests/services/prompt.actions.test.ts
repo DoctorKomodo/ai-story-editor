@@ -61,9 +61,9 @@ describe('[V12] system message — all actions open with DEFAULT_SYSTEM_PROMPT',
 // ─── action: continue ─────────────────────────────────────────────────────────
 
 describe('[V12] action=continue', () => {
-  it('system message contains the "continue" instruction', () => {
+  it('system message contains the "continue" task instruction', () => {
     const content = systemContent(baseInput({ action: 'continue', selectedText: 'She fled.' }));
-    expect(content.toLowerCase()).toContain('continue');
+    expect(content.toLowerCase()).toMatch(/task:\s*continue/);
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {
