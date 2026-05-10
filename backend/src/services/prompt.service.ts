@@ -108,7 +108,7 @@ export interface BuiltPrompt {
 export const DEFAULT_SYSTEM_PROMPT =
   'You are an expert creative-writing assistant. ' +
   'Help the author continue, refine, and develop their story with vivid prose that matches their established voice and tone. ' +
-  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output.';
+  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output, no XML tags, and no section labels.';
 
 // [X29] Single source of truth for default templates — exposed via
 // GET /api/ai/default-prompts so the frontend renders the same strings
