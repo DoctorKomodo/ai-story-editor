@@ -424,7 +424,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
             ],
           },
         ],
-      } as unknown as object,
+      },
       wordCount: 11,
     });
 

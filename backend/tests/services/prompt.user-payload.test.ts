@@ -1,4 +1,8 @@
 import { describe, expect, it } from 'vitest';
+// buildUserPayload is intentionally not yet exported from prompt.service —
+// Task 3 of the k1r plan introduces it. Until then, this entire file fails
+// at import time with "buildUserPayload is not a function". That's the
+// expected RED state.
 import { type BuildPromptInput, buildUserPayload } from '../../src/services/prompt.service';
 
 function input(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput {

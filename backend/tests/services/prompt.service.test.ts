@@ -380,6 +380,9 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
   function inputFor(action: BuildPromptInput['action']): BuildPromptInput {
     return baseInput({
       action,
+      // Use a large context so chapterContent survives the token-budget trim.
+      modelContextLength: 128_000,
+      modelMaxCompletionTokens: 4096,
       chapterContent: 'CHAPTER_BODY_SENTINEL',
       worldNotes: 'WORLD_NOTES_SENTINEL',
       characters: [{ name: 'Eira', role: 'protagonist', keyTraits: 'CHAR_TRAIT_SENTINEL' }],
