@@ -40,6 +40,7 @@ import {
   useRenameChatMutation,
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -161,13 +162,18 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
     });
   }, [activeChatId, selectedModelId, sendChatMessage]);
 
-  const onCopy = useCallback((message: ChatMessage) => {
-    const text =
-      typeof message.contentJson === 'string'
-        ? message.contentJson
-        : JSON.stringify(message.contentJson);
-    void navigator.clipboard?.writeText(text);
-  }, []);
+  const { copy: copyToClipboard, status: copyStatus } = useCopyToClipboard();
+
+  const onCopy = useCallback(
+    (message: ChatMessage) => {
+      const text =
+        typeof message.contentJson === 'string'
+          ? message.contentJson
+          : JSON.stringify(message.contentJson);
+      void copyToClipboard(text);
+    },
+    [copyToClipboard],
+  );
 
   const onInsert = useCallback(
     (message: ChatMessage) => {
@@ -259,6 +265,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
                         onClick={() => {
                           onCopy(r.message);
                         }}
+                        status={copyStatus}
                       />
                       <RegenerateAction
                         onClick={onRegenerate}
