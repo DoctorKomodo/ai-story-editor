@@ -2,7 +2,7 @@
 //
 // Covers:
 //   - POST /api/chapters/:chapterId/chats — create, 201, decrypted title
-//   - GET  /api/chapters/:chapterId/chats — list sorted by createdAt asc
+//   - GET  /api/chapters/:chapterId/chats — list sorted by lastActivityAt desc, createdAt desc
 //   - Auth gates on all three endpoints (401 without Bearer)
 //   - Ownership gates (404 when chapter/chat not owned)
 //   - POST /api/chats/:chatId/messages — SSE streams, both messages persisted

@@ -98,8 +98,8 @@ describe('[SC3] chat.repo — kind support', () => {
 // Shared fixture for the ordering tests below
 // ---------------------------------------------------------------------------
 
-async function setupTwoChatsFixture() {
-  const u = await makeUserContext('loj-ordering');
+async function setupTwoChatsFixture(username: string) {
+  const u = await makeUserContext(username);
   const story = await createStoryRepo(u.req).create({ title: 's' });
   const chapter = await createChapterRepo(u.req).create({
     storyId: story.id as string,
@@ -124,7 +124,7 @@ describe('chatRepo.findManyForChapter — most-recent-activity ordering (story-e
   afterEach(resetAllTables);
 
   it('returns chats ordered by lastActivityAt desc — chat with newer message activity comes first', async () => {
-    const { req, chapterId, chatAId, chatBId } = await setupTwoChatsFixture();
+    const { req, chapterId, chatAId, chatBId } = await setupTwoChatsFixture('loj-ordering-active');
 
     // A was created first, B second. Send a message into A (so its
     // lastActivityAt > B's), then a message into B (so B's > A's). Final
@@ -134,13 +134,19 @@ describe('chatRepo.findManyForChapter — most-recent-activity ordering (story-e
     await messageRepo.create({
       chatId: chatAId,
       role: 'user',
-      contentJson: { type: 'doc', content: [{ type: 'text', text: 'a' }] },
+      contentJson: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }],
+      },
     });
     await new Promise((r) => setTimeout(r, 15));
     await messageRepo.create({
       chatId: chatBId,
       role: 'user',
-      contentJson: { type: 'doc', content: [{ type: 'text', text: 'b' }] },
+      contentJson: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }],
+      },
     });
 
     const list = await createChatRepo(req).findManyForChapter(chapterId);
@@ -153,7 +159,7 @@ describe('chatRepo.findManyForChapter — most-recent-activity ordering (story-e
   it('uses createdAt desc as the tie-breaker when both chats are dormant (lastActivityAt === createdAt)', async () => {
     // Two fresh chats, no messages. lastActivityAt defaults to createdAt for
     // both (and they may even share the same lastActivityAt timestamp).
-    const { req, chapterId, chatAId, chatBId } = await setupTwoChatsFixture();
+    const { req, chapterId, chatAId, chatBId } = await setupTwoChatsFixture('loj-ordering-dormant');
     // A was created first → older createdAt. Under [lastActivityAt desc,
     // createdAt desc], B (newer createdAt) should land first.
 
