@@ -50,7 +50,7 @@ describe('resetClientState', () => {
         expect(spy).toHaveBeenCalledTimes(1);
       }
     } finally {
-      spies.forEach((s) => s.mockRestore());
+      for (const s of spies) s.mockRestore();
     }
   });
 
