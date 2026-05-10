@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { prisma } from '../setup';
 import { makeUserContext, resetAllTables } from './_req';
@@ -90,5 +91,76 @@ describe('[SC3] chat.repo — kind support', () => {
     expect(scenesOnly[0].kind).toBe('scene');
     expect(asksOnly.length).toBe(2);
     expect(asksOnly.every((c) => c.kind === 'ask')).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Shared fixture for the ordering tests below
+// ---------------------------------------------------------------------------
+
+async function setupTwoChatsFixture() {
+  const u = await makeUserContext('loj-ordering');
+  const story = await createStoryRepo(u.req).create({ title: 's' });
+  const chapter = await createChapterRepo(u.req).create({
+    storyId: story.id as string,
+    title: 'ch1',
+    orderIndex: 0,
+  });
+  const chapterId = chapter.id as string;
+  const repo = createChatRepo(u.req);
+
+  // Chat A created first
+  const chatA = await repo.create({ chapterId, title: 'chat-a' });
+  // Small delay so createdAt timestamps differ meaningfully
+  await new Promise((r) => setTimeout(r, 20));
+  // Chat B created second (newer createdAt)
+  const chatB = await repo.create({ chapterId, title: 'chat-b' });
+
+  return { req: u.req, chapterId, chatAId: chatA.id as string, chatBId: chatB.id as string };
+}
+
+describe('chatRepo.findManyForChapter — most-recent-activity ordering (story-editor-loj)', () => {
+  beforeEach(resetAllTables);
+  afterEach(resetAllTables);
+
+  it('returns chats ordered by lastActivityAt desc — chat with newer message activity comes first', async () => {
+    const { req, chapterId, chatAId, chatBId } = await setupTwoChatsFixture();
+
+    // A was created first, B second. Send a message into A (so its
+    // lastActivityAt > B's), then a message into B (so B's > A's). Final
+    // order should be [B, A] — most-recently-active first.
+    await new Promise((r) => setTimeout(r, 15));
+    const messageRepo = createMessageRepo(req);
+    await messageRepo.create({
+      chatId: chatAId,
+      role: 'user',
+      contentJson: { type: 'doc', content: [{ type: 'text', text: 'a' }] },
+    });
+    await new Promise((r) => setTimeout(r, 15));
+    await messageRepo.create({
+      chatId: chatBId,
+      role: 'user',
+      contentJson: { type: 'doc', content: [{ type: 'text', text: 'b' }] },
+    });
+
+    const list = await createChatRepo(req).findManyForChapter(chapterId);
+
+    expect(list).toHaveLength(2);
+    expect(list[0]?.id).toBe(chatBId);
+    expect(list[1]?.id).toBe(chatAId);
+  });
+
+  it('uses createdAt desc as the tie-breaker when both chats are dormant (lastActivityAt === createdAt)', async () => {
+    // Two fresh chats, no messages. lastActivityAt defaults to createdAt for
+    // both (and they may even share the same lastActivityAt timestamp).
+    const { req, chapterId, chatAId, chatBId } = await setupTwoChatsFixture();
+    // A was created first → older createdAt. Under [lastActivityAt desc,
+    // createdAt desc], B (newer createdAt) should land first.
+
+    const list = await createChatRepo(req).findManyForChapter(chapterId);
+
+    expect(list).toHaveLength(2);
+    expect(list[0]?.id).toBe(chatBId);
+    expect(list[1]?.id).toBe(chatAId);
   });
 });
