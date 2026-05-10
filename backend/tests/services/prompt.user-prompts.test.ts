@@ -37,7 +37,7 @@ function systemMsg(input: BuildPromptInput): string {
 }
 
 function userMsg(input: BuildPromptInput): string {
-  return buildPrompt(input).messages[1]?.content ?? '';
+  return buildPrompt(input).messages.find((m) => m.role === 'user')?.content ?? '';
 }
 
 // ─── system-prompt override ────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ function userMsg(input: BuildPromptInput): string {
 describe('[X29] userPrompts.system — override behaviour', () => {
   it('non-empty → system message starts with override', () => {
     const custom = 'You are a gothic horror novelist.';
-    expect(systemMsg(baseInput({ userPrompts: { system: custom } }))).toContain(custom);
+    expect(systemMsg(baseInput({ userPrompts: { system: custom } })).startsWith(custom)).toBe(true);
   });
 
   it('null → system message contains DEFAULT_SYSTEM_PROMPT', () => {
@@ -161,7 +161,8 @@ describe('[X29] freeform is not template-driven (k1r: ask now is)', () => {
       baseInput({
         action: 'freeform',
         freeformInstruction: 'Tell me a haiku.',
-        userPrompts: { continue: 'should not appear' } as never,
+        // passing a valid userPrompts key to freeform confirms the template path is not invoked
+        userPrompts: { continue: 'should not appear' },
       }),
     );
     expect(a).toBe(b);
