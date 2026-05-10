@@ -210,7 +210,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         sessions={visibleSessions.map((c) => ({
           id: c.id,
           title: c.title ?? 'Untitled',
-          updatedAt: c.updatedAt,
+          lastActivityAt: c.lastActivityAt,
         }))}
         activeSessionId={activeChatId}
         onSelect={setActiveChatId}

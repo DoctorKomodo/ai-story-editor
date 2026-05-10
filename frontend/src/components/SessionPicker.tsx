@@ -14,7 +14,8 @@ export interface SessionPickerLabels {
 export interface Session {
   id: string;
   title: string;
-  updatedAt: string;
+  /** story-editor-loj: most-recent activity timestamp; drives the "X ago" label. */
+  lastActivityAt: string;
 }
 
 export interface SessionPickerProps {
@@ -235,7 +236,7 @@ export function SessionPicker({
         </span>
         {active !== null && (
           <span className="text-[11px] font-mono text-ink-4 flex-shrink-0">
-            {relativeAge(active.updatedAt)}
+            {relativeAge(active.lastActivityAt)}
           </span>
         )}
         <ChevronDownIcon />
@@ -296,7 +297,9 @@ export function SessionPicker({
                 ) : (
                   <span className="text-[13px] text-ink truncate">{s.title}</span>
                 )}
-                <span className="text-[11px] font-mono text-ink-4">{relativeAge(s.updatedAt)}</span>
+                <span className="text-[11px] font-mono text-ink-4">
+                  {relativeAge(s.lastActivityAt)}
+                </span>
               </div>
 
               <button

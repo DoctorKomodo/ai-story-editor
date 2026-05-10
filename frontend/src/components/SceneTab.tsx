@@ -237,7 +237,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         sessions={visibleSessions.map((s) => ({
           id: s.id,
           title: s.title ?? 'Untitled',
-          updatedAt: s.updatedAt,
+          lastActivityAt: s.lastActivityAt,
         }))}
         activeSessionId={activeChatId}
         onSelect={setActiveChatId}

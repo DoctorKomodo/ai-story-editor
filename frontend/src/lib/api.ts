@@ -302,6 +302,7 @@ export interface ChatRow {
   kind: 'ask' | 'scene';
   createdAt: string;
   updatedAt: string;
+  lastActivityAt: string; // story-editor-loj: bumped on every message create
   messageCount?: number;
 }
 
