@@ -44,11 +44,13 @@ export const PER_USER_STORES: readonly ResettableStore[] = [
  * Use `swapSession` (below) for login so the order is unreachable from
  * call sites.
  *
- * **In-flight fetch race:** `cancelQueries` aborts the AbortSignal on any
- * pending queryFn AND removes those queries from active tracking, so a
- * late-resolving fetch from the previous user's session cannot write back
- * into the empty cache. Calling `clear()` alone is not sufficient —
- * pending promises will resolve into the vacated keys.
+ * **In-flight fetch race:** `cancelQueries` fires the AbortSignal on any
+ * pending queryFn so it can bail early. `clear()` then removes all cache
+ * entries so a late-resolving fetch from the previous session has no key
+ * to write back into. `clear()` alone would eventually also abort via
+ * `query.destroy()`, but explicitly cancelling first ensures the signal
+ * is aborted before the entry is removed — giving the queryFn a chance
+ * to observe it synchronously before the key disappears.
  *
  * **Storage gotcha:** if you add a Zustand store using the `persist`
  * middleware, `getState().reset()` does NOT clear the mirrored

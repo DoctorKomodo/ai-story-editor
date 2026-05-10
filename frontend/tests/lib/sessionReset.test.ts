@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   _unsafeResetSessionResetRegistryForTests,
   PER_USER_STORES,
+  PER_USER_STORES as REGISTERED_STORES,
   registerSessionResetQueryClient,
   resetClientState,
   resetClientStateUsingRegistered,
@@ -14,6 +15,7 @@ import { useSessionStore } from '@/store/session';
 
 afterEach(() => {
   _unsafeResetSessionResetRegistryForTests();
+  useSessionStore.getState().clearSession();
 });
 
 describe('resetClientState', () => {
@@ -42,11 +44,13 @@ describe('resetClientState', () => {
 
   it('calls reset() on every per-user store in PER_USER_STORES', async () => {
     const spies = PER_USER_STORES.map((store) => vi.spyOn(store.getState(), 'reset'));
-
-    await resetClientState(new QueryClient());
-
-    for (const spy of spies) {
-      expect(spy).toHaveBeenCalledTimes(1);
+    try {
+      await resetClientState(new QueryClient());
+      for (const spy of spies) {
+        expect(spy).toHaveBeenCalledTimes(1);
+      }
+    } finally {
+      spies.forEach((s) => s.mockRestore());
     }
   });
 
@@ -144,6 +148,10 @@ describe('store enumeration guard', () => {
   ];
   // UI-only stores intentionally excluded from per-user reset.
   const UI_ONLY_STORES = ['session', 'sidebarTab', 'ui'];
+
+  it('PER_USER_STORES export length matches the per-user-stores allowlist', () => {
+    expect(REGISTERED_STORES.length).toBe(PER_USER_STORES.length);
+  });
 
   it('every store file is explicitly classified as per-user-reset or UI-only', () => {
     const all = Object.keys(import.meta.glob('@/store/*.ts'))
