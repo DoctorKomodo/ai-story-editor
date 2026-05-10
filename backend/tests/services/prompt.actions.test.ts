@@ -1,7 +1,7 @@
 // [V12] Tests for AI action system prompts and per-action user prompt templates.
-// Verifies each of the five original actions (continue, rephrase, expand,
-// summarise, freeform) produces appropriately-worded prompts with correct
-// selection delimiters and system message.
+// Verifies each of the original actions (continue, rephrase, expand,
+// summarise) produces appropriately-worded prompts with correct selection
+// delimiters and system message.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -49,13 +49,6 @@ describe('[V12] system message — all actions open with DEFAULT_SYSTEM_PROMPT',
       expect(content.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
     });
   }
-
-  it('action=freeform → system message starts with DEFAULT_SYSTEM_PROMPT', () => {
-    const content = systemContent(
-      baseInput({ action: 'freeform', freeformInstruction: 'Rewrite as Hemingway.' }),
-    );
-    expect(content.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
-  });
 });
 
 // ─── action: continue ─────────────────────────────────────────────────────────
@@ -152,40 +145,5 @@ describe('[V12] action=summarise', () => {
       baseInput({ action: 'summarise', selectedText: 'A long passage.' }),
     );
     expect(content.toLowerCase()).toMatch(/sentence|1.*2.*3|essential/);
-  });
-});
-
-// ─── action: freeform ─────────────────────────────────────────────────────────
-
-describe('[V12] action=freeform', () => {
-  it('user message contains freeformInstruction verbatim', () => {
-    const instruction = 'Rewrite in the style of Hemingway.';
-    const content = userContent(
-      baseInput({ action: 'freeform', freeformInstruction: instruction, selectedText: '' }),
-    );
-    expect(content).toContain(instruction);
-  });
-
-  it('user message contains the selectedText (when present)', () => {
-    const content = userContent(
-      baseInput({
-        action: 'freeform',
-        freeformInstruction: 'Tighten this.',
-        selectedText: 'A long passage.',
-      }),
-    );
-    expect(content).toContain('«A long passage.»');
-  });
-
-  it('throws when freeformInstruction is missing', () => {
-    expect(() =>
-      buildPrompt(
-        baseInput({
-          action: 'freeform',
-          freeformInstruction: undefined,
-          selectedText: 'Text.',
-        }),
-      ),
-    ).toThrow(/freeformInstruction/i);
   });
 });

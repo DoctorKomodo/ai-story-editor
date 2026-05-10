@@ -186,12 +186,4 @@ describe('[V14] smoke — existing actions still produce prompts', () => {
     const content = systemContent(baseInput({ action: 'expand', selectedText: 'Short text.' }));
     expect(content.toLowerCase()).toContain('expand');
   });
-
-  it('action=freeform still passes instruction through', () => {
-    const instruction = 'Write this differently.';
-    const content = userContent(
-      baseInput({ action: 'freeform', freeformInstruction: instruction, selectedText: 'T.' }),
-    );
-    expect(content).toContain(instruction);
-  });
 });

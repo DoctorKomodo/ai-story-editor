@@ -233,22 +233,6 @@ describe('POST /api/ai/complete [V5]', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when action is freeform but freeformInstruction is missing', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
-      .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({
-        action: 'freeform',
-        selectedText: 'some text',
-        chapterId: 'c',
-        storyId: 's',
-        modelId: 'm',
-        // freeformInstruction intentionally absent
-      });
-    expect(res.status).toBe(400);
-  });
-
   it('returns 409 venice_key_required when user has no BYOK key', async () => {
     const accessToken = await registerAndLogin();
     const _req = makeFakeReq(accessToken);

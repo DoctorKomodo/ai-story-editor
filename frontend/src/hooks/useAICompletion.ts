@@ -38,12 +38,11 @@ export interface AICompletionState {
 }
 
 export interface RunArgs {
-  action: 'continue' | 'rephrase' | 'expand' | 'summarise' | 'freeform' | 'rewrite' | 'describe';
+  action: 'continue' | 'rephrase' | 'expand' | 'summarise' | 'rewrite' | 'describe';
   selectedText: string;
   chapterId: string;
   storyId: string;
   modelId: string;
-  freeformInstruction?: string;
   enableWebSearch?: boolean;
 }
 
@@ -139,9 +138,6 @@ export function useAICompletion(): UseAICompletion {
         storyId: args.storyId,
         modelId: args.modelId,
       };
-      if (args.freeformInstruction !== undefined) {
-        body.freeformInstruction = args.freeformInstruction;
-      }
       if (args.enableWebSearch !== undefined) {
         body.enableWebSearch = args.enableWebSearch;
       }

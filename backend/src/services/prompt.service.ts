@@ -14,7 +14,6 @@ export type PromptAction =
   | 'rephrase'
   | 'expand'
   | 'summarise'
-  | 'freeform'
   | 'rewrite'
   | 'describe'
   | 'scene'
@@ -65,7 +64,7 @@ export interface BuildPromptInput {
   includeVeniceSystemPrompt?: boolean;
   /** [X29] User-level prompt overrides. Per key: non-empty trimmed string wins; null / undefined / whitespace falls back to DEFAULT_PROMPTS[key]. */
   userPrompts?: UserPrompts;
-  /** Required when action === 'freeform' or 'ask'; optional otherwise */
+  /** Required when action === 'scene' or 'ask'; optional otherwise */
   freeformInstruction?: string;
 }
 
@@ -159,23 +158,12 @@ export function buildUserPayload(input: BuildPromptInput): string {
       return sel.length > 0 ? sel : 'Summarise.';
     case 'describe':
       return sel.length > 0 ? sel : 'Describe.';
-    case 'freeform': {
-      if (!input.freeformInstruction) {
-        throw new PromptValidationError('freeformInstruction is required for action "freeform"');
-      }
-      return sel.length > 0 ? `${input.freeformInstruction}\n\n${sel}` : input.freeformInstruction;
-    }
   }
 }
 
 // ─── Per-action task template lookup ──────────────────────────────────────────
-//
-// k1r: every action goes through the same lookup. The single carve-out is
-// `freeform` — the user's instruction carries the framing, so the system
-// message has no task line for it.
 
 function taskTemplateFor(action: PromptAction, userPrompts: UserPrompts | undefined): string {
-  if (action === 'freeform') return '';
   // 'rephrase' shares the 'rewrite' override key (collapsed under [X29]).
   const key: UserPromptKey = action === 'rephrase' ? 'rewrite' : action;
   return resolvePrompt(userPrompts, key);

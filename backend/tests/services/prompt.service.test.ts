@@ -188,20 +188,6 @@ describe('buildPrompt — action task block', () => {
     expect(systemContent(input).toLowerCase()).toMatch(/summar(i|y)s?e/);
     expect(userContent(input)).toContain('«A long passage.»');
   });
-
-  it('action=freeform: user message contains freeformInstruction + selection; system has NO task template line', () => {
-    const instruction = 'Rewrite in the style of Hemingway.';
-    const input = baseInput({
-      action: 'freeform',
-      freeformInstruction: instruction,
-      selectedText: 'Text.',
-    });
-    expect(userContent(input)).toContain(instruction);
-    expect(userContent(input)).toContain('«Text.»');
-    // freeform has no DEFAULT_PROMPTS entry; system lacks any per-action task line
-    // (just systemContent + world + chars + chapter).
-    expect(systemContent(input)).not.toContain(instruction);
-  });
 });
 
 // ─── World notes and characters ───────────────────────────────────────────────
@@ -369,7 +355,6 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
     'rephrase',
     'expand',
     'summarise',
-    'freeform',
     'rewrite',
     'describe',
     'scene',
@@ -386,10 +371,7 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
       worldNotes: 'WORLD_NOTES_SENTINEL',
       characters: [{ name: 'Eira', role: 'protagonist', keyTraits: 'CHAR_TRAIT_SENTINEL' }],
       // Provide instructions for the actions that require them.
-      freeformInstruction:
-        action === 'scene' || action === 'ask' || action === 'freeform'
-          ? 'do the thing'
-          : undefined,
+      freeformInstruction: action === 'scene' || action === 'ask' ? 'do the thing' : undefined,
     });
   }
 

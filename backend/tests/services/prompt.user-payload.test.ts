@@ -76,26 +76,4 @@ describe('buildUserPayload — matrix', () => {
       });
     }
   });
-
-  describe('freeform', () => {
-    it('with selection: returns instruction + Selection: «...»', () => {
-      expect(
-        buildUserPayload(
-          input({
-            action: 'freeform',
-            freeformInstruction: 'Rewrite as Hemingway.',
-            selectedText: 'The sun rose.',
-          }),
-        ),
-      ).toBe('Rewrite as Hemingway.\n\nSelection: «The sun rose.»');
-    });
-
-    it('without selection: returns just the instruction', () => {
-      expect(
-        buildUserPayload(
-          input({ action: 'freeform', freeformInstruction: 'Rewrite as Hemingway.' }),
-        ),
-      ).toBe('Rewrite as Hemingway.');
-    });
-  });
 });
