@@ -110,11 +110,9 @@ export function CopyAction({ onClick, disabled, status = 'idle' }: CopyActionPro
       disabled={disabled}
     >
       <CopyIcon />
-      {label !== null ? (
-        <span aria-live="polite" aria-atomic="true" className="text-[12px]">
-          {label}
-        </span>
-      ) : null}
+      <span aria-live="polite" aria-atomic="true" className="text-[12px] empty:hidden">
+        {label}
+      </span>
     </button>
   );
 }
