@@ -271,7 +271,11 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     }
   }
 
-  const chapterBlock = chapterText.length > 0 ? `Chapter so far:\n${chapterText}` : '';
+  const chapterTrimmed = chapterText.trimEnd();
+  const chapterBlock =
+    chapterTrimmed.length > 0
+      ? `<chapter_so_far>\n${escapeXmlText(chapterTrimmed)}\n</chapter_so_far>`
+      : '';
 
   const systemParts = [
     systemContent,

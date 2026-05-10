@@ -419,8 +419,8 @@ describe('POST /api/ai/complete [V5]', () => {
     const wireMessages = requestBody.messages as Array<{ role: string; content: string }>;
     expect(wireMessages[0]?.role).toBe('system');
     // The setupStoryAndChapter helper writes a non-empty chapter body, so
-    // 'Chapter so far:' must appear in the system message.
-    expect(wireMessages[0]?.content).toContain('Chapter so far:');
+    // '<chapter_so_far>' must appear in the system message.
+    expect(wireMessages[0]?.content).toContain('<chapter_so_far>');
   });
 
   it('max_completion_tokens: per-model override above model cap → model cap wins (X28)', async () => {

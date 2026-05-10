@@ -480,7 +480,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     // The structural invariant: SOME message must include the chapter fragment.
     // Today (pre-k1r) this fails — the synthesisedUserMsg was dropped on retry,
     // taking chapter context with it for the `ask` action.
-    expect(sent.some((m) => m.content.includes('Chapter so far:'))).toBe(true);
+    expect(sent.some((m) => m.content.includes('<chapter_so_far>'))).toBe(true);
     expect(sent.some((m) => m.content.includes('dragon circled the keep'))).toBe(true);
   });
 

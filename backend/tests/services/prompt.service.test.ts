@@ -532,6 +532,58 @@ describe('toCharacterContext (h0z)', () => {
   });
 });
 
+// ─── chapterBlock XML rendering (h0z) ────────────────────────────────────────
+
+describe('chapterBlock XML rendering (h0z)', () => {
+  function baseInput(chapterContent: string) {
+    return {
+      action: 'continue' as const,
+      selectedText: '',
+      chapterContent,
+      characters: [],
+      worldNotes: null,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  it('renders <chapter_so_far>...</chapter_so_far> when chapter content survives the trim', () => {
+    const out = buildPrompt(baseInput('She crossed the room.'));
+    expect(out.messages[0].content).toContain(
+      '<chapter_so_far>\nShe crossed the room.\n</chapter_so_far>',
+    );
+  });
+
+  it('omits the wrapper when chapter is empty', () => {
+    expect(buildPrompt(baseInput('')).messages[0].content).not.toContain('<chapter_so_far>');
+  });
+
+  it('escapes & < > in chapter prose', () => {
+    const out = buildPrompt(baseInput('Sam said "<3" then & sighed.'));
+    expect(out.messages[0].content).toContain(
+      '<chapter_so_far>\nSam said "&lt;3" then &amp; sighed.\n</chapter_so_far>',
+    );
+  });
+
+  it('collision test: chapter containing </chapter_so_far> renders escaped', () => {
+    const out = buildPrompt(baseInput('open </chapter_so_far> close'));
+    expect(out.messages[0].content).toContain('open &lt;/chapter_so_far&gt; close');
+  });
+
+  it('double-escape semantics: literal "&amp;" in chapter renders as "&amp;amp;"', () => {
+    const out = buildPrompt(baseInput('Smith &amp; Wesson'));
+    expect(out.messages[0].content).toContain('Smith &amp;amp; Wesson');
+  });
+
+  it('trailing whitespace inside the wrapper is normalised', () => {
+    const out = buildPrompt(baseInput('content\n\n  '));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<chapter_so_far>\ncontent\n</chapter_so_far>');
+    expect(sys).not.toContain('content\n\n  ');
+  });
+});
+
 // ─── worldNotesBlock XML rendering (h0z) ────────────────────────────────────
 
 describe('worldNotesBlock XML rendering (h0z)', () => {
