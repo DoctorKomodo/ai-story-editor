@@ -18,6 +18,7 @@
 import { type UseMutationResult, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
+import { resetClientState } from '@/lib/sessionReset';
 import { type SessionUser, useSessionStore } from '@/store/session';
 
 export interface ChangePasswordInput {
@@ -67,12 +68,14 @@ export function useRotateRecoveryCodeMutation(): UseMutationResult<
 export function useSignOutEverywhereMutation(): UseMutationResult<void, Error, void> {
   const navigate = useNavigate();
   const clearSession = useSessionStore((s) => s.clearSession);
+  const queryClient = useQueryClient();
 
   return useMutation<void, Error, void>({
     mutationFn: async (): Promise<void> => {
       await api<void>('/auth/sign-out-everywhere', { method: 'POST' });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
+      await resetClientState(queryClient);
       clearSession();
       navigate('/login', { replace: true, state: { signedOutEverywhere: true } });
     },
