@@ -155,77 +155,81 @@ describe('buildPrompt — max_completion_tokens', () => {
 // ─── Action → task block ──────────────────────────────────────────────────────
 
 describe('buildPrompt — action task block', () => {
+  function systemContent(input: BuildPromptInput): string {
+    const result = buildPrompt(input);
+    return result.messages.find((m) => m.role === 'system')?.content ?? '';
+  }
+
   function userContent(input: BuildPromptInput): string {
     const result = buildPrompt(input);
     return result.messages.find((m) => m.role === 'user')?.content ?? '';
   }
 
-  it('action=continue includes the selection and "continue" instruction', () => {
-    const content = userContent(baseInput({ action: 'continue', selectedText: 'She fled.' }));
-    expect(content.toLowerCase()).toContain('continue');
-    expect(content).toContain('She fled.');
+  it('action=continue includes the "continue" instruction in system; user has the selection', () => {
+    const input = baseInput({ action: 'continue', selectedText: 'She fled.' });
+    expect(systemContent(input).toLowerCase()).toContain('continue');
+    expect(userContent(input)).toContain('«She fled.»');
   });
 
-  it('action=rephrase uses the rewrite template (collapsed under X29) and includes the selection', () => {
-    const content = userContent(baseInput({ action: 'rephrase', selectedText: 'He said hello.' }));
-    expect(content.toLowerCase()).toContain('rewrite');
-    expect(content).toContain('He said hello.');
+  it('action=rephrase includes the "rewrite" instruction in system (collapsed under X29)', () => {
+    const input = baseInput({ action: 'rephrase', selectedText: 'He said hello.' });
+    expect(systemContent(input).toLowerCase()).toContain('rewrite');
+    expect(userContent(input)).toContain('«He said hello.»');
   });
 
-  it('action=expand includes the selection and "expand" instruction', () => {
-    const content = userContent(baseInput({ action: 'expand', selectedText: 'The door creaked.' }));
-    expect(content.toLowerCase()).toContain('expand');
-    expect(content).toContain('The door creaked.');
+  it('action=expand includes the "expand" instruction in system', () => {
+    const input = baseInput({ action: 'expand', selectedText: 'The door creaked.' });
+    expect(systemContent(input).toLowerCase()).toContain('expand');
+    expect(userContent(input)).toContain('«The door creaked.»');
   });
 
-  it('action=summarise includes the selection and "summarise" or "summarize" instruction', () => {
-    const content = userContent(
-      baseInput({ action: 'summarise', selectedText: 'A long passage.' }),
-    );
-    expect(content.toLowerCase()).toMatch(/summar(i|y)s?e/);
-    expect(content).toContain('A long passage.');
+  it('action=summarise includes the "summarise"/"summarize" instruction in system', () => {
+    const input = baseInput({ action: 'summarise', selectedText: 'A long passage.' });
+    expect(systemContent(input).toLowerCase()).toMatch(/summar(i|y)s?e/);
+    expect(userContent(input)).toContain('«A long passage.»');
   });
 
-  it('action=freeform uses freeformInstruction verbatim', () => {
+  it('action=freeform: user message contains freeformInstruction + selection; system has NO task template line', () => {
     const instruction = 'Rewrite in the style of Hemingway.';
-    const content = userContent(
-      baseInput({ action: 'freeform', freeformInstruction: instruction, selectedText: 'Text.' }),
-    );
-    expect(content).toContain(instruction);
-    expect(content).toContain('Text.');
+    const input = baseInput({
+      action: 'freeform',
+      freeformInstruction: instruction,
+      selectedText: 'Text.',
+    });
+    expect(userContent(input)).toContain(instruction);
+    expect(userContent(input)).toContain('«Text.»');
+    // freeform has no DEFAULT_PROMPTS entry; system lacks any per-action task line
+    // (just systemContent + world + chars + chapter).
+    expect(systemContent(input)).not.toContain(instruction);
   });
 });
 
 // ─── World notes and characters ───────────────────────────────────────────────
 
 describe('buildPrompt — worldNotes and characters', () => {
-  it('includes worldNotes in the user message', () => {
-    const content =
-      buildPrompt(baseInput({ worldNotes: 'The world is a vast ocean.' })).messages.find(
-        (m) => m.role === 'user',
-      )?.content ?? '';
-    expect(content).toContain('The world is a vast ocean.');
+  function systemContent(overrides: Partial<BuildPromptInput>): string {
+    return (
+      buildPrompt(baseInput(overrides)).messages.find((m) => m.role === 'system')?.content ?? ''
+    );
+  }
+
+  it('includes worldNotes in the system message', () => {
+    expect(systemContent({ worldNotes: 'The world is a vast ocean.' })).toContain(
+      'The world is a vast ocean.',
+    );
   });
 
-  it('includes character name, role, and keyTraits in the user message', () => {
-    const content =
-      buildPrompt(
-        baseInput({
-          characters: [{ name: 'Eira', role: 'Protagonist', keyTraits: 'brave, reckless' }],
-        }),
-      ).messages.find((m) => m.role === 'user')?.content ?? '';
-    expect(content).toContain('Eira');
-    expect(content).toContain('Protagonist');
-    expect(content).toContain('brave, reckless');
+  it('includes character name, role, and keyTraits in the system message', () => {
+    expect(
+      systemContent({
+        characters: [{ name: 'Eira', role: 'Protagonist', keyTraits: 'brave, reckless' }],
+      }),
+    ).toMatch(/Eira.*Protagonist.*brave, reckless/s);
   });
 
   it('handles characters with null role / keyTraits gracefully', () => {
     expect(() =>
-      buildPrompt(
-        baseInput({
-          characters: [{ name: 'Nobody', role: null, keyTraits: null }],
-        }),
-      ),
+      buildPrompt(baseInput({ characters: [{ name: 'Nobody', role: null, keyTraits: null }] })),
     ).not.toThrow();
   });
 });
@@ -233,9 +237,10 @@ describe('buildPrompt — worldNotes and characters', () => {
 // ─── Truncation ───────────────────────────────────────────────────────────────
 
 describe('buildPrompt — chapterContent truncation', () => {
-  // A 200k-char chapter content against a 4096-token context is obviously
-  // over-budget. The prompt builder must truncate from the TOP (oldest chars),
-  // so the END of the string (newest content) survives.
+  function systemContent(input: BuildPromptInput): string {
+    return buildPrompt(input).messages.find((m) => m.role === 'system')?.content ?? '';
+  }
+
   it('truncates chapterContent from the top when over budget', () => {
     const HEAD = 'HEAD_DROPPED_SENTINEL';
     const TAIL = 'TAIL_CONTENT_SURVIVES';
@@ -244,56 +249,50 @@ describe('buildPrompt — chapterContent truncation', () => {
       baseInput({
         chapterContent: bigContent,
         modelContextLength: 4096,
-        modelMaxCompletionTokens: 256, // small response cap → leaves prompt budget for truncated chapter
+        modelMaxCompletionTokens: 256,
       }),
     );
-    const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
-    // The tail (newest content) must survive
-    expect(userContent).toContain(TAIL);
-    // The head (oldest content) must have been dropped
-    expect(userContent).not.toContain(HEAD);
-    // The overall token count of the user message must be ≤ derived prompt
-    // budget = contextLength - responseTokens - SAFETY_MARGIN_TOKENS.
-    const responseTokens = Math.min(256, Number.POSITIVE_INFINITY); // = 256
+    const sys = result.messages.find((m) => m.role === 'system')?.content ?? '';
+    expect(sys).toContain(TAIL);
+    expect(sys).not.toContain(HEAD);
+    // Total fixed tokens (system + user) must fit in the prompt budget.
+    const responseTokens = Math.min(256, Number.POSITIVE_INFINITY);
     const promptBudget = 4096 - responseTokens - 512;
-    const userTokens = estimateTokens(userContent);
-    expect(userTokens).toBeLessThanOrEqual(Math.max(0, promptBudget) + 10);
+    const userMsg = result.messages.find((m) => m.role === 'user')?.content ?? '';
+    const totalTokens = estimateTokens(sys) + estimateTokens(userMsg);
+    expect(totalTokens).toBeLessThanOrEqual(Math.max(0, promptBudget) + 10);
   });
 
   it('sets chapterContent to empty string when worldNotes + characters alone exceed budget', () => {
-    // worldNotes that fill the entire budget
-    const fatWorldNotes = 'W'.repeat(4096 * 4 * 2); // 2× the total token budget
-    const result = buildPrompt(
+    const fatWorldNotes = 'W'.repeat(4096 * 4 * 2);
+    const sys = systemContent(
       baseInput({
         worldNotes: fatWorldNotes,
         chapterContent: 'Should be gone.',
         modelContextLength: 4096,
       }),
     );
-    const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
-    // worldNotes must still appear (never truncated)
-    expect(userContent).toContain('W'.repeat(20)); // at least the start of worldNotes
-    // chapter content should be empty or absent
-    expect(userContent).not.toContain('Should be gone.');
+    expect(sys).toContain('W'.repeat(20));
+    expect(sys).not.toContain('Should be gone.');
   });
 
   it('worldNotes are never truncated even when they alone exceed the budget', () => {
     const fatWorldNotes = 'W'.repeat(4096 * 4 * 2);
-    const result = buildPrompt(baseInput({ worldNotes: fatWorldNotes, modelContextLength: 4096 }));
-    const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
-    expect(userContent).toContain(fatWorldNotes);
+    expect(
+      systemContent(baseInput({ worldNotes: fatWorldNotes, modelContextLength: 4096 })),
+    ).toContain(fatWorldNotes);
   });
 
   it('characters are never truncated even when they alone exceed the budget', () => {
     const fatTraits = 'T'.repeat(4096 * 4 * 2);
-    const result = buildPrompt(
-      baseInput({
-        characters: [{ name: 'BigChar', role: 'Hero', keyTraits: fatTraits }],
-        modelContextLength: 4096,
-      }),
-    );
-    const userContent = result.messages.find((m) => m.role === 'user')?.content ?? '';
-    expect(userContent).toContain(fatTraits);
+    expect(
+      systemContent(
+        baseInput({
+          characters: [{ name: 'BigChar', role: 'Hero', keyTraits: fatTraits }],
+          modelContextLength: 4096,
+        }),
+      ),
+    ).toContain(fatTraits);
   });
 });
 
