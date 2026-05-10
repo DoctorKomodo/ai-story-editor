@@ -31,9 +31,10 @@ export interface CharRefSuggestionState {
   moveDown: () => void;
   moveUp: () => void;
   close: () => void;
+  reset: () => void;
 }
 
-const INITIAL = {
+const initialState = {
   open: false,
   items: [] as CharRefSuggestionItem[],
   activeIndex: 0,
@@ -43,7 +44,7 @@ const INITIAL = {
 };
 
 export const useCharRefSuggestionStore = create<CharRefSuggestionState>((set, get) => ({
-  ...INITIAL,
+  ...initialState,
   openMenu: (input) =>
     set({
       open: true,
@@ -72,9 +73,6 @@ export const useCharRefSuggestionStore = create<CharRefSuggestionState>((set, ge
     if (items.length === 0) return;
     set({ activeIndex: (activeIndex - 1 + items.length) % items.length });
   },
-  close: () => set(INITIAL),
+  close: () => set(initialState),
+  reset: () => set(initialState),
 }));
-
-export function resetCharRefSuggestionStore(): void {
-  useCharRefSuggestionStore.setState(INITIAL);
-}

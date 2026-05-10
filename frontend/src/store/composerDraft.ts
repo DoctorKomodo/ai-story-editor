@@ -14,18 +14,25 @@ import { create } from 'zustand';
  * composer focuses the textarea on each change.
  */
 
+const initialState: { draft: string | null; focusToken: number } = {
+  draft: null,
+  focusToken: 0,
+};
+
 export interface ComposerDraftState {
   draft: string | null;
   focusToken: number;
   setDraft: (draft: string) => void;
   requestFocus: () => void;
+  /** Clears `draft` only — does NOT reset `focusToken`. Use `reset()` for full reset. */
   clearDraft: () => void;
+  reset: () => void;
 }
 
 export const useComposerDraftStore = create<ComposerDraftState>((set) => ({
-  draft: null,
-  focusToken: 0,
+  ...initialState,
   setDraft: (draft) => set({ draft }),
   requestFocus: () => set((s) => ({ focusToken: s.focusToken + 1 })),
   clearDraft: () => set({ draft: null }),
+  reset: () => set(initialState),
 }));

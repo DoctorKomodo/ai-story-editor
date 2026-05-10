@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CharRefMenu } from '@/components/CharRefMenu';
 import { setCharRefSuggestionProvider } from '@/lib/charRefSuggestion';
 import { formatBarExtensions } from '@/lib/tiptap-extensions';
-import { resetCharRefSuggestionStore, useCharRefSuggestionStore } from '@/store/charRefSuggestion';
+import { useCharRefSuggestionStore } from '@/store/charRefSuggestion';
 
 const CAST = [
   { id: 'c1', name: 'Elena Marsh', role: 'Protagonist' },
@@ -69,7 +69,7 @@ describe('charRef @-trigger authoring (F62)', () => {
   afterEach(() => {
     setCharRefSuggestionProvider(null);
     act(() => {
-      resetCharRefSuggestionStore();
+      useCharRefSuggestionStore.getState().reset();
     });
   });
 

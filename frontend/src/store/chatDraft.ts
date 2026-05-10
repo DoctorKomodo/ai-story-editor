@@ -45,6 +45,10 @@ export interface ChatDraft {
   error: ChatDraftError | null;
 }
 
+const initialState: { drafts: Record<string, ChatDraft> } = {
+  drafts: {} as Record<string, ChatDraft>,
+};
+
 interface ChatDraftState {
   drafts: Record<string, ChatDraft>;
   start: (args: {
@@ -57,10 +61,11 @@ interface ChatDraftState {
   markDone: (chatId: string) => void;
   markError: (chatId: string, error: ChatDraftError) => void;
   clear: (chatId: string) => void;
+  reset: () => void;
 }
 
 export const useChatDraftStore = create<ChatDraftState>((set) => ({
-  drafts: {},
+  ...initialState,
 
   start: ({ chatId, userContent, attachment }) =>
     set((s) => ({
@@ -116,4 +121,6 @@ export const useChatDraftStore = create<ChatDraftState>((set) => ({
       const { [chatId]: _removed, ...rest } = s.drafts;
       return { drafts: rest };
     }),
+
+  reset: () => set(initialState),
 }));

@@ -71,4 +71,11 @@ describe('useChatDraftStore', () => {
     useChatDraftStore.getState().clear('c1');
     expect(useChatDraftStore.getState().drafts['c1']).toBeUndefined();
   });
+
+  it('reset() returns data fields to initialState (empty drafts)', () => {
+    useChatDraftStore.getState().start({ chatId: 'c1', userContent: 'q', attachment: null });
+    useChatDraftStore.getState().start({ chatId: 'c2', userContent: 'r', attachment: null });
+    useChatDraftStore.getState().reset();
+    expect(useChatDraftStore.getState().drafts).toEqual({});
+  });
 });

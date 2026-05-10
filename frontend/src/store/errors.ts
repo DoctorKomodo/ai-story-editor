@@ -18,7 +18,12 @@ export interface ErrorStore {
   push(e: Omit<AppError, 'id' | 'at'>): string;
   dismiss(id: string): void;
   clear(): void;
+  reset(): void;
 }
+
+const initialState: { errors: AppError[] } = {
+  errors: [] as AppError[],
+};
 
 const MAX_ENTRIES = 50;
 
@@ -30,7 +35,7 @@ function generateId(): string {
 }
 
 export const useErrorStore = create<ErrorStore>((set) => ({
-  errors: [],
+  ...initialState,
   push: (entry) => {
     const id = generateId();
     const next: AppError = { ...entry, id, at: Date.now() };
@@ -45,6 +50,9 @@ export const useErrorStore = create<ErrorStore>((set) => ({
     set((state) => ({ errors: state.errors.filter((e) => e.id !== id) }));
   },
   clear: () => {
-    set({ errors: [] });
+    set(initialState);
+  },
+  reset: () => {
+    set(initialState);
   },
 }));
