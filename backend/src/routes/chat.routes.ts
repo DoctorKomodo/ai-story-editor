@@ -25,6 +25,8 @@ import { createStoryRepo } from '../repos/story.repo';
 import {
   buildPrompt,
   type CharacterContext,
+  // @ts-expect-error renderAskUserContent removed in Task 10; import kept to avoid a large
+  // diff across two commits — deletion is the only change in that task.
   renderAskUserContent,
 } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
@@ -444,23 +446,24 @@ export function createChatMessagesRouter() {
       // ── 8. Build messages array for Venice ───────────────────────────────
       const systemMsg = baseMessages[0];
       const synthesisedUserMsg = baseMessages[1];
+      // [k1r] Uniform per-action history mapping. Any prior user turn (any
+      // chat kind) that carried an attachmentJson.selectionText gets the
+      // same `\n\nAttached selection: «...»` suffix the current-turn user
+      // payload uses (see buildUserPayload). No `User question:` prefix
+      // anywhere — the role label is the provenance signal. This is the
+      // change flagged in
+      // docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md
+      // §chat.routes.ts simplifications (a).
       const history = priorMessagesForHistory.map((m) => {
         const rawContent =
           typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
 
-        // For prior user turns in an `ask` chat that carried an attachment,
-        // re-synthesise the framing the prompt builder emits for the `ask`
-        // action so Venice sees consistent context across turns.
-        // Scene chats take the raw direction — no "User question:" framing.
-        if (action === 'ask' && m.role === 'user' && m.attachmentJson != null) {
+        if (m.role === 'user' && m.attachmentJson != null) {
           const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
-          if (typeof att.selectionText === 'string') {
+          if (typeof att.selectionText === 'string' && att.selectionText.length > 0) {
             return {
               role: 'user' as const,
-              content: renderAskUserContent({
-                freeformInstruction: rawContent,
-                selectionText: att.selectionText,
-              }),
+              content: `${rawContent}\n\nAttached selection: «${att.selectionText}»`,
             };
           }
         }
