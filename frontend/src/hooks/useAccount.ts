@@ -104,8 +104,8 @@ export function useDeleteAccountMutation(): UseMutationResult<void, Error, Delet
         body: input,
       });
     },
-    onSuccess: () => {
-      queryClient.clear();
+    onSuccess: async () => {
+      await resetClientState(queryClient);
       clearSession();
       navigate('/login', { replace: true, state: { accountDeleted: true } });
     },
