@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
 import { api, refreshAccessToken, setAccessToken } from '@/lib/api';
-import { swapSession } from '@/lib/sessionReset';
+import { resetClientState, swapSession } from '@/lib/sessionReset';
 import { type SessionUser, useSessionStore } from '@/store/session';
 
 export interface LoginCredentials {
@@ -129,9 +129,13 @@ export function useAuth(): UseAuthResult {
     } catch {
       // Ignore errors on logout — we clear local state regardless.
     } finally {
+      // resetClientState awaits cancelQueries first, so any in-flight fetch
+      // from this session is aborted before clear() runs and before the
+      // session slice flips to unauthenticated.
+      await resetClientState(queryClient);
       clearSession();
     }
-  }, [clearSession]);
+  }, [clearSession, queryClient]);
 
   const resetPassword = useCallback(
     async ({ username, recoveryCode, newPassword }: ResetPasswordInput): Promise<void> => {
