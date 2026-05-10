@@ -4,7 +4,17 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { RecoveryCodeHandoff } from '@/components/RecoveryCodeHandoff';
 
 describe('<RecoveryCodeHandoff>', () => {
+  const originalIsSecureContext = window.isSecureContext;
+
+  function setSecureContext(value: boolean): void {
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value,
+    });
+  }
+
   afterEach(() => {
+    setSecureContext(originalIsSecureContext);
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -50,6 +60,7 @@ describe('<RecoveryCodeHandoff>', () => {
 
   it('copy button writes the recovery code to the clipboard and flashes "Copied"', async () => {
     vi.useFakeTimers();
+    setSecureContext(true);
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,

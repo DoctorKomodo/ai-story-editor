@@ -58,6 +58,12 @@ const ROWS: ReadonlyArray<RowMeta> = [
     hint: 'Used by the Scene tab — turns a scene direction into a paragraph of prose.',
     multiline: false,
   },
+  {
+    key: 'ask',
+    label: 'Ask',
+    hint: 'Used by the Chat (Ask) tab when answering questions about the story.',
+    multiline: false,
+  },
 ];
 
 export function SettingsPromptsTab(): JSX.Element {

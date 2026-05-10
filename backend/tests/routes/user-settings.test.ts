@@ -89,6 +89,7 @@ describe('User settings routes [B11]', () => {
           summarise: null,
           describe: null,
           scene: null,
+          ask: null,
         },
       },
     });
@@ -300,6 +301,7 @@ describe('[X29] settingsJson.prompts slice', () => {
       summarise: null,
       describe: null,
       scene: null,
+      ask: null,
     });
   });
 

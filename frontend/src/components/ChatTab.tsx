@@ -1,15 +1,22 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
 import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
-import { ChatMessages } from '@/components/ChatMessages';
+import { ChatEmptyState } from '@/components/ChatEmptyState';
+import { AssistantMessageRow } from '@/components/messageRow/AssistantMessageRow';
+import { CopyAction, MessageActions, RegenerateAction } from '@/components/messageRow/primitives';
+import { TranscriptView } from '@/components/messageRow/TranscriptView';
+import { UserMessageRow } from '@/components/messageRow/UserMessageRow';
 import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
+import { useBannerRetry } from '@/hooks/useBannerRetry';
 import {
+  type ChatMessage,
   useChatsQuery,
   useCreateChatMutation,
   useRemoveChatMutation,
   useRenameChatMutation,
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -94,6 +101,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
       lastChatSendArgsRef.current = args;
       const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
         chatId,
+        chapterId: cId, // story-editor-loj: needed so onSuccess can invalidate the chats list
         content: args.content,
         modelId: mId,
         enableWebSearch: args.enableWebSearch,
@@ -120,11 +128,14 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
     [chapterId, selectedModelId, activeChatId, sessions, createChat, renameChat, sendChatMessage],
   );
 
-  const onRetry = useCallback((): void => {
-    const last = lastChatSendArgsRef.current;
-    if (last === null) return;
-    void onSend(last);
-  }, [onSend]);
+  const { onRetry, isDispatching } = useBannerRetry({
+    chatId: activeChatId,
+    chapterId,
+    selectedModelId,
+    mutation: sendChatMessage,
+    lastSendArgsRef: lastChatSendArgsRef,
+    onSend,
+  });
 
   const onDelete = useCallback(
     (id: string) => {
@@ -153,6 +164,40 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
     });
   }, [chapterId, createChat]);
 
+  const { copy: copyToClipboard, status: copyStatus } = useCopyToClipboard();
+
+  const onCopy = useCallback(
+    (message: ChatMessage) => {
+      const text =
+        typeof message.contentJson === 'string'
+          ? message.contentJson
+          : JSON.stringify(message.contentJson);
+      void copyToClipboard(text);
+    },
+    [copyToClipboard],
+  );
+
+  const onRegenerate = useCallback(() => {
+    // Reuse the same guard `onSend` runs through; this catches "no chapter" /
+    // "no model selected" the same way and surfaces the canonical error to
+    // useErrorStore.
+    const guard = checkChatSendGuards({
+      activeChapterId: chapterId,
+      selectedModelId,
+    });
+    if (guard) {
+      useErrorStore.getState().push(guard);
+      return;
+    }
+    if (activeChatId === null) return;
+    void sendChatMessage.mutateAsync({
+      chatId: activeChatId,
+      chapterId: chapterId as string,
+      modelId: selectedModelId as string,
+      retry: true,
+    });
+  }, [chapterId, selectedModelId, activeChatId, sendChatMessage]);
+
   const visibleSessions = sessions.filter((s) => !isDeletePending(s.id));
 
   const pendingEntries = Array.from(pendingDeletes.entries());
@@ -165,7 +210,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         sessions={visibleSessions.map((c) => ({
           id: c.id,
           title: c.title ?? 'Untitled',
-          updatedAt: c.updatedAt,
+          lastActivityAt: c.lastActivityAt,
         }))}
         activeSessionId={activeChatId}
         onSelect={setActiveChatId}
@@ -174,13 +219,81 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         onNew={onNew}
       />
 
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <ChatMessages
-          chatId={activeChatId}
-          sendError={sendChatMessage.error}
-          onRetrySend={onRetry}
-        />
-      </div>
+      <TranscriptView
+        chatId={activeChatId}
+        emptyState={<ChatEmptyState />}
+        sendError={sendChatMessage.error}
+        onRetrySend={() => {
+          void onRetry();
+        }}
+        disableRetrySend={sendChatMessage.isPending || isDispatching}
+      >
+        {(rows) =>
+          rows.map((r) => {
+            if (r.kind === 'persisted' && r.message.role === 'user') {
+              return <UserMessageRow key={r.message.id} message={r.message} />;
+            }
+            if (r.kind === 'persisted' && r.message.role === 'assistant') {
+              return (
+                <AssistantMessageRow
+                  key={r.message.id}
+                  message={r.message}
+                  actions={
+                    <MessageActions>
+                      <CopyAction onClick={() => onCopy(r.message)} status={copyStatus} />
+                      <RegenerateAction
+                        onClick={onRegenerate}
+                        disabled={sendChatMessage.isPending}
+                      />
+                    </MessageActions>
+                  }
+                />
+              );
+            }
+            if (r.kind === 'draft-user') {
+              return (
+                <UserMessageRow
+                  key="draft-user"
+                  message={{
+                    id: 'draft-user',
+                    role: 'user',
+                    contentJson: r.userContent,
+                    attachmentJson: r.attachment,
+                    citationsJson: null,
+                    model: null,
+                    tokens: null,
+                    latencyMs: null,
+                    createdAt: new Date().toISOString(),
+                  }}
+                />
+              );
+            }
+            if (r.kind === 'draft-assistant') {
+              return (
+                <AssistantMessageRow
+                  key="draft-assistant"
+                  message={{
+                    id: 'draft-assistant',
+                    role: 'assistant',
+                    contentJson: r.assistantText,
+                    attachmentJson: null,
+                    citationsJson: null,
+                    model: null,
+                    tokens: null,
+                    latencyMs: null,
+                    createdAt: new Date().toISOString(),
+                  }}
+                  actions={null}
+                  isStreaming
+                  // Chat passes no label — ThinkingDots renders its default
+                  // dots-only animation. (Scene passes "Generating scene…".)
+                />
+              );
+            }
+            return null;
+          })
+        }
+      </TranscriptView>
 
       <div className="relative">
         {lastPending !== null && (

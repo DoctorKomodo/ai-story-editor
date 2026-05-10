@@ -69,6 +69,18 @@ describe('useErrorStore', () => {
     expect(result.current.errors).toEqual([]);
   });
 
+  it('reset() returns data fields to initialState (empty errors)', () => {
+    const { result } = renderHook(() => useErrorStore());
+    act(() => {
+      result.current.push({ severity: 'error', source: 'a', code: null, message: 'x' });
+      result.current.push({ severity: 'warn', source: 'b', code: null, message: 'y' });
+    });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.errors).toEqual([]);
+  });
+
   it('caps at 50 entries; oldest dropped on overflow', () => {
     const { result } = renderHook(() => useErrorStore());
     act(() => {

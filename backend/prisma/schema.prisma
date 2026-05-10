@@ -206,8 +206,12 @@ model Chat {
   titleCiphertext String?
   titleIv         String?
   titleAuthTag    String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  // story-editor-loj: bumped on every child-message create. SessionPicker
+  // reads this for the "X ago" label and the dropdown order. Distinct from
+  // updatedAt, which only fires on Chat-row metadata changes (e.g. rename).
+  lastActivityAt DateTime @default(now())
 
   chapterId String
   chapter   Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
@@ -216,6 +220,8 @@ model Chat {
 
   @@index([chapterId])
   @@index([chapterId, kind])
+  // story-editor-loj: index supports the findManyForChapter ORDER BY.
+  @@index([chapterId, lastActivityAt])
 }
 
 model Message {

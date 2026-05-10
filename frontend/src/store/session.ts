@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetClientStateUsingRegistered } from '@/lib/sessionReset';
 
 export interface SessionUser {
   id: string;
@@ -22,7 +23,7 @@ export interface SessionState {
   sessionExpired: boolean;
   setSession: (user: SessionUser, accessToken: string) => void;
   setUser: (user: SessionUser) => void;
-  clearSession: () => void;
+  clearSession: (opts?: { expired?: boolean }) => void;
   setStatus: (status: SessionStatus) => void;
 }
 
@@ -41,9 +42,13 @@ export const useSessionStore = create<SessionState>((set) => ({
     // without rotating the access token. Keeps status === 'authenticated'.
     set({ user });
   },
-  clearSession: () => {
+  clearSession: (opts) => {
     setAccessToken(null);
-    set({ user: null, status: 'unauthenticated', sessionExpired: false });
+    set({
+      user: null,
+      status: 'unauthenticated',
+      sessionExpired: opts?.expired ?? false,
+    });
   },
   setStatus: (status) => set({ status }),
 }));
@@ -56,22 +61,25 @@ export const useSessionStore = create<SessionState>((set) => ({
 // unauthenticated without the "session expired" banner — which is the
 // intended UX (the user wasn't actively in a session).
 //
-// Single setState (rather than clearSession() + setState) avoids a render
-// where the user is unauthenticated but sessionExpired is still false —
-// React 18's automatic batching may not coalesce two zustand mutations
-// dispatched from a non-React callback, which would briefly flash /login
-// without the banner.
+// `clearSession({ expired: true })` issues a single Zustand `set` — so
+// user, status, and sessionExpired are written atomically. React 18's
+// automatic batching may not coalesce two separate zustand mutations from
+// a non-React callback, which would briefly flash /login without the
+// "session expired" banner — hence delegating to clearSession rather than
+// any two-call approach.
 //
 // Exported so tests can install the production wiring after
 // `resetApiClientForTests` strips it; otherwise tests would have to inline
 // a near-duplicate of the same body and silently drift if this changes.
 export function handleUnauthorizedAccess(): void {
-  setAccessToken(null);
-  useSessionStore.setState({
-    user: null,
-    status: 'unauthenticated',
-    sessionExpired: true,
-  });
+  // Fire-and-forget: the registry call is async (cancelQueries), but
+  // clearSession below must remain synchronous so the existing single-
+  // setState contract is preserved (avoids a render where the user is
+  // unauthenticated but sessionExpired is still false). Awaiting here
+  // would split the state change across a microtask. Promise rejection
+  // here is unreachable in practice — cancelQueries / clear are infallible.
+  void resetClientStateUsingRegistered();
+  useSessionStore.getState().clearSession({ expired: true });
 }
 
 setUnauthorizedHandler(handleUnauthorizedAccess);

@@ -233,22 +233,6 @@ describe('POST /api/ai/complete [V5]', () => {
     expect(res.status).toBe(400);
   });
 
-  it('returns 400 when action is freeform but freeformInstruction is missing', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
-      .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({
-        action: 'freeform',
-        selectedText: 'some text',
-        chapterId: 'c',
-        storyId: 's',
-        modelId: 'm',
-        // freeformInstruction intentionally absent
-      });
-    expect(res.status).toBe(400);
-  });
-
   it('returns 409 venice_key_required when user has no BYOK key', async () => {
     const accessToken = await registerAndLogin();
     const _req = makeFakeReq(accessToken);
@@ -430,6 +414,13 @@ describe('POST /api/ai/complete [V5]', () => {
     expect((requestBody.messages as unknown[]).length).toBeGreaterThan(0);
     expect(typeof requestBody.max_completion_tokens).toBe('number');
     expect(requestBody.stream).toBe(true);
+
+    // [k1r] Canonical-shape invariant: chapter context lives in system, not user.
+    const wireMessages = requestBody.messages as Array<{ role: string; content: string }>;
+    expect(wireMessages[0]?.role).toBe('system');
+    // The setupStoryAndChapter helper writes a non-empty chapter body, so
+    // 'Chapter so far:' must appear in the system message.
+    expect(wireMessages[0]?.content).toContain('Chapter so far:');
   });
 
   it('max_completion_tokens: per-model override above model cap → model cap wins (X28)', async () => {

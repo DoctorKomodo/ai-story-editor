@@ -23,10 +23,17 @@ export interface InlineAIResultState {
   inlineAIResult: InlineAIResultValue | null;
   setInlineAIResult: (result: InlineAIResultValue | null) => void;
   clear: () => void;
+  reset: () => void;
 }
 
-export const useInlineAIResultStore = create<InlineAIResultState>((set) => ({
+const initialState: { inlineAIResult: InlineAIResultValue | null } = {
   inlineAIResult: null,
+};
+
+export const useInlineAIResultStore = create<InlineAIResultState>((set) => ({
+  ...initialState,
   setInlineAIResult: (inlineAIResult) => set({ inlineAIResult }),
-  clear: () => set({ inlineAIResult: null }),
+  /** Domain action: dismiss the inline AI result. For account-switch lifecycle reset, call `reset()` instead. */
+  clear: () => set(initialState),
+  reset: () => set(initialState),
 }));

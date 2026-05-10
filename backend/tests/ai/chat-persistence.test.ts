@@ -2,7 +2,7 @@
 //
 // Covers:
 //   - POST /api/chapters/:chapterId/chats — create, 201, decrypted title
-//   - GET  /api/chapters/:chapterId/chats — list sorted by createdAt asc
+//   - GET  /api/chapters/:chapterId/chats — list sorted by lastActivityAt desc, createdAt desc
 //   - Auth gates on all three endpoints (401 without Bearer)
 //   - Ownership gates (404 when chapter/chat not owned)
 //   - POST /api/chats/:chatId/messages — SSE streams, both messages persisted
@@ -253,15 +253,17 @@ describe('Chat persistence [V15]', () => {
 
   // ── List chats ──────────────────────────────────────────────────────────────
 
-  it('GET /api/chapters/:chapterId/chats returns chats sorted by createdAt asc', async () => {
+  it('GET /api/chapters/:chapterId/chats returns chats sorted by lastActivityAt desc, createdAt desc', async () => {
     const accessToken = await registerAndLogin();
     const req = makeFakeReq(accessToken);
     const { chapterId } = await setupStoryAndChapter(req);
 
-    // Create two chats with a small delay so createdAt differs.
+    // Create two dormant chats (no messages). lastActivityAt === createdAt for
+    // both, so the tie-breaker (createdAt desc) determines order: the newer
+    // chat ('Second Chat') should appear first.
     await createChatRepo(req).create({ chapterId, title: 'First Chat' });
     // Tiny pause to guarantee distinct timestamps.
-    await new Promise((r) => setTimeout(r, 5));
+    await new Promise((r) => setTimeout(r, 20));
     await createChatRepo(req).create({ chapterId, title: 'Second Chat' });
 
     const res = await request(app)
@@ -270,8 +272,9 @@ describe('Chat persistence [V15]', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.chats).toHaveLength(2);
-    expect(res.body.chats[0].title).toBe('First Chat');
-    expect(res.body.chats[1].title).toBe('Second Chat');
+    // story-editor-loj: newest-created dormant chat comes first (createdAt desc tie-breaker)
+    expect(res.body.chats[0].title).toBe('Second Chat');
+    expect(res.body.chats[1].title).toBe('First Chat');
     // Chats include messageCount.
     expect(typeof res.body.chats[0].messageCount).toBe('number');
   });

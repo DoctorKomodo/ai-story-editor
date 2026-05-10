@@ -20,4 +20,10 @@ describe('useSelectedCharacterStore', () => {
     useSelectedCharacterStore.getState().setSelectedCharacterId(null);
     expect(useSelectedCharacterStore.getState().selectedCharacterId).toBeNull();
   });
+
+  it('reset() returns data fields to initialState', () => {
+    useSelectedCharacterStore.getState().setSelectedCharacterId('char-99');
+    useSelectedCharacterStore.getState().reset();
+    expect(useSelectedCharacterStore.getState().selectedCharacterId).toBeNull();
+  });
 });
