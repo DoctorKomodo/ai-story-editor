@@ -467,9 +467,13 @@ export function createChatMessagesRouter() {
           content: rawContent,
         };
       });
-      // [SC6] On retry the trailing user turn is already in `history`; do
-      // NOT append synthesisedUserMsg again or the model would see a
-      // duplicate user turn. On a normal turn, append as usual.
+      // [k1r] On retry the trailing history entry equals what
+      // buildUserPayload would emit for the same inputs (both are built from
+      // lastUserMsg.contentJson + lastUserMsg.attachmentJson under the
+      // unified history mapping). So the retry path uses [systemMsg, ...history]
+      // and the trailing entry IS the user message — chapter / characters /
+      // world-notes context lives in systemMsg in both branches, so the
+      // 9ph context-loss bug is structurally impossible.
       const messages: Array<{ role: MessageRole; content: string }> = body.retry
         ? [systemMsg, ...history]
         : [systemMsg, ...history, synthesisedUserMsg];
