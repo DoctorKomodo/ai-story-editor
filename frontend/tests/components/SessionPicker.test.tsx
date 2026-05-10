@@ -11,8 +11,8 @@ const LABELS = {
 } as const;
 
 const sessions: Session[] = [
-  { id: 's1', title: 'Veranda', updatedAt: '2026-05-07T12:00:00Z' },
-  { id: 's2', title: 'Cellar', updatedAt: '2026-05-06T12:00:00Z' },
+  { id: 's1', title: 'Veranda', lastActivityAt: '2026-05-07T12:00:00Z' },
+  { id: 's2', title: 'Cellar', lastActivityAt: '2026-05-06T12:00:00Z' },
 ];
 
 describe('SessionPicker', () => {

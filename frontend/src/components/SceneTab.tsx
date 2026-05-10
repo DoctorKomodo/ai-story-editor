@@ -121,6 +121,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       try {
         await sendChatMessage.mutateAsync({
           chatId,
+          chapterId: cId, // story-editor-loj: needed so onSuccess can invalidate the chats list
           content: args.content,
           modelId: mId,
           enableWebSearch: args.enableWebSearch,
@@ -147,6 +148,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   // table tested in tests/hooks/useBannerRetry.test.tsx.
   const { onRetry, isDispatching } = useBannerRetry({
     chatId: activeChatId,
+    chapterId,
     selectedModelId,
     mutation: sendChatMessage,
     lastSendArgsRef: lastSceneSendArgsRef,
@@ -154,13 +156,22 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   });
 
   const onRegenerate = useCallback(() => {
-    if (activeChatId === null || selectedModelId === null) return;
+    // Reuse the same guard `onSend` runs through; this catches "no chapter" /
+    // "no model selected" the same way and surfaces the canonical error to
+    // useErrorStore.
+    const guard = checkChatSendGuards({ activeChapterId: chapterId, selectedModelId });
+    if (guard) {
+      useErrorStore.getState().push(guard);
+      return;
+    }
+    if (activeChatId === null) return;
     void sendChatMessage.mutateAsync({
       chatId: activeChatId,
-      modelId: selectedModelId,
+      chapterId: chapterId as string,
+      modelId: selectedModelId as string,
       retry: true,
     });
-  }, [activeChatId, selectedModelId, sendChatMessage]);
+  }, [activeChatId, chapterId, selectedModelId, sendChatMessage]);
 
   const { copy: copyToClipboard, status: copyStatus } = useCopyToClipboard();
 
@@ -226,7 +237,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         sessions={visibleSessions.map((s) => ({
           id: s.id,
           title: s.title ?? 'Untitled',
-          updatedAt: s.updatedAt,
+          lastActivityAt: s.lastActivityAt,
         }))}
         activeSessionId={activeChatId}
         onSelect={setActiveChatId}

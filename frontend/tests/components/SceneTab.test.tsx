@@ -131,8 +131,9 @@ describe('SceneTab — [7] soft-delete with undo', () => {
               chapterId: 'ch1',
               kind: 'scene',
               messageCount: 0,
-              updatedAt: new Date().toISOString(),
               createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              lastActivityAt: new Date().toISOString(),
             },
           ],
         });
@@ -234,6 +235,7 @@ describe('SceneTab — [1] session picker integration', () => {
                 messageCount: 0,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
+                lastActivityAt: new Date().toISOString(),
               },
             ],
           }),
@@ -249,6 +251,10 @@ describe('SceneTab — [1] session picker integration', () => {
   });
 
   it('switches active session when user clicks a different option in the picker', async () => {
+    // s1 is the most-recently-used session (newest lastActivityAt) so it
+    // auto-selects as sessions[0] under the newest-first invariant.
+    const recentTime = new Date().toISOString();
+    const olderTime = new Date(Date.now() - 60_000).toISOString();
     fetchMock.mockImplementation((url: string, _init?: RequestInit) => {
       if (typeof url === 'string' && url.includes('/messages')) {
         return Promise.resolve(jsonResponse(200, { messages: [] }));
@@ -263,8 +269,9 @@ describe('SceneTab — [1] session picker integration', () => {
                 chapterId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
+                createdAt: olderTime,
+                updatedAt: recentTime,
+                lastActivityAt: recentTime,
               },
               {
                 id: 's2',
@@ -272,8 +279,9 @@ describe('SceneTab — [1] session picker integration', () => {
                 chapterId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
+                createdAt: olderTime,
+                updatedAt: olderTime,
+                lastActivityAt: olderTime,
               },
             ],
           }),
@@ -331,6 +339,7 @@ describe('SceneTab — [2] auto-rename on first turn', () => {
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
+      lastActivityAt: now,
     };
 
     let chatCreated = false;
@@ -432,6 +441,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 messageCount: 0,
                 createdAt: '',
                 updatedAt: new Date().toISOString(),
+                lastActivityAt: new Date().toISOString(),
               },
             ],
           }),
@@ -471,6 +481,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 messageCount: 0,
                 createdAt: '',
                 updatedAt: new Date().toISOString(),
+                lastActivityAt: new Date().toISOString(),
               },
             ],
           }),
@@ -560,6 +571,7 @@ describe('SceneTab — [4] insert-at-end', () => {
         messageCount: 2,
         createdAt: now,
         updatedAt: now,
+        lastActivityAt: now,
       },
     ]);
 
@@ -579,6 +591,7 @@ describe('SceneTab — [4] insert-at-end', () => {
                 messageCount: 2,
                 createdAt: now,
                 updatedAt: now,
+                lastActivityAt: now,
               },
             ],
           }),
@@ -663,6 +676,7 @@ describe('SceneTab — [5] retry semantics', () => {
         messageCount: 2,
         createdAt: now,
         updatedAt: now,
+        lastActivityAt: now,
       },
     ]);
 
@@ -682,6 +696,7 @@ describe('SceneTab — [5] retry semantics', () => {
                 messageCount: 2,
                 createdAt: now,
                 updatedAt: now,
+                lastActivityAt: now,
               },
             ],
           }),
@@ -740,6 +755,7 @@ describe('SceneTab — [6] stop during streaming', () => {
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
+      lastActivityAt: now,
     };
 
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -813,6 +829,7 @@ describe('SceneTab — [8] enableWebSearch propagation', () => {
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
+      lastActivityAt: now,
     };
 
     let chatCreated = false;
@@ -905,6 +922,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
       messageCount: 1,
       createdAt: now,
       updatedAt: now,
+      lastActivityAt: now,
     };
 
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -957,6 +975,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
       messageCount: 1,
       createdAt: now,
       updatedAt: now,
+      lastActivityAt: now,
     };
 
     const userMsg = {

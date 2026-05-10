@@ -46,22 +46,33 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   async function create(input: MessageCreateInput) {
     const userId = resolveUserId(req);
     await ensureChatOwned(client, input.chatId, userId);
-    const row = await client.message.create({
-      data: {
-        chatId: input.chatId,
-        role: input.role,
-        model: input.model ?? null,
-        tokens: input.tokens ?? null,
-        latencyMs: input.latencyMs ?? null,
-        // Post-[E11]: JSON payloads live only in the ciphertext triples —
-        // serialised + encrypted. Plaintext `contentJson` / `attachmentJson`
-        // columns were dropped.
-        ...writeEncrypted(req, 'contentJson', serialiseJsonField(input.contentJson)),
-        ...writeEncrypted(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
-        // [V26] `citationsJson` follows the same ciphertext-triple pattern.
-        // Null input → null triple → `projectDecrypted` returns `null` on read.
-        ...writeEncrypted(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
-      },
+    // story-editor-loj: bump Chat.lastActivityAt so findManyForChapter can
+    // order by recency. Transactional: a message insert without the parent's
+    // lastActivityAt bump (or vice versa) would leave the list ordering stale.
+    const row = await client.$transaction(async (tx) => {
+      const created = await tx.message.create({
+        data: {
+          chatId: input.chatId,
+          role: input.role,
+          model: input.model ?? null,
+          tokens: input.tokens ?? null,
+          latencyMs: input.latencyMs ?? null,
+          // Post-[E11]: JSON payloads live only in the ciphertext triples —
+          // serialised + encrypted. Plaintext `contentJson` / `attachmentJson`
+          // columns were dropped.
+          ...writeEncrypted(req, 'contentJson', serialiseJsonField(input.contentJson)),
+          ...writeEncrypted(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
+          // [V26] `citationsJson` follows the same ciphertext-triple pattern.
+          // Null input → null triple → `projectDecrypted` returns `null` on read.
+          ...writeEncrypted(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
+        },
+      });
+      await tx.chat.update({
+        where: { id: input.chatId },
+        data: { lastActivityAt: new Date() },
+        select: { id: true },
+      });
+      return created;
     });
     return shape(row, req);
   }

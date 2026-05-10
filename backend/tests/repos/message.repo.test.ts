@@ -263,3 +263,39 @@ describe('MessageRepo.deleteAllAfter', () => {
     expect(stillThereA.length).toBe(2);
   });
 });
+
+async function setupChatFixture() {
+  const { user, chapterId } = await createUserWithChapter();
+  const chatRepo = createChatRepo(user.req);
+  const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+  return { req: user.req, chatId: chat.id as string };
+}
+
+describe('messageRepo.create — Chat.lastActivityAt bump (story-editor-loj)', () => {
+  beforeEach(resetAllTables);
+  afterEach(resetAllTables);
+
+  it("bumps the parent chat's lastActivityAt when a message is created", async () => {
+    const { req, chatId } = await setupChatFixture();
+
+    const chatBefore = await prisma.chat.findUnique({ where: { id: chatId } });
+    if (chatBefore === null) throw new Error('test fixture: chat not found');
+    const before = chatBefore.lastActivityAt;
+
+    // 15ms sleep so the DB timestamp can advance. Postgres has microsecond
+    // precision but JS Date.now() resolves to ms; a sub-ms gap on fast
+    // hardware can collide.
+    await new Promise((r) => setTimeout(r, 15));
+
+    await createMessageRepo(req).create({
+      chatId,
+      role: 'user',
+      contentJson: { type: 'doc', content: [{ type: 'text', text: 'hello' }] },
+    });
+
+    const chatAfter = await prisma.chat.findUnique({ where: { id: chatId } });
+    if (chatAfter === null) throw new Error('post-create: chat not found');
+
+    expect(chatAfter.lastActivityAt.getTime()).toBeGreaterThan(before.getTime());
+  });
+});

@@ -50,6 +50,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
         const ref = useRef(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
+          chapterId: 'chapter-1',
           selectedModelId: 'venice-test',
           mutation,
           lastSendArgsRef: ref,
@@ -83,6 +84,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
         const ref = useRef(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
+          chapterId: 'chapter-1',
           selectedModelId: 'venice-test',
           mutation,
           lastSendArgsRef: ref,
@@ -98,6 +100,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
 
     expect(mutation.mutateAsync).toHaveBeenCalledWith({
       chatId: 'chat-1',
+      chapterId: 'chapter-1',
       modelId: 'venice-test',
       retry: true,
     });
@@ -119,6 +122,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
         const ref = useRef(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
+          chapterId: 'chapter-1',
           selectedModelId: 'venice-test',
           mutation,
           lastSendArgsRef: ref,
@@ -153,6 +157,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
         const ref = useRef(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
+          chapterId: 'chapter-1',
           selectedModelId: 'venice-test',
           mutation,
           lastSendArgsRef: ref,
@@ -191,6 +196,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
         const ref = useRef(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
+          chapterId: 'chapter-1',
           selectedModelId: 'venice-test',
           mutation,
           lastSendArgsRef: ref,
@@ -233,6 +239,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
         const ref = useRef(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
+          chapterId: 'chapter-1',
           selectedModelId: 'venice-test',
           mutation,
           lastSendArgsRef: ref,
@@ -264,6 +271,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
         const ref = useRef(null);
         return useBannerRetry({
           chatId: null,
+          chapterId: null,
           selectedModelId: null,
           mutation,
           lastSendArgsRef: ref as never,

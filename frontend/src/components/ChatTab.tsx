@@ -101,6 +101,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
       lastChatSendArgsRef.current = args;
       const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
         chatId,
+        chapterId: cId, // story-editor-loj: needed so onSuccess can invalidate the chats list
         content: args.content,
         modelId: mId,
         enableWebSearch: args.enableWebSearch,
@@ -129,6 +130,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
 
   const { onRetry, isDispatching } = useBannerRetry({
     chatId: activeChatId,
+    chapterId,
     selectedModelId,
     mutation: sendChatMessage,
     lastSendArgsRef: lastChatSendArgsRef,
@@ -190,6 +192,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
     if (activeChatId === null) return;
     void sendChatMessage.mutateAsync({
       chatId: activeChatId,
+      chapterId: chapterId as string,
       modelId: selectedModelId as string,
       retry: true,
     });
@@ -207,7 +210,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         sessions={visibleSessions.map((c) => ({
           id: c.id,
           title: c.title ?? 'Untitled',
-          updatedAt: c.updatedAt,
+          lastActivityAt: c.lastActivityAt,
         }))}
         activeSessionId={activeChatId}
         onSelect={setActiveChatId}

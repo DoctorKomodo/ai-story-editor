@@ -132,6 +132,18 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
     const kinds = res.body.chats.map((c: { kind: string }) => c.kind).sort();
     expect(kinds).toEqual(['ask', 'scene']);
   });
+
+  // [loj] Each chat in the response must carry a lastActivityAt string field so
+  // the SessionPicker "X ago" label has its recency source.
+  it('response chats each carry a lastActivityAt string field', async () => {
+    const { agent, chapterId } = await setup('chat-lastactivity-u8');
+    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
+
+    const res = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
+    expect(res.body.chats).toHaveLength(1);
+    expect(typeof res.body.chats[0].lastActivityAt).toBe('string');
+    expect(res.body.chats[0].lastActivityAt).not.toBe('');
+  });
 });
 
 // ─── Fixtures shared by SC5/SC6/SC8 suites ───────────────────────────────────

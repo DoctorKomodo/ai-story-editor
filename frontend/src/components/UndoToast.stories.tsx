@@ -71,12 +71,12 @@ function InContextDemo({ pickerOpen }: { pickerOpen: boolean }): JSX.Element {
     {
       id: 's1',
       title: 'Veranda confrontation',
-      updatedAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
+      lastActivityAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
     },
     {
       id: 's2',
       title: 'Cellar discovery',
-      updatedAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
+      lastActivityAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
     },
   ];
   const [activeId, setActiveId] = useState<string>('s1');

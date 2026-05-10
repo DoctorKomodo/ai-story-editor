@@ -116,8 +116,9 @@ describe('ChatTab — smoke', () => {
               title: 'How do I describe rain?',
               chapterId: 'ch1',
               kind: 'ask',
-              updatedAt: new Date().toISOString(),
               createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              lastActivityAt: new Date().toISOString(),
             },
           ],
         });
@@ -193,6 +194,7 @@ describe('ChatTab — smoke', () => {
       messageCount: 0,
       createdAt: now,
       updatedAt: now,
+      lastActivityAt: now,
     };
 
     // Stateful mock: after the POST create, GET /chats returns the new session.
@@ -305,6 +307,7 @@ describe('ChatTab — smoke', () => {
               messageCount: 0,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
+              lastActivityAt: new Date().toISOString(),
             },
           ],
         });

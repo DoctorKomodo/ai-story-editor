@@ -5,12 +5,12 @@ const sessions: Session[] = [
   {
     id: 's1',
     title: 'Veranda confrontation',
-    updatedAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
+    lastActivityAt: new Date(Date.now() - 2 * 3600_000).toISOString(),
   },
   {
     id: 's2',
     title: 'Cellar discovery',
-    updatedAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
+    lastActivityAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
   },
 ];
 
@@ -61,12 +61,12 @@ export const ChatLabels: Story = {
       {
         id: 'c1',
         title: 'On the cellar discovery',
-        updatedAt: new Date(Date.now() - 1_800_000).toISOString(),
+        lastActivityAt: new Date(Date.now() - 1_800_000).toISOString(),
       },
       {
         id: 'c2',
         title: 'Pacing notes',
-        updatedAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
+        lastActivityAt: new Date(Date.now() - 26 * 3600_000).toISOString(),
       },
     ],
     activeSessionId: 'c1',
