@@ -95,6 +95,17 @@ export const ActionsDisabled: StoryT = {
   ),
 };
 
+export const CopyActionStates: StoryT = {
+  name: 'CopyAction — Status states',
+  render: () => (
+    <MessageActions>
+      <CopyAction onClick={() => {}} status="idle" />
+      <CopyAction onClick={() => {}} status="copied" />
+      <CopyAction onClick={() => {}} status="failed" />
+    </MessageActions>
+  ),
+};
+
 export const CitationsSlotStory: StoryT = {
   name: 'CitationsSlot',
   render: () => (

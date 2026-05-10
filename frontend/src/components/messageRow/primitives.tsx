@@ -76,6 +76,7 @@ export function MessageActions({ children }: MessageActionsProps): JSX.Element {
 export interface CopyActionProps {
   onClick: () => void;
   disabled?: boolean;
+  status?: 'idle' | 'copied' | 'failed';
 }
 
 function CopyIcon(): JSX.Element {
@@ -97,7 +98,8 @@ function CopyIcon(): JSX.Element {
   );
 }
 
-export function CopyAction({ onClick, disabled }: CopyActionProps): JSX.Element {
+export function CopyAction({ onClick, disabled, status = 'idle' }: CopyActionProps): JSX.Element {
+  const label = status === 'copied' ? 'Copied' : status === 'failed' ? "Couldn't copy" : null;
   return (
     <button
       type="button"
@@ -108,6 +110,9 @@ export function CopyAction({ onClick, disabled }: CopyActionProps): JSX.Element 
       disabled={disabled}
     >
       <CopyIcon />
+      <span aria-live="polite" aria-atomic="true" className="text-[12px] empty:hidden">
+        {label}
+      </span>
     </button>
   );
 }
