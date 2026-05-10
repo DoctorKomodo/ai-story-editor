@@ -381,11 +381,11 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
     it(`action=${action}: chapter / world / characters live in messages[0] (system)`, () => {
       const out = buildPrompt(inputFor(action));
       expect(out.messages[0]?.role).toBe('system');
-      expect(out.messages[0]?.content).toContain('Chapter so far:');
+      expect(out.messages[0]?.content).toContain('<chapter_so_far>');
       expect(out.messages[0]?.content).toContain('CHAPTER_BODY_SENTINEL');
-      expect(out.messages[0]?.content).toContain('World notes:');
+      expect(out.messages[0]?.content).toContain('<world_notes>');
       expect(out.messages[0]?.content).toContain('WORLD_NOTES_SENTINEL');
-      expect(out.messages[0]?.content).toContain('Characters:');
+      expect(out.messages[0]?.content).toContain('<characters>');
       expect(out.messages[0]?.content).toContain('CHAR_TRAIT_SENTINEL');
     });
 
@@ -398,6 +398,84 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
       expect(userContent).not.toContain('CHAR_TRAIT_SENTINEL');
     });
   }
+});
+
+// ─── charactersBlock XML rendering (h0z) ────────────────────────────────────
+
+describe('charactersBlock XML rendering (h0z)', () => {
+  function baseInput(characters: import('../../src/services/prompt.service').CharacterContext[]) {
+    return {
+      action: 'continue' as const,
+      selectedText: '',
+      chapterContent: '',
+      characters,
+      worldNotes: null,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  it('renders <characters>...</characters> with one <character> per entry', () => {
+    const out = buildPrompt(
+      baseInput([
+        { name: 'Imogen Thorne', role: 'protagonist', keyTraits: 'wry' },
+        { name: 'Felix', role: 'rival', keyTraits: 'vain' },
+      ]),
+    );
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<characters>\n');
+    expect(sys).toContain('\n</characters>');
+    expect(sys).toContain('<character name="Imogen Thorne" role="protagonist">wry</character>');
+    expect(sys).toContain('<character name="Felix" role="rival">vain</character>');
+  });
+
+  it('self-closing form when keyTraits is null', () => {
+    const out = buildPrompt(baseInput([{ name: 'Bystander', role: null, keyTraits: null }]));
+    expect(out.messages[0].content).toContain('<character name="Bystander" />');
+  });
+
+  it('omits role attribute when role is null', () => {
+    const out = buildPrompt(baseInput([{ name: 'X', role: null, keyTraits: 'flat' }]));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<character name="X">flat</character>');
+    expect(sys).not.toMatch(/role=""/);
+    expect(sys).not.toMatch(/role="null"/);
+  });
+
+  it('empty-name character is skipped entirely', () => {
+    const out = buildPrompt(
+      baseInput([
+        { name: '', role: 'rival', keyTraits: 'noise' },
+        { name: 'Real', role: 'protagonist', keyTraits: 'ok' },
+      ]),
+    );
+    const sys = out.messages[0].content;
+    expect(sys).not.toContain('<character name=""');
+    expect(sys).toContain('<character name="Real" role="protagonist">ok</character>');
+  });
+
+  it('characters block omitted entirely when list is empty', () => {
+    const out = buildPrompt(baseInput([]));
+    expect(out.messages[0].content).not.toContain('<characters>');
+  });
+
+  it('escapes & < > " in attributes and & < > in text', () => {
+    const out = buildPrompt(
+      baseInput([{ name: 'A & B "the kid"', role: '<rival>', keyTraits: 'has < and > and &' }]),
+    );
+    const sys = out.messages[0].content;
+    expect(sys).toContain('name="A &amp; B &quot;the kid&quot;"');
+    expect(sys).toContain('role="&lt;rival&gt;"');
+    expect(sys).toContain('>has &lt; and &gt; and &amp;</character>');
+  });
+
+  it('collision test: name containing </character> does not close the tag prematurely', () => {
+    const out = buildPrompt(baseInput([{ name: '</character>', role: null, keyTraits: 'ok' }]));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('name="&lt;/character&gt;"');
+    expect(sys).toContain('<character name="&lt;/character&gt;">ok</character>');
+  });
 });
 
 // ─── toCharacterContext (h0z) ────────────────────────────────────────────────

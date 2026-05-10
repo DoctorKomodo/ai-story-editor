@@ -141,6 +141,33 @@ export function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4);
 }
 
+// ─── XML escape helpers (h0z) ────────────────────────────────────────────────
+// Used wherever decrypted user content is interpolated into XML wrappers in
+// the system-message content. Escape semantics: input is plaintext (escape is
+// non-idempotent — a literal "&amp;" in user input renders as "&amp;amp;").
+
+function escapeXmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeXmlAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ─── Per-character renderer (h0z) ────────────────────────────────────────────
+
+function renderCharacterTag(c: CharacterContext): string {
+  if (!c.name) return ''; // skip malformed empty-name entries entirely
+  const nameAttr = ` name="${escapeXmlAttr(c.name)}"`;
+  const roleAttr = c.role ? ` role="${escapeXmlAttr(c.role)}"` : '';
+  if (!c.keyTraits) return `<character${nameAttr}${roleAttr} />`;
+  return `<character${nameAttr}${roleAttr}>${escapeXmlText(c.keyTraits)}</character>`;
+}
+
 // ─── Resolution helper ────────────────────────────────────────────────────────
 
 function resolvePrompt(userPrompts: UserPrompts | undefined, key: UserPromptKey): string {
@@ -214,16 +241,10 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
 
   const charactersBlock =
     input.characters.length > 0
-      ? `Characters:\n${input.characters
-          .map((c) => {
-            const role = c.role ?? '';
-            const traits = c.keyTraits ?? '';
-            if (role && traits) return `- ${c.name} (${role}): ${traits}`;
-            if (role) return `- ${c.name} (${role})`;
-            if (traits) return `- ${c.name}: ${traits}`;
-            return `- ${c.name}`;
-          })
-          .join('\n')}`
+      ? `<characters>\n${input.characters
+          .map(renderCharacterTag)
+          .filter((s) => s.length > 0)
+          .join('\n')}\n</characters>`
       : '';
 
   const taskTemplate = taskTemplateFor(input.action, input.userPrompts);
