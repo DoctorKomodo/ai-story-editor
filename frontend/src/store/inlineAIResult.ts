@@ -33,6 +33,7 @@ const initialState: { inlineAIResult: InlineAIResultValue | null } = {
 export const useInlineAIResultStore = create<InlineAIResultState>((set) => ({
   ...initialState,
   setInlineAIResult: (inlineAIResult) => set({ inlineAIResult }),
+  /** Domain action: dismiss the inline AI result. For account-switch lifecycle reset, call `reset()` instead. */
   clear: () => set(initialState),
   reset: () => set(initialState),
 }));

@@ -22,7 +22,7 @@ describe('useSelectedCharacterStore', () => {
   });
 
   it('reset() returns data fields to initialState', () => {
-    useSelectedCharacterStore.setState({ selectedCharacterId: 'char-99' });
+    useSelectedCharacterStore.getState().setSelectedCharacterId('char-99');
     useSelectedCharacterStore.getState().reset();
     expect(useSelectedCharacterStore.getState().selectedCharacterId).toBeNull();
   });

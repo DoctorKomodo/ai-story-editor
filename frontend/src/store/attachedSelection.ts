@@ -25,6 +25,7 @@ const initialState: { attachedSelection: AttachedSelectionValue | null } = {
 export const useAttachedSelectionStore = create<AttachedSelectionState>((set) => ({
   ...initialState,
   setAttachedSelection: (attachedSelection) => set({ attachedSelection }),
+  /** Domain action: detach the current selection. For account-switch lifecycle reset, call `reset()` instead. */
   clear: () => set(initialState),
   reset: () => set(initialState),
 }));

@@ -46,7 +46,7 @@ export interface ChatDraft {
 }
 
 const initialState: { drafts: Record<string, ChatDraft> } = {
-  drafts: {} as Record<string, ChatDraft>,
+  drafts: {},
 };
 
 interface ChatDraftState {

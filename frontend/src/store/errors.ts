@@ -22,7 +22,7 @@ export interface ErrorStore {
 }
 
 const initialState: { errors: AppError[] } = {
-  errors: [] as AppError[],
+  errors: [],
 };
 
 const MAX_ENTRIES = 50;
@@ -49,6 +49,7 @@ export const useErrorStore = create<ErrorStore>((set) => ({
   dismiss: (id) => {
     set((state) => ({ errors: state.errors.filter((e) => e.id !== id) }));
   },
+  /** Domain action: dismiss all error toasts. For account-switch lifecycle reset, call `reset()` instead. */
   clear: () => {
     set(initialState);
   },

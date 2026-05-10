@@ -20,6 +20,7 @@ const initialState: { selection: SelectionValue | null } = {
 export const useSelectionStore = create<SelectionState>((set) => ({
   ...initialState,
   setSelection: (selection) => set({ selection }),
+  /** Domain action: clear the current TipTap selection. For account-switch lifecycle reset, call `reset()` instead. */
   clear: () => set(initialState),
   reset: () => set(initialState),
 }));
