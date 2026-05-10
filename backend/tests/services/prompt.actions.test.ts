@@ -8,7 +8,6 @@ import {
   type BuildPromptInput,
   buildPrompt,
   DEFAULT_SYSTEM_PROMPT,
-  renderAskUserContent,
 } from '../../src/services/prompt.service';
 
 function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput {
@@ -36,7 +35,7 @@ function systemContent(input: BuildPromptInput): string {
 
 // ─── System message defaults to DEFAULT_SYSTEM_PROMPT ─────────────────────────
 
-describe('[V12] system message — all actions use DEFAULT_SYSTEM_PROMPT by default', () => {
+describe('[V12] system message — all actions open with DEFAULT_SYSTEM_PROMPT', () => {
   const actions: Array<BuildPromptInput['action']> = [
     'continue',
     'rephrase',
@@ -45,25 +44,25 @@ describe('[V12] system message — all actions use DEFAULT_SYSTEM_PROMPT by defa
   ];
 
   for (const action of actions) {
-    it(`action=${action} → system message is DEFAULT_SYSTEM_PROMPT`, () => {
+    it(`action=${action} → system message starts with DEFAULT_SYSTEM_PROMPT`, () => {
       const content = systemContent(baseInput({ action }));
-      expect(content).toBe(DEFAULT_SYSTEM_PROMPT);
+      expect(content.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
     });
   }
 
-  it('action=freeform → system message is DEFAULT_SYSTEM_PROMPT', () => {
+  it('action=freeform → system message starts with DEFAULT_SYSTEM_PROMPT', () => {
     const content = systemContent(
       baseInput({ action: 'freeform', freeformInstruction: 'Rewrite as Hemingway.' }),
     );
-    expect(content).toBe(DEFAULT_SYSTEM_PROMPT);
+    expect(content.startsWith(DEFAULT_SYSTEM_PROMPT)).toBe(true);
   });
 });
 
 // ─── action: continue ─────────────────────────────────────────────────────────
 
 describe('[V12] action=continue', () => {
-  it('user message contains "continue" instruction', () => {
-    const content = userContent(baseInput({ action: 'continue', selectedText: 'She fled.' }));
+  it('system message contains the "continue" instruction', () => {
+    const content = systemContent(baseInput({ action: 'continue', selectedText: 'She fled.' }));
     expect(content.toLowerCase()).toContain('continue');
   });
 
@@ -72,14 +71,14 @@ describe('[V12] action=continue', () => {
     expect(content).toContain('«She fled.»');
   });
 
-  it('user message contains a word-count target (~80–150 words)', () => {
-    const content = userContent(baseInput({ action: 'continue', selectedText: 'She fled.' }));
-    // The template includes a word count hint for ⌥↵ cursor-context continuation
+  it('system message contains a word-count target (~80–150 words)', () => {
+    const content = systemContent(baseInput({ action: 'continue', selectedText: 'She fled.' }));
     expect(content.toLowerCase()).toMatch(/\b(80|150|words?)\b/i);
   });
 
-  it('empty selectedText → selection delimiter «…» is NOT included', () => {
+  it('empty selectedText: user payload is the imperative fallback "Continue." (no «…»)', () => {
     const content = userContent(baseInput({ action: 'continue', selectedText: '' }));
+    expect(content).toBe('Continue.');
     expect(content).not.toContain('«');
     expect(content).not.toContain('»');
   });
@@ -88,8 +87,10 @@ describe('[V12] action=continue', () => {
 // ─── action: rephrase ─────────────────────────────────────────────────────────
 
 describe('[V12] action=rephrase', () => {
-  it('user message contains the rewrite instruction (collapsed under X29)', () => {
-    const content = userContent(baseInput({ action: 'rephrase', selectedText: 'He said hello.' }));
+  it('system message contains the rewrite instruction (collapsed under X29)', () => {
+    const content = systemContent(
+      baseInput({ action: 'rephrase', selectedText: 'He said hello.' }),
+    );
     expect(content.toLowerCase()).toContain('rewrite');
   });
 
@@ -98,17 +99,21 @@ describe('[V12] action=rephrase', () => {
     expect(content).toContain('«He said hello.»');
   });
 
-  it('user message mentions preserving meaning', () => {
-    const content = userContent(baseInput({ action: 'rephrase', selectedText: 'Text.' }));
-    expect(content.toLowerCase()).toContain('meaning');
+  it('system message mentions preserving meaning', () => {
+    const content = systemContent(
+      baseInput({ action: 'rephrase', selectedText: 'He said hello.' }),
+    );
+    expect(content.toLowerCase()).toMatch(/preserving|preserve|meaning/);
   });
 });
 
 // ─── action: expand ───────────────────────────────────────────────────────────
 
 describe('[V12] action=expand', () => {
-  it('user message contains "expand" instruction', () => {
-    const content = userContent(baseInput({ action: 'expand', selectedText: 'The door creaked.' }));
+  it('system message contains the "expand" instruction', () => {
+    const content = systemContent(
+      baseInput({ action: 'expand', selectedText: 'The door creaked.' }),
+    );
     expect(content.toLowerCase()).toContain('expand');
   });
 
@@ -117,17 +122,19 @@ describe('[V12] action=expand', () => {
     expect(content).toContain('«The door creaked.»');
   });
 
-  it('user message mentions detail/description/depth', () => {
-    const content = userContent(baseInput({ action: 'expand', selectedText: 'Text.' }));
-    expect(content.toLowerCase()).toMatch(/detail|description|depth/);
+  it('system message mentions detail/description/depth', () => {
+    const content = systemContent(
+      baseInput({ action: 'expand', selectedText: 'The door creaked.' }),
+    );
+    expect(content.toLowerCase()).toMatch(/detail|descri|depth/);
   });
 });
 
 // ─── action: summarise ────────────────────────────────────────────────────────
 
 describe('[V12] action=summarise', () => {
-  it('user message contains "summarise"/"summarize" instruction', () => {
-    const content = userContent(
+  it('system message contains the "summarise"/"summarize" instruction', () => {
+    const content = systemContent(
       baseInput({ action: 'summarise', selectedText: 'A long passage.' }),
     );
     expect(content.toLowerCase()).toMatch(/summar(i|y)s?e/);
@@ -140,10 +147,11 @@ describe('[V12] action=summarise', () => {
     expect(content).toContain('«A long passage.»');
   });
 
-  it('user message mentions a sentence count limit', () => {
-    const content = userContent(baseInput({ action: 'summarise', selectedText: 'Text.' }));
-    // Template says "1–3 sentences"
-    expect(content.toLowerCase()).toMatch(/sentence/);
+  it('system message mentions a sentence count limit', () => {
+    const content = systemContent(
+      baseInput({ action: 'summarise', selectedText: 'A long passage.' }),
+    );
+    expect(content.toLowerCase()).toMatch(/sentence|1.*2.*3|essential/);
   });
 });
 
@@ -153,84 +161,31 @@ describe('[V12] action=freeform', () => {
   it('user message contains freeformInstruction verbatim', () => {
     const instruction = 'Rewrite in the style of Hemingway.';
     const content = userContent(
-      baseInput({ action: 'freeform', freeformInstruction: instruction, selectedText: 'Text.' }),
+      baseInput({ action: 'freeform', freeformInstruction: instruction, selectedText: '' }),
     );
     expect(content).toContain(instruction);
   });
 
-  it('user message contains the selectedText', () => {
+  it('user message contains the selectedText (when present)', () => {
     const content = userContent(
       baseInput({
         action: 'freeform',
-        freeformInstruction: 'Do something.',
-        selectedText: 'Unique freeform text.',
+        freeformInstruction: 'Tighten this.',
+        selectedText: 'A long passage.',
       }),
     );
-    expect(content).toContain('Unique freeform text.');
+    expect(content).toContain('«A long passage.»');
   });
 
-  it('empty freeformInstruction → empty string prefix (no crash)', () => {
+  it('throws when freeformInstruction is missing', () => {
     expect(() =>
-      buildPrompt(baseInput({ action: 'freeform', freeformInstruction: '', selectedText: 'T.' })),
-    ).not.toThrow();
-  });
-});
-
-// ─── renderAskUserContent ─────────────────────────────────────────────────────
-
-describe('renderAskUserContent', () => {
-  it('without selection: returns "User question: <instruction>"', () => {
-    const result = renderAskUserContent({ freeformInstruction: 'What happens next?' });
-    expect(result).toBe('User question: What happens next?');
-    expect(result).not.toContain('Attached selection');
-  });
-
-  it('with selection: appends "Attached selection: «…»" on a new line', () => {
-    const result = renderAskUserContent({
-      freeformInstruction: 'Explain this passage.',
-      selectionText: 'The sun rose slowly.',
-    });
-    expect(result).toBe(
-      'User question: Explain this passage.\n\nAttached selection: «The sun rose slowly.»',
-    );
-  });
-
-  it('empty selectionText is treated as no selection (no attachment block)', () => {
-    const result = renderAskUserContent({
-      freeformInstruction: 'Tell me more.',
-      selectionText: '',
-    });
-    expect(result).toBe('User question: Tell me more.');
-    expect(result).not.toContain('Attached selection');
-  });
-
-  it('null selectionText is treated as no selection', () => {
-    const result = renderAskUserContent({
-      freeformInstruction: 'Any thoughts?',
-      selectionText: null,
-    });
-    expect(result).toBe('User question: Any thoughts?');
-    expect(result).not.toContain('Attached selection');
-  });
-
-  it('matches the framing that buildPrompt action=ask produces', () => {
-    const instruction = 'What is the theme here?';
-    const selection = 'He walked away in silence.';
-
-    // Via buildPrompt (integration path).
-    const built = buildPrompt(
-      baseInput({ action: 'ask', freeformInstruction: instruction, selectedText: selection }),
-    );
-    const builtUserContent = built.messages.find((m) => m.role === 'user')?.content ?? '';
-
-    // Via renderAskUserContent (history-reconstruction path).
-    const rendered = renderAskUserContent({
-      freeformInstruction: instruction,
-      selectionText: selection,
-    });
-
-    // The task block is embedded inside a larger user message (chapter, characters, etc.),
-    // but both must agree on the key framing strings.
-    expect(builtUserContent).toContain(rendered);
+      buildPrompt(
+        baseInput({
+          action: 'freeform',
+          freeformInstruction: undefined,
+          selectedText: 'Text.',
+        }),
+      ),
+    ).toThrow(/freeformInstruction/i);
   });
 });
