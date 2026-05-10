@@ -7,7 +7,7 @@
 //   3. null / undefined / '' / whitespace-only fall back to defaults.
 //   4. Selection auto-append still happens for overridden action templates.
 //   5. include_venice_system_prompt is independent of userPrompts.system.
-//   6. freeform / ask actions are not template-driven and ignore userPrompts.
+//   6. freeform action is not template-driven and ignores userPrompts (k1r: ask now is).
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -32,68 +32,95 @@ function baseInput(overrides: Partial<BuildPromptInput> = {}): BuildPromptInput 
 }
 
 function systemMsg(input: BuildPromptInput): string {
-  return buildPrompt(input).messages[0]?.content ?? '';
+  const result = buildPrompt(input);
+  return result.messages.find((m) => m.role === 'system')?.content ?? '';
 }
 
 function userMsg(input: BuildPromptInput): string {
-  return buildPrompt(input).messages[1]?.content ?? '';
+  return buildPrompt(input).messages.find((m) => m.role === 'user')?.content ?? '';
 }
 
 // ─── system-prompt override ────────────────────────────────────────────────────
 
 describe('[X29] userPrompts.system — override behaviour', () => {
-  it('non-empty → system message equals override', () => {
+  it('non-empty → system message starts with override', () => {
     const custom = 'You are a gothic horror novelist.';
-    expect(systemMsg(baseInput({ userPrompts: { system: custom } }))).toBe(custom);
+    expect(systemMsg(baseInput({ userPrompts: { system: custom } })).startsWith(custom)).toBe(true);
   });
 
-  it('null → DEFAULT_SYSTEM_PROMPT', () => {
-    expect(systemMsg(baseInput({ userPrompts: { system: null } }))).toBe(DEFAULT_SYSTEM_PROMPT);
+  it('null → system message contains DEFAULT_SYSTEM_PROMPT', () => {
+    expect(systemMsg(baseInput({ userPrompts: { system: null } }))).toContain(
+      DEFAULT_SYSTEM_PROMPT,
+    );
   });
 
-  it('undefined → DEFAULT_SYSTEM_PROMPT', () => {
-    expect(systemMsg(baseInput({ userPrompts: {} }))).toBe(DEFAULT_SYSTEM_PROMPT);
+  it('undefined → system message contains DEFAULT_SYSTEM_PROMPT', () => {
+    expect(systemMsg(baseInput({ userPrompts: {} }))).toContain(DEFAULT_SYSTEM_PROMPT);
   });
 
-  it('empty string → DEFAULT_SYSTEM_PROMPT', () => {
-    expect(systemMsg(baseInput({ userPrompts: { system: '' } }))).toBe(DEFAULT_SYSTEM_PROMPT);
+  it('empty string → system message contains DEFAULT_SYSTEM_PROMPT', () => {
+    expect(systemMsg(baseInput({ userPrompts: { system: '' } }))).toContain(DEFAULT_SYSTEM_PROMPT);
   });
 
-  it('whitespace-only → DEFAULT_SYSTEM_PROMPT', () => {
-    expect(systemMsg(baseInput({ userPrompts: { system: '   ' } }))).toBe(DEFAULT_SYSTEM_PROMPT);
+  it('whitespace-only → system message contains DEFAULT_SYSTEM_PROMPT', () => {
+    expect(systemMsg(baseInput({ userPrompts: { system: '   ' } }))).toContain(
+      DEFAULT_SYSTEM_PROMPT,
+    );
   });
 
-  it('userPrompts undefined entirely → DEFAULT_SYSTEM_PROMPT', () => {
-    expect(systemMsg(baseInput())).toBe(DEFAULT_SYSTEM_PROMPT);
+  it('userPrompts undefined entirely → system message contains DEFAULT_SYSTEM_PROMPT', () => {
+    expect(systemMsg(baseInput())).toContain(DEFAULT_SYSTEM_PROMPT);
   });
 });
 
 // ─── action-template overrides ─────────────────────────────────────────────────
 // `rewrite` covers both 'rephrase' and 'rewrite' actions per X29 spec.
+// k1r: `ask` and `scene` are now template-driven (added to ACTION_KEYS).
 
-const ACTION_KEYS = ['continue', 'rewrite', 'expand', 'summarise', 'describe'] as const;
+const ACTION_KEYS = [
+  'continue',
+  'rewrite',
+  'expand',
+  'summarise',
+  'describe',
+  'scene',
+  'ask',
+] as const;
 
 describe('[X29] userPrompts.<action> — override behaviour', () => {
   for (const key of ACTION_KEYS) {
     const action = key === 'rewrite' ? 'rewrite' : key;
-    it(`${key}: non-empty override appears in user message`, () => {
+    it(`${key}: non-empty override appears in system message`, () => {
       const custom = `CUSTOM ${key.toUpperCase()} INSTRUCTION.`;
-      const out = userMsg(
-        baseInput({ action: action as BuildPromptInput['action'], userPrompts: { [key]: custom } }),
+      const out = systemMsg(
+        baseInput({
+          action: action as BuildPromptInput['action'],
+          // ask + scene need a freeformInstruction.
+          freeformInstruction: action === 'ask' || action === 'scene' ? 'q' : undefined,
+          userPrompts: { [key]: custom },
+        }),
       );
       expect(out).toContain(custom);
     });
 
     it(`${key}: null falls back to DEFAULT_PROMPTS.${key}`, () => {
-      const out = userMsg(
-        baseInput({ action: action as BuildPromptInput['action'], userPrompts: { [key]: null } }),
+      const out = systemMsg(
+        baseInput({
+          action: action as BuildPromptInput['action'],
+          freeformInstruction: action === 'ask' || action === 'scene' ? 'q' : undefined,
+          userPrompts: { [key]: null },
+        }),
       );
       expect(out).toContain(DEFAULT_PROMPTS[key]);
     });
 
     it(`${key}: whitespace-only falls back to DEFAULT_PROMPTS.${key}`, () => {
-      const out = userMsg(
-        baseInput({ action: action as BuildPromptInput['action'], userPrompts: { [key]: '   ' } }),
+      const out = systemMsg(
+        baseInput({
+          action: action as BuildPromptInput['action'],
+          freeformInstruction: action === 'ask' || action === 'scene' ? 'q' : undefined,
+          userPrompts: { [key]: '   ' },
+        }),
       );
       expect(out).toContain(DEFAULT_PROMPTS[key]);
     });
@@ -101,7 +128,7 @@ describe('[X29] userPrompts.<action> — override behaviour', () => {
 
   it('rephrase action also reads userPrompts.rewrite (collapsed override)', () => {
     const custom = 'CUSTOM REPHRASE.';
-    const out = userMsg(baseInput({ action: 'rephrase', userPrompts: { rewrite: custom } }));
+    const out = systemMsg(baseInput({ action: 'rephrase', userPrompts: { rewrite: custom } }));
     expect(out).toContain(custom);
   });
 });
@@ -109,22 +136,20 @@ describe('[X29] userPrompts.<action> — override behaviour', () => {
 // ─── selection auto-append ─────────────────────────────────────────────────────
 
 describe('[X29] selection text auto-appends after overridden action templates', () => {
-  it('overridden continue template still gets the Selection: «…» suffix', () => {
-    const out = userMsg(
-      baseInput({
-        action: 'continue',
-        selectedText: 'The dog barked.',
-        userPrompts: { continue: 'CUSTOM CONTINUE INSTRUCTION.' },
-      }),
-    );
-    expect(out).toContain('CUSTOM CONTINUE INSTRUCTION.');
-    expect(out).toContain('Selection: «The dog barked.»');
+  it('overridden continue template lives in system; selection lives in user', () => {
+    const input = baseInput({
+      action: 'continue',
+      selectedText: 'The dog barked.',
+      userPrompts: { continue: 'CUSTOM CONTINUE INSTRUCTION.' },
+    });
+    expect(systemMsg(input)).toContain('CUSTOM CONTINUE INSTRUCTION.');
+    expect(userMsg(input)).toBe('Selection: «The dog barked.»');
   });
 });
 
-// ─── freeform / ask ignore userPrompts ─────────────────────────────────────────
+// ─── freeform is not template-driven (k1r: ask now is) ─────────────────────────
 
-describe('[X29] freeform / ask are not template-driven', () => {
+describe('[X29] freeform is not template-driven (k1r: ask now is)', () => {
   it('freeform: userPrompts has no observable effect', () => {
     const a = userMsg(
       baseInput({
@@ -136,10 +161,33 @@ describe('[X29] freeform / ask are not template-driven', () => {
       baseInput({
         action: 'freeform',
         freeformInstruction: 'Tell me a haiku.',
-        userPrompts: { continue: 'should not appear' } as never,
+        // passing a valid userPrompts key to freeform confirms the template path is not invoked
+        userPrompts: { continue: 'should not appear' },
       }),
     );
     expect(a).toBe(b);
+  });
+
+  it('ask: userPrompts.ask non-empty override appears in system message', () => {
+    const sys = systemMsg(
+      baseInput({
+        action: 'ask',
+        freeformInstruction: 'Why did she leave?',
+        userPrompts: { ask: 'CUSTOM ASK INSTRUCTION.' },
+      }),
+    );
+    expect(sys).toContain('CUSTOM ASK INSTRUCTION.');
+  });
+
+  it('ask: null userPrompts.ask falls back to DEFAULT_PROMPTS.ask', () => {
+    const sys = systemMsg(
+      baseInput({
+        action: 'ask',
+        freeformInstruction: 'Why?',
+        userPrompts: { ask: null },
+      }),
+    );
+    expect(sys).toContain(DEFAULT_PROMPTS.ask);
   });
 });
 

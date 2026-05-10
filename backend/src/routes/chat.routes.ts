@@ -22,11 +22,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
-import {
-  buildPrompt,
-  type CharacterContext,
-  renderAskUserContent,
-} from '../services/prompt.service';
+import { buildPrompt, type CharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
@@ -444,23 +440,24 @@ export function createChatMessagesRouter() {
       // ── 8. Build messages array for Venice ───────────────────────────────
       const systemMsg = baseMessages[0];
       const synthesisedUserMsg = baseMessages[1];
+      // [k1r] Uniform per-action history mapping. Any prior user turn (any
+      // chat kind) that carried an attachmentJson.selectionText gets the
+      // same `\n\nAttached selection: «...»` suffix the current-turn user
+      // payload uses (see buildUserPayload). No `User question:` prefix
+      // anywhere — the role label is the provenance signal. This is the
+      // change flagged in
+      // docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md
+      // §chat.routes.ts simplifications (a).
       const history = priorMessagesForHistory.map((m) => {
         const rawContent =
           typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
 
-        // For prior user turns in an `ask` chat that carried an attachment,
-        // re-synthesise the framing the prompt builder emits for the `ask`
-        // action so Venice sees consistent context across turns.
-        // Scene chats take the raw direction — no "User question:" framing.
-        if (action === 'ask' && m.role === 'user' && m.attachmentJson != null) {
+        if (m.role === 'user' && m.attachmentJson != null) {
           const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
-          if (typeof att.selectionText === 'string') {
+          if (typeof att.selectionText === 'string' && att.selectionText.length > 0) {
             return {
               role: 'user' as const,
-              content: renderAskUserContent({
-                freeformInstruction: rawContent,
-                selectionText: att.selectionText,
-              }),
+              content: `${rawContent}\n\nAttached selection: «${att.selectionText}»`,
             };
           }
         }
@@ -470,9 +467,13 @@ export function createChatMessagesRouter() {
           content: rawContent,
         };
       });
-      // [SC6] On retry the trailing user turn is already in `history`; do
-      // NOT append synthesisedUserMsg again or the model would see a
-      // duplicate user turn. On a normal turn, append as usual.
+      // [k1r] On retry the trailing history entry equals what
+      // buildUserPayload would emit for the same inputs (both are built from
+      // lastUserMsg.contentJson + lastUserMsg.attachmentJson under the
+      // unified history mapping). So the retry path uses [systemMsg, ...history]
+      // and the trailing entry IS the user message — chapter / characters /
+      // world-notes context lives in systemMsg in both branches, so the
+      // 9ph context-loss bug is structurally impossible.
       const messages: Array<{ role: MessageRole; content: string }> = body.retry
         ? [systemMsg, ...history]
         : [systemMsg, ...history, synthesisedUserMsg];
