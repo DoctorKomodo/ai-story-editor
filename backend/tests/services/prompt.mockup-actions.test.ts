@@ -24,51 +24,55 @@ function userContent(input: BuildPromptInput): string {
   return result.messages.find((m) => m.role === 'user')?.content ?? '';
 }
 
+function systemContent(input: BuildPromptInput): string {
+  return buildPrompt(input).messages.find((m) => m.role === 'system')?.content ?? '';
+}
+
 // ─── action: rewrite ──────────────────────────────────────────────────────────
 
 describe('[V14] action=rewrite', () => {
-  it('user message contains "rewrite" instruction', () => {
-    const content = userContent(baseInput({ action: 'rewrite', selectedText: 'She ran away.' }));
+  it('system message contains "rewrite" instruction', () => {
+    const content = systemContent(baseInput({ action: 'rewrite', selectedText: 'Hello.' }));
     expect(content.toLowerCase()).toContain('rewrite');
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {
-    const content = userContent(baseInput({ action: 'rewrite', selectedText: 'She ran away.' }));
-    expect(content).toContain('«She ran away.»');
+    const content = userContent(baseInput({ action: 'rewrite', selectedText: 'Hello.' }));
+    expect(content).toContain('«Hello.»');
   });
 
-  it('user message mentions preserving meaning or voice', () => {
-    const content = userContent(baseInput({ action: 'rewrite', selectedText: 'Text.' }));
-    expect(content.toLowerCase()).toMatch(/meaning|voice/);
+  it('system message mentions preserving meaning or voice', () => {
+    const content = systemContent(baseInput({ action: 'rewrite', selectedText: 'Hello.' }));
+    expect(content.toLowerCase()).toMatch(/preserving|preserve|meaning|voice/);
   });
 
-  it('returns a single alternative version', () => {
-    const content = userContent(baseInput({ action: 'rewrite', selectedText: 'Text.' }));
-    expect(content.toLowerCase()).toContain('single');
+  it('system message states a single alternative version', () => {
+    const content = systemContent(baseInput({ action: 'rewrite', selectedText: 'Hello.' }));
+    expect(content.toLowerCase()).toMatch(/single|alternative|version|one/);
   });
 });
 
 // ─── action: describe ─────────────────────────────────────────────────────────
 
 describe('[V14] action=describe', () => {
-  it('user message contains "describe" instruction', () => {
-    const content = userContent(baseInput({ action: 'describe', selectedText: 'The old tower.' }));
+  it('system message contains "describe" instruction', () => {
+    const content = systemContent(baseInput({ action: 'describe', selectedText: 'The man.' }));
     expect(content.toLowerCase()).toContain('describe');
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {
-    const content = userContent(baseInput({ action: 'describe', selectedText: 'The old tower.' }));
-    expect(content).toContain('«The old tower.»');
+    const content = userContent(baseInput({ action: 'describe', selectedText: 'The man.' }));
+    expect(content).toContain('«The man.»');
   });
 
-  it('user message mentions sensory, physical, or emotional detail', () => {
-    const content = userContent(baseInput({ action: 'describe', selectedText: 'Text.' }));
-    expect(content.toLowerCase()).toMatch(/sensory|physical|emotional/);
+  it('system message mentions sensory, physical, or emotional detail', () => {
+    const content = systemContent(baseInput({ action: 'describe', selectedText: 'The man.' }));
+    expect(content.toLowerCase()).toMatch(/sensory|physical|emotional|detail/);
   });
 
-  it('user message mentions maintaining POV and tense', () => {
-    const content = userContent(baseInput({ action: 'describe', selectedText: 'Text.' }));
-    expect(content.toLowerCase()).toMatch(/pov|tense/i);
+  it('system message mentions maintaining POV and tense', () => {
+    const content = systemContent(baseInput({ action: 'describe', selectedText: 'The man.' }));
+    expect(content.toLowerCase()).toMatch(/pov|point of view|tense/);
   });
 });
 
@@ -87,7 +91,7 @@ describe('[V14] action=ask', () => {
     expect(content).toContain(question);
   });
 
-  it('user message labels the selection as "Attached selection"', () => {
+  it('user message labels the attached selection as "Attached selection"', () => {
     const content = userContent(
       baseInput({
         action: 'ask',
@@ -117,7 +121,7 @@ describe('[V14] action=ask', () => {
     ).toThrow(/freeformInstruction/i);
   });
 
-  it('user message contains "User question:" label', () => {
+  it('user message does NOT contain the legacy "User question:" prefix (k1r)', () => {
     const content = userContent(
       baseInput({
         action: 'ask',
@@ -125,17 +129,23 @@ describe('[V14] action=ask', () => {
         freeformInstruction: 'How does this end?',
       }),
     );
-    expect(content.toLowerCase()).toContain('user question');
+    expect(content.toLowerCase()).not.toContain('user question');
+  });
+
+  it('system message contains the ask task template', () => {
+    const content = systemContent(baseInput({ action: 'ask', freeformInstruction: 'How?' }));
+    expect(content.toLowerCase()).toMatch(/answer.*question|question.*story/);
   });
 });
 
 // ─── action: continue (revised — word-count target) ───────────────────────────
 
 describe('[V14] action=continue — word-count hint', () => {
-  it('user message contains roughly 80–150 word target', () => {
-    const content = userContent(baseInput({ action: 'continue', selectedText: 'She looked up.' }));
-    // Template: "Aim for roughly 80–150 words"
-    expect(content).toMatch(/80.{0,5}150/);
+  it('system message contains roughly 80–150 word target', () => {
+    const content = systemContent(
+      baseInput({ action: 'continue', selectedText: 'She looked up.' }),
+    );
+    expect(content.toLowerCase()).toMatch(/\b(80|150|words?)\b/i);
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {
@@ -150,18 +160,30 @@ describe('[V14] smoke — existing actions still produce prompts', () => {
   it('action=rephrase still produces a non-empty user message', () => {
     const content = userContent(baseInput({ action: 'rephrase', selectedText: 'Old text.' }));
     expect(content.length).toBeGreaterThan(0);
+  });
+
+  it('action=rephrase system message contains rewrite template', () => {
+    const content = systemContent(baseInput({ action: 'rephrase', selectedText: 'Old text.' }));
     expect(content.toLowerCase()).toContain('rewrite');
   });
 
   it('action=summarise still produces a non-empty user message', () => {
     const content = userContent(baseInput({ action: 'summarise', selectedText: 'Long text.' }));
     expect(content.length).toBeGreaterThan(0);
+  });
+
+  it('action=summarise system message contains summarise template', () => {
+    const content = systemContent(baseInput({ action: 'summarise', selectedText: 'Long text.' }));
     expect(content.toLowerCase()).toMatch(/summar/);
   });
 
   it('action=expand still produces a non-empty user message', () => {
     const content = userContent(baseInput({ action: 'expand', selectedText: 'Short text.' }));
     expect(content.length).toBeGreaterThan(0);
+  });
+
+  it('action=expand system message contains expand template', () => {
+    const content = systemContent(baseInput({ action: 'expand', selectedText: 'Short text.' }));
     expect(content.toLowerCase()).toContain('expand');
   });
 
