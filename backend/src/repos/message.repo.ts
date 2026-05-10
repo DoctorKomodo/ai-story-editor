@@ -70,6 +70,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
       await tx.chat.update({
         where: { id: input.chatId },
         data: { lastActivityAt: new Date() },
+        select: { id: true },
       });
       return created;
     });
