@@ -121,6 +121,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
       try {
         await sendChatMessage.mutateAsync({
           chatId,
+          chapterId: cId, // story-editor-loj: needed so onSuccess can invalidate the chats list
           content: args.content,
           modelId: mId,
           enableWebSearch: args.enableWebSearch,
@@ -147,6 +148,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   // table tested in tests/hooks/useBannerRetry.test.tsx.
   const { onRetry, isDispatching } = useBannerRetry({
     chatId: activeChatId,
+    chapterId,
     selectedModelId,
     mutation: sendChatMessage,
     lastSendArgsRef: lastSceneSendArgsRef,
@@ -157,10 +159,11 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
     if (activeChatId === null || selectedModelId === null) return;
     void sendChatMessage.mutateAsync({
       chatId: activeChatId,
+      chapterId: chapterId as string,
       modelId: selectedModelId,
       retry: true,
     });
-  }, [activeChatId, selectedModelId, sendChatMessage]);
+  }, [activeChatId, chapterId, selectedModelId, sendChatMessage]);
 
   const { copy: copyToClipboard, status: copyStatus } = useCopyToClipboard();
 

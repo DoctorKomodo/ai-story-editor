@@ -76,6 +76,7 @@ describe('useSendChatMessageMutation', () => {
     act(() => {
       p = result.current.mutateAsync({
         chatId: 'c1',
+        chapterId: 'ch1',
         content: 'hello',
         modelId: 'm1',
       });
@@ -112,6 +113,7 @@ describe('useSendChatMessageMutation', () => {
     act(() => {
       p = result.current.mutateAsync({
         chatId: 'c1',
+        chapterId: 'ch1',
         content: 'q',
         modelId: 'm1',
         attachment: { selectionText: 'sel', chapterId: 'ch1' },
@@ -140,9 +142,11 @@ describe('useSendChatMessageMutation', () => {
     const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ chatId: 'c1', content: 'q', modelId: 'm1' }).catch(() => {
-        // expected — mutation throws on error frame
-      });
+      await result.current
+        .mutateAsync({ chatId: 'c1', chapterId: 'ch1', content: 'q', modelId: 'm1' })
+        .catch(() => {
+          // expected — mutation throws on error frame
+        });
     });
 
     // Draft should have been marked error before onSettled cleared it.
@@ -176,6 +180,7 @@ describe('useSendChatMessageMutation', () => {
       await expect(
         result.current.mutateAsync({
           chatId: 'c1',
+          chapterId: 'ch1',
           content: 'hi',
           modelId: 'm1',
         }),
@@ -210,6 +215,7 @@ describe('useSendChatMessageMutation', () => {
 
     const sendPromise = result.current.mutateAsync({
       chatId: 'c1',
+      chapterId: 'ch1',
       content: 'hello',
       modelId: 'm1',
     });
@@ -251,7 +257,12 @@ describe('useSendChatMessageMutation', () => {
 
     let p!: Promise<void>;
     act(() => {
-      p = result.current.mutateAsync({ chatId: 'c1', content: 'q', modelId: 'm1' });
+      p = result.current.mutateAsync({
+        chatId: 'c1',
+        chapterId: 'ch1',
+        content: 'q',
+        modelId: 'm1',
+      });
     });
 
     // Emit a role-only chunk first — must NOT flip status to 'streaming'.
@@ -272,6 +283,68 @@ describe('useSendChatMessageMutation', () => {
     close();
     await act(async () => {
       await p;
+    });
+  });
+});
+
+// ── useSendChatMessageMutation — invalidates chats list ───────────────────────
+
+describe('useSendChatMessageMutation — invalidates chats list (story-editor-loj)', () => {
+  it('invalidates the chats list cache for the chapter after a successful send', async () => {
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    // Seed the chats-list cache for chapter-1 with a single chat.
+    qc.setQueryData(chatsBaseQueryKey('chapter-1'), [
+      {
+        id: 'chat-1',
+        chapterId: 'chapter-1',
+        title: 't',
+        kind: 'ask',
+        createdAt: '2026-05-01T00:00:00Z',
+        updatedAt: '2026-05-01T00:00:00Z',
+        lastActivityAt: '2026-05-01T00:00:00Z',
+        messageCount: 0,
+      },
+    ]);
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+
+    vi.mocked(apiStream).mockResolvedValueOnce(
+      sseResponse([
+        'data: {"choices":[{"delta":{"role":"assistant"}}]}\n\n',
+        'data: {"choices":[{"delta":{"content":"Hi"}}]}\n\n',
+        'data: [DONE]\n\n',
+      ]),
+    );
+
+    // We need a wrapper that uses OUR qc, not the one from withClient().
+    const customWrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useSendChatMessageMutation(), {
+      wrapper: customWrapper,
+    });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        chatId: 'chat-1',
+        chapterId: 'chapter-1',
+        content: 'hi',
+        modelId: 'venice-uncensored-1b',
+      });
+    });
+
+    await waitFor(() => {
+      const matched = invalidateSpy.mock.calls.some((args) => {
+        const arg = args[0];
+        if (!arg || typeof arg !== 'object' || !('queryKey' in arg)) return false;
+        const key = (arg as { queryKey?: readonly unknown[] }).queryKey;
+        return (
+          Array.isArray(key) && key[0] === 'chapter' && key[1] === 'chapter-1' && key[2] === 'chats'
+        );
+      });
+      expect(matched).toBe(true);
     });
   });
 });

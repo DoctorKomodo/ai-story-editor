@@ -10,6 +10,7 @@ import {
 
 export interface UseBannerRetryOptions {
   chatId: string | null;
+  chapterId: string | null;
   selectedModelId: string | null;
   mutation: ReturnType<typeof useSendChatMessageMutation>;
   lastSendArgsRef: RefObject<ChatSendArgs | null>;
@@ -44,6 +45,7 @@ export interface UseBannerRetryResult {
  */
 export function useBannerRetry({
   chatId,
+  chapterId,
   selectedModelId,
   mutation,
   lastSendArgsRef,
@@ -54,7 +56,7 @@ export function useBannerRetry({
 
   const onRetry = useCallback(async (): Promise<void> => {
     const last = lastSendArgsRef.current;
-    if (last === null || chatId === null || selectedModelId === null) return;
+    if (last === null || chatId === null || chapterId === null || selectedModelId === null) return;
     setIsDispatching(true);
     try {
       await qc.refetchQueries({ queryKey: chatMessagesQueryKey(chatId) });
@@ -64,6 +66,7 @@ export function useBannerRetry({
       if (trailing?.role === 'user') {
         await mutation.mutateAsync({
           chatId,
+          chapterId,
           modelId: selectedModelId,
           retry: true,
         });
@@ -73,7 +76,7 @@ export function useBannerRetry({
     } finally {
       setIsDispatching(false);
     }
-  }, [chatId, selectedModelId, mutation, qc, onSend, lastSendArgsRef]);
+  }, [chatId, chapterId, selectedModelId, mutation, qc, onSend, lastSendArgsRef]);
 
   return { onRetry, isDispatching };
 }

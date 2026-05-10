@@ -201,11 +201,15 @@ export function useRemoveChatMutation(
 
 export interface SendChatMessageArgs {
   chatId: string;
+  /** The chapter this chat belongs to. Used by onSuccess to invalidate the chats list. */
+  chapterId: string;
+  modelId: string;
   /** Message text. Required unless `retry` is true. */
   content?: string;
-  modelId: string;
   /** When true, replays the existing trailing user turn without persisting a new message. */
   retry?: boolean;
+  /** The selection attached to this message. `attachment.chapterId` is the selection's source
+   *  chapter — in practice the same as the top-level `chapterId` but semantically distinct. */
   attachment?: { selectionText: string; chapterId: string };
   enableWebSearch?: boolean;
 }
@@ -282,6 +286,12 @@ export function useSendChatMessageMutation(): UseMutationResult<
       // the optimistic draft bubble and the persisted assistant message.
       useChatDraftStore.getState().clear(vars.chatId);
       void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
+      // story-editor-loj: the backend bumps Chat.lastActivityAt on every
+      // message create, so the chats-list order has shifted. Match the
+      // pattern used by useCreateChatMutation / useRenameChatMutation /
+      // useRemoveChatMutation: invalidate via chatsBaseQueryKey so both
+      // kind='ask' and kind='scene' lists for the chapter are swept.
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(vars.chapterId) });
     },
     onSettled: (_void, _err, vars) => {
       // Safety net for any path that didn't clear in onSuccess (i.e. failed
