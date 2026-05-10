@@ -11,7 +11,7 @@ import {
 } from '@/lib/sessionReset';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useChatDraftStore } from '@/store/chatDraft';
-import { useSessionStore } from '@/store/session';
+import { handleUnauthorizedAccess, useSessionStore } from '@/store/session';
 
 afterEach(() => {
   _unsafeResetSessionResetRegistryForTests();
@@ -128,6 +128,40 @@ describe('registered-QC variant', () => {
     await resetClientStateUsingRegistered();
 
     expect(qc.getQueryData(['stories', 'list'])).toBeUndefined();
+  });
+});
+
+describe('handleUnauthorizedAccess (registered-QC integration)', () => {
+  it('clears the registered QueryClient + per-user stores when registered', async () => {
+    const qc = new QueryClient();
+    qc.setQueryData(['stories', 'list'], [{ id: 'A1' }]);
+    useAttachedSelectionStore.setState({
+      attachedSelection: { text: 'leak', chapter: { id: 'c', number: 1, title: '' } },
+    });
+    registerSessionResetQueryClient(qc);
+
+    handleUnauthorizedAccess();
+    // resetClientStateUsingRegistered is fire-and-forget (void Promise).
+    // Flush all pending microtasks so cancelQueries + clear settle before
+    // we assert. flushPromises drains the queue to empty.
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(qc.getQueryData(['stories', 'list'])).toBeUndefined();
+    expect(useAttachedSelectionStore.getState().attachedSelection).toBeNull();
+  });
+
+  it('sets sessionExpired=true and clears user on the session store', () => {
+    useSessionStore.setState({
+      user: { id: 'u', username: 'u', name: 'U' },
+      status: 'authenticated',
+      sessionExpired: false,
+    });
+
+    handleUnauthorizedAccess();
+
+    expect(useSessionStore.getState().sessionExpired).toBe(true);
+    expect(useSessionStore.getState().user).toBeNull();
+    expect(useSessionStore.getState().status).toBe('unauthenticated');
   });
 });
 
