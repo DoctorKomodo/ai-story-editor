@@ -61,11 +61,12 @@ export const useSessionStore = create<SessionState>((set) => ({
 // unauthenticated without the "session expired" banner — which is the
 // intended UX (the user wasn't actively in a session).
 //
-// Single setState (rather than clearSession() + setState) avoids a render
-// where the user is unauthenticated but sessionExpired is still false —
-// React 18's automatic batching may not coalesce two zustand mutations
-// dispatched from a non-React callback, which would briefly flash /login
-// without the banner.
+// `clearSession({ expired: true })` issues a single Zustand `set` — so
+// user, status, and sessionExpired are written atomically. React 18's
+// automatic batching may not coalesce two separate zustand mutations from
+// a non-React callback, which would briefly flash /login without the
+// "session expired" banner — hence delegating to clearSession rather than
+// any two-call approach.
 //
 // Exported so tests can install the production wiring after
 // `resetApiClientForTests` strips it; otherwise tests would have to inline

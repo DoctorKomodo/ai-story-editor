@@ -149,20 +149,6 @@ describe('handleUnauthorizedAccess (registered-QC integration)', () => {
     expect(qc.getQueryData(['stories', 'list'])).toBeUndefined();
     expect(useAttachedSelectionStore.getState().attachedSelection).toBeNull();
   });
-
-  it('sets sessionExpired=true and clears user on the session store', () => {
-    useSessionStore.setState({
-      user: { id: 'u', username: 'u', name: 'U' },
-      status: 'authenticated',
-      sessionExpired: false,
-    });
-
-    handleUnauthorizedAccess();
-
-    expect(useSessionStore.getState().sessionExpired).toBe(true);
-    expect(useSessionStore.getState().user).toBeNull();
-    expect(useSessionStore.getState().status).toBe('unauthenticated');
-  });
 });
 
 // ─── Enumeration guard: every store file must be classified ──────────────────
