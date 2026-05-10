@@ -1,5 +1,7 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
 import { api, refreshAccessToken, setAccessToken } from '@/lib/api';
+import { resetClientState, swapSession } from '@/lib/sessionReset';
 import { type SessionUser, useSessionStore } from '@/store/session';
 
 export interface LoginCredentials {
@@ -89,8 +91,8 @@ export async function initAuth(signal?: AbortSignal): Promise<void> {
 export function useAuth(): UseAuthResult {
   const user = useSessionStore((s) => s.user);
   const status = useSessionStore((s) => s.status);
-  const setSession = useSessionStore((s) => s.setSession);
   const clearSession = useSessionStore((s) => s.clearSession);
+  const queryClient = useQueryClient();
 
   const login = useCallback(
     async ({ username, password }: LoginCredentials): Promise<SessionUser> => {
@@ -98,10 +100,13 @@ export function useAuth(): UseAuthResult {
         method: 'POST',
         body: { username, password },
       });
-      setSession(res.user, res.accessToken);
+      // swapSession does cancelQueries → clear → reset stores → setSession
+      // atomically. The ordering invariant (reset before setSession) is
+      // unreachable from this call site.
+      await swapSession(queryClient, res.user, res.accessToken);
       return res.user;
     },
-    [setSession],
+    [queryClient],
   );
 
   const register = useCallback(
@@ -124,9 +129,13 @@ export function useAuth(): UseAuthResult {
     } catch {
       // Ignore errors on logout — we clear local state regardless.
     } finally {
+      // resetClientState awaits cancelQueries first, so any in-flight fetch
+      // from this session is aborted before clear() runs and before the
+      // session slice flips to unauthenticated.
+      await resetClientState(queryClient);
       clearSession();
     }
-  }, [clearSession]);
+  }, [clearSession, queryClient]);
 
   const resetPassword = useCallback(
     async ({ username, recoveryCode, newPassword }: ResetPasswordInput): Promise<void> => {

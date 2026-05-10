@@ -37,4 +37,15 @@ describe('useSelectionStore', () => {
     });
     expect(result.current.selection).toBeNull();
   });
+
+  it('reset() returns data fields to initialState', () => {
+    const { result } = renderHook(() => useSelectionStore());
+    act(() => {
+      result.current.setSelection({ text: 'hello', range: null, rect: null });
+    });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.selection).toBeNull();
+  });
 });

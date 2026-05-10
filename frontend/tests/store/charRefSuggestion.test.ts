@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { resetCharRefSuggestionStore, useCharRefSuggestionStore } from '@/store/charRefSuggestion';
+import { useCharRefSuggestionStore } from '@/store/charRefSuggestion';
 
 describe('useCharRefSuggestionStore', () => {
   afterEach(() => {
-    resetCharRefSuggestionStore();
+    useCharRefSuggestionStore.getState().reset();
   });
 
   it('starts closed with no items, query empty, activeIndex 0', () => {
@@ -98,5 +98,25 @@ describe('useCharRefSuggestionStore', () => {
     expect(s.query).toBe('');
     expect(s.activeIndex).toBe(0);
     expect(s.clientRect).toBeNull();
+  });
+
+  it('reset() returns data fields to initialState', () => {
+    useCharRefSuggestionStore.getState().openMenu({
+      items: [
+        { id: '1', name: 'A' },
+        { id: '2', name: 'B' },
+      ],
+      query: 'ab',
+      clientRect: new DOMRect(5, 10, 0, 16),
+      onSelect: () => undefined,
+    });
+    useCharRefSuggestionStore.getState().reset();
+    const s = useCharRefSuggestionStore.getState();
+    expect(s.open).toBe(false);
+    expect(s.items).toEqual([]);
+    expect(s.activeIndex).toBe(0);
+    expect(s.query).toBe('');
+    expect(s.clientRect).toBeNull();
+    expect(s.onSelect).toBeNull();
   });
 });

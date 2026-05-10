@@ -32,4 +32,15 @@ describe('useActiveChapterStore', () => {
     });
     expect(result.current.activeChapterId).toBeNull();
   });
+
+  it('reset() returns data fields to initialState', () => {
+    const { result } = renderHook(() => useActiveChapterStore());
+    act(() => {
+      result.current.setActiveChapterId('chapter-42');
+    });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.activeChapterId).toBeNull();
+  });
 });

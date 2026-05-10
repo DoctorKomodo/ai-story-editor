@@ -6,7 +6,7 @@ import { Paper } from '@/components/Paper';
 import { type Character, charactersQueryKey } from '@/hooks/useCharacters';
 import { setCharRefSuggestionProvider } from '@/lib/charRefSuggestion';
 import { createQueryClient } from '@/lib/queryClient';
-import { resetCharRefSuggestionStore } from '@/store/charRefSuggestion';
+import { useCharRefSuggestionStore } from '@/store/charRefSuggestion';
 
 /**
  * X30 regression test.
@@ -44,7 +44,7 @@ describe('Paper @-mention character picker (X30 regression)', () => {
   afterEach(() => {
     setCharRefSuggestionProvider(null);
     act(() => {
-      resetCharRefSuggestionStore();
+      useCharRefSuggestionStore.getState().reset();
     });
   });
 

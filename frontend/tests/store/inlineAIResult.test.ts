@@ -43,4 +43,20 @@ describe('useInlineAIResultStore', () => {
     });
     expect(result.current.inlineAIResult).toBeNull();
   });
+
+  it('reset() returns data fields to initialState', () => {
+    const { result } = renderHook(() => useInlineAIResultStore());
+    act(() => {
+      result.current.setInlineAIResult({
+        action: 'rewrite',
+        text: 'some text',
+        status: 'done',
+        output: 'rewritten',
+      });
+    });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.inlineAIResult).toBeNull();
+  });
 });

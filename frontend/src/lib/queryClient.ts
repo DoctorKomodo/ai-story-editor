@@ -1,5 +1,6 @@
 import { QueryClient } from '@tanstack/react-query';
 import { ApiError } from '@/lib/api';
+import { registerSessionResetQueryClient } from '@/lib/sessionReset';
 
 /**
  * Factory for a fresh `QueryClient`. The app uses a single shared client
@@ -36,3 +37,10 @@ export function createQueryClient(): QueryClient {
 // App-wide singleton. Tests should not import this — they should build
 // their own client via `createQueryClient()`.
 export const queryClient = createQueryClient();
+
+// Wire the singleton into the non-React-context session-reset registry so
+// that `handleUnauthorizedAccess` (api-client terminal-401 handler) can
+// cancel in-flight queries and clear the cache without a React context.
+// This runs at module-evaluation time — before React mounts — which is
+// intentional: the 401 handler can fire before the first render.
+registerSessionResetQueryClient(queryClient);

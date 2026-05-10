@@ -60,4 +60,18 @@ describe('useComposerDraftStore', () => {
     });
     expect(result.current.focusToken).toBe(tokenBefore);
   });
+
+  it('reset() returns data fields to initialState (draft null, focusToken 0)', () => {
+    const { result } = renderHook(() => useComposerDraftStore());
+    act(() => {
+      result.current.setDraft('some draft text');
+      result.current.requestFocus();
+      result.current.requestFocus();
+    });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.draft).toBeNull();
+    expect(result.current.focusToken).toBe(0);
+  });
 });

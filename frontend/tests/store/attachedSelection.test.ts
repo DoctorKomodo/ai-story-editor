@@ -39,4 +39,18 @@ describe('useAttachedSelectionStore', () => {
     });
     expect(result.current.attachedSelection).toBeNull();
   });
+
+  it('reset() returns data fields to initialState', () => {
+    const { result } = renderHook(() => useAttachedSelectionStore());
+    act(() => {
+      result.current.setAttachedSelection({
+        text: 'snippet',
+        chapter: { id: 'c3', number: 2, title: 'Chapter Two' },
+      });
+    });
+    act(() => {
+      result.current.reset();
+    });
+    expect(result.current.attachedSelection).toBeNull();
+  });
 });
