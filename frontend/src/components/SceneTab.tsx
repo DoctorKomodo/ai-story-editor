@@ -156,11 +156,19 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   });
 
   const onRegenerate = useCallback(() => {
-    if (activeChatId === null || selectedModelId === null) return;
+    // Reuse the same guard `onSend` runs through; this catches "no chapter" /
+    // "no model selected" the same way and surfaces the canonical error to
+    // useErrorStore.
+    const guard = checkChatSendGuards({ activeChapterId: chapterId, selectedModelId });
+    if (guard) {
+      useErrorStore.getState().push(guard);
+      return;
+    }
+    if (activeChatId === null) return;
     void sendChatMessage.mutateAsync({
       chatId: activeChatId,
       chapterId: chapterId as string,
-      modelId: selectedModelId,
+      modelId: selectedModelId as string,
       retry: true,
     });
   }, [activeChatId, chapterId, selectedModelId, sendChatMessage]);

@@ -340,8 +340,11 @@ describe('useSendChatMessageMutation — invalidates chats list (story-editor-lo
         const arg = args[0];
         if (!arg || typeof arg !== 'object' || !('queryKey' in arg)) return false;
         const key = (arg as { queryKey?: readonly unknown[] }).queryKey;
+        const expected = chatsBaseQueryKey('chapter-1');
         return (
-          Array.isArray(key) && key[0] === 'chapter' && key[1] === 'chapter-1' && key[2] === 'chats'
+          Array.isArray(key) &&
+          key.length >= expected.length &&
+          expected.every((v, i) => key[i] === v)
         );
       });
       expect(matched).toBe(true);
