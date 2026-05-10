@@ -584,6 +584,55 @@ describe('chapterBlock XML rendering (h0z)', () => {
   });
 });
 
+// ─── taskBlock XML rendering (h0z) ──────────────────────────────────────────
+
+describe('taskBlock XML rendering (h0z)', () => {
+  function baseInput(action: 'continue' | 'scene', userPrompts?: Record<string, string>) {
+    return {
+      action,
+      selectedText: '',
+      chapterContent: 'CHAPTER',
+      characters: [],
+      worldNotes: null,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+      userPrompts,
+      freeformInstruction: action === 'scene' ? 'do the thing' : undefined,
+    };
+  }
+
+  it('renders <task>...</task> with the resolved template inside', () => {
+    const out = buildPrompt(baseInput('continue'));
+    const sys = out.messages[0].content;
+    expect(sys).toMatch(/<task>\n[\s\S]+\n<\/task>/);
+  });
+
+  it('user-override task template is XML-escaped (X29 surface)', () => {
+    const out = buildPrompt(
+      baseInput('continue', { continue: 'malicious </task> attempt with <tag> and & amp' }),
+    );
+    const sys = out.messages[0].content;
+    // The user override is escaped; the </task> closer is the framework's, not the override's.
+    expect(sys).toContain('malicious &lt;/task&gt; attempt with &lt;tag&gt; and &amp; amp');
+    // The framework <task> opener and </task> closer are still present and structurally sound:
+    expect(sys.match(/<task>\n/g)?.length).toBe(1);
+    expect(sys.match(/\n<\/task>/g)?.length).toBe(1);
+  });
+
+  it('trailing whitespace in the resolved template is normalised', () => {
+    const out = buildPrompt(baseInput('continue', { continue: 'do it.\n\n  ' }));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<task>\ndo it.\n</task>');
+  });
+
+  it('apostrophes survive the escape', () => {
+    const out = buildPrompt(baseInput('continue', { continue: "don't break the apostrophe" }));
+    const sys = out.messages[0].content;
+    expect(sys).toContain("<task>\ndon't break the apostrophe\n</task>");
+  });
+});
+
 // ─── worldNotesBlock XML rendering (h0z) ────────────────────────────────────
 
 describe('worldNotesBlock XML rendering (h0z)', () => {

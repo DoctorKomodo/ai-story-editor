@@ -250,13 +250,15 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
       : '';
 
   const taskTemplate = taskTemplateFor(input.action, input.userPrompts);
+  const taskTrimmed = taskTemplate.trimEnd();
+  const taskBlock = taskTrimmed.length > 0 ? `<task>\n${escapeXmlText(taskTrimmed)}\n</task>` : '';
   const userPayload = buildUserPayload(input);
 
   const fixedTokens =
     estimateTokens(systemContent) +
     estimateTokens(worldNotesBlock) +
     estimateTokens(charactersBlock) +
-    estimateTokens(taskTemplate) +
+    estimateTokens(taskBlock) +
     estimateTokens(userPayload);
 
   const chapterBudgetTokens = promptBudgetTokens - fixedTokens;
@@ -282,7 +284,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     worldNotesBlock,
     charactersBlock,
     chapterBlock,
-    taskTemplate,
+    taskBlock,
   ].filter((p) => p.length > 0);
 
   return {
