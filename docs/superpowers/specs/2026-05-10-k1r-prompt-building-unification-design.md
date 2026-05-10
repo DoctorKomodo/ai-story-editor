@@ -5,7 +5,7 @@
 
 ## Goal
 
-Move every `buildPrompt` action onto the same message-array shape so context lives in the system message and the user message holds only what the user contributed this turn. This eliminates the asymmetry that produced [story-editor-9ph](../../../) (Chat retry on `ask` drops chapter / characters / world-notes context — LLM acts blind) and removes the per-action divergence that fed the bug.
+Move every `buildPrompt` action onto the same message-array shape so context lives in the system message and the user message holds only what the user contributed this turn. This eliminates the asymmetry that produced story-editor-9ph (Chat retry on `ask` drops chapter / characters / world-notes context — LLM acts blind) and removes the per-action divergence that fed the bug.
 
 ## Non-goals
 
@@ -74,7 +74,14 @@ ask: 'Task: answer the user\'s question about the story. Use the chapter and cha
 
 `UserPromptKey` extends to include `'ask'`, so per-user `ask` overrides flow through `[X29]`'s existing override layer (`/api/user-settings` `userPrompts.ask`).
 
-`taskTemplate(action)` becomes a uniform lookup over `DEFAULT_PROMPTS` (with override resolution). The `if (input.action === 'scene')` template-vs-taskBlock branch in `buildPrompt` is gone.
+`taskTemplate(action)` becomes a near-uniform lookup over `DEFAULT_PROMPTS` (with override resolution). One carve-out: **`freeform` has no `DEFAULT_PROMPTS` entry and no `UserPromptKey` slot** (today and after this change). For `freeform`, `taskTemplate` returns `''` — the user's `freeformInstruction` carries the framing, and the empty entry is dropped by the `.filter(p => p.length > 0)` on `systemParts`. The `if (input.action === 'scene')` template-vs-taskBlock branch in `buildPrompt` is gone; the only action-level branching that remains is `freeform`'s empty-template arm.
+
+### `ask` template UI surface
+
+`[X29]` exposes `DEFAULT_PROMPTS` via `GET /api/ai/default-prompts` and the Settings → Prompts UI iterates the keys to render override fields. Adding `'ask'` to `DEFAULT_PROMPTS` + `UserPromptKey` automatically surfaces a new override field in that UI — no bespoke frontend code is required (the rendering loop is already keyed off the API response). What this change still owes:
+
+- A manual verification step (open Settings → Prompts, confirm the Ask field appears with the new default text and that override persistence works end-to-end).
+- Update the relevant Storybook story for the Prompts settings tab if it asserts on the visible key set or on a fixture-shaped `defaultPrompts` payload.
 
 ## `buildPrompt` rewrite
 
@@ -138,6 +145,8 @@ if (action === 'ask' && m.role === 'user' && m.attachmentJson != null) {
 ```
 
 …becomes a uniform per-action map. For any prior user turn (regardless of action) that carries an `attachmentJson.selectionText`, append `\n\nAttached selection: «${selectionText}»` to the bare content string. This keeps cross-turn signal alive (the model sees what the user attached on each prior turn) and removes the action-specific branch. `renderAskUserContent` is no longer needed and is deleted.
+
+**Behavior change — flagged for L-series sanity:** prior `ask` user turns no longer carry the `User question:` prefix that `renderAskUserContent` used to add. Under the unified history map they appear as bare questions (with attachment framing where present). Multi-turn `ask` chats spanning the deploy will read slightly differently to the model post-deploy. Not a regression — chapter/character context still reaches the model via the system message, and the role label `user` makes the question's provenance unambiguous — but worth an L-series check on a 3-turn `ask` chat with attachments before/after.
 
 ### (b) Retry-vs-non-retry messages-array fork — gone
 
@@ -216,7 +225,7 @@ This sets the convention for future actions: they inherit the canonical shape au
 
 ## Acceptance
 
-- One canonical message-array shape across all `buildPrompt` actions; no `if (action === 'scene')` or `if (action === 'ask')` branches remain in `buildPrompt` outside the per-action `taskTemplate` lookup.
+- One canonical message-array shape across all `buildPrompt` actions; no `if (action === 'scene')` or `if (action === 'ask')` branches remain in `buildPrompt`'s system-message assembly. The `taskTemplate` lookup carves out `freeform` (returns `''`); per-action `freeformInstruction`-required validation lives in `buildUserPayload`'s switch arms (the natural home — the validation is about which payload form requires user input). These two are the only action-level branches that remain on the prompt-build path.
 - Chat `ask` retry preserves chapter context (closes 9ph as a side-effect; explicit regression test asserts this).
 - `chat.routes.ts:455-466` ask-attachment-rewrap branch removed; history mapping is uniform across actions.
 - `chat.routes.ts:476-478` retry-vs-non-retry fork removed; both paths use the same shape.
@@ -234,4 +243,5 @@ This sets the convention for future actions: they inherit the canonical shape au
 - `backend/tests/services/prompt.service.test.ts` — re-blessed; new invariant tests; new `buildUserPayload` matrix tests.
 - `backend/tests/routes/chat.test.ts` — re-blessed retry / attachment tests; new 9ph regression test.
 - `backend/tests/routes/ai.test.ts` — re-blessed shape tests.
+- `frontend/**` — no source code changes expected (the Prompts settings UI iterates `defaultPrompts` keys returned by the API, so the new `ask` field appears automatically); a Storybook story covering the Prompts tab may need a fixture update if it pins the visible key set.
 - `docs/agent-rules/backend.md` — new canonical-message-array-shape subsection.
