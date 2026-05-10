@@ -16,6 +16,7 @@ import {
   useRenameChatMutation,
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
+import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -161,13 +162,18 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
     });
   }, [chapterId, createChat]);
 
-  const onCopy = useCallback((message: ChatMessage) => {
-    const text =
-      typeof message.contentJson === 'string'
-        ? message.contentJson
-        : JSON.stringify(message.contentJson);
-    void navigator.clipboard?.writeText(text);
-  }, []);
+  const { copy: copyToClipboard, status: copyStatus } = useCopyToClipboard();
+
+  const onCopy = useCallback(
+    (message: ChatMessage) => {
+      const text =
+        typeof message.contentJson === 'string'
+          ? message.contentJson
+          : JSON.stringify(message.contentJson);
+      void copyToClipboard(text);
+    },
+    [copyToClipboard],
+  );
 
   const onRegenerate = useCallback(() => {
     // Reuse the same guard `onSend` runs through; this catches "no chapter" /
@@ -231,7 +237,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                   message={r.message}
                   actions={
                     <MessageActions>
-                      <CopyAction onClick={() => onCopy(r.message)} />
+                      <CopyAction onClick={() => onCopy(r.message)} status={copyStatus} />
                       <RegenerateAction
                         onClick={onRegenerate}
                         disabled={sendChatMessage.isPending}
