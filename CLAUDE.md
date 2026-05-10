@@ -85,6 +85,22 @@ For every task:
 
 If a task has no verify command, add one to `--notes` (`bd update <id> --notes "verify: <command>\n…"`) before starting.
 
+### Plan-review gate
+
+After writing or updating a plan under `docs/superpowers/plans/`, **STOP**. Quote the plan path and a one-line summary back to the user, then wait for explicit approval before:
+
+- committing the plan file
+- running `scripts/bd-link-plan.sh`
+- invoking `/bd-execute`
+- dispatching any implementer subagent
+
+`AskUserQuestion` answers about scope or approach are **direction approval**, not plan-review approval. They are different gates:
+
+- **Direction gate:** "Should the fix include X? Stack now or wait?" — answered before writing the plan.
+- **Plan-review gate:** the user reads the written plan file and confirms.
+
+A plan that passes direction approval can still be wrong in shape, scope, or abstraction. The brainstorming skill's hard gate ("Do NOT invoke any implementation skill … until you have presented a design and the user has approved it") applies to the plan file itself, not to a summary or to the design questions that preceded it. Auto Mode does **not** override this gate — Auto Mode is about reducing interruptions on routine work, not about skipping reviews of multi-task plans.
+
 ### When to skip `/bd-execute`
 
 Three cases skip the loop:

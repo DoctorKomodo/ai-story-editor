@@ -21,6 +21,14 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
   with `credentials: 'include'`.
 - The auth identifier is `username` (lowercased, 3–32 chars,
   `/^[a-z0-9_-]+$/`). `User.email` is optional metadata only.
+- **Telemetry / error-reporting buffers must flush on every auth
+  transition.** If a future change introduces Sentry, PostHog, an
+  in-app feedback widget, a breadcrumb buffer, or any other client-
+  side sink that retains content across renders, it must be wired
+  into `frontend/src/lib/sessionReset.ts` (or its successor). The
+  invariant: no buffer that captured user A's content may survive
+  into user B's session. There are no such sinks today; the rule
+  exists so the next contributor sees it before adding one.
 
 ## State management
 
