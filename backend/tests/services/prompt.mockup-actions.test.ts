@@ -48,7 +48,7 @@ describe('[V14] action=rewrite', () => {
 
   it('system message states a single alternative version', () => {
     const content = systemContent(baseInput({ action: 'rewrite', selectedText: 'Hello.' }));
-    expect(content.toLowerCase()).toMatch(/single|alternative|version|one/);
+    expect(content.toLowerCase()).toMatch(/single|alternative|version/);
   });
 });
 
@@ -145,7 +145,7 @@ describe('[V14] action=continue — word-count hint', () => {
     const content = systemContent(
       baseInput({ action: 'continue', selectedText: 'She looked up.' }),
     );
-    expect(content.toLowerCase()).toMatch(/\b(80|150|words?)\b/i);
+    expect(content).toMatch(/80.{0,5}150/);
   });
 
   it('user message contains selection wrapped in «…» delimiters', () => {
