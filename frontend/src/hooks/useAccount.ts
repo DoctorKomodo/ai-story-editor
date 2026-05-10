@@ -15,11 +15,28 @@
 // access token is short-lived and still valid until expiry, after which
 // the global setUnauthorizedHandler in `frontend/src/store/session.ts`
 // will redirect on the next failed refresh.
-import { type UseMutationResult, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import {
+  type QueryClient,
+  type UseMutationResult,
+  useMutation,
+  useQueryClient,
+} from '@tanstack/react-query';
+import { type NavigateFunction, useNavigate } from 'react-router-dom';
 import { api } from '@/lib/api';
 import { resetClientState } from '@/lib/sessionReset';
 import { type SessionUser, useSessionStore } from '@/store/session';
+
+type LoggedOutBannerKind = 'signedOutEverywhere' | 'accountDeleted';
+
+async function goLoggedOut(
+  queryClient: QueryClient,
+  navigate: NavigateFunction,
+  kind: LoggedOutBannerKind,
+): Promise<void> {
+  await resetClientState(queryClient);
+  useSessionStore.getState().clearSession();
+  navigate('/login', { replace: true, state: { [kind]: true } });
+}
 
 export interface ChangePasswordInput {
   oldPassword: string;
@@ -67,18 +84,13 @@ export function useRotateRecoveryCodeMutation(): UseMutationResult<
  */
 export function useSignOutEverywhereMutation(): UseMutationResult<void, Error, void> {
   const navigate = useNavigate();
-  const clearSession = useSessionStore((s) => s.clearSession);
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, void>({
     mutationFn: async (): Promise<void> => {
       await api<void>('/auth/sign-out-everywhere', { method: 'POST' });
     },
-    onSuccess: async () => {
-      await resetClientState(queryClient);
-      clearSession();
-      navigate('/login', { replace: true, state: { signedOutEverywhere: true } });
-    },
+    onSuccess: () => goLoggedOut(queryClient, navigate, 'signedOutEverywhere'),
   });
 }
 
@@ -94,7 +106,6 @@ export interface DeleteAccountInput {
  */
 export function useDeleteAccountMutation(): UseMutationResult<void, Error, DeleteAccountInput> {
   const navigate = useNavigate();
-  const clearSession = useSessionStore((s) => s.clearSession);
   const queryClient = useQueryClient();
 
   return useMutation<void, Error, DeleteAccountInput>({
@@ -104,11 +115,7 @@ export function useDeleteAccountMutation(): UseMutationResult<void, Error, Delet
         body: input,
       });
     },
-    onSuccess: async () => {
-      await resetClientState(queryClient);
-      clearSession();
-      navigate('/login', { replace: true, state: { accountDeleted: true } });
-    },
+    onSuccess: () => goLoggedOut(queryClient, navigate, 'accountDeleted'),
   });
 }
 
