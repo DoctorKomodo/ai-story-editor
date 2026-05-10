@@ -63,6 +63,7 @@ export interface UserPromptsSettings {
   summarise: string | null;
   describe: string | null;
   scene: string | null;
+  ask: string | null;
 }
 
 export interface UserSettings {
@@ -153,6 +154,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     summarise: null,
     describe: null,
     scene: null,
+    ask: null,
   },
 };
 

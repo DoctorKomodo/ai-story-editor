@@ -24,6 +24,7 @@ const DEFAULTS: DefaultPrompts = {
     "Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
   scene:
     'Task: turn the following scene direction into a paragraph of vivid prose that fits the story voice.',
+  ask: "Task: answer the user's question about the story. Use the chapter and character context to inform your answer.",
 };
 
 function withQueryClient(settings: UserSettings) {
@@ -82,6 +83,7 @@ export const EverythingOverridden: Story = {
         summarise: 'Custom summarise.',
         describe: 'Custom describe.',
         scene: 'Custom scene.',
+        ask: 'Custom ask.',
       },
     }),
   ],
