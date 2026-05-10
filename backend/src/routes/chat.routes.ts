@@ -405,10 +405,11 @@ export function createChatMessagesRouter() {
       // user message, scene template in system); ask chats use the ask action.
       const action: 'ask' | 'scene' = chat.kind === 'scene' ? 'scene' : 'ask';
 
-      // [SC6] On retry, use the last user turn's content as the freeform
-      // instruction so the prompt builder assembles the system message
-      // correctly. On a normal turn, use body.content (guaranteed non-empty
-      // by superRefine when retry is false/omitted).
+      // [SC6] On retry, use the last user turn's content as the user
+      // instruction (passed via freeformInstruction, which the ask/scene
+      // builder arms read) so the prompt builder assembles the system
+      // message correctly. On a normal turn, use body.content (guaranteed
+      // non-empty by superRefine when retry is false/omitted).
       // lastUserMsg is guaranteed non-null here for retry (checked above).
       const trailingUserContent: string = body.retry
         ? typeof lastUserMsg!.contentJson === 'string'

@@ -7,7 +7,7 @@
 //   3. null / undefined / '' / whitespace-only fall back to defaults.
 //   4. Selection auto-append still happens for overridden action templates.
 //   5. include_venice_system_prompt is independent of userPrompts.system.
-//   6. freeform action is not template-driven and ignores userPrompts (k1r: ask now is).
+//   6. ask action is template-driven (k1r); per-action overrides apply.
 
 import { describe, expect, it } from 'vitest';
 import {
@@ -147,27 +147,9 @@ describe('[X29] selection text auto-appends after overridden action templates', 
   });
 });
 
-// ─── freeform is not template-driven (k1r: ask now is) ─────────────────────────
+// ─── ask is template-driven (k1r) ─────────────────────────────────────────────
 
-describe('[X29] freeform is not template-driven (k1r: ask now is)', () => {
-  it('freeform: userPrompts has no observable effect', () => {
-    const a = userMsg(
-      baseInput({
-        action: 'freeform',
-        freeformInstruction: 'Tell me a haiku.',
-      }),
-    );
-    const b = userMsg(
-      baseInput({
-        action: 'freeform',
-        freeformInstruction: 'Tell me a haiku.',
-        // passing a valid userPrompts key to freeform confirms the template path is not invoked
-        userPrompts: { continue: 'should not appear' },
-      }),
-    );
-    expect(a).toBe(b);
-  });
-
+describe('[X29] ask is template-driven (k1r)', () => {
   it('ask: userPrompts.ask non-empty override appears in system message', () => {
     const sys = systemMsg(
       baseInput({

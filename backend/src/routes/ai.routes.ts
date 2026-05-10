@@ -20,35 +20,16 @@ import type { UserSettings } from './user-settings.routes';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
-const CompleteBody = z
-  .object({
-    // 'ask' is intentionally excluded: it routes into chat (V16), not /complete.
-    // 'rewrite' and 'describe' are V14 additions for the selection-bubble surface.
-    action: z.enum([
-      'continue',
-      'rephrase',
-      'expand',
-      'summarise',
-      'freeform',
-      'rewrite',
-      'describe',
-    ]),
-    selectedText: z.string(),
-    chapterId: z.string().min(1),
-    storyId: z.string().min(1),
-    modelId: z.string().min(1),
-    freeformInstruction: z.string().optional(),
-    enableWebSearch: z.boolean().optional(),
-  })
-  .refine(
-    (d) =>
-      d.action !== 'freeform' ||
-      (typeof d.freeformInstruction === 'string' && d.freeformInstruction.length > 0),
-    {
-      message: 'freeformInstruction is required when action is "freeform"',
-      path: ['freeformInstruction'],
-    },
-  );
+const CompleteBody = z.object({
+  // 'ask' is intentionally excluded: it routes into chat (V16), not /complete.
+  // 'rewrite' and 'describe' are V14 additions for the selection-bubble surface.
+  action: z.enum(['continue', 'rephrase', 'expand', 'summarise', 'rewrite', 'describe']),
+  selectedText: z.string(),
+  chapterId: z.string().min(1),
+  storyId: z.string().min(1),
+  modelId: z.string().min(1),
+  enableWebSearch: z.boolean().optional(),
+});
 
 // ─── Prompt-cache key helper ──────────────────────────────────────────────────
 
@@ -180,7 +161,6 @@ export function createAiRouter() {
         userMaxCompletionTokens: Number.POSITIVE_INFINITY,
         includeVeniceSystemPrompt,
         userPrompts,
-        freeformInstruction: body.freeformInstruction,
       });
 
       // ── 10. Enrich venice_parameters ─────────────────────────────────────
