@@ -22,13 +22,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
-import {
-  buildPrompt,
-  type CharacterContext,
-  // @ts-expect-error renderAskUserContent removed in Task 10; import kept to avoid a large
-  // diff across two commits — deletion is the only change in that task.
-  renderAskUserContent,
-} from '../services/prompt.service';
+import { buildPrompt, type CharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
