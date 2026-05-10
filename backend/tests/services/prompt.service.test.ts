@@ -361,3 +361,55 @@ describe('buildPrompt — scene action', () => {
     expect(out.messages[1].content).toBe(baseSceneInput.freeformInstruction);
   });
 });
+
+// ─── Canonical shape invariant (k1r) ─────────────────────────────────────────
+
+describe('buildPrompt — canonical shape invariant (k1r)', () => {
+  const ALL_ACTIONS: BuildPromptInput['action'][] = [
+    'continue',
+    'rephrase',
+    'expand',
+    'summarise',
+    'freeform',
+    'rewrite',
+    'describe',
+    'scene',
+    'ask',
+  ];
+
+  function inputFor(action: BuildPromptInput['action']): BuildPromptInput {
+    return baseInput({
+      action,
+      chapterContent: 'CHAPTER_BODY_SENTINEL',
+      worldNotes: 'WORLD_NOTES_SENTINEL',
+      characters: [{ name: 'Eira', role: 'protagonist', keyTraits: 'CHAR_TRAIT_SENTINEL' }],
+      // Provide instructions for the actions that require them.
+      freeformInstruction:
+        action === 'scene' || action === 'ask' || action === 'freeform'
+          ? 'do the thing'
+          : undefined,
+    });
+  }
+
+  for (const action of ALL_ACTIONS) {
+    it(`action=${action}: chapter / world / characters live in messages[0] (system)`, () => {
+      const out = buildPrompt(inputFor(action));
+      expect(out.messages[0]?.role).toBe('system');
+      expect(out.messages[0]?.content).toContain('Chapter so far:');
+      expect(out.messages[0]?.content).toContain('CHAPTER_BODY_SENTINEL');
+      expect(out.messages[0]?.content).toContain('World notes:');
+      expect(out.messages[0]?.content).toContain('WORLD_NOTES_SENTINEL');
+      expect(out.messages[0]?.content).toContain('Characters:');
+      expect(out.messages[0]?.content).toContain('CHAR_TRAIT_SENTINEL');
+    });
+
+    it(`action=${action}: messages[1] (user) does NOT carry chapter / world / characters`, () => {
+      const out = buildPrompt(inputFor(action));
+      expect(out.messages[1]?.role).toBe('user');
+      const userContent = out.messages[1]?.content ?? '';
+      expect(userContent).not.toContain('CHAPTER_BODY_SENTINEL');
+      expect(userContent).not.toContain('WORLD_NOTES_SENTINEL');
+      expect(userContent).not.toContain('CHAR_TRAIT_SENTINEL');
+    });
+  }
+});

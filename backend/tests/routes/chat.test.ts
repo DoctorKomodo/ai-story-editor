@@ -403,6 +403,75 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     expect(assistants[0].contentJson).toBe('second reply');
   });
 
+  it('[9ph] retry on ask preserves chapter context (regression)', async () => {
+    const { agent, accessToken, chapterId } = await setup('k1r-9ph-regression');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    // Chapter must have content for the test to be meaningful.
+    const req = makeFakeReq(accessToken);
+    await createChapterRepo(req).update(chapterId, {
+      bodyJson: {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: 'The dragon circled the keep before landing on the courtyard.',
+              },
+            ],
+          },
+        ],
+      } as unknown as object,
+      wordCount: 11,
+    });
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'q', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // First turn — establishes a user message + assistant reply.
+    queueSseResponse(fetchSpy, 'A circling sky-snake is bad news.');
+    await sendMessage(agent, chatId, {
+      content: 'What is the dragon doing?',
+      modelId: MODEL_ID,
+    });
+
+    // Retry — models cache warm; only the stream mock is needed.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-9ph',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'Retry reply.' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, { retry: true, modelId: MODEL_ID });
+    expect(retryStatus).toBe(200);
+
+    // Inspect the SECOND completions call (the retry's outgoing wire payload).
+    const completionCalls = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCalls.length).toBeGreaterThanOrEqual(2);
+    const [, retryInit] = completionCalls[completionCalls.length - 1]!;
+    const retryBody = JSON.parse((retryInit as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
+    const sent = retryBody.messages as Array<{ role: string; content: string }>;
+
+    // The structural invariant: SOME message must include the chapter fragment.
+    // Today (pre-k1r) this fails — the synthesisedUserMsg was dropped on retry,
+    // taking chapter context with it for the `ask` action.
+    expect(sent.some((m) => m.content.includes('Chapter so far:'))).toBe(true);
+    expect(sent.some((m) => m.content.includes('dragon circled the keep'))).toBe(true);
+  });
+
   // [ai-surfaces-v1] Case B: retry with no trailing assistant (mid-stream error scenario).
   it('on retry with no trailing assistant, generates cleanly with no deletions (case B)', async () => {
     const { agent, chapterId, accessToken } = await setup('sc6-retry-caseB');
