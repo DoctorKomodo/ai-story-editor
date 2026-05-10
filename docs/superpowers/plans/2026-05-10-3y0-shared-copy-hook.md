@@ -62,9 +62,20 @@ import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 describe('useCopyToClipboard', () => {
   const originalClipboard = navigator.clipboard;
   const originalExecCommand = document.execCommand;
+  const originalIsSecureContext = window.isSecureContext;
+
+  function setSecureContext(value: boolean): void {
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value,
+    });
+  }
 
   beforeEach(() => {
     vi.useFakeTimers();
+    // jsdom defaults window.isSecureContext to false; tests that exercise
+    // the modern path must opt in explicitly.
+    setSecureContext(true);
   });
 
   afterEach(() => {
@@ -74,6 +85,7 @@ describe('useCopyToClipboard', () => {
       value: originalClipboard,
     });
     document.execCommand = originalExecCommand;
+    setSecureContext(originalIsSecureContext);
   });
 
   it('starts in idle status', () => {
@@ -117,6 +129,26 @@ describe('useCopyToClipboard', () => {
       await result.current.copy('lan-text');
     });
 
+    expect(exec).toHaveBeenCalledWith('copy');
+    expect(result.current.status).toBe('copied');
+  });
+
+  it('non-secure context → skips clipboard API entirely and falls back', async () => {
+    setSecureContext(false);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    const exec = vi.fn().mockReturnValue(true);
+    document.execCommand = exec as unknown as typeof document.execCommand;
+
+    const { result } = renderHook(() => useCopyToClipboard());
+    await act(async () => {
+      await result.current.copy('lan-ip-text');
+    });
+
+    expect(writeText).not.toHaveBeenCalled();
     expect(exec).toHaveBeenCalledWith('copy');
     expect(result.current.status).toBe('copied');
   });
@@ -220,6 +252,11 @@ function executeFallbackCopy(text: string): boolean {
   textarea.style.left = '-9999px';
   textarea.style.top = '0';
   document.body.appendChild(textarea);
+  // iOS Safari (and some Firefox versions) require focus before select for
+  // document.execCommand('copy') to succeed. The fallback path exists for
+  // non-secure-context users (LAN self-host), many of whom are on mobile —
+  // skipping focus() silently fails exactly where the fallback needs to work.
+  textarea.focus();
   textarea.select();
   let ok = false;
   try {
@@ -248,7 +285,11 @@ export function useCopyToClipboard(opts?: UseCopyToClipboardOptions): UseCopyToC
   const copy = useCallback(
     async (text: string): Promise<void> => {
       let ok = false;
-      if (navigator.clipboard?.writeText) {
+      // Pair the navigator.clipboard?.writeText feature-detect with
+      // window.isSecureContext: some historical Chromium builds exposed
+      // navigator.clipboard over plain HTTP but rejected writeText at call
+      // time. Checking isSecureContext skips the rejection round-trip.
+      if (navigator.clipboard?.writeText && window.isSecureContext) {
         try {
           await navigator.clipboard.writeText(text);
           ok = true;
@@ -544,9 +585,18 @@ function CopyHarness({ text }: { text: string }): JSX.Element {
 
 describe('CopyAction wired with useCopyToClipboard', () => {
   const originalClipboard = navigator.clipboard;
+  const originalIsSecureContext = window.isSecureContext;
+
+  function setSecureContext(value: boolean): void {
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value,
+    });
+  }
 
   beforeEach(() => {
     vi.useFakeTimers();
+    setSecureContext(true);
   });
 
   afterEach(() => {
@@ -555,6 +605,7 @@ describe('CopyAction wired with useCopyToClipboard', () => {
       configurable: true,
       value: originalClipboard,
     });
+    setSecureContext(originalIsSecureContext);
   });
 
   it('clicking the icon writes via Clipboard API and shows "Copied"', async () => {
