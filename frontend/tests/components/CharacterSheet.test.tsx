@@ -30,6 +30,11 @@ interface CharacterFixture {
   voice: string | null;
   arc: string | null;
   personality: string | null;
+  backstory: string | null;
+  relationships: string | null;
+  orderIndex: number;
+  color: string | null;
+  initial: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,6 +49,11 @@ function char(overrides: Partial<CharacterFixture> & { id: string }): CharacterF
     voice: 'Measured',
     arc: 'Redemption',
     personality: 'Curious',
+    backstory: null,
+    relationships: null,
+    orderIndex: 0,
+    color: null,
+    initial: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
     ...overrides,
