@@ -7,6 +7,8 @@ import {
 } from '@tanstack/react-query';
 import {
   type Character,
+  type CharacterCreateInput,
+  type CharacterUpdateInput,
   characterResponseSchema,
   charactersResponseSchema,
 } from 'story-editor-shared';
@@ -50,30 +52,12 @@ export function useCharactersQuery(
   });
 }
 
-/**
- * POST body shape accepted by the create endpoint. Only `name` is required;
- * any optional field provided is forwarded as-is. Empty/blank values should
- * be omitted by the caller (do not send `""`); to clear a field after create,
- * use the update mutation with an explicit `null`.
- */
-export interface CreateCharacterInput {
-  name: string;
-  role?: string;
-  age?: string;
-  appearance?: string;
-  voice?: string;
-  arc?: string;
-  personality?: string;
-  backstory?: string;
-  relationships?: string;
-}
-
 export function useCreateCharacterMutation(
   storyId: string,
-): UseMutationResult<Character, Error, CreateCharacterInput> {
+): UseMutationResult<Character, Error, CharacterCreateInput> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateCharacterInput): Promise<Character> => {
+    mutationFn: async (input: CharacterCreateInput): Promise<Character> => {
       const raw = await api<unknown>(`/stories/${encodeURIComponent(storyId)}/characters`, {
         method: 'POST',
         body: input,
@@ -115,29 +99,12 @@ export function useCharacterQuery(
   });
 }
 
-/**
- * PATCH body shape accepted by the sheet modal. Every field is optional —
- * only keys the user actually changed are forwarded; an explicit `null`
- * clears the stored value server-side.
- */
-export type UpdateCharacterPatch = Partial<
-  Pick<
-    Character,
-    | 'name'
-    | 'role'
-    | 'age'
-    | 'appearance'
-    | 'voice'
-    | 'arc'
-    | 'personality'
-    | 'backstory'
-    | 'relationships'
-  >
->;
+// Alias kept for consumers that use the previous name (CharacterSheet.tsx).
+export type UpdateCharacterPatch = CharacterUpdateInput;
 
 export interface UpdateCharacterInput {
   id: string;
-  patch: UpdateCharacterPatch;
+  patch: CharacterUpdateInput;
 }
 
 export function useUpdateCharacterMutation(

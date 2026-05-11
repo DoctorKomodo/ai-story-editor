@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { Character } from 'story-editor-shared';
+import type { Character, CharacterCreateInput } from 'story-editor-shared';
 import {
   Button,
   Field,
@@ -20,7 +20,6 @@ import {
   Textarea,
 } from '@/design/primitives';
 import {
-  type CreateCharacterInput,
   type UpdateCharacterPatch,
   useCharacterQuery,
   useCreateCharacterMutation,
@@ -183,7 +182,7 @@ function CreateCharacterSheet({
     const trimmedName = fields.name.trim();
     if (trimmedName.length === 0) return;
     setFormError(null);
-    const input: CreateCharacterInput = { name: trimmedName };
+    const input: CharacterCreateInput = { name: trimmedName };
     const role = nullable(fields.role);
     if (role !== null) input.role = role;
     const age = nullable(fields.age);
