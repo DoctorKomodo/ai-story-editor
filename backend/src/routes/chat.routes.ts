@@ -22,7 +22,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
-import { buildPrompt, type CharacterContext } from '../services/prompt.service';
+import { buildPrompt, type CharacterContext, toCharacterContext } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
@@ -381,21 +381,7 @@ export function createChatMessagesRouter() {
 
       // ── 5. Load characters ────────────────────────────────────────────────
       const rawCharacters = await createCharacterRepo(req).findManyForStory(storyId);
-      const characters: CharacterContext[] = rawCharacters.map((c) => {
-        const nameVal = typeof c.name === 'string' ? c.name : '';
-        const roleVal = typeof c.role === 'string' ? c.role : null;
-        const traitFields = ['personality', 'arc', 'appearance', 'voice'] as const;
-        const traitParts: string[] = [];
-        for (const f of traitFields) {
-          const v = (c as Record<string, unknown>)[f];
-          if (typeof v === 'string' && v.trim().length > 0) {
-            traitParts.push(v.trim());
-          }
-          if (traitParts.join('; ').length >= 120) break;
-        }
-        const keyTraits = traitParts.join('; ').slice(0, 120) || null;
-        return { name: nameVal, role: roleVal, keyTraits };
-      });
+      const characters: CharacterContext[] = rawCharacters.map(toCharacterContext);
 
       // ── 6. Build prompt from chapter + story context ──────────────────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);

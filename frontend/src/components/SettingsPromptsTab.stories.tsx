@@ -14,17 +14,17 @@ const DEFAULTS: DefaultPrompts = {
   system:
     'You are an expert creative-writing assistant. Help the author continue, refine, and develop their story…',
   continue:
-    'Task: continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
+    'continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
   rewrite:
-    'Task: rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
+    'rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
   expand:
-    'Task: expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
-  summarise: 'Task: summarise the selection to its essential points. Use 1–3 sentences.',
+    'expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
+  summarise: 'summarise the selection to its essential points. Use 1–3 sentences.',
   describe:
-    "Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
+    "describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
   scene:
-    'Task: write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
-  ask: "Task: answer the user's question about the story. Use the chapter and character context to inform your answer.",
+    'write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
+  ask: "answer the user's question about the story. Use the chapter and character context to inform your answer.",
 };
 
 function withQueryClient(settings: UserSettings) {

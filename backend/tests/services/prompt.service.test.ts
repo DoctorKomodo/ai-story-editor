@@ -2,10 +2,12 @@ import { describe, expect, it } from 'vitest';
 import {
   type BuildPromptInput,
   buildPrompt,
+  type CharacterRecord,
   DEFAULT_PROMPTS,
   DEFAULT_SYSTEM_PROMPT,
   estimateTokens,
   PromptValidationError,
+  toCharacterContext,
 } from '../../src/services/prompt.service';
 
 // ─── estimateTokens ──────────────────────────────────────────────────────────
@@ -379,11 +381,11 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
     it(`action=${action}: chapter / world / characters live in messages[0] (system)`, () => {
       const out = buildPrompt(inputFor(action));
       expect(out.messages[0]?.role).toBe('system');
-      expect(out.messages[0]?.content).toContain('Chapter so far:');
+      expect(out.messages[0]?.content).toContain('<chapter_so_far>');
       expect(out.messages[0]?.content).toContain('CHAPTER_BODY_SENTINEL');
-      expect(out.messages[0]?.content).toContain('World notes:');
+      expect(out.messages[0]?.content).toContain('<world_notes>');
       expect(out.messages[0]?.content).toContain('WORLD_NOTES_SENTINEL');
-      expect(out.messages[0]?.content).toContain('Characters:');
+      expect(out.messages[0]?.content).toContain('<characters>');
       expect(out.messages[0]?.content).toContain('CHAR_TRAIT_SENTINEL');
     });
 
@@ -396,4 +398,285 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
       expect(userContent).not.toContain('CHAR_TRAIT_SENTINEL');
     });
   }
+});
+
+// ─── charactersBlock XML rendering (h0z) ────────────────────────────────────
+
+describe('charactersBlock XML rendering (h0z)', () => {
+  function baseInput(characters: import('../../src/services/prompt.service').CharacterContext[]) {
+    return {
+      action: 'continue' as const,
+      selectedText: '',
+      chapterContent: '',
+      characters,
+      worldNotes: null,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  it('renders <characters>...</characters> with one <character> per entry', () => {
+    const out = buildPrompt(
+      baseInput([
+        { name: 'Imogen Thorne', role: 'protagonist', keyTraits: 'wry' },
+        { name: 'Felix', role: 'rival', keyTraits: 'vain' },
+      ]),
+    );
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<characters>\n');
+    expect(sys).toContain('\n</characters>');
+    expect(sys).toContain('<character name="Imogen Thorne" role="protagonist">wry</character>');
+    expect(sys).toContain('<character name="Felix" role="rival">vain</character>');
+  });
+
+  it('self-closing form when keyTraits is null', () => {
+    const out = buildPrompt(baseInput([{ name: 'Bystander', role: null, keyTraits: null }]));
+    expect(out.messages[0].content).toContain('<character name="Bystander" />');
+  });
+
+  it('omits role attribute when role is null', () => {
+    const out = buildPrompt(baseInput([{ name: 'X', role: null, keyTraits: 'flat' }]));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<character name="X">flat</character>');
+    expect(sys).not.toMatch(/role=""/);
+    expect(sys).not.toMatch(/role="null"/);
+  });
+
+  it('empty-name character is skipped entirely', () => {
+    const out = buildPrompt(
+      baseInput([
+        { name: '', role: 'rival', keyTraits: 'noise' },
+        { name: 'Real', role: 'protagonist', keyTraits: 'ok' },
+      ]),
+    );
+    const sys = out.messages[0].content;
+    expect(sys).not.toContain('<character name=""');
+    expect(sys).toContain('<character name="Real" role="protagonist">ok</character>');
+  });
+
+  it('characters block omitted entirely when list is empty', () => {
+    const out = buildPrompt(baseInput([]));
+    expect(out.messages[0].content).not.toContain('<characters>');
+  });
+
+  it('escapes & < > " in attributes and & < > in text', () => {
+    const out = buildPrompt(
+      baseInput([{ name: 'A & B "the kid"', role: '<rival>', keyTraits: 'has < and > and &' }]),
+    );
+    const sys = out.messages[0].content;
+    expect(sys).toContain('name="A &amp; B &quot;the kid&quot;"');
+    expect(sys).toContain('role="&lt;rival&gt;"');
+    expect(sys).toContain('>has &lt; and &gt; and &amp;</character>');
+  });
+
+  it('collision test: name containing </character> does not close the tag prematurely', () => {
+    const out = buildPrompt(baseInput([{ name: '</character>', role: null, keyTraits: 'ok' }]));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('name="&lt;/character&gt;"');
+    expect(sys).toContain('<character name="&lt;/character&gt;">ok</character>');
+  });
+});
+
+// ─── toCharacterContext (h0z) ────────────────────────────────────────────────
+
+describe('toCharacterContext (h0z)', () => {
+  it('all four trait fields populated → joined with "; "; no truncation even when result > 200 chars', () => {
+    const long = 'x'.repeat(80);
+    const c: CharacterRecord = {
+      name: 'Imogen Thorne',
+      role: 'protagonist',
+      personality: long,
+      arc: long,
+      appearance: long,
+      voice: 'auburn hair',
+    };
+    const out = toCharacterContext(c);
+    expect(out.name).toBe('Imogen Thorne');
+    expect(out.role).toBe('protagonist');
+    expect(out.keyTraits).not.toBeNull();
+    expect(out.keyTraits!.length).toBeGreaterThan(200);
+    expect(out.keyTraits).toBe(`${long}; ${long}; ${long}; auburn hair`);
+  });
+
+  it('only personality populated → single value, no separator', () => {
+    expect(toCharacterContext({ name: 'Bystander', personality: 'shy' })).toEqual({
+      name: 'Bystander',
+      role: null,
+      keyTraits: 'shy',
+    });
+  });
+
+  it('whitespace-only trait fields are skipped', () => {
+    const out = toCharacterContext({
+      name: 'X',
+      personality: '   ',
+      arc: '\t\n',
+      appearance: 'tall',
+    });
+    expect(out.keyTraits).toBe('tall');
+  });
+
+  it('all trait fields missing/null → keyTraits is null', () => {
+    expect(toCharacterContext({ name: 'X' }).keyTraits).toBeNull();
+  });
+
+  it('role missing or empty → role is null', () => {
+    expect(toCharacterContext({ name: 'X' }).role).toBeNull();
+    expect(toCharacterContext({ name: 'X', role: '' }).role).toBe(''); // empty string is preserved as-is per typeof check
+  });
+
+  it('name missing or non-string → empty string', () => {
+    expect(toCharacterContext({}).name).toBe('');
+    expect(toCharacterContext({ name: 42 as unknown }).name).toBe('');
+  });
+});
+
+// ─── chapterBlock XML rendering (h0z) ────────────────────────────────────────
+
+describe('chapterBlock XML rendering (h0z)', () => {
+  function baseInput(chapterContent: string) {
+    return {
+      action: 'continue' as const,
+      selectedText: '',
+      chapterContent,
+      characters: [],
+      worldNotes: null,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  it('renders <chapter_so_far>...</chapter_so_far> when chapter content survives the trim', () => {
+    const out = buildPrompt(baseInput('She crossed the room.'));
+    expect(out.messages[0].content).toContain(
+      '<chapter_so_far>\nShe crossed the room.\n</chapter_so_far>',
+    );
+  });
+
+  it('omits the wrapper when chapter is empty', () => {
+    expect(buildPrompt(baseInput('')).messages[0].content).not.toContain('<chapter_so_far>');
+  });
+
+  it('escapes & < > in chapter prose', () => {
+    const out = buildPrompt(baseInput('Sam said "<3" then & sighed.'));
+    expect(out.messages[0].content).toContain(
+      '<chapter_so_far>\nSam said "&lt;3" then &amp; sighed.\n</chapter_so_far>',
+    );
+  });
+
+  it('collision test: chapter containing </chapter_so_far> renders escaped', () => {
+    const out = buildPrompt(baseInput('open </chapter_so_far> close'));
+    expect(out.messages[0].content).toContain('open &lt;/chapter_so_far&gt; close');
+  });
+
+  it('double-escape semantics: literal "&amp;" in chapter renders as "&amp;amp;"', () => {
+    const out = buildPrompt(baseInput('Smith &amp; Wesson'));
+    expect(out.messages[0].content).toContain('Smith &amp;amp; Wesson');
+  });
+
+  it('trailing whitespace inside the wrapper is normalised', () => {
+    const out = buildPrompt(baseInput('content\n\n  '));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<chapter_so_far>\ncontent\n</chapter_so_far>');
+    expect(sys).not.toContain('content\n\n  ');
+  });
+});
+
+// ─── taskBlock XML rendering (h0z) ──────────────────────────────────────────
+
+describe('taskBlock XML rendering (h0z)', () => {
+  function baseInput(action: 'continue' | 'scene', userPrompts?: Record<string, string>) {
+    return {
+      action,
+      selectedText: '',
+      chapterContent: 'CHAPTER',
+      characters: [],
+      worldNotes: null,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+      userPrompts,
+      freeformInstruction: action === 'scene' ? 'do the thing' : undefined,
+    };
+  }
+
+  it('renders <task>...</task> with the resolved template inside', () => {
+    const out = buildPrompt(baseInput('continue'));
+    const sys = out.messages[0].content;
+    expect(sys).toMatch(/<task>\n[\s\S]+\n<\/task>/);
+  });
+
+  it('user-override task template is XML-escaped (X29 surface)', () => {
+    const out = buildPrompt(
+      baseInput('continue', { continue: 'malicious </task> attempt with <tag> and & amp' }),
+    );
+    const sys = out.messages[0].content;
+    // The user override is escaped; the </task> closer is the framework's, not the override's.
+    expect(sys).toContain('malicious &lt;/task&gt; attempt with &lt;tag&gt; and &amp; amp');
+    // The framework <task> opener and </task> closer are still present and structurally sound:
+    expect(sys.match(/<task>\n/g)?.length).toBe(1);
+    expect(sys.match(/\n<\/task>/g)?.length).toBe(1);
+  });
+
+  it('trailing whitespace in the resolved template is normalised', () => {
+    const out = buildPrompt(baseInput('continue', { continue: 'do it.\n\n  ' }));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<task>\ndo it.\n</task>');
+  });
+
+  it('apostrophes survive the escape', () => {
+    const out = buildPrompt(baseInput('continue', { continue: "don't break the apostrophe" }));
+    const sys = out.messages[0].content;
+    expect(sys).toContain("<task>\ndon't break the apostrophe\n</task>");
+  });
+});
+
+// ─── worldNotesBlock XML rendering (h0z) ────────────────────────────────────
+
+describe('worldNotesBlock XML rendering (h0z)', () => {
+  function baseInput(worldNotes: string | null) {
+    return {
+      action: 'continue' as const,
+      selectedText: '',
+      chapterContent: '',
+      characters: [],
+      worldNotes,
+      modelContextLength: 8192,
+      modelMaxCompletionTokens: 1024,
+      userMaxCompletionTokens: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  it('renders <world_notes>...</world_notes> when world notes present', () => {
+    const out = buildPrompt(baseInput('Late-Victorian London.'));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<world_notes>\nLate-Victorian London.\n</world_notes>');
+  });
+
+  it('omits the wrapper entirely when world notes are null or empty', () => {
+    expect(buildPrompt(baseInput(null)).messages[0].content).not.toContain('<world_notes>');
+    expect(buildPrompt(baseInput('')).messages[0].content).not.toContain('<world_notes>');
+  });
+
+  it('escapes & < > in world-notes content', () => {
+    const out = buildPrompt(baseInput('AT&T then <html> there'));
+    expect(out.messages[0].content).toContain(
+      '<world_notes>\nAT&amp;T then &lt;html&gt; there\n</world_notes>',
+    );
+  });
+
+  it('collision test: world notes containing </world_notes> renders escaped', () => {
+    const out = buildPrompt(baseInput('text </world_notes> more text'));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('text &lt;/world_notes&gt; more text');
+  });
+
+  it('trailing whitespace inside the wrapper is normalised (no trailing \\n\\n before closer)', () => {
+    const out = buildPrompt(baseInput('content\n\n   '));
+    const sys = out.messages[0].content;
+    expect(sys).toContain('<world_notes>\ncontent\n</world_notes>');
+    expect(sys).not.toContain('content\n\n');
+  });
 });

@@ -25,6 +25,33 @@ export interface CharacterContext {
   keyTraits?: string | null;
 }
 
+// [h0z] Permissive shape that matches the decrypted character row returned by
+// the character repo. Kept loose (`unknown` per field) so the pure prompt
+// service stays decoupled from the repo's narrative-character type.
+export interface CharacterRecord {
+  name?: unknown;
+  role?: unknown;
+  personality?: unknown;
+  arc?: unknown;
+  appearance?: unknown;
+  voice?: unknown;
+}
+
+// [h0z] Pure projection of a decrypted character row into the trimmed shape
+// the prompt builder consumes. Previously inlined in ai.routes.ts and
+// chat.routes.ts (byte-for-byte duplicate, modulo one stray comment).
+// The 120-char cap from the inlined version is removed by design.
+export function toCharacterContext(c: CharacterRecord): CharacterContext {
+  const name = typeof c.name === 'string' ? c.name : '';
+  const role = typeof c.role === 'string' ? c.role : null;
+  const traits: string[] = [];
+  for (const f of ['personality', 'arc', 'appearance', 'voice'] as const) {
+    const v = c[f];
+    if (typeof v === 'string' && v.trim().length > 0) traits.push(v.trim());
+  }
+  return { name, role, keyTraits: traits.join('; ') || null };
+}
+
 // [X29] Keys of the user-overridable prompt slice. `rewrite` covers both
 // 'rephrase' and 'rewrite' actions (collapsed at the override layer; the
 // in-builder strings for each surface stay distinct via DEFAULT_PROMPTS).
@@ -81,7 +108,7 @@ export interface BuiltPrompt {
 export const DEFAULT_SYSTEM_PROMPT =
   'You are an expert creative-writing assistant. ' +
   'Help the author continue, refine, and develop their story with vivid prose that matches their established voice and tone. ' +
-  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output.';
+  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output, no XML tags, and no section labels.';
 
 // [X29] Single source of truth for default templates — exposed via
 // GET /api/ai/default-prompts so the frontend renders the same strings
@@ -89,17 +116,17 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const DEFAULT_PROMPTS = {
   system: DEFAULT_SYSTEM_PROMPT,
   continue:
-    'Task: continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
+    'continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
   rewrite:
-    'Task: rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
+    'rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
   expand:
-    'Task: expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
-  summarise: 'Task: summarise the selection to its essential points. Use 1–3 sentences.',
+    'expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
+  summarise: 'summarise the selection to its essential points. Use 1–3 sentences.',
   describe:
-    "Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
+    "describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
   scene:
-    'Task: write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
-  ask: "Task: answer the user's question about the story. Use the chapter and character context to inform your answer.",
+    'write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
+  ask: "answer the user's question about the story. Use the chapter and character context to inform your answer.",
 } as const satisfies Record<UserPromptKey, string>;
 
 // Reserved tokens between the response budget and the prompt budget. Covers
@@ -112,6 +139,33 @@ export const SAFETY_MARGIN_TOKENS = 512;
 
 export function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4);
+}
+
+// ─── XML escape helpers (h0z) ────────────────────────────────────────────────
+// Used wherever decrypted user content is interpolated into XML wrappers in
+// the system-message content. Escape semantics: input is plaintext (escape is
+// non-idempotent — a literal "&amp;" in user input renders as "&amp;amp;").
+
+function escapeXmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeXmlAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ─── Per-character renderer (h0z) ────────────────────────────────────────────
+
+function renderCharacterTag(c: CharacterContext): string {
+  if (!c.name) return ''; // skip malformed empty-name entries entirely
+  const nameAttr = ` name="${escapeXmlAttr(c.name)}"`;
+  const roleAttr = c.role ? ` role="${escapeXmlAttr(c.role)}"` : '';
+  if (!c.keyTraits) return `<character${nameAttr}${roleAttr} />`;
+  return `<character${nameAttr}${roleAttr}>${escapeXmlText(c.keyTraits)}</character>`;
 }
 
 // ─── Resolution helper ────────────────────────────────────────────────────────
@@ -182,31 +236,29 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
 
   const systemContent = resolvePrompt(input.userPrompts, 'system');
 
-  const worldNotesBlock =
-    input.worldNotes && input.worldNotes.length > 0 ? `World notes:\n${input.worldNotes}` : '';
+  const worldNotesBlock = (() => {
+    const trimmed = input.worldNotes ? input.worldNotes.trimEnd() : '';
+    return trimmed.length > 0 ? `<world_notes>\n${escapeXmlText(trimmed)}\n</world_notes>` : '';
+  })();
 
   const charactersBlock =
     input.characters.length > 0
-      ? `Characters:\n${input.characters
-          .map((c) => {
-            const role = c.role ?? '';
-            const traits = c.keyTraits ?? '';
-            if (role && traits) return `- ${c.name} (${role}): ${traits}`;
-            if (role) return `- ${c.name} (${role})`;
-            if (traits) return `- ${c.name}: ${traits}`;
-            return `- ${c.name}`;
-          })
-          .join('\n')}`
+      ? `<characters>\n${input.characters
+          .map(renderCharacterTag)
+          .filter((s) => s.length > 0)
+          .join('\n')}\n</characters>`
       : '';
 
   const taskTemplate = taskTemplateFor(input.action, input.userPrompts);
+  const taskTrimmed = taskTemplate.trimEnd();
+  const taskBlock = taskTrimmed.length > 0 ? `<task>\n${escapeXmlText(taskTrimmed)}\n</task>` : '';
   const userPayload = buildUserPayload(input);
 
   const fixedTokens =
     estimateTokens(systemContent) +
     estimateTokens(worldNotesBlock) +
     estimateTokens(charactersBlock) +
-    estimateTokens(taskTemplate) +
+    estimateTokens(taskBlock) +
     estimateTokens(userPayload);
 
   const chapterBudgetTokens = promptBudgetTokens - fixedTokens;
@@ -221,14 +273,18 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     }
   }
 
-  const chapterBlock = chapterText.length > 0 ? `Chapter so far:\n${chapterText}` : '';
+  const chapterTrimmed = chapterText.trimEnd();
+  const chapterBlock =
+    chapterTrimmed.length > 0
+      ? `<chapter_so_far>\n${escapeXmlText(chapterTrimmed)}\n</chapter_so_far>`
+      : '';
 
   const systemParts = [
     systemContent,
     worldNotesBlock,
     charactersBlock,
     chapterBlock,
-    taskTemplate,
+    taskBlock,
   ].filter((p) => p.length > 0);
 
   return {
