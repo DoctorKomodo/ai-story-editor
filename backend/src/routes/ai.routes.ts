@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
+import { type CharacterPromptInput, toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
@@ -8,7 +9,7 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
 import { createStoryRepo } from '../repos/story.repo';
-import { buildPrompt, type CharacterContext, toCharacterContext } from '../services/prompt.service';
+import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
@@ -119,8 +120,10 @@ export function createAiRouter() {
       // ── 6. Load characters ────────────────────────────────────────────────
       const rawCharacters = await createCharacterRepo(req).findManyForStory(body.storyId);
 
-      // ── 7. Map characters to CharacterContext ────────────────────────────
-      const characters: CharacterContext[] = rawCharacters.map(toCharacterContext);
+      // ── 7. Map characters to CharacterPromptInput ────────────────────────
+      const characters = (rawCharacters as unknown as CharacterPromptInput[]).map(
+        toCharacterPromptInput,
+      );
 
       // ── 8. Extract chapter plaintext from decrypted TipTap body ──────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
