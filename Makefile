@@ -57,8 +57,8 @@ reset-db:
 	cd backend && npx prisma migrate reset --force
 
 test: shared-build
-	cd backend && npm run test
-	cd frontend && npm run test
+	npm -w story-editor-backend run test
+	npm -w story-editor-frontend run test
 
 test-e2e:
 	npx playwright test
