@@ -4,7 +4,6 @@
 import { Prisma } from '@prisma/client';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 import {
-  type CharacterUpdateInput,
   characterCreateSchema,
   characterReorderSchema,
   characterResponseSchema,
@@ -74,18 +73,8 @@ export function createCharactersRouter() {
         try {
           created = await characterRepo.create({
             storyId,
-            name: body.name,
-            role: body.role,
-            age: body.age,
-            color: body.color,
-            initial: body.initial,
-            appearance: body.appearance,
-            voice: body.voice,
-            arc: body.arc,
-            personality: body.personality,
-            backstory: body.backstory,
-            relationships: body.relationships,
             orderIndex: nextOrderIndex,
+            ...body,
           });
           break;
         } catch (err) {
@@ -198,28 +187,7 @@ export function createCharactersRouter() {
           return;
         }
 
-        const input: CharacterUpdateInput = {};
-        // Only forward explicitly present keys so `null` clears a field and
-        // omitted keys leave it untouched.
-        for (const key of [
-          'name',
-          'role',
-          'age',
-          'color',
-          'initial',
-          'appearance',
-          'voice',
-          'arc',
-          'personality',
-          'backstory',
-          'relationships',
-        ] as const) {
-          if (key in body) {
-            (input as Record<string, unknown>)[key] = (body as Record<string, unknown>)[key];
-          }
-        }
-
-        const character = await createCharacterRepo(req).update(characterId, input);
+        const character = await createCharacterRepo(req).update(characterId, body);
         if (!character) {
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
