@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
+import { toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
@@ -22,11 +23,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
-import {
-  buildPrompt,
-  type CharacterContext,
-  renderAskUserContent,
-} from '../services/prompt.service';
+import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
@@ -322,7 +319,11 @@ export function createChatMessagesRouter() {
       // ── 1b. Load message history early for retry validation ──────────────
       // Done here — before any external calls — so an invalid retry state
       // returns 400 without touching the Venice API or user settings.
-      const priorMessages = await createMessageRepo(req).findManyForChat(chatId);
+      // messageRepo is hoisted here so it can also be used for deleteAllAfter
+      // in the retry branch below (step 1c) and for persisting the user/assistant
+      // messages later (step 9a / stream handler).
+      const messageRepo = createMessageRepo(req);
+      const priorMessages = await messageRepo.findManyForChat(chatId);
 
       // ── [SC6] Retry validation ────────────────────────────────────────────
       // Compute lastUserMsg once; reused below for trailingUserContent.
@@ -337,6 +338,16 @@ export function createChatMessagesRouter() {
           },
         });
         return;
+      }
+
+      // ── 1c. [ai-surfaces-v1] On retry, delete trailing-after-lastUser rows ─
+      // Delete any rows that came after the last user turn (typically a prior
+      // assistant turn this retry is replacing), then re-fetch so history is
+      // correct. On a normal turn this block is skipped entirely.
+      let priorMessagesForHistory = priorMessages;
+      if (body.retry && lastUserMsg) {
+        await messageRepo.deleteAllAfter(chatId, lastUserMsg.id as string);
+        priorMessagesForHistory = await messageRepo.findManyForChat(chatId);
       }
 
       // ── 2. Prime models cache (throws NoVeniceKeyError if no BYOK) ────────
@@ -371,21 +382,7 @@ export function createChatMessagesRouter() {
 
       // ── 5. Load characters ────────────────────────────────────────────────
       const rawCharacters = await createCharacterRepo(req).findManyForStory(storyId);
-      const characters: CharacterContext[] = rawCharacters.map((c) => {
-        const nameVal = typeof c.name === 'string' ? c.name : '';
-        const roleVal = typeof c.role === 'string' ? c.role : null;
-        const traitFields = ['personality', 'arc', 'appearance', 'voice'] as const;
-        const traitParts: string[] = [];
-        for (const f of traitFields) {
-          const v = (c as Record<string, unknown>)[f];
-          if (typeof v === 'string' && v.trim().length > 0) {
-            traitParts.push(v.trim());
-          }
-          if (traitParts.join('; ').length >= 120) break;
-        }
-        const keyTraits = traitParts.join('; ').slice(0, 120) || null;
-        return { name: nameVal, role: roleVal, keyTraits };
-      });
+      const characters = rawCharacters.map(toCharacterPromptInput);
 
       // ── 6. Build prompt from chapter + story context ──────────────────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
@@ -395,10 +392,11 @@ export function createChatMessagesRouter() {
       // user message, scene template in system); ask chats use the ask action.
       const action: 'ask' | 'scene' = chat.kind === 'scene' ? 'scene' : 'ask';
 
-      // [SC6] On retry, use the last user turn's content as the freeform
-      // instruction so the prompt builder assembles the system message
-      // correctly. On a normal turn, use body.content (guaranteed non-empty
-      // by superRefine when retry is false/omitted).
+      // [SC6] On retry, use the last user turn's content as the user
+      // instruction (passed via freeformInstruction, which the ask/scene
+      // builder arms read) so the prompt builder assembles the system
+      // message correctly. On a normal turn, use body.content (guaranteed
+      // non-empty by superRefine when retry is false/omitted).
       // lastUserMsg is guaranteed non-null here for retry (checked above).
       const trailingUserContent: string = body.retry
         ? typeof lastUserMsg!.contentJson === 'string'
@@ -430,23 +428,24 @@ export function createChatMessagesRouter() {
       // ── 8. Build messages array for Venice ───────────────────────────────
       const systemMsg = baseMessages[0];
       const synthesisedUserMsg = baseMessages[1];
-      const history = priorMessages.map((m) => {
+      // [k1r] Uniform per-action history mapping. Any prior user turn (any
+      // chat kind) that carried an attachmentJson.selectionText gets the
+      // same `\n\nAttached selection: «...»` suffix the current-turn user
+      // payload uses (see buildUserPayload). No `User question:` prefix
+      // anywhere — the role label is the provenance signal. This is the
+      // change flagged in
+      // docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md
+      // §chat.routes.ts simplifications (a).
+      const history = priorMessagesForHistory.map((m) => {
         const rawContent =
           typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
 
-        // For prior user turns in an `ask` chat that carried an attachment,
-        // re-synthesise the framing the prompt builder emits for the `ask`
-        // action so Venice sees consistent context across turns.
-        // Scene chats take the raw direction — no "User question:" framing.
-        if (action === 'ask' && m.role === 'user' && m.attachmentJson != null) {
+        if (m.role === 'user' && m.attachmentJson != null) {
           const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
-          if (typeof att.selectionText === 'string') {
+          if (typeof att.selectionText === 'string' && att.selectionText.length > 0) {
             return {
               role: 'user' as const,
-              content: renderAskUserContent({
-                freeformInstruction: rawContent,
-                selectionText: att.selectionText,
-              }),
+              content: `${rawContent}\n\nAttached selection: «${att.selectionText}»`,
             };
           }
         }
@@ -456,15 +455,18 @@ export function createChatMessagesRouter() {
           content: rawContent,
         };
       });
-      // [SC6] On retry the trailing user turn is already in `history`; do
-      // NOT append synthesisedUserMsg again or the model would see a
-      // duplicate user turn. On a normal turn, append as usual.
+      // [k1r] On retry the trailing history entry equals what
+      // buildUserPayload would emit for the same inputs (both are built from
+      // lastUserMsg.contentJson + lastUserMsg.attachmentJson under the
+      // unified history mapping). So the retry path uses [systemMsg, ...history]
+      // and the trailing entry IS the user message — chapter / characters /
+      // world-notes context lives in systemMsg in both branches, so the
+      // 9ph context-loss bug is structurally impossible.
       const messages: Array<{ role: MessageRole; content: string }> = body.retry
         ? [systemMsg, ...history]
         : [systemMsg, ...history, synthesisedUserMsg];
 
       // ── 9a. Persist the user message BEFORE calling Venice (normal turn only)
-      const messageRepo = createMessageRepo(req);
       if (!body.retry) {
         await messageRepo.create({
           chatId,

@@ -69,7 +69,6 @@ describe('triggerAskAI flow (F41)', () => {
         text: 'A passage',
         chapter: { id: 'ch-1', number: 3, title: 'Storm' },
       },
-      mode: 'ask',
       enableWebSearch: false,
     } satisfies SendArgs);
 

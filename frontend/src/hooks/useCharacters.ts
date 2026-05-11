@@ -5,6 +5,13 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import {
+  type Character,
+  type CharacterCreateInput,
+  type CharacterUpdateInput,
+  characterResponseSchema,
+  charactersResponseSchema,
+} from 'story-editor-shared';
 import { api } from '@/lib/api';
 
 /**
@@ -19,29 +26,10 @@ import { api } from '@/lib/api';
  * - DELETE /api/stories/:storyId/characters/:id    → 204
  *
  * See also F27 (Cast tab redesign) + F37 (character popover).
+ *
+ * Character type and response schemas are imported from story-editor-shared.
+ * Components must import `type Character` directly from 'story-editor-shared'.
  */
-export interface Character {
-  id: string;
-  storyId: string;
-  name: string;
-  role: string | null;
-  age: string | null;
-  appearance: string | null;
-  voice: string | null;
-  arc: string | null;
-  personality: string | null;
-  orderIndex: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CharactersResponse {
-  characters: Character[];
-}
-
-export interface CharacterResponse {
-  character: Character;
-}
 
 /**
  * Query key for the character list belonging to a story.
@@ -55,46 +43,27 @@ export function useCharactersQuery(
   return useQuery({
     queryKey: charactersQueryKey(storyId ?? ''),
     queryFn: async (): Promise<Character[]> => {
-      const res = await api<CharactersResponse>(
-        `/stories/${encodeURIComponent(storyId ?? '')}/characters`,
-      );
-      return res.characters;
+      const raw = await api<unknown>(`/stories/${encodeURIComponent(storyId ?? '')}/characters`);
+      const { characters } = charactersResponseSchema.parse(raw);
+      return characters;
     },
     enabled: Boolean(storyId),
     staleTime: 30_000,
   });
 }
 
-/**
- * POST body shape accepted by the create endpoint. Only `name` is required;
- * any optional field provided is forwarded as-is. Empty/blank values should
- * be omitted by the caller (do not send `""`); to clear a field after create,
- * use the update mutation with an explicit `null`.
- */
-export interface CreateCharacterInput {
-  name: string;
-  role?: string;
-  age?: string;
-  appearance?: string;
-  voice?: string;
-  arc?: string;
-  personality?: string;
-}
-
 export function useCreateCharacterMutation(
   storyId: string,
-): UseMutationResult<Character, Error, CreateCharacterInput> {
+): UseMutationResult<Character, Error, CharacterCreateInput> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateCharacterInput): Promise<Character> => {
-      const res = await api<CharacterResponse>(
-        `/stories/${encodeURIComponent(storyId)}/characters`,
-        {
-          method: 'POST',
-          body: input,
-        },
-      );
-      return res.character;
+    mutationFn: async (input: CharacterCreateInput): Promise<Character> => {
+      const raw = await api<unknown>(`/stories/${encodeURIComponent(storyId)}/characters`, {
+        method: 'POST',
+        body: input,
+      });
+      const { character } = characterResponseSchema.parse(raw);
+      return character;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: charactersQueryKey(storyId) });
@@ -117,30 +86,25 @@ export function useCharacterQuery(
   return useQuery({
     queryKey: characterQueryKey(storyId ?? '', characterId ?? ''),
     queryFn: async (): Promise<Character> => {
-      const res = await api<CharacterResponse>(
+      const raw = await api<unknown>(
         `/stories/${encodeURIComponent(storyId ?? '')}/characters/${encodeURIComponent(
           characterId ?? '',
         )}`,
       );
-      return res.character;
+      const { character } = characterResponseSchema.parse(raw);
+      return character;
     },
     enabled: storyId != null && characterId != null,
     staleTime: 30_000,
   });
 }
 
-/**
- * PATCH body shape accepted by the sheet modal. Every field is optional —
- * only keys the user actually changed are forwarded; an explicit `null`
- * clears the stored value server-side.
- */
-export type UpdateCharacterPatch = Partial<
-  Pick<Character, 'name' | 'role' | 'age' | 'appearance' | 'voice' | 'arc' | 'personality'>
->;
+// Alias kept for consumers that use the previous name (CharacterSheet.tsx).
+export type UpdateCharacterPatch = CharacterUpdateInput;
 
 export interface UpdateCharacterInput {
   id: string;
-  patch: UpdateCharacterPatch;
+  patch: CharacterUpdateInput;
 }
 
 export function useUpdateCharacterMutation(
@@ -149,14 +113,15 @@ export function useUpdateCharacterMutation(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: UpdateCharacterInput): Promise<Character> => {
-      const res = await api<CharacterResponse>(
+      const raw = await api<unknown>(
         `/stories/${encodeURIComponent(storyId)}/characters/${encodeURIComponent(id)}`,
         {
           method: 'PATCH',
           body: patch,
         },
       );
-      return res.character;
+      const { character } = characterResponseSchema.parse(raw);
+      return character;
     },
     onSuccess: (_updated, { id }) => {
       void qc.invalidateQueries({ queryKey: characterQueryKey(storyId, id) });

@@ -1,6 +1,6 @@
 import type { JSX } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { Character } from '@/hooks/useCharacters';
+import type { Character } from 'story-editor-shared';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 
 /**

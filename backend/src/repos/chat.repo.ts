@@ -65,7 +65,13 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
         chapter: { story: { userId } },
         ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
       },
-      orderBy: { createdAt: 'asc' },
+      // story-editor-loj: order by most-recent-activity desc, with createdAt
+      // desc as the tie-breaker for dormant chats whose lastActivityAt equals
+      // createdAt. Chat.lastActivityAt is bumped on every child-message create
+      // (see messageRepo.create), so this surfaces "the chat the user was
+      // most-recently in" at index 0. Tie-breaker is deterministic + matches
+      // intuition: dormant-newer-created beats dormant-older-created.
+      orderBy: [{ lastActivityAt: 'desc' }, { createdAt: 'desc' }],
     });
     return rows.map((r) =>
       projectDecrypted(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),

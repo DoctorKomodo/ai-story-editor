@@ -47,6 +47,11 @@ function makeCharacter(): Record<string, unknown> {
     voice: 'Calm',
     arc: 'Grows up',
     personality: null,
+    backstory: null,
+    relationships: null,
+    orderIndex: 0,
+    color: null,
+    initial: null,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
   };

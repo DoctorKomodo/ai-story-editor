@@ -38,6 +38,7 @@ const SAMPLE_SETTINGS: UserSettings = {
     summarise: null,
     describe: null,
     scene: null,
+    ask: null,
   },
 };
 

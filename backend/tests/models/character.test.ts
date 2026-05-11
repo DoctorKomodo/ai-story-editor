@@ -1,9 +1,15 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 
-// Post-[E11] character narrative fields are ciphertext-only. Schema-shape +
-// cascade tests only; repo-layer encrypt/decrypt is covered in
-// tests/repos/character.repo.test.ts.
+// Lane note: this file uses raw Prisma deliberately. It asserts SCHEMA
+// invariants (nullable ciphertext columns, multi-row insert, ON DELETE
+// CASCADE on the storyId FK), not narrative data round-trips. The repo
+// layer is the right boundary for app code and for content tests
+// (tests/repos/character.repo.test.ts); raw Prisma is the right boundary
+// for "does the database enforce this constraint" tests, which is what
+// these are. Do not migrate to the repo — the repo's encrypt-on-write
+// path can't express "create a row with all-null ciphertext columns" or
+// "trigger an FK cascade."
 
 async function makeStory(email = 'char-author@example.com') {
   const username = email
@@ -34,10 +40,9 @@ describe('Character model', () => {
     // Every narrative field is ciphertext-only and nullable.
     expect(character.nameCiphertext).toBeNull();
     expect(character.roleCiphertext).toBeNull();
-    expect(character.physicalDescriptionCiphertext).toBeNull();
+    expect(character.relationshipsCiphertext).toBeNull();
     expect(character.personalityCiphertext).toBeNull();
     expect(character.backstoryCiphertext).toBeNull();
-    expect(character.notesCiphertext).toBeNull();
     expect(character.storyId).toBe(story.id);
     expect(character.createdAt).toBeInstanceOf(Date);
     expect(character.updatedAt).toBeInstanceOf(Date);

@@ -21,6 +21,14 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
   with `credentials: 'include'`.
 - The auth identifier is `username` (lowercased, 3–32 chars,
   `/^[a-z0-9_-]+$/`). `User.email` is optional metadata only.
+- **Telemetry / error-reporting buffers must flush on every auth
+  transition.** If a future change introduces Sentry, PostHog, an
+  in-app feedback widget, a breadcrumb buffer, or any other client-
+  side sink that retains content across renders, it must be wired
+  into `frontend/src/lib/sessionReset.ts` (or its successor). The
+  invariant: no buffer that captured user A's content may survive
+  into user B's session. There are no such sinks today; the rule
+  exists so the next contributor sees it before adding one.
 
 ## State management
 
@@ -36,6 +44,30 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
 - **TanStack Query keys: `[entity, id]`** for single entities,
   `[entity, 'list', filters?]` for lists. Hooks named
   `use<Entity>(id)`.
+
+## Per-user state must reset on auth transition
+
+Any new Zustand store under `frontend/src/store/*.ts` that holds
+plaintext content, IDs referencing user-owned rows, or any state that
+should not survive a session swap must be added to `resetClientState`
+in `frontend/src/lib/sessionReset.ts` AND to the `PER_USER_STORES`
+allowlist in `frontend/tests/lib/sessionReset.test.ts`.
+
+UI-only stores (theme, layout, sidebar tab) go on the `UI_ONLY_STORES`
+allowlist instead. The enumeration test fails on unclassified stores —
+pick one explicitly.
+
+Every auth-transition site must reset before flipping the session slice:
+- `useAuth.login` → `swapSession(qc, user, token)` (atomic).
+- `useAuth.logout` → `await resetClientState(qc); clearSession();`
+- `useSignOutEverywhereMutation.onSuccess` → `await resetClientState(qc); clearSession(); navigate(...);`
+- `useDeleteAccountMutation.onSuccess` → same shape.
+- `handleUnauthorizedAccess` (terminal-401, non-React) → `void resetClientStateUsingRegistered();` then the existing setState.
+
+If you add a store that uses Zustand's `persist` middleware,
+`setState({ ...initial })` does NOT clear the mirrored `localStorage`
+entry — call `useFooStore.persist.clearStorage()` from
+`resetClientState` in addition.
 
 ## API access
 

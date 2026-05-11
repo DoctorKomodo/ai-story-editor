@@ -10,6 +10,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAICompletion } from '@/hooks/useAICompletion';
 import { ApiError, apiStream } from '@/lib/api';
+import { useErrorStore } from '@/store/errors';
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -51,10 +52,16 @@ const BASE_ARGS = {
 describe('useAICompletion', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    act(() => {
+      useErrorStore.getState().clear();
+    });
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    act(() => {
+      useErrorStore.getState().clear();
+    });
   });
 
   it('starts idle and transitions to done with accumulated text', async () => {
@@ -126,6 +133,35 @@ describe('useAICompletion', () => {
 
     expect(result.current.status).toBe('done');
     expect(result.current.text).toBe('Hi');
+  });
+
+  it('SSE error frame mid-stream → status="error", error.code preserved, useErrorStore receives entry', async () => {
+    // Feed an SSE response whose body contains an error frame partway through.
+    // runStreamingAI will throw ApiError(502, msg, 'rate_limited') from inside
+    // the stream loop; useAICompletion must catch it, flip status to 'error',
+    // expose the error with the preserved code, and push it to useErrorStore.
+    const sseLines = [
+      'data: {"choices":[{"delta":{"content":"partial"}}]}\n\n',
+      `event: error\ndata: ${JSON.stringify({ error: 'Rate limit hit', code: 'rate_limited' })}\n\n`,
+      'data: [DONE]\n\n',
+    ];
+    mockApiStreamWithSseLines(sseLines);
+
+    const { result } = renderHook(() => useAICompletion());
+
+    await act(async () => {
+      await result.current.run(BASE_ARGS);
+    });
+
+    expect(result.current.status).toBe('error');
+    expect(result.current.error).toBeInstanceOf(ApiError);
+    expect((result.current.error as ApiError).code).toBe('rate_limited');
+    expect((result.current.error as ApiError).status).toBe(502);
+
+    const storeErrors = useErrorStore.getState().errors;
+    expect(storeErrors.length).toBeGreaterThan(0);
+    expect(storeErrors[0].source).toBe('ai.complete');
+    expect(storeErrors[0].code).toBe('rate_limited');
   });
 
   it('flips to "streaming" on the first non-empty content delta', async () => {

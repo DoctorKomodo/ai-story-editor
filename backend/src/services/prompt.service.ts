@@ -2,6 +2,8 @@
 // Pure, no IO, no async. `stream` and `model` are injected by the route
 // layer so this module stays unit-testable without HTTP or Venice deps.
 
+import type { CharacterPromptInput } from 'story-editor-shared';
+
 export class PromptValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -14,17 +16,10 @@ export type PromptAction =
   | 'rephrase'
   | 'expand'
   | 'summarise'
-  | 'freeform'
   | 'rewrite'
   | 'describe'
   | 'scene'
   | 'ask';
-
-export interface CharacterContext {
-  name: string;
-  role?: string | null;
-  keyTraits?: string | null;
-}
 
 // [X29] Keys of the user-overridable prompt slice. `rewrite` covers both
 // 'rephrase' and 'rewrite' actions (collapsed at the override layer; the
@@ -36,7 +31,8 @@ export type UserPromptKey =
   | 'expand'
   | 'summarise'
   | 'describe'
-  | 'scene';
+  | 'scene'
+  | 'ask';
 
 export type UserPrompts = Partial<Record<UserPromptKey, string | null>>;
 
@@ -44,7 +40,7 @@ export interface BuildPromptInput {
   action: PromptAction;
   selectedText: string;
   chapterContent: string;
-  characters: CharacterContext[];
+  characters: CharacterPromptInput[];
   worldNotes: string | null;
   modelContextLength: number;
   /** Per-model output cap from Venice's /v1/models. Required. */
@@ -64,7 +60,7 @@ export interface BuildPromptInput {
   includeVeniceSystemPrompt?: boolean;
   /** [X29] User-level prompt overrides. Per key: non-empty trimmed string wins; null / undefined / whitespace falls back to DEFAULT_PROMPTS[key]. */
   userPrompts?: UserPrompts;
-  /** Required when action === 'freeform' or 'ask'; optional otherwise */
+  /** Required when action === 'scene' or 'ask'; optional otherwise */
   freeformInstruction?: string;
 }
 
@@ -81,7 +77,7 @@ export interface BuiltPrompt {
 export const DEFAULT_SYSTEM_PROMPT =
   'You are an expert creative-writing assistant. ' +
   'Help the author continue, refine, and develop their story with vivid prose that matches their established voice and tone. ' +
-  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output.';
+  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output, no XML tags, and no section labels.';
 
 // [X29] Single source of truth for default templates — exposed via
 // GET /api/ai/default-prompts so the frontend renders the same strings
@@ -89,16 +85,17 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const DEFAULT_PROMPTS = {
   system: DEFAULT_SYSTEM_PROMPT,
   continue:
-    'Task: continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
+    'continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
   rewrite:
-    'Task: rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
+    'rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
   expand:
-    'Task: expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
-  summarise: 'Task: summarise the selection to its essential points. Use 1–3 sentences.',
+    'expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
+  summarise: 'summarise the selection to its essential points. Use 1–3 sentences.',
   describe:
-    "Task: describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
+    "describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
   scene:
-    'Task: write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
+    'write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
+  ask: "answer the user's question about the story. Use the chapter and character context to inform your answer.",
 } as const satisfies Record<UserPromptKey, string>;
 
 // Reserved tokens between the response budget and the prompt budget. Covers
@@ -113,17 +110,49 @@ export function estimateTokens(s: string): number {
   return Math.ceil(s.length / 4);
 }
 
-// ─── Ask-action user content renderer ────────────────────────────────────────
+// ─── XML escape helpers (h0z) ────────────────────────────────────────────────
+// Used wherever decrypted user content is interpolated into XML wrappers in
+// the system-message content. Escape semantics: input is plaintext (escape is
+// non-idempotent — a literal "&amp;" in user input renders as "&amp;amp;").
 
-export function renderAskUserContent({
-  freeformInstruction,
-  selectionText,
-}: {
-  freeformInstruction: string;
-  selectionText?: string | null;
-}): string {
-  const attached = selectionText ? `\n\nAttached selection: «${selectionText}»` : '';
-  return `User question: ${freeformInstruction}${attached}`;
+function escapeXmlText(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escapeXmlAttr(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+// ─── Per-character renderer ───────────────────────────────────────────────────
+
+function renderCharacterTag(c: CharacterPromptInput): string {
+  if (!c.name) return '';
+  const attrs = [
+    ` name="${escapeXmlAttr(c.name)}"`,
+    c.role ? ` role="${escapeXmlAttr(c.role)}"` : '',
+    c.age ? ` age="${escapeXmlAttr(c.age)}"` : '',
+  ].join('');
+
+  const proseFields = [
+    ['appearance', c.appearance],
+    ['personality', c.personality],
+    ['voice', c.voice],
+    ['backstory', c.backstory],
+    ['arc', c.arc],
+    ['relationships', c.relationships],
+  ] as const;
+
+  const children = proseFields
+    .filter(([, v]) => v != null && v.trim().length > 0)
+    .map(([tag, v]) => `  <${tag}>${escapeXmlText(v!.trim())}</${tag}>`)
+    .join('\n');
+
+  if (children.length === 0) return `<character${attrs} />`;
+  return `<character${attrs}>\n${children}\n</character>`;
 }
 
 // ─── Resolution helper ────────────────────────────────────────────────────────
@@ -134,41 +163,51 @@ function resolvePrompt(userPrompts: UserPrompts | undefined, key: UserPromptKey)
   return DEFAULT_PROMPTS[key];
 }
 
-// ─── Action task block ────────────────────────────────────────────────────────
+// ─── User payload (per-action) ────────────────────────────────────────────────
+//
+// k1r: Returns the user-message body. The system message carries chapter /
+// characters / world-notes / task-template; this function only emits what
+// the user contributed this turn. See
+// docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md.
 
-function buildTaskBlock(input: BuildPromptInput): string {
-  const sel = input.selectedText ? `\n\nSelection: «${input.selectedText}»` : '';
+export function buildUserPayload(input: BuildPromptInput): string {
+  const sel = input.selectedText.length > 0 ? `Selection: «${input.selectedText}»` : '';
+
   switch (input.action) {
-    case 'continue':
-      return `${resolvePrompt(input.userPrompts, 'continue')}${sel}`;
-    case 'rephrase':
-    case 'rewrite':
-      // Both surfaces collapse onto the single 'rewrite' override key.
-      return `${resolvePrompt(input.userPrompts, 'rewrite')}${sel}`;
-    case 'expand':
-      return `${resolvePrompt(input.userPrompts, 'expand')}${sel}`;
-    case 'summarise':
-      return `${resolvePrompt(input.userPrompts, 'summarise')}${sel}`;
-    case 'describe':
-      return `${resolvePrompt(input.userPrompts, 'describe')}${sel}`;
-    case 'freeform': {
-      const instruction = input.freeformInstruction ?? '';
-      return `${instruction}${sel}`;
+    case 'scene': {
+      if (!input.freeformInstruction) {
+        throw new PromptValidationError('freeformInstruction is required for action "scene"');
+      }
+      return input.freeformInstruction;
     }
-    case 'scene':
-      // Handled entirely in buildPrompt — scene template + freeformInstruction
-      // validation are wired there. This case exists only for switch exhaustiveness.
-      return '';
     case 'ask': {
       if (!input.freeformInstruction) {
         throw new PromptValidationError('freeformInstruction is required for action "ask"');
       }
-      return renderAskUserContent({
-        freeformInstruction: input.freeformInstruction,
-        selectionText: input.selectedText,
-      });
+      const attached =
+        input.selectedText.length > 0 ? `\n\nAttached selection: «${input.selectedText}»` : '';
+      return `${input.freeformInstruction}${attached}`;
     }
+    case 'continue':
+      return sel.length > 0 ? sel : 'Continue.';
+    case 'rephrase':
+    case 'rewrite':
+      return sel.length > 0 ? sel : 'Rewrite.';
+    case 'expand':
+      return sel.length > 0 ? sel : 'Expand.';
+    case 'summarise':
+      return sel.length > 0 ? sel : 'Summarise.';
+    case 'describe':
+      return sel.length > 0 ? sel : 'Describe.';
   }
+}
+
+// ─── Per-action task template lookup ──────────────────────────────────────────
+
+function taskTemplateFor(action: PromptAction, userPrompts: UserPrompts | undefined): string {
+  // 'rephrase' shares the 'rewrite' override key (collapsed under [X29]).
+  const key: UserPromptKey = action === 'rephrase' ? 'rewrite' : action;
+  return resolvePrompt(userPrompts, key);
 }
 
 // ─── Core builder ─────────────────────────────────────────────────────────────
@@ -177,8 +216,6 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
   const responseTokens = Math.min(input.modelMaxCompletionTokens, input.userMaxCompletionTokens);
   const includeVeniceSystemPrompt = input.includeVeniceSystemPrompt ?? true;
 
-  // ── Shared context blocks (used by all actions) ───────────────────────────
-
   const promptBudgetTokens = Math.max(
     0,
     input.modelContextLength - responseTokens - SAFETY_MARGIN_TOKENS,
@@ -186,33 +223,30 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
 
   const systemContent = resolvePrompt(input.userPrompts, 'system');
 
-  const worldNotesBlock =
-    input.worldNotes && input.worldNotes.length > 0 ? `World notes:\n${input.worldNotes}` : '';
+  const worldNotesBlock = (() => {
+    const trimmed = input.worldNotes ? input.worldNotes.trimEnd() : '';
+    return trimmed.length > 0 ? `<world_notes>\n${escapeXmlText(trimmed)}\n</world_notes>` : '';
+  })();
 
   const charactersBlock =
     input.characters.length > 0
-      ? `Characters:\n${input.characters
-          .map((c) => {
-            const role = c.role ?? '';
-            const traits = c.keyTraits ?? '';
-            if (role && traits) return `- ${c.name} (${role}): ${traits}`;
-            if (role) return `- ${c.name} (${role})`;
-            if (traits) return `- ${c.name}: ${traits}`;
-            return `- ${c.name}`;
-          })
-          .join('\n')}`
+      ? `<characters>\n${input.characters
+          .map(renderCharacterTag)
+          .filter((s) => s.length > 0)
+          .join('\n')}\n</characters>`
       : '';
 
-  // For scene, the scene template replaces taskBlock in the fixed-token budget.
-  const sceneTemplate = input.action === 'scene' ? resolvePrompt(input.userPrompts, 'scene') : '';
-  const taskBlock = input.action === 'scene' ? '' : buildTaskBlock(input);
+  const taskTemplate = taskTemplateFor(input.action, input.userPrompts);
+  const taskTrimmed = taskTemplate.trimEnd();
+  const taskBlock = taskTrimmed.length > 0 ? `<task>\n${escapeXmlText(taskTrimmed)}\n</task>` : '';
+  const userPayload = buildUserPayload(input);
 
-  const sysTokens = estimateTokens(systemContent);
   const fixedTokens =
-    sysTokens +
+    estimateTokens(systemContent) +
     estimateTokens(worldNotesBlock) +
     estimateTokens(charactersBlock) +
-    (input.action === 'scene' ? estimateTokens(sceneTemplate) : estimateTokens(taskBlock));
+    estimateTokens(taskBlock) +
+    estimateTokens(userPayload);
 
   const chapterBudgetTokens = promptBudgetTokens - fixedTokens;
 
@@ -226,45 +260,26 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     }
   }
 
-  const chapterBlock = chapterText.length > 0 ? `Chapter so far:\n${chapterText}` : '';
+  const chapterTrimmed = chapterText.trimEnd();
+  const chapterBlock =
+    chapterTrimmed.length > 0
+      ? `<chapter_so_far>\n${escapeXmlText(chapterTrimmed)}\n</chapter_so_far>`
+      : '';
 
-  // ── scene: all context blocks go into the system message; user message is raw direction ──
-  if (input.action === 'scene') {
-    if (!input.freeformInstruction) {
-      throw new PromptValidationError('freeformInstruction is required for action "scene"');
-    }
-    const systemParts = [
-      systemContent,
-      worldNotesBlock,
-      charactersBlock,
-      chapterBlock,
-      sceneTemplate,
-    ].filter((p) => p.length > 0);
-    return {
-      messages: [
-        { role: 'system', content: systemParts.join('\n\n') },
-        { role: 'user', content: input.freeformInstruction },
-      ],
-      venice_parameters: { include_venice_system_prompt: includeVeniceSystemPrompt },
-      max_completion_tokens: responseTokens,
-    };
-  }
-
-  // ── All other actions ──────────────────────────────────────────────────────
-
-  const userParts = [worldNotesBlock, charactersBlock, chapterBlock, taskBlock].filter(
-    (p) => p.length > 0,
-  );
-  const userContent = userParts.join('\n\n');
+  const systemParts = [
+    systemContent,
+    worldNotesBlock,
+    charactersBlock,
+    chapterBlock,
+    taskBlock,
+  ].filter((p) => p.length > 0);
 
   return {
     messages: [
-      { role: 'system', content: systemContent },
-      { role: 'user', content: userContent },
+      { role: 'system', content: systemParts.join('\n\n') },
+      { role: 'user', content: userPayload },
     ],
-    venice_parameters: {
-      include_venice_system_prompt: includeVeniceSystemPrompt,
-    },
+    venice_parameters: { include_venice_system_prompt: includeVeniceSystemPrompt },
     max_completion_tokens: responseTokens,
   };
 }

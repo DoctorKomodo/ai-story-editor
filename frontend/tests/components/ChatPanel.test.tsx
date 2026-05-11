@@ -94,12 +94,11 @@ describe('ChatPanel (F38)', () => {
     });
   }
 
-  it('renders header tabs, model footer, body, and composer landmarks', () => {
+  it('renders header tabs, model footer, body, and chat slot landmarks', () => {
     mockModels();
     renderWithProviders(
       <ChatPanel
-        messagesBody={<div data-testid="msg-slot">messages</div>}
-        composer={<div data-testid="composer-slot">composer</div>}
+        chatBody={<div data-testid="chat-slot">chat</div>}
         sceneBody={<div data-testid="scene-slot">scene</div>}
       />,
     );
@@ -116,19 +115,14 @@ describe('ChatPanel (F38)', () => {
     // Scrollable body region.
     expect(screen.getByRole('region', { name: 'Chat messages' })).toBeInTheDocument();
 
-    // Slot props rendered.
-    expect(screen.getByTestId('msg-slot')).toBeInTheDocument();
-    expect(screen.getByTestId('composer-slot')).toBeInTheDocument();
+    // Chat slot rendered on the default Chat tab.
+    expect(screen.getByTestId('chat-slot')).toBeInTheDocument();
   });
 
   it('Chat tab is active by default; clicking History flips state', async () => {
     mockModels();
     renderWithProviders(
-      <ChatPanel
-        messagesBody={<div data-testid="msg-slot">messages</div>}
-        composer={<div data-testid="composer-slot">composer</div>}
-        sceneBody={<div />}
-      />,
+      <ChatPanel chatBody={<div data-testid="chat-slot">chat</div>} sceneBody={<div />} />,
     );
 
     const chatTab = screen.getByRole('tab', { name: 'Chat' });
@@ -146,32 +140,11 @@ describe('ChatPanel (F38)', () => {
     expect(historyTab).toHaveAttribute('aria-selected', 'true');
   });
 
-  it('New chat button calls onNewChat', async () => {
-    mockModels();
-    const onNewChat = vi.fn();
-    renderWithProviders(
-      <ChatPanel
-        messagesBody={<div />}
-        composer={<div />}
-        sceneBody={<div />}
-        onNewChat={onNewChat}
-      />,
-    );
-
-    await userEvent.click(screen.getByRole('button', { name: 'New chat' }));
-    expect(onNewChat).toHaveBeenCalledTimes(1);
-  });
-
   it('Settings button calls onOpenSettings', async () => {
     mockModels();
     const onOpenSettings = vi.fn();
     renderWithProviders(
-      <ChatPanel
-        messagesBody={<div />}
-        composer={<div />}
-        sceneBody={<div />}
-        onOpenSettings={onOpenSettings}
-      />,
+      <ChatPanel chatBody={<div />} sceneBody={<div />} onOpenSettings={onOpenSettings} />,
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
@@ -182,12 +155,7 @@ describe('ChatPanel (F38)', () => {
     mockModels();
     const onOpenModelPicker = vi.fn();
     renderWithProviders(
-      <ChatPanel
-        messagesBody={<div />}
-        composer={<div />}
-        sceneBody={<div />}
-        onOpenModelPicker={onOpenModelPicker}
-      />,
+      <ChatPanel chatBody={<div />} sceneBody={<div />} onOpenModelPicker={onOpenModelPicker} />,
     );
 
     await userEvent.click(screen.getByRole('button', { name: 'Open model picker' }));
@@ -200,10 +168,7 @@ describe('ChatPanel (F38)', () => {
       chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-uncensored-1.5' },
     });
 
-    renderWithProviders(
-      <ChatPanel messagesBody={<div />} composer={<div />} sceneBody={<div />} />,
-      qc,
-    );
+    renderWithProviders(<ChatPanel chatBody={<div />} sceneBody={<div />} />, qc);
 
     // Wait for the query to resolve and the picker to render the model name.
     await waitFor(() => {
@@ -220,31 +185,23 @@ describe('ChatPanel (F38)', () => {
   it('shows "No model" and "—" ctx chip when no model is selected', () => {
     mockModels();
     // modelId left as null in beforeEach.
-    renderWithProviders(
-      <ChatPanel messagesBody={<div />} composer={<div />} sceneBody={<div />} />,
-    );
+    renderWithProviders(<ChatPanel chatBody={<div />} sceneBody={<div />} />);
 
     expect(screen.getByText('No model')).toBeInTheDocument();
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('—');
   });
 
-  it('composer is visible on Chat tab and hidden on History tab', async () => {
+  it('chatBody is visible on Chat tab and hidden on History tab', async () => {
     mockModels();
     renderWithProviders(
-      <ChatPanel
-        messagesBody={<div data-testid="msg-slot">messages</div>}
-        composer={<div data-testid="composer-slot">composer</div>}
-        sceneBody={<div />}
-      />,
+      <ChatPanel chatBody={<div data-testid="chat-slot">chat</div>} sceneBody={<div />} />,
     );
 
-    expect(screen.getByTestId('composer-slot')).toBeInTheDocument();
-    expect(screen.getByTestId('msg-slot')).toBeInTheDocument();
+    expect(screen.getByTestId('chat-slot')).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('tab', { name: 'History' }));
 
-    expect(screen.queryByTestId('composer-slot')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('msg-slot')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-slot')).not.toBeInTheDocument();
     expect(screen.getByText(/history — coming in a future task/i)).toBeInTheDocument();
   });
 
@@ -252,8 +209,7 @@ describe('ChatPanel (F38)', () => {
     mockModels();
     renderWithProviders(
       <ChatPanel
-        messagesBody={<div data-testid="msg-slot">messages</div>}
-        composer={<div data-testid="composer-slot">composer</div>}
+        chatBody={<div data-testid="chat-slot">chat</div>}
         sceneBody={<div data-testid="scene-slot">scene content</div>}
       />,
     );
@@ -271,17 +227,14 @@ describe('ChatPanel (F38)', () => {
     // Scene tab is now active.
     expect(sceneTab).toHaveAttribute('aria-selected', 'true');
     expect(chatTab).toHaveAttribute('aria-selected', 'false');
-    // sceneBody renders, messagesBody and composer do not.
+    // sceneBody renders, chatBody does not.
     expect(screen.getByTestId('scene-slot')).toBeInTheDocument();
-    expect(screen.queryByTestId('msg-slot')).not.toBeInTheDocument();
-    expect(screen.queryByTestId('composer-slot')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('chat-slot')).not.toBeInTheDocument();
   });
 
   it('tab order is Chat → Scene → History', () => {
     mockModels();
-    renderWithProviders(
-      <ChatPanel messagesBody={<div />} composer={<div />} sceneBody={<div />} />,
-    );
+    renderWithProviders(<ChatPanel chatBody={<div />} sceneBody={<div />} />);
 
     const tabs = screen.getAllByRole('tab');
     expect(tabs).toHaveLength(3);

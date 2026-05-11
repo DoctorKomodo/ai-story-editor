@@ -6,15 +6,17 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
 import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
 
-// Returns a supertest agent (with auth header set) and a chapterId for use in tests.
+// Returns a supertest agent (with auth header set), a chapterId, and the raw
+// accessToken (for constructing repo instances in tests that need them).
 async function setup(
   username: string,
-): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string }> {
+): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; accessToken: string }> {
   const accessToken = await registerAndLogin(username);
   const req = makeFakeReq(accessToken);
 
@@ -32,7 +34,7 @@ async function setup(
   const agent = request.agent(app);
   agent.set('Authorization', `Bearer ${accessToken}`);
 
-  return { agent, chapterId };
+  return { agent, chapterId, accessToken };
 }
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
@@ -129,6 +131,18 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
     // [D1] Assert both kinds are present
     const kinds = res.body.chats.map((c: { kind: string }) => c.kind).sort();
     expect(kinds).toEqual(['ask', 'scene']);
+  });
+
+  // [loj] Each chat in the response must carry a lastActivityAt string field so
+  // the SessionPicker "X ago" label has its recency source.
+  it('response chats each carry a lastActivityAt string field', async () => {
+    const { agent, chapterId } = await setup('chat-lastactivity-u8');
+    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
+
+    const res = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
+    expect(res.body.chats).toHaveLength(1);
+    expect(typeof res.body.chats[0].lastActivityAt).toBe('string');
+    expect(res.body.chats[0].lastActivityAt).not.toBe('');
   });
 });
 
@@ -247,7 +261,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     await resetAll();
   });
 
-  it('does not persist a new user message when retry=true', async () => {
+  it('does not persist a new user message on retry=true; prior assistant is replaced with new content', async () => {
     const { agent, chapterId } = await setup('sc6-retry-u1');
     const fetchSpy = stubVeniceFetch();
     await storeKey(agent, fetchSpy);
@@ -290,9 +304,10 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     const after = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
     expect(after.body.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(1);
-    expect(
-      after.body.messages.filter((m: { role: string }) => m.role === 'assistant'),
-    ).toHaveLength(2);
+    // Linear retry: old assistant is replaced; exactly one assistant survives with the new content.
+    const assistants = after.body.messages.filter((m: { role: string }) => m.role === 'assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].contentJson).toBe('Retry reply.');
   });
 
   it('400 when retry=true and the trailing message is not a user turn', async () => {
@@ -355,6 +370,161 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
       .post(`/api/chats/${chatId}/messages`)
       .send({ retry: true, content: 'extra', modelId: MODEL_ID })
       .expect(400);
+  });
+
+  // [ai-surfaces-v1] Case C: retry deletes prior trailing assistant before regenerating.
+  it('on retry, deletes prior trailing assistant before regenerating (case C — linear retry)', async () => {
+    const { agent, chapterId } = await setup('sc6-retry-caseC');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'case-c', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // First normal turn: user message + assistant reply.
+    queueSseResponse(fetchSpy, 'first reply');
+    await sendMessage(agent, chatId, { content: 'hello', modelId: MODEL_ID });
+
+    // Verify starting state: 1 user + 1 assistant.
+    const before = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(before.body.messages.filter((m: { role: string }) => m.role === 'user')).toHaveLength(1);
+    expect(
+      before.body.messages.filter((m: { role: string }) => m.role === 'assistant'),
+    ).toHaveLength(1);
+
+    // Retry: old assistant should be deleted, new one created. Models cache warm.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-caseC',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'second reply' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, { retry: true, modelId: MODEL_ID });
+    expect(retryStatus).toBe(200);
+
+    const after = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const assistants = after.body.messages.filter((m: { role: string }) => m.role === 'assistant');
+    // Exactly one assistant — the old one was deleted before the new one was created.
+    expect(assistants).toHaveLength(1);
+    // The surviving assistant carries the new reply content.
+    expect(assistants[0].contentJson).toBe('second reply');
+  });
+
+  it('[9ph] retry on ask preserves chapter context (regression)', async () => {
+    const { agent, accessToken, chapterId } = await setup('k1r-9ph-regression');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    // Chapter must have content for the test to be meaningful.
+    const req = makeFakeReq(accessToken);
+    await createChapterRepo(req).update(chapterId, {
+      bodyJson: {
+        type: 'doc',
+        content: [
+          {
+            type: 'paragraph',
+            content: [
+              {
+                type: 'text',
+                text: 'The dragon circled the keep before landing on the courtyard.',
+              },
+            ],
+          },
+        ],
+      },
+      wordCount: 11,
+    });
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'q', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // First turn — establishes a user message + assistant reply.
+    queueSseResponse(fetchSpy, 'A circling sky-snake is bad news.');
+    await sendMessage(agent, chatId, {
+      content: 'What is the dragon doing?',
+      modelId: MODEL_ID,
+    });
+
+    // Retry — models cache warm; only the stream mock is needed.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-9ph',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'Retry reply.' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, { retry: true, modelId: MODEL_ID });
+    expect(retryStatus).toBe(200);
+
+    // Inspect the SECOND completions call (the retry's outgoing wire payload).
+    const completionCalls = fetchSpy.mock.calls.filter(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCalls.length).toBeGreaterThanOrEqual(2);
+    const [, retryInit] = completionCalls[completionCalls.length - 1]!;
+    const retryBody = JSON.parse((retryInit as RequestInit).body as string) as Record<
+      string,
+      unknown
+    >;
+    const sent = retryBody.messages as Array<{ role: string; content: string }>;
+
+    // The structural invariant: SOME message must include the chapter fragment.
+    // Today (pre-k1r) this fails — the synthesisedUserMsg was dropped on retry,
+    // taking chapter context with it for the `ask` action.
+    expect(sent.some((m) => m.content.includes('<chapter_so_far>'))).toBe(true);
+    expect(sent.some((m) => m.content.includes('dragon circled the keep'))).toBe(true);
+  });
+
+  // [ai-surfaces-v1] Case B: retry with no trailing assistant (mid-stream error scenario).
+  it('on retry with no trailing assistant, generates cleanly with no deletions (case B)', async () => {
+    const { agent, chapterId, accessToken } = await setup('sc6-retry-caseB');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'case-b', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // Seed only a user message via the repo layer — no assistant is ever created,
+    // modelling a mid-stream error where the server died before persisting the reply.
+    const messageRepo = createMessageRepo(makeFakeReq(accessToken));
+    await messageRepo.create({ chatId, role: 'user', contentJson: 'hello' });
+
+    // Confirm we are at user-only state.
+    const midState = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(midState.body.messages).toHaveLength(1);
+    expect(midState.body.messages[0].role).toBe('user');
+
+    // Retry: no trailing assistant to delete; should just generate cleanly.
+    // Queue model-list fetch first (warms the cache) then the SSE reply.
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-caseB',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'reply' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const retryStatus = await sendMessage(agent, chatId, { retry: true, modelId: MODEL_ID });
+    expect(retryStatus).toBe(200);
+
+    const after = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    // user + new assistant = 2
+    expect(after.body.messages).toHaveLength(2);
+    expect(after.body.messages[1].role).toBe('assistant');
+    expect(after.body.messages[1].contentJson).toBe('reply');
   });
 });
 

@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { Character, CharacterCreateInput } from 'story-editor-shared';
 import {
   Button,
   Field,
@@ -19,8 +20,6 @@ import {
   Textarea,
 } from '@/design/primitives';
 import {
-  type Character,
-  type CreateCharacterInput,
   type UpdateCharacterPatch,
   useCharacterQuery,
   useCreateCharacterMutation,
@@ -47,7 +46,16 @@ const ROLE_MAX = 200;
 const AGE_MAX = 50;
 const LONG_MAX = 5000;
 
-type FieldKey = 'name' | 'role' | 'age' | 'appearance' | 'voice' | 'arc' | 'personality';
+type FieldKey =
+  | 'name'
+  | 'role'
+  | 'age'
+  | 'appearance'
+  | 'voice'
+  | 'arc'
+  | 'personality'
+  | 'backstory'
+  | 'relationships';
 
 interface FieldState {
   name: string;
@@ -57,6 +65,8 @@ interface FieldState {
   voice: string;
   arc: string;
   personality: string;
+  backstory: string;
+  relationships: string;
 }
 
 function toState(c: Character): FieldState {
@@ -68,6 +78,8 @@ function toState(c: Character): FieldState {
     voice: c.voice ?? '',
     arc: c.arc ?? '',
     personality: c.personality ?? '',
+    backstory: c.backstory ?? '',
+    relationships: c.relationships ?? '',
   };
 }
 
@@ -99,6 +111,8 @@ function diffPatch(original: Character, current: FieldState): UpdateCharacterPat
     { key: 'voice', currentRaw: current.voice, initial: original.voice },
     { key: 'arc', currentRaw: current.arc, initial: original.arc },
     { key: 'personality', currentRaw: current.personality, initial: original.personality },
+    { key: 'backstory', currentRaw: current.backstory, initial: original.backstory },
+    { key: 'relationships', currentRaw: current.relationships, initial: original.relationships },
   ];
   for (const { key, currentRaw, initial } of checks) {
     const next = nullable(currentRaw);
@@ -115,6 +129,8 @@ const EMPTY_FIELDS: FieldState = {
   voice: '',
   arc: '',
   personality: '',
+  backstory: '',
+  relationships: '',
 };
 
 function CreateCharacterSheet({
@@ -132,6 +148,8 @@ function CreateCharacterSheet({
   const voiceId = useId();
   const arcId = useId();
   const personalityId = useId();
+  const backstoryId = useId();
+  const relationshipsId = useId();
 
   const createMutation = useCreateCharacterMutation(storyId);
   const [fields, setFields] = useState<FieldState>(EMPTY_FIELDS);
@@ -164,7 +182,7 @@ function CreateCharacterSheet({
     const trimmedName = fields.name.trim();
     if (trimmedName.length === 0) return;
     setFormError(null);
-    const input: CreateCharacterInput = { name: trimmedName };
+    const input: CharacterCreateInput = { name: trimmedName };
     const role = nullable(fields.role);
     if (role !== null) input.role = role;
     const age = nullable(fields.age);
@@ -177,6 +195,10 @@ function CreateCharacterSheet({
     if (arc !== null) input.arc = arc;
     const personality = nullable(fields.personality);
     if (personality !== null) input.personality = personality;
+    const backstory = nullable(fields.backstory);
+    if (backstory !== null) input.backstory = backstory;
+    const relationships = nullable(fields.relationships);
+    if (relationships !== null) input.relationships = relationships;
 
     try {
       const created = await createMutation.mutateAsync(input);
@@ -266,6 +288,26 @@ function CreateCharacterSheet({
                 onChange={handleFieldChange('personality')}
               />
             </Field>
+            <Field label="Backstory" htmlFor={backstoryId}>
+              <Textarea
+                id={backstoryId}
+                name="backstory"
+                value={fields.backstory}
+                maxLength={LONG_MAX}
+                rows={3}
+                onChange={handleFieldChange('backstory')}
+              />
+            </Field>
+            <Field label="Relationships" htmlFor={relationshipsId}>
+              <Textarea
+                id={relationshipsId}
+                name="relationships"
+                value={fields.relationships}
+                maxLength={LONG_MAX}
+                rows={3}
+                onChange={handleFieldChange('relationships')}
+              />
+            </Field>
           </div>
           {formError ? (
             <p
@@ -319,6 +361,8 @@ function EditCharacterSheet({
   const voiceId = useId();
   const arcId = useId();
   const personalityId = useId();
+  const backstoryId = useId();
+  const relationshipsId = useId();
 
   const query = useCharacterQuery(storyId, characterId);
   const updateMutation = useUpdateCharacterMutation(storyId);
@@ -510,6 +554,28 @@ function EditCharacterSheet({
                   maxLength={LONG_MAX}
                   rows={3}
                   onChange={handleFieldChange('personality')}
+                />
+              </Field>
+
+              <Field label="Backstory" htmlFor={backstoryId}>
+                <Textarea
+                  id={backstoryId}
+                  name="backstory"
+                  value={fields.backstory}
+                  maxLength={LONG_MAX}
+                  rows={3}
+                  onChange={handleFieldChange('backstory')}
+                />
+              </Field>
+
+              <Field label="Relationships" htmlFor={relationshipsId}>
+                <Textarea
+                  id={relationshipsId}
+                  name="relationships"
+                  value={fields.relationships}
+                  maxLength={LONG_MAX}
+                  rows={3}
+                  onChange={handleFieldChange('relationships')}
                 />
               </Field>
             </div>

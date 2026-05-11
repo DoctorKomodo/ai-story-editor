@@ -8,6 +8,14 @@ const USERNAME = 'alice';
 
 describe('<RecoveryCodeCard>', () => {
   let originalClipboard: PropertyDescriptor | undefined;
+  const originalIsSecureContext = window.isSecureContext;
+
+  function setSecureContext(value: boolean): void {
+    Object.defineProperty(window, 'isSecureContext', {
+      configurable: true,
+      value,
+    });
+  }
 
   beforeEach(() => {
     originalClipboard = Object.getOwnPropertyDescriptor(navigator, 'clipboard');
@@ -21,6 +29,7 @@ describe('<RecoveryCodeCard>', () => {
       // `delete` works because each test's defineProperty used `configurable: true`.
       delete (navigator as { clipboard?: unknown }).clipboard;
     }
+    setSecureContext(originalIsSecureContext);
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -70,6 +79,7 @@ describe('<RecoveryCodeCard>', () => {
 
   it('Copy button: success path flips label to Copied and back after the flash window', async () => {
     vi.useFakeTimers();
+    setSecureContext(true);
     const writeText = vi.fn(() => Promise.resolve());
     Object.defineProperty(navigator, 'clipboard', {
       configurable: true,

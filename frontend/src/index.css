@@ -513,7 +513,7 @@ body {
     transform: scaleX(0);
   }
 }
-.scene-undo-countdown {
+.undo-countdown {
   transform-origin: left center;
   animation: inkwell-undo-countdown var(--undo-ms, 5000ms) linear forwards;
 }

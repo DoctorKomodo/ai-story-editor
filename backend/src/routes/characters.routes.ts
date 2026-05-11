@@ -3,15 +3,19 @@
 
 import { Prisma } from '@prisma/client';
 import { type NextFunction, type Request, type Response, Router } from 'express';
-import { z } from 'zod';
+import {
+  characterCreateSchema,
+  characterReorderSchema,
+  characterResponseSchema,
+  charactersResponseSchema,
+  characterUpdateSchema,
+} from 'story-editor-shared';
 import { badRequestFromZod } from '../lib/bad-request';
+import { respond } from '../lib/respond';
+import { serializeCharacter } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import {
-  CharacterNotOwnedError,
-  type CharacterUpdateInput,
-  createCharacterRepo,
-} from '../repos/character.repo';
+import { CharacterNotOwnedError, createCharacterRepo } from '../repos/character.repo';
 
 // [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
 // After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
@@ -25,56 +29,6 @@ function isPrismaUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
-const CreateCharacterBody = z
-  .object({
-    name: z.string().min(1).max(200),
-    role: z.string().max(200).nullable().optional(),
-    age: z.string().max(50).nullable().optional(),
-    color: z.string().max(20).nullable().optional(),
-    initial: z.string().max(4).nullable().optional(),
-    appearance: z.string().max(5_000).nullable().optional(),
-    voice: z.string().max(5_000).nullable().optional(),
-    arc: z.string().max(5_000).nullable().optional(),
-    physicalDescription: z.string().max(5_000).nullable().optional(),
-    personality: z.string().max(5_000).nullable().optional(),
-    backstory: z.string().max(20_000).nullable().optional(),
-    notes: z.string().max(20_000).nullable().optional(),
-  })
-  .strict();
-
-const UpdateCharacterBody = z
-  .object({
-    name: z.string().min(1).max(200).optional(),
-    role: z.string().max(200).nullable().optional(),
-    age: z.string().max(50).nullable().optional(),
-    color: z.string().max(20).nullable().optional(),
-    initial: z.string().max(4).nullable().optional(),
-    appearance: z.string().max(5_000).nullable().optional(),
-    voice: z.string().max(5_000).nullable().optional(),
-    arc: z.string().max(5_000).nullable().optional(),
-    physicalDescription: z.string().max(5_000).nullable().optional(),
-    personality: z.string().max(5_000).nullable().optional(),
-    backstory: z.string().max(20_000).nullable().optional(),
-    notes: z.string().max(20_000).nullable().optional(),
-  })
-  .strict();
-
-const ReorderCharactersBody = z
-  .object({
-    characters: z
-      .array(
-        z
-          .object({
-            id: z.string().min(1),
-            orderIndex: z.number().int().min(0),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(500),
-  })
-  .strict();
-
 export function createCharactersRouter() {
   const router = Router({ mergeParams: true });
   router.use(requireAuth);
@@ -86,7 +40,7 @@ export function createCharactersRouter() {
     const storyId = req.params.storyId as string;
     try {
       const characters = await createCharacterRepo(req).findManyForStory(storyId);
-      res.status(200).json({ characters });
+      respond(charactersResponseSchema, res, { characters: characters.map(serializeCharacter) });
     } catch (err) {
       next(err);
     }
@@ -95,7 +49,7 @@ export function createCharactersRouter() {
   router.post('/', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
 
-    const parsed = CreateCharacterBody.safeParse(req.body);
+    const parsed = characterCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -119,19 +73,8 @@ export function createCharactersRouter() {
         try {
           created = await characterRepo.create({
             storyId,
-            name: body.name,
-            role: body.role,
-            age: body.age,
-            color: body.color,
-            initial: body.initial,
-            appearance: body.appearance,
-            voice: body.voice,
-            arc: body.arc,
-            physicalDescription: body.physicalDescription,
-            personality: body.personality,
-            backstory: body.backstory,
-            notes: body.notes,
             orderIndex: nextOrderIndex,
+            ...body,
           });
           break;
         } catch (err) {
@@ -145,7 +88,7 @@ export function createCharactersRouter() {
         throw lastErr ?? new Error('characters POST: failed to allocate orderIndex');
       }
 
-      res.status(201).json({ character: created });
+      respond(characterResponseSchema, res, { character: serializeCharacter(created) }, 201);
     } catch (err) {
       next(err);
     }
@@ -156,7 +99,7 @@ export function createCharactersRouter() {
   router.patch('/reorder', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
 
-    const parsed = ReorderCharactersBody.safeParse(req.body);
+    const parsed = characterReorderSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -215,7 +158,7 @@ export function createCharactersRouter() {
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
         }
-        res.status(200).json({ character });
+        respond(characterResponseSchema, res, { character: serializeCharacter(character) });
       } catch (err) {
         next(err);
       }
@@ -230,7 +173,7 @@ export function createCharactersRouter() {
       const storyId = req.params.storyId as string;
       const characterId = req.params.characterId as string;
 
-      const parsed = UpdateCharacterBody.safeParse(req.body);
+      const parsed = characterUpdateSchema.safeParse(req.body);
       if (!parsed.success) {
         badRequestFromZod(res, parsed.error);
         return;
@@ -244,34 +187,12 @@ export function createCharactersRouter() {
           return;
         }
 
-        const input: CharacterUpdateInput = {};
-        // Only forward explicitly present keys so `null` clears a field and
-        // omitted keys leave it untouched.
-        for (const key of [
-          'name',
-          'role',
-          'age',
-          'color',
-          'initial',
-          'appearance',
-          'voice',
-          'arc',
-          'physicalDescription',
-          'personality',
-          'backstory',
-          'notes',
-        ] as const) {
-          if (key in body) {
-            (input as Record<string, unknown>)[key] = (body as Record<string, unknown>)[key];
-          }
-        }
-
-        const character = await createCharacterRepo(req).update(characterId, input);
+        const character = await createCharacterRepo(req).update(characterId, body);
         if (!character) {
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
         }
-        res.status(200).json({ character });
+        respond(characterResponseSchema, res, { character: serializeCharacter(character) });
       } catch (err) {
         next(err);
       }

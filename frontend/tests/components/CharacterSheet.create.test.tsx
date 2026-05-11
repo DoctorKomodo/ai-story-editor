@@ -28,7 +28,11 @@ interface CharacterFixture {
   voice: string | null;
   arc: string | null;
   personality: string | null;
+  backstory: string | null;
+  relationships: string | null;
   orderIndex: number;
+  color: string | null;
+  initial: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -44,7 +48,11 @@ function makeChar(
     voice: null,
     arc: null,
     personality: null,
+    backstory: null,
+    relationships: null,
     orderIndex: 0,
+    color: null,
+    initial: null,
     createdAt: '2026-05-01T00:00:00.000Z',
     updatedAt: '2026-05-01T00:00:00.000Z',
     ...overrides,

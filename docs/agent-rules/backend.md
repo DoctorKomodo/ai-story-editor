@@ -90,6 +90,20 @@ talks to Venice.ai directly.
   - `prompt_cache_key` set to a hash of `storyId + modelId`
     (`[V8]`).
 
+- **Canonical message-array shape (k1r).** Every action goes through the
+  same code path in `buildPrompt`. The `system` message carries everything
+  stable across turns (system prompt + world-notes + characters + chapter +
+  per-action task template); the `user` message carries only what the user
+  contributed this turn. No `if (action === ...)` branches in `buildPrompt`'s
+  system-message assembly. Per-action `freeformInstruction`-required
+  validation lives in `buildUserPayload`'s switch arms (`scene` / `ask` /
+  `freeform`). New actions inherit this shape automatically — add a
+  `DEFAULT_PROMPTS.<action>` entry, a `UserPromptKey` member, a
+  `buildUserPayload` arm describing the user payload, and the rest is free.
+  See
+  `docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md`
+  for rationale (why `ask` was special pre-k1r, why we unified).
+
 ## Encryption at rest (backend lane)
 
 - The repo-boundary digest (`repo-boundary.md`) owns the

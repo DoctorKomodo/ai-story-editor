@@ -73,4 +73,60 @@ describe('requireAllowedOrigin middleware', () => {
     const res = await supertest(makeApp()).get('/protected').set('Origin', 'https://evil.example');
     expect(res.status).toBe(200);
   });
+
+  describe('with a list of allowed origins', () => {
+    const ALLOWED_LIST = ['http://localhost:3000', 'http://192.168.0.41:3000'] as const;
+
+    function makeListApp() {
+      const app = express();
+      app.use(express.json());
+      app.post('/protected', requireAllowedOrigin(ALLOWED_LIST), (_req: Request, res: Response) => {
+        res.status(200).json({ ok: true });
+      });
+      return app;
+    }
+
+    it('allows POST with an Origin matching the first list entry', async () => {
+      const res = await supertest(makeListApp())
+        .post('/protected')
+        .set('Origin', ALLOWED_LIST[0])
+        .send({});
+      expect(res.status).toBe(200);
+    });
+
+    it('allows POST with an Origin matching a non-first list entry', async () => {
+      const res = await supertest(makeListApp())
+        .post('/protected')
+        .set('Origin', ALLOWED_LIST[1])
+        .send({});
+      expect(res.status).toBe(200);
+    });
+
+    it('blocks POST with an Origin not in the list', async () => {
+      const res = await supertest(makeListApp())
+        .post('/protected')
+        .set('Origin', 'https://evil.example')
+        .send({});
+      expect(res.status).toBe(403);
+    });
+
+    it('allows POST with a Referer matching any list entry + /', async () => {
+      const res = await supertest(makeListApp())
+        .post('/protected')
+        .set('Referer', `${ALLOWED_LIST[1]}/login`)
+        .send({});
+      expect(res.status).toBe(200);
+    });
+
+    it('blocks POST with a Referer that subdomain-prefixes a list entry', async () => {
+      // Same subdomain-substring guard as the single-string case: the Referer
+      // must start with `${entry}/`, not just `${entry}`. Verified for every
+      // list entry, not only the first.
+      const res = await supertest(makeListApp())
+        .post('/protected')
+        .set('Referer', `${ALLOWED_LIST[1]}.evil.example/page`)
+        .send({});
+      expect(res.status).toBe(403);
+    });
+  });
 });

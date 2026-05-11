@@ -3,10 +3,10 @@ import { type JSX, type ReactNode, useState } from 'react';
  * [F38] Chat panel shell — 360px wide right column.
  *
  * Owns the structural chrome of the AI chat side panel:
- *   - 40px header with `Chat / Scene / History` pill tabs + `New chat` and
- *     `Settings` icon buttons.
- *   - Scrollable body slot for the message list ([F39]).
- *   - Composer slot pinned to the bottom ([F40]) — Chat tab only.
+ *   - 40px header with `Chat / Scene / History` pill tabs + `Settings` icon
+ *     button.
+ *   - Body slot for the active tab — `chatBody` ([ChatTab]) on Chat,
+ *     `sceneBody` ([SceneTab]) on Scene, or a placeholder on History.
  *   - ModelFooter at the very bottom: model picker button showing the active
  *     model and context-window chip (opens [F42]).
  *
@@ -20,40 +20,17 @@ import { type JSX, type ReactNode, useState } from 'react';
 import { ModelFooter } from '@/components/ModelFooter';
 
 export interface ChatPanelProps {
-  /** Slot for the message list ([F39]). Rendered when the Chat tab is active. */
-  messagesBody: ReactNode;
-  /** Slot for the composer ([F40]). Rendered when the Chat tab is active only. */
-  composer: ReactNode;
+  /** Slot for the Chat tab body ([ChatTab]). Rendered when the Chat tab is active. */
+  chatBody: ReactNode;
   /** Slot for the Scene tab body ([SC18]). Rendered when the Scene tab is active. */
   sceneBody: ReactNode;
   /** Click handler for the model picker button — opens [F42]. */
   onOpenModelPicker?: () => void;
-  /** Click handler for the New chat icon button. */
-  onNewChat?: () => void;
   /** Click handler for the Settings icon button — opens [F43]. */
   onOpenSettings?: () => void;
 }
 
 type TabId = 'chat' | 'scene' | 'history';
-
-function PlusIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
-}
 
 function SlidersIcon(): JSX.Element {
   return (
@@ -82,11 +59,9 @@ function SlidersIcon(): JSX.Element {
 }
 
 export function ChatPanel({
-  messagesBody,
-  composer,
+  chatBody,
   sceneBody,
   onOpenModelPicker,
-  onNewChat,
   onOpenSettings,
 }: ChatPanelProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('chat');
@@ -145,15 +120,6 @@ export function ChatPanel({
           <button
             type="button"
             className="icon-btn"
-            aria-label="New chat"
-            title="New chat"
-            onClick={onNewChat}
-          >
-            <PlusIcon />
-          </button>
-          <button
-            type="button"
-            className="icon-btn"
             aria-label="Settings"
             title="Settings"
             onClick={onOpenSettings}
@@ -168,18 +134,12 @@ export function ChatPanel({
         aria-label="Chat messages"
         data-testid="chat-body"
       >
-        {activeTab === 'chat' && messagesBody}
+        {activeTab === 'chat' && chatBody}
         {activeTab === 'scene' && sceneBody}
         {activeTab === 'history' && (
           <div className="px-4 py-6 text-[12px] text-ink-4">History — coming in a future task</div>
         )}
       </section>
-
-      {activeTab === 'chat' ? (
-        <div className="border-t border-line" data-testid="chat-composer">
-          {composer}
-        </div>
-      ) : null}
 
       <ModelFooter onOpenModelPicker={onOpenModelPicker} />
     </aside>

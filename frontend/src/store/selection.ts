@@ -10,10 +10,17 @@ export interface SelectionState {
   selection: SelectionValue | null;
   setSelection: (selection: SelectionValue | null) => void;
   clear: () => void;
+  reset: () => void;
 }
 
-export const useSelectionStore = create<SelectionState>((set) => ({
+const initialState: { selection: SelectionValue | null } = {
   selection: null,
+};
+
+export const useSelectionStore = create<SelectionState>((set) => ({
+  ...initialState,
   setSelection: (selection) => set({ selection }),
-  clear: () => set({ selection: null }),
+  /** Domain action: clear the current TipTap selection. For account-switch lifecycle reset, call `reset()` instead. */
+  clear: () => set(initialState),
+  reset: () => set(initialState),
 }));

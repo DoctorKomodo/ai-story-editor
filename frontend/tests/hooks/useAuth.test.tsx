@@ -1,10 +1,18 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import type { JSX, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initAuth, useAuth } from '@/hooks/useAuth';
 import { getAccessToken, resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
+
+function makeWrapper(client: QueryClient): (props: { children: ReactNode }) => JSX.Element {
+  return function Wrapper({ children }) {
+    return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+  };
+}
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -19,8 +27,12 @@ function emptyResponse(status: number): Response {
 
 describe('useAuth', () => {
   let fetchMock: FetchMock;
+  let queryClient: QueryClient;
 
   beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
     resetApiClientForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
@@ -33,6 +45,8 @@ describe('useAuth', () => {
   });
 
   afterEach(() => {
+    queryClient.clear();
+    queryClient.unmount();
     vi.unstubAllGlobals();
     setUnauthorizedHandler(null);
     resetApiClientForTests();
@@ -53,7 +67,7 @@ describe('useAuth', () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth(), { wrapper: makeWrapper(queryClient) });
     await act(async () => {
       await result.current.login({ username: 'alice', password: 'hunter2hunter2' });
     });
@@ -81,7 +95,7 @@ describe('useAuth', () => {
       }),
     );
 
-    const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth(), { wrapper: makeWrapper(queryClient) });
     let registerResult: {
       user: { id: string; username: string; name: string };
       recoveryCode: string;
@@ -121,7 +135,7 @@ describe('useAuth', () => {
 
     fetchMock.mockResolvedValueOnce(emptyResponse(204));
 
-    const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth(), { wrapper: makeWrapper(queryClient) });
     await act(async () => {
       await result.current.logout();
     });
@@ -141,7 +155,7 @@ describe('useAuth', () => {
     useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
     fetchMock.mockRejectedValueOnce(new TypeError('network down'));
 
-    const { result } = renderHook(() => useAuth());
+    const { result } = renderHook(() => useAuth(), { wrapper: makeWrapper(queryClient) });
     await act(async () => {
       await result.current.logout().catch(() => undefined);
     });

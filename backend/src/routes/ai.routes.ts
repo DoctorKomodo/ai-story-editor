@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
+import { toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
@@ -8,7 +9,7 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
 import { createStoryRepo } from '../repos/story.repo';
-import { buildPrompt, type CharacterContext } from '../services/prompt.service';
+import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
@@ -20,35 +21,16 @@ import type { UserSettings } from './user-settings.routes';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
-const CompleteBody = z
-  .object({
-    // 'ask' is intentionally excluded: it routes into chat (V16), not /complete.
-    // 'rewrite' and 'describe' are V14 additions for the selection-bubble surface.
-    action: z.enum([
-      'continue',
-      'rephrase',
-      'expand',
-      'summarise',
-      'freeform',
-      'rewrite',
-      'describe',
-    ]),
-    selectedText: z.string(),
-    chapterId: z.string().min(1),
-    storyId: z.string().min(1),
-    modelId: z.string().min(1),
-    freeformInstruction: z.string().optional(),
-    enableWebSearch: z.boolean().optional(),
-  })
-  .refine(
-    (d) =>
-      d.action !== 'freeform' ||
-      (typeof d.freeformInstruction === 'string' && d.freeformInstruction.length > 0),
-    {
-      message: 'freeformInstruction is required when action is "freeform"',
-      path: ['freeformInstruction'],
-    },
-  );
+const CompleteBody = z.object({
+  // 'ask' is intentionally excluded: it routes into chat (V16), not /complete.
+  // 'rewrite' and 'describe' are V14 additions for the selection-bubble surface.
+  action: z.enum(['continue', 'rephrase', 'expand', 'summarise', 'rewrite', 'describe']),
+  selectedText: z.string(),
+  chapterId: z.string().min(1),
+  storyId: z.string().min(1),
+  modelId: z.string().min(1),
+  enableWebSearch: z.boolean().optional(),
+});
 
 // ─── Prompt-cache key helper ──────────────────────────────────────────────────
 
@@ -138,23 +120,8 @@ export function createAiRouter() {
       // ── 6. Load characters ────────────────────────────────────────────────
       const rawCharacters = await createCharacterRepo(req).findManyForStory(body.storyId);
 
-      // ── 7. Map characters to CharacterContext ────────────────────────────
-      const characters: CharacterContext[] = rawCharacters.map((c) => {
-        const nameVal = typeof c.name === 'string' ? c.name : '';
-        const roleVal = typeof c.role === 'string' ? c.role : null;
-        // Condense traits: combine available trait fields into a short string.
-        const traitFields = ['personality', 'arc', 'appearance', 'voice'] as const;
-        const traitParts: string[] = [];
-        for (const f of traitFields) {
-          const v = (c as Record<string, unknown>)[f];
-          if (typeof v === 'string' && v.trim().length > 0) {
-            traitParts.push(v.trim());
-          }
-          if (traitParts.join('; ').length >= 120) break;
-        }
-        const keyTraits = traitParts.join('; ').slice(0, 120) || null;
-        return { name: nameVal, role: roleVal, keyTraits };
-      });
+      // ── 7. Map characters to CharacterPromptInput ────────────────────────
+      const characters = rawCharacters.map(toCharacterPromptInput);
 
       // ── 8. Extract chapter plaintext from decrypted TipTap body ──────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
@@ -180,7 +147,6 @@ export function createAiRouter() {
         userMaxCompletionTokens: Number.POSITIVE_INFINITY,
         includeVeniceSystemPrompt,
         userPrompts,
-        freeformInstruction: body.freeformInstruction,
       });
 
       // ── 10. Enrich venice_parameters ─────────────────────────────────────
