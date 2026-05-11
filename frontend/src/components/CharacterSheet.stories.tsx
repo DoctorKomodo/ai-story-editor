@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { Character } from 'story-editor-shared';
 import { Button } from '@/design/primitives';
-import type { Character } from '@/hooks/useCharacters';
 import { characterQueryKey } from '@/hooks/useCharacters';
 import { CharacterSheet } from './CharacterSheet';
 
@@ -16,10 +16,14 @@ const sampleCharacter: Character = {
   role: 'protagonist',
   age: '27',
   appearance: 'Tall, with the kind of stillness that gets mistaken for shyness.',
-  voice: 'Quiet, precise. Holds eye contact a beat longer than is comfortable.',
-  arc: 'Learns to trust her own judgement after a series of avoidable misreadings.',
   personality: 'Careful, curious, slow to anger but absolute once she gets there.',
+  voice: 'Quiet, precise. Holds eye contact a beat longer than is comfortable.',
+  backstory: null,
+  arc: 'Learns to trust her own judgement after a series of avoidable misreadings.',
+  relationships: null,
   orderIndex: 0,
+  color: null,
+  initial: null,
   createdAt: '2026-04-01T12:00:00Z',
   updatedAt: '2026-04-30T12:00:00Z',
 };

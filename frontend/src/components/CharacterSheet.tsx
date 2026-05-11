@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import type { Character } from 'story-editor-shared';
 import {
   Button,
   Field,
@@ -19,7 +20,6 @@ import {
   Textarea,
 } from '@/design/primitives';
 import {
-  type Character,
   type CreateCharacterInput,
   type UpdateCharacterPatch,
   useCharacterQuery,
