@@ -20,9 +20,6 @@ FROM node:22-alpine AS builder
 ARG PRISMA_GENERATE_DATABASE_URL
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/backend/node_modules ./backend/node_modules
-COPY --from=deps /app/frontend/node_modules ./frontend/node_modules
-COPY --from=deps /app/shared/node_modules ./shared/node_modules
 COPY . .
 # Shared must be built before backend tsc — backend's compiled CJS will
 # `require('story-editor-shared')` which resolves to shared/dist.
@@ -59,8 +56,9 @@ ENV PORT=4000
 # Prod deps only.
 COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
 COPY shared/package.json ./shared/
-RUN npm ci --omit=dev -w story-editor-backend -w story-editor-shared --include-workspace-root
+RUN npm ci --omit=dev --ignore-scripts -w story-editor-backend -w story-editor-shared --include-workspace-root
 
 # Bring in the compiled output for backend AND shared. Backend's runtime
 # does `require('story-editor-shared')` → resolves via workspace symlink in

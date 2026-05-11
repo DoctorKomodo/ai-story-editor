@@ -1,0 +1,46 @@
+# Root .dockerignore — applies when Docker context is the repo root (context: .)
+# Covers all workspaces: backend, frontend, shared.
+# The per-workspace backend/.dockerignore and frontend/.dockerignore are kept
+# as documentation but are NOT read by Docker when context is the repo root.
+
+# Dependencies (hoisted + per-workspace)
+node_modules
+**/node_modules
+
+# Build outputs
+dist
+**/dist
+
+# Secrets — never bake into image layers
+.env
+.env.*
+!.env.example
+
+# Version control
+.git
+.gitignore
+
+# Logs
+*.log
+
+# Test artefacts
+tests
+**/tests
+test-results
+coverage
+playwright-report
+
+# TypeScript incremental build info
+tsconfig.tsbuildinfo
+**/tsconfig.tsbuildinfo
+
+# IDE / OS noise
+.vscode
+.idea
+.DS_Store
+
+# Storybook static output
+storybook-static
+
+# Backup artefacts
+backups
