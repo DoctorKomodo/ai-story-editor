@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
-import { type CharacterPromptInput, toCharacterPromptInput } from 'story-editor-shared';
+import { toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
@@ -121,12 +121,7 @@ export function createAiRouter() {
       const rawCharacters = await createCharacterRepo(req).findManyForStory(body.storyId);
 
       // ── 7. Map characters to CharacterPromptInput ────────────────────────
-      // Cast: findManyForStory returns Record<string, unknown>[] because projectDecrypted
-      // type-erases the row. Safe at runtime: the repo invariant guarantees fully-decrypted
-      // character rows, and toCharacterPromptInput narrows to the 9 prompt fields itself.
-      const characters = (rawCharacters as unknown as CharacterPromptInput[]).map(
-        toCharacterPromptInput,
-      );
+      const characters = rawCharacters.map(toCharacterPromptInput);
 
       // ── 8. Extract chapter plaintext from decrypted TipTap body ──────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);

@@ -1,6 +1,7 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import type {
+  Character,
   CharacterUpdateInput,
   CharacterCreateInput as SharedCharacterCreateInput,
 } from 'story-editor-shared';
@@ -13,6 +14,15 @@ export class CharacterNotOwnedError extends Error {
     this.name = 'CharacterNotOwnedError';
   }
 }
+
+// Repo-layer shape: narrative fields are plaintext strings (decrypted by the
+// repo), but timestamps are Date objects (Prisma's raw output). Distinct from
+// the wire `Character` type (story-editor-shared), which has ISO string
+// timestamps. serialize.ts converts between the two at the handler boundary.
+export type RepoCharacter = Omit<Character, 'createdAt' | 'updatedAt'> & {
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 const ENCRYPTED_FIELDS = [
   'name',
@@ -74,14 +84,22 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
         ...encryptedDataFrom(req, input),
       },
     });
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoCharacter>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function findById(id: string) {
     const userId = resolveUserId(req);
     const row = await client.character.findFirst({ where: { id, story: { userId } } });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoCharacter>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function findManyForStory(storyId: string) {
@@ -92,7 +110,11 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
     });
     return rows.map((r) =>
-      projectDecrypted(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
+      projectDecrypted<RepoCharacter>(
+        req,
+        r as unknown as Record<string, unknown>,
+        ENCRYPTED_FIELDS,
+      ),
     );
   }
 
@@ -110,7 +132,11 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
       where: { id, story: { userId } },
     });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoCharacter>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function remove(id: string) {
