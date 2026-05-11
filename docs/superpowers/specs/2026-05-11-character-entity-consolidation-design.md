@@ -42,7 +42,7 @@ Single migration `YYYYMMDDHHMMSS_character_field_consolidation`:
 
 - **Drop** `physicalDescriptionCiphertext`, `physicalDescriptionIv`, `physicalDescriptionAuthTag`.
 - **Drop** `notesCiphertext`, `notesIv`, `notesAuthTag`.
-- **Add** `relationshipsCiphertext`, `relationshipsIv`, `relationshipsAuthTag` (all `BYTEA`, all nullable).
+- **Add** `relationshipsCiphertext`, `relationshipsIv`, `relationshipsAuthTag` (all `String?` in Prisma → `TEXT` in PostgreSQL, all nullable). The narrative-encryption helpers in `_narrative.ts` store base64-encoded ciphertext as text; this matches the existing convention for every other narrative ciphertext column. Don't introduce `BYTEA` — `writeEncrypted` would silently break.
 
 Pre-deployment per CLAUDE.md "General" rule — no data-migration branches. Migration runs against an empty `Character` table in dev/test.
 
@@ -59,7 +59,12 @@ import { z } from 'zod';
 // Wire format for timestamps is ISO-8601 — backend serializes Date → string
 // at the handler boundary. The Zod schema is the source of truth for the
 // wire format; the repo's Date return is normalised before egress.
-export const characterSchema = z.object({
+//
+// `z.strictObject` rejects unknown keys — this is what closes the
+// Prisma↔Zod drift seam at egress validation time. Adding a column to
+// Prisma without updating this schema causes a `respond()` parse failure
+// in dev/test, surfacing the drift loudly.
+export const characterSchema = z.strictObject({
   id: z.string().uuid(),
   storyId: z.string().uuid(),
   name: z.string(),
@@ -78,8 +83,10 @@ export const characterSchema = z.object({
   updatedAt: z.string().datetime(),
 });
 
-// Create input — name required; everything else optional.
-export const characterCreateSchema = z.object({
+// Create input — name required; everything else optional. Strict at the
+// inner shape; backend additionally calls `.strict()` at the request
+// validator (defensive, since some derivations may relax strictness).
+export const characterCreateSchema = z.strictObject({
   name: z.string().min(1),
   role: z.string().nullable().optional(),
   age: z.string().nullable().optional(),
@@ -93,16 +100,18 @@ export const characterCreateSchema = z.object({
   initial: z.string().nullable().optional(),
 });
 
-// Update input — every field optional.
+// Update input — every field optional. `.partial()` preserves the
+// strictness of the underlying object schema.
 export const characterUpdateSchema = characterCreateSchema.partial();
 
-// Response wrappers — match the existing API shape.
-export const characterResponseSchema = z.object({ character: characterSchema });
-export const charactersResponseSchema = z.object({ characters: z.array(characterSchema) });
+// Response wrappers — match the existing API shape. Strict at every
+// layer so `{ character, foo }` is also caught at egress.
+export const characterResponseSchema = z.strictObject({ character: characterSchema });
+export const charactersResponseSchema = z.strictObject({ characters: z.array(characterSchema) });
 
 // Reorder payload — preserves the existing { characters: [...] } body shape.
-export const characterReorderSchema = z.object({
-  characters: z.array(z.object({
+export const characterReorderSchema = z.strictObject({
+  characters: z.array(z.strictObject({
     id: z.string().uuid(),
     orderIndex: z.number().int().nonnegative(),
   })),
@@ -114,7 +123,7 @@ export type CharacterCreateInput = z.infer<typeof characterCreateSchema>;
 export type CharacterUpdateInput = z.infer<typeof characterUpdateSchema>;
 ```
 
-Backend applies `.strict()` at the request-validation use site (so unknown fields from clients are rejected); the base shared schemas stay lenient so future variants can extend them without re-declaring.
+Strictness in `z.strictObject` is preserved through `.partial()`, `.omit()`, and similar derivations — once strict at the source, derivative schemas inherit it. Both ingress (request-body validation) and egress (`respond()` parse) reject unknown keys.
 
 ### Build wiring: npm workspaces
 
@@ -133,19 +142,36 @@ The project adopts npm workspaces. The wiring touches the root, both Dockerfiles
 **`shared/package.json`** (new):
 ```jsonc
 {
-  "name": "@story-editor/shared",
+  "name": "story-editor-shared",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  // Conditional exports: bundlers (Vite) and TypeScript pick `src` directly,
+  // so editing shared/src/* propagates to dev without a build step. Node
+  // (backend prod runtime, `node dist/...`) gets `dist/` via the `node`
+  // condition. Belt-and-braces in dev: `make dev` runs `tsc -w -p shared`
+  // alongside the backend dev server so a stale dist/ never burns the
+  // backend's ts-node-dev process either.
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "node": "./dist/index.js",
+      "default": "./src/index.ts"
+    }
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
-  "dependencies": { "zod": "^4.4.3" }
+  "dependencies": { "zod": "^4.4.3" },
+  "devDependencies": { "vitest": "^2.x" }
 }
 ```
+
+Naming note: backend is `story-editor-backend`, frontend is `story-editor-frontend`, root is `story-editor` — all unscoped. The new workspace matches this convention as `story-editor-shared` rather than the scoped `story-editor-shared` an earlier draft used.
 
 **`shared/tsconfig.json`** (new) — emits `dist/` for backend's prod runtime to consume:
 ```jsonc
@@ -170,20 +196,22 @@ export * from './schemas/character.ts';
 ```
 
 **Backend wiring:**
-- `backend/package.json` adds `"@story-editor/shared": "*"` to `dependencies`. npm-workspace protocol auto-symlinks.
-- `backend/tsconfig.json` is unchanged (`rootDir: "src"` continues to work; shared's compiled `dist/` is consumed via `node_modules/@story-editor/shared/` from the workspace symlink — same as any other npm dep).
-- `backend/Dockerfile` build context changes: `docker-compose.yml`'s `context: ./backend` becomes `context: .` with `dockerfile: backend/Dockerfile`. Same for frontend. The `deps` stage runs `npm ci --workspaces --include-workspace-root` (or equivalent) from the repo-root context. The `builder` stage runs `npm -w @story-editor/shared run build` before `npm -w backend run build`.
+- `backend/package.json` adds `"story-editor-shared": "*"` to `dependencies`. npm-workspace protocol auto-symlinks.
+- `backend/tsconfig.json` is unchanged (`rootDir: "src"` continues to work; shared's compiled `dist/` is consumed via `node_modules/story-editor-shared/` from the workspace symlink — same as any other npm dep).
+- `backend/Dockerfile` build context changes: `docker-compose.yml`'s `context: ./backend` becomes `context: .` with `dockerfile: backend/Dockerfile`. Same for frontend. The `deps` stage runs `npm ci --workspaces --include-workspace-root` (or equivalent) from the repo-root context. The `builder` stage runs `npm -w story-editor-shared run build` before `npm -w backend run build`.
 - `backend/src/lib/serialize.ts` (new) — `serializeCharacter(row)` ISO-strings Date fields (createdAt, updatedAt) from the repo's `Date` return into wire-format strings before responses. Handler boundaries call it once.
 
 **Frontend wiring:**
-- `frontend/package.json` adds `"@story-editor/shared": "*"` and `"zod": "^4.4.3"`.
-- `frontend/vite.config.ts` doesn't need a new alias — workspace symlink in `node_modules` resolves the import naturally. Vite handles the `.ts` source via the workspace's `main`/`types` fields. (Actually, since `main` points at `dist/index.js`, Vite resolves that. The workspace must be built before frontend's dev server starts. For dev ergonomics, add `vite.config.ts` plugin or `optimizeDeps.include: ['@story-editor/shared']` if needed — small detail; plan task to verify.)
-- `frontend/tsconfig.app.json` — confirm it resolves `@story-editor/shared` via node module resolution (no `paths` entry needed; the `node_modules` symlink suffices for both type and runtime resolution).
+- `frontend/package.json` adds `"story-editor-shared": "*"` and `"zod": "^4.4.3"`.
+- `frontend/vite.config.ts` doesn't need a new alias — workspace symlink in `node_modules` resolves the import naturally. Vite handles the `.ts` source via the workspace's `main`/`types` fields. (Actually, since `main` points at `dist/index.js`, Vite resolves that. The workspace must be built before frontend's dev server starts. For dev ergonomics, add `vite.config.ts` plugin or `optimizeDeps.include: ['story-editor-shared']` if needed — small detail; plan task to verify.)
+- `frontend/tsconfig.app.json` — confirm it resolves `story-editor-shared` via node module resolution (no `paths` entry needed; the `node_modules` symlink suffices for both type and runtime resolution).
 
 **`docker-compose.yml`:**
 - `backend.build.context: ./backend` → `context: .`, `dockerfile: backend/Dockerfile`.
 - `frontend.build.context: ./frontend` → `context: .`, `dockerfile: frontend/Dockerfile`.
 - Per-subdir lockfiles (`backend/package-lock.json`, `frontend/package-lock.json`) are removed; a single root `package-lock.json` takes their place. `.gitignore` and any CI workflows referencing the per-subdir lockfiles need updating.
+
+**Lockfile-drift verification.** Workspaces resolve transitive deps against the combined dep graph from root, which can pin different transitive versions than the per-subdir lockfiles previously did. Before merging the workspace conversion: capture `npm ls --all --workspaces` post-conversion and diff against the pre-conversion state (per-subdir `npm ls --all` outputs concatenated). Flag any major-version drift in transitive deps for explicit review — most are harmless; some (e.g. a runtime dep silently going up a major) deserve a deliberate look. Add this diff to the workspace-adoption task's verify line.
 
 **`Makefile`:**
 - `make dev`, `make rebuild-frontend`, etc. — verify they still work. Most should be transparent since they use `docker compose` which honors the updated context.
@@ -205,11 +233,16 @@ New file: **`backend/src/lib/respond.ts`**.
 
 ```ts
 import type { Response } from 'express';
-import type { ZodSchema } from 'zod';
+import type { z } from 'zod';
 
 const VALIDATE = process.env.NODE_ENV !== 'production';
 
-export function respond<T>(schema: ZodSchema<T>, res: Response, data: T, status = 200): Response {
+export function respond<T>(
+  schema: z.ZodType<T>,
+  res: Response,
+  data: T,
+  status = 200,
+): Response {
   if (VALIDATE) {
     // Throws ZodError on drift; the global error handler renders it.
     schema.parse(data);
@@ -258,7 +291,7 @@ import { type Character } from '../hooks/useCharacters';
 gets updated to:
 
 ```ts
-import { type Character } from '@story-editor/shared';
+import { type Character } from 'story-editor-shared';
 ```
 
 One find-and-replace step in the implementation plan. The hook still exports its TanStack Query helpers, just not the type.
@@ -267,43 +300,55 @@ One find-and-replace step in the implementation plan. The hook still exports its
 
 ### Backend
 
-`backend/src/routes/characters.routes.ts` keeps its current Express-style shape. Only the Zod schemas and the response shape change:
+`backend/src/routes/characters.routes.ts` keeps its current Express-style shape. Only the Zod schemas, the egress response shape, and the import sources change. The route preserves the existing per-handler `safeParse` + early-return pattern (matching every other route in the codebase):
 
 ```ts
 import {
   characterCreateSchema,
-  characterUpdateSchema,
-  characterReorderSchema,
   characterResponseSchema,
-  charactersResponseSchema,
-} from '@story-editor/shared';
+} from 'story-editor-shared';
+import { badRequestFromZod } from '../lib/bad-request';
 import { respond } from '../lib/respond';
+import { serializeCharacter } from '../lib/serialize';
 
 // POST /api/stories/:storyId/characters
-router.post('/stories/:storyId/characters',
-  requireStoryOwnership,
-  badRequestFromZod(async (req, res) => {
-    const body = characterCreateSchema.strict().parse(req.body);
-    const character = await createCharacterRepo(req).create({ storyId: req.params.storyId, ...body });
+router.post('/', ownStory, async (req, res, next) => {
+  const parsed = characterCreateSchema.safeParse(req.body);
+  if (!parsed.success) {
+    badRequestFromZod(res, parsed.error);
+    return;
+  }
+  const body = parsed.data;
+  try {
+    const character = await createCharacterRepo(req).create({
+      storyId: req.params.storyId as string,
+      ...body,
+    });
     respond(characterResponseSchema, res, { character: serializeCharacter(character) }, 201);
-  })
-);
+  } catch (err) {
+    next(err);
+  }
+});
 ```
 
-Auth + ownership middleware unchanged. Request-scoped DEK cache unchanged. `badRequestFromZod` continues to produce 400s on input validation failures; ownership middleware produces 401/403/404.
+Auth + ownership middleware unchanged. Request-scoped DEK cache unchanged. `badRequestFromZod` (existing helper at `backend/src/lib/bad-request.ts`) continues to produce 400s on input validation failures; ownership middleware produces 401/403/404. The `[D16]` POST retry loop for orderIndex collisions is preserved verbatim — only the schema source moves.
+
+**Reorder-handler semantic checks survive verbatim.** The current handler does duplicate-id and duplicate-orderIndex validation in JS (`characters.routes.ts:171-188`) with the contract's `code: 'validation_error'` envelope — these are semantic checks that Zod can't express cleanly. Preserve them as-is; only the body schema's source moves to the shared workspace. An implementer reading "Zod now validates everything" should not be tempted to delete them.
+
+**Why no `validateBody()` middleware in this PR.** A wrapper that does `safeParse` + 400 + attach `req.validatedBody` would be cleaner than per-handler boilerplate, but adopting it for character routes only creates an asymmetry against the eight other route files. Better as a workspace-wide cleanup PR after a few entities have migrated. Listed in Follow-up tasks.
 
 The repo (`backend/src/repos/character.repo.ts`) updates:
 - `ENCRYPTED_FIELDS` → `['name', 'role', 'age', 'appearance', 'voice', 'arc', 'personality', 'backstory', 'relationships']`.
-- `CharacterCreateInput` / `CharacterUpdateInput` interfaces deleted; replaced by inferred types from `@story-editor/shared`.
+- `CharacterCreateInput` / `CharacterUpdateInput` interfaces deleted; replaced by inferred types from `story-editor-shared`.
 - All other repo behaviour unchanged (encrypt-on-write / decrypt-on-read, transaction logic for `remove`/`reorder`, ownership checks).
 
 ### Frontend
 
-`frontend/src/components/CharacterSheet.tsx` adds **one new field**: `relationships` (textarea). Same pattern as the existing 8 prose fields. Imports update from `../hooks/useCharacters` → `@story-editor/shared`.
+`frontend/src/components/CharacterSheet.tsx` adds **one new field**: `relationships` (textarea). Same pattern as the existing 8 prose fields. Imports update from `../hooks/useCharacters` → `story-editor-shared`.
 
 `frontend/src/hooks/useCharacters.ts`:
 - Drops the hand-rolled `Character` interface (no re-export).
-- Imports `Character`, `characterResponseSchema`, `charactersResponseSchema` from `@story-editor/shared`.
+- Imports `Character`, `characterResponseSchema`, `charactersResponseSchema` from `story-editor-shared`.
 - Keeps using the existing `api()` helper from `lib/api.ts` — no new HTTP client, no library swap.
 - **Adds runtime validation** on every response:
   ```ts
@@ -317,14 +362,14 @@ The repo (`backend/src/repos/character.repo.ts`) updates:
 
 ### What stays REST
 
-All other routes (stories, chapters, outline, chats, messages, ai/*, auth/*) are untouched. Their existing Zod validators stay inline in the route files. Other entities can migrate their Zod schemas to `@story-editor/shared` incrementally in follow-up PRs — purely a file relocation, no architectural shift.
+All other routes (stories, chapters, outline, chats, messages, ai/*, auth/*) are untouched. Their existing Zod validators stay inline in the route files. Other entities can migrate their Zod schemas to `story-editor-shared` incrementally in follow-up PRs — purely a file relocation, no architectural shift.
 
 ## Prompt builder
 
 `backend/src/services/prompt.service.ts`:
 
 - Remove `CharacterContext`, `CharacterRecord`, `toCharacterContext`.
-- `BuildPromptInput.characters` becomes `Character[]` (imported from `@story-editor/shared`).
+- `BuildPromptInput.characters` becomes `Character[]` (imported from `story-editor-shared`).
 - New `renderCharacterTag(c: Character): string`:
 
 ```ts
@@ -422,7 +467,7 @@ This design closes the type-drift seams between backend, frontend, and prompt bu
 
 - `backend/tests/services/prompt.service.test.ts`'s `toCharacterContext (h0z)` describe block — **deleted entirely**. Function is gone.
 - `backend/tests/services/prompt.service.test.ts`'s `charactersBlock XML rendering (h0z)` describe block — updated for hybrid shape.
-- Every test file in the frontend that imports `type Character` from `useCharacters` — import sites updated to `@story-editor/shared`.
+- Every test file in the frontend that imports `type Character` from `useCharacters` — import sites updated to `story-editor-shared`.
 
 ### Encryption leak test
 
@@ -467,7 +512,7 @@ This PR is forward-compatible with multiple future paths:
 Explicitly NOT in this PR:
 
 - ts-rest adoption for any route.
-- Migration of other entities' Zod schemas into `@story-editor/shared`. (Each is a small follow-up — see "Follow-up tasks" below.)
+- Migration of other entities' Zod schemas into `story-editor-shared`. (Each is a small follow-up — see "Follow-up tasks" below.)
 - Character context truncation strategy (deferred per direction question — see "Follow-up tasks" below).
 - `prisma-zod-generator` adoption.
 - Production-mode egress validation (would add latency; not justified yet).
@@ -481,17 +526,18 @@ Explicitly NOT in this PR:
 
 ### High-value, mechanical (unblocked by this PR's workspace adoption)
 
-- **Migrate `Story` Zod schemas → `@story-editor/shared`.** Move inline request validators from `backend/src/routes/stories.routes.ts` into `shared/src/schemas/story.ts`. Drop the frontend's hand-rolled `Story` interface in `frontend/src/hooks/useStories.ts`. Apply the `respond(schema, res, data)` egress pattern. Pattern identical to Character; file an issue per entity.
-- **Migrate `Chapter` Zod schemas → `@story-editor/shared`.** Same shape as Story. Note: chapter has a TipTap JSON body that needs careful schema treatment (likely `z.unknown()` or `z.record(z.unknown())` at the boundary — TipTap's internal structure is its own contract).
-- **Migrate `OutlineItem` Zod schemas → `@story-editor/shared`.** Same shape.
-- **Migrate `Chat` Zod schemas → `@story-editor/shared`.** Same shape.
-- **Migrate `Message` Zod schemas → `@story-editor/shared`.** Append-only entity (no update endpoint); slightly simpler schema set than the others.
+- **Migrate `Story` Zod schemas → `story-editor-shared`.** Move inline request validators from `backend/src/routes/stories.routes.ts` into `shared/src/schemas/story.ts`. Drop the frontend's hand-rolled `Story` interface in `frontend/src/hooks/useStories.ts`. Apply the `respond(schema, res, data)` egress pattern. Pattern identical to Character; file an issue per entity.
+- **Migrate `Chapter` Zod schemas → `story-editor-shared`.** Same shape as Story. Note: chapter has a TipTap JSON body that needs careful schema treatment (likely `z.unknown()` or `z.record(z.unknown())` at the boundary — TipTap's internal structure is its own contract).
+- **Migrate `OutlineItem` Zod schemas → `story-editor-shared`.** Same shape.
+- **Migrate `Chat` Zod schemas → `story-editor-shared`.** Same shape.
+- **Migrate `Message` Zod schemas → `story-editor-shared`.** Append-only entity (no update endpoint); slightly simpler schema set than the others.
 
 ### Design-and-decide
 
 - **Character context truncation strategy.** Send-all is the right starting point but breaks down at scale. Three candidate shapes (per the original brainstorm): per-field soft caps; per-character or per-field `includeInAi` toggle; characters block becomes truncatable like chapters with `orderIndex` as priority. File when a user actually hits a context wall; pick based on the failure mode.
 - **`prisma-zod-generator` evaluation.** Closes the Prisma↔Zod drift seam acknowledged in this design. Worth revisiting once two or three entities have settled into the shared pattern — gives a concrete data point on how much per-PR boilerplate the generator would save vs. its setup + maintenance cost.
 - **Production-mode egress validation.** The `respond` helper currently skips parsing in production. Removing the skip catches drift in prod at a small latency cost (~<1ms per response). File when there's evidence drift is leaking past dev/test (recurring class of bug), or when the latency budget allows.
+- **`validateBody(schema)` ingress middleware.** A wrapper that runs `safeParse` + 400 on failure + attaches typed body to `req` would replace the per-handler `safeParse` + early-return boilerplate everywhere. Cleaner end state but should be applied workspace-wide in one PR (not character-routes-only) to avoid asymmetry. File once two or three entities have migrated to shared schemas and the friction is observable.
 - **OpenAPI / API documentation generation from shared schemas.** Once 3+ entities have migrated to `shared/`, the Zod schemas can drive an OpenAPI spec via `@anatine/zod-openapi` or similar. Useful for a generated API reference, Postman collection, or future external integrations. Out of scope until there's a concrete consumer.
 
 ### Opportunistic
@@ -506,14 +552,14 @@ Explicitly NOT in this PR:
 - CI workflows updated: `ci.yml` and `e2e.yml` cache the root lockfile only; `npm ci` runs once from root; per-step `working-directory` overrides for npm scripts adjusted; first push to CI on the converted branch is green.
 - Schema migration runs cleanly; new `relationships*` triple present, old `physicalDescription*` / `notes*` triples gone.
 - Single canonical `Character` Zod schema in `shared/src/schemas/character.ts`; no other hand-maintained `Character` interface anywhere in `backend/`, `frontend/`, or `shared/`.
-- Backend `characters.routes.ts` consumes `characterCreateSchema.strict()`, `characterUpdateSchema.strict()`, `characterReorderSchema.strict()` from `@story-editor/shared` — no inline duplicates.
+- Backend `characters.routes.ts` consumes `characterCreateSchema.strict()`, `characterUpdateSchema.strict()`, `characterReorderSchema.strict()` from `story-editor-shared` — no inline duplicates.
 - Backend `character.repo.ts` consumes `CharacterCreateInput` / `CharacterUpdateInput` inferred from the shared schemas — no parallel interfaces.
 - `respond(schema, res, data)` helper exists; every character handler returns via it; non-prod parsing catches drift; prod skips the parse cleanly.
 - Wire format for `createdAt` / `updatedAt` is ISO-8601 strings; backend serialises Date → ISO string at the handler boundary.
 - `CharacterSheet` form exposes all 9 narrative fields; `relationships` is fillable end-to-end (UI → API → DB → re-read → UI).
 - Prompt builder renders the full character with the hybrid XML shape; all 9 fields appear in the system message when populated; empty fields suppressed; escapes applied; collision tests pass for all new tag names.
 - Frontend runtime-validates API responses against the shared schemas; a drift smoke test (mocked malformed response) surfaces as a `ZodError` through the hook's error path.
-- No `Character` re-export from `useCharacters.ts`; all component import sites point at `@story-editor/shared`.
+- No `Character` re-export from `useCharacters.ts`; all component import sites point at `story-editor-shared`.
 - Encryption leak test passes.
 - `lint:design` and all three typechecks (`shared`, `backend`, `frontend`) clean.
 - Repo-boundary review CLEAN at close-gate.
