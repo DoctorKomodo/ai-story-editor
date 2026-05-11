@@ -61,8 +61,9 @@ COPY shared/package.json ./shared/
 RUN npm ci
 COPY . .
 EXPOSE 3000
-# Vite needs --host so it binds 0.0.0.0 inside the container.
-CMD ["npx", "vite", "--host", "--port", "3000"]
+# Run via npm workspace so npm sets CWD to frontend/ where vite.config.ts lives.
+# The config already sets host:true and port:3000, so no extra CLI flags needed.
+CMD ["npm", "-w", "story-editor-frontend", "run", "dev"]
 
 # ---- runner --------------------------------------------------------------
 FROM nginx:alpine AS runner

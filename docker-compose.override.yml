@@ -39,5 +39,5 @@ services:
     volumes:
       - ./frontend:/app/frontend
       - /app/frontend/node_modules
-    command: ["npx", "vite", "--host", "--port", "3000"]
+    command: ["npm", "-w", "story-editor-frontend", "run", "dev"]
     # Vite's HMR talks back over the exposed port; nothing else changes.
