@@ -4,15 +4,16 @@ import type { Character } from 'story-editor-shared';
 // happens in the repo), but timestamps are still Date objects from Prisma.
 // `Character` (the wire shape) has timestamps as ISO strings. This helper
 // converts at the handler boundary so the response matches the schema.
-type RepoCharacter = Omit<Character, 'createdAt' | 'updatedAt'> & {
-  createdAt: Date;
-  updatedAt: Date;
-};
-
-export function serializeCharacter(row: RepoCharacter): Character {
+//
+// The repo's projectDecrypted helper returns `Record<string, unknown>` — we
+// accept it here and cast so the route file doesn't need the intermediate
+// RepoCharacter type. The respond() egress gate validates the actual shape at
+// runtime in non-production, so any drift between the repo output and the wire
+// schema surfaces immediately during development.
+export function serializeCharacter(row: Record<string, unknown>): Character {
   return {
-    ...row,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
+    ...(row as Omit<Character, 'createdAt' | 'updatedAt'>),
+    createdAt: (row.createdAt as Date).toISOString(),
+    updatedAt: (row.updatedAt as Date).toISOString(),
   };
 }

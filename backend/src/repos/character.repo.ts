@@ -7,10 +7,6 @@ import type {
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
-// Re-export so the route file continues to compile until Task 13 migrates it
-// to the shared import directly.
-export type { CharacterUpdateInput };
-
 export class CharacterNotOwnedError extends Error {
   constructor() {
     super('character.repo: one or more characters not owned by caller');

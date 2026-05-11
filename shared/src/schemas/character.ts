@@ -5,8 +5,8 @@ import { z } from 'zod';
 // load-bearing invariant that closes the Prisma↔Zod drift seam at
 // egress validation time.
 export const characterSchema = z.strictObject({
-  id: z.string().uuid(),
-  storyId: z.string().uuid(),
+  id: z.string().min(1),
+  storyId: z.string().min(1),
   name: z.string(),
   role: z.string().nullable(),
   age: z.string().nullable(),
@@ -47,7 +47,7 @@ export const charactersResponseSchema = z.strictObject({
 export const characterReorderSchema = z.strictObject({
   characters: z.array(
     z.strictObject({
-      id: z.string().uuid(),
+      id: z.string().min(1),
       orderIndex: z.number().int().nonnegative(),
     }),
   ),
