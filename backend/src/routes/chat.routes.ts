@@ -382,6 +382,9 @@ export function createChatMessagesRouter() {
 
       // ── 5. Load characters ────────────────────────────────────────────────
       const rawCharacters = await createCharacterRepo(req).findManyForStory(storyId);
+      // Cast: findManyForStory returns Record<string, unknown>[] because projectDecrypted
+      // type-erases the row. Safe at runtime: the repo invariant guarantees fully-decrypted
+      // character rows, and toCharacterPromptInput narrows to the 9 prompt fields itself.
       const characters = (rawCharacters as unknown as CharacterPromptInput[]).map(
         toCharacterPromptInput,
       );
