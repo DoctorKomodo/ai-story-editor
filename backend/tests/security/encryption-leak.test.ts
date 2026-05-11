@@ -105,10 +105,9 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       appearance: `appearance ${SENTINEL}`,
       voice: `voice ${SENTINEL}`,
       arc: `arc ${SENTINEL}`,
-      physicalDescription: `physical ${SENTINEL}`,
       personality: `personality ${SENTINEL}`,
       backstory: `backstory ${SENTINEL}`,
-      notes: `notes ${SENTINEL}`,
+      relationships: `relationships ${SENTINEL}`,
       color: 'plain-color-ok',
       initial: 'C',
     });
