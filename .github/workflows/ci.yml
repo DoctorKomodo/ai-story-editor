@@ -107,6 +107,9 @@ jobs:
         run: npm -w story-editor-frontend run build-storybook -- --quiet
 
       # ── Test ───────────────────────────────────────────────────────────────
+      - name: Shared tests
+        run: npm -w story-editor-shared run test
+
       - name: Prisma migrate (test DB)
         working-directory: backend
         run: npx prisma migrate deploy
