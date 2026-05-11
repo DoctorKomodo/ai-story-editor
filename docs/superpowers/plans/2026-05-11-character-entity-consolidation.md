@@ -2269,7 +2269,7 @@ npm -w story-editor-shared run build && \
   npm -w story-editor-frontend run typecheck && \
   npm -w story-editor-shared test && \
   npm -w story-editor-backend test -- tests/services/prompt.service.test.ts tests/repos/character.repo.test.ts tests/lib/respond.test.ts tests/lib/serialize.test.ts tests/routes/characters.test.ts tests/security/encryption-leak.test.ts && \
-  npm -w story-editor-frontend test -- src/hooks/useCharacters src/components/CharacterSheet
+  npm -w story-editor-frontend test -- useCharacters CharacterSheet
 ```
 
 Expected: every step PASS.

@@ -2,6 +2,11 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 import { createStoryRow, createUser, resetNarrativeTables, SENTINEL } from './_helpers';
 
+// Lane note: raw Prisma is intentional. This file asserts the SCHEMA
+// accepts a ciphertext triple on every narrative field of Character —
+// it's a column-shape invariant, not a repo-layer test. Repo-layer
+// encrypt/decrypt round-trips live in tests/repos/character.repo.test.ts.
+
 describe('[E6] Character — ciphertext columns', () => {
   beforeEach(resetNarrativeTables);
   afterEach(resetNarrativeTables);
