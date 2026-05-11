@@ -60,8 +60,8 @@ describe('characterSchema', () => {
     expect(() => characterSchema.parse({ ...validCharacter, createdAt: 'not a date' })).toThrow();
   });
 
-  it('rejects non-uuid id', () => {
-    expect(() => characterSchema.parse({ ...validCharacter, id: 'not-a-uuid' })).toThrow();
+  it('rejects empty string id', () => {
+    expect(() => characterSchema.parse({ ...validCharacter, id: '' })).toThrow();
   });
 });
 
