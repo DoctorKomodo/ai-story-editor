@@ -4,7 +4,8 @@ services:
     # — see docker-compose.yml's `inkwell-backend:prod` for the prod tag.
     image: inkwell-backend:dev
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
       target: dev
     # Make the host reachable by name from inside the container so the [T8]
     # E2E spec can stand up an in-process mock Venice server on the host and
@@ -19,14 +20,15 @@ services:
       # Bind-mount the source for hot reload. node_modules is kept inside the
       # container so the host's (potentially different-arch) node_modules
       # doesn't shadow what was installed at build time.
-      - ./backend:/app
+      - ./backend:/app/backend
       - /app/node_modules
-    command: ["npm", "run", "dev"]
+    command: ["npm", "-w", "story-editor-backend", "run", "dev"]
 
   frontend:
     image: inkwell-frontend:dev
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       target: dev
     environment:
       NODE_ENV: development
@@ -35,7 +37,7 @@ services:
       # forwarded to backend:4000 without CORS.
       VITE_DEV_PROXY_TARGET: http://backend:4000
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      - ./frontend:/app/frontend
+      - /app/frontend/node_modules
     command: ["npx", "vite", "--host", "--port", "3000"]
     # Vite's HMR talks back over the exposed port; nothing else changes.

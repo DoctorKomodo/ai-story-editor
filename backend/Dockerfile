@@ -1,16 +1,18 @@
 # backend/Dockerfile
+# Built with repo root as context per the workspaces adoption. See
+# docker-compose.yml's backend.build.{context,dockerfile}.
 
-# Dummy DATABASE_URL used only for `prisma generate` at build time. The real
-# value is provided as a runtime env var; `migrate deploy` (run from the
-# entrypoint) is the only path that actually connects. We keep one literal
-# here and let each stage redeclare the ARG so a future change touches one
-# line, not three.
 ARG PRISMA_GENERATE_DATABASE_URL=postgresql://prisma:prisma@localhost:5432/prisma
 
 # ---- deps ----------------------------------------------------------------
 FROM node:22-alpine AS deps
 WORKDIR /app
+# Workspace-aware install: copy every workspace manifest and the single root
+# lockfile, then npm ci installs all workspaces.
 COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+COPY shared/package.json ./shared/
 RUN npm ci
 
 # ---- builder -------------------------------------------------------------
@@ -18,54 +20,62 @@ FROM node:22-alpine AS builder
 ARG PRISMA_GENERATE_DATABASE_URL
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
+COPY --from=deps /app/backend/node_modules ./backend/node_modules
+COPY --from=deps /app/frontend/node_modules ./frontend/node_modules
+COPY --from=deps /app/shared/node_modules ./shared/node_modules
 COPY . .
+# Shared must be built before backend tsc — backend's compiled CJS will
+# `require('story-editor-shared')` which resolves to shared/dist.
+RUN npm -w story-editor-shared run build
 ENV DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL}
-RUN npx prisma generate
-RUN npm run build
+RUN npx -w story-editor-backend prisma generate
+RUN npm -w story-editor-backend run build
 
 # ---- dev (used by docker-compose.override.yml) ---------------------------
-# Placed before `runner` so a default `docker build` (no --target) lands on
-# the runner stage. Compose's override selects this stage explicitly via
-# `target: dev`.
 FROM node:22-alpine AS dev
 ARG PRISMA_GENERATE_DATABASE_URL
 WORKDIR /app
 ENV NODE_ENV=development
 COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+COPY shared/package.json ./shared/
 RUN npm ci
 COPY . .
-RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx prisma generate
+RUN npm -w story-editor-shared run build
+RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx -w story-editor-backend prisma generate
 EXPOSE 4000
-CMD ["npm", "run", "dev"]
+CMD ["npm", "-w", "story-editor-backend", "run", "dev"]
 
 # ---- runner --------------------------------------------------------------
 FROM node:22-alpine AS runner
 ARG PRISMA_GENERATE_DATABASE_URL
 WORKDIR /app
-
-# Non-root user for the app process.
 RUN addgroup -S app && adduser -S app -G app
 
 ENV NODE_ENV=production
 ENV PORT=4000
 
-# Prod-only deps; the prisma client must be generated against these node_modules
-# so we run `prisma generate` once more here against the schema.
+# Prod deps only.
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+COPY backend/package.json ./backend/
+COPY shared/package.json ./shared/
+RUN npm ci --omit=dev -w story-editor-backend -w story-editor-shared --include-workspace-root
 
-# Bring in the compiled output, the schema (for `prisma migrate deploy`), and
-# the entrypoint. The prisma.config.ts is needed for `prisma generate` and
-# `migrate deploy` in this stage.
-COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/prisma ./prisma
-COPY prisma.config.ts ./prisma.config.ts
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+# Bring in the compiled output for backend AND shared. Backend's runtime
+# does `require('story-editor-shared')` → resolves via workspace symlink in
+# node_modules/ → shared/dist/index.js.
+COPY --from=builder /app/backend/dist ./backend/dist
+COPY --from=builder /app/backend/prisma ./backend/prisma
+COPY --from=builder /app/shared/dist ./shared/dist
+COPY backend/prisma.config.ts ./backend/prisma.config.ts
+COPY backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
-    && DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx prisma generate \
+    && DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx -w story-editor-backend prisma generate \
     && chown -R app:app /app
 
 USER app
+WORKDIR /app/backend
 
 EXPOSE 4000
 

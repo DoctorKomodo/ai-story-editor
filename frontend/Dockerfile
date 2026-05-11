@@ -1,4 +1,6 @@
 # frontend/Dockerfile
+# Built with repo root as context per the workspaces adoption. See
+# docker-compose.yml's frontend.build.{context,dockerfile}.
 
 # ---- builder -------------------------------------------------------------
 FROM node:22-alpine AS builder
@@ -10,8 +12,17 @@ WORKDIR /app
 # npm is opt-out by default in corepack on node 22 LTS.
 RUN COREPACK_ENABLE_NPM=1 corepack enable npm \
  && corepack prepare npm@11.13.0 --activate
+
+# Workspace-aware install: copy every workspace manifest and the single root
+# lockfile, then npm ci installs all workspaces.
 COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+COPY shared/package.json ./shared/
 RUN npm ci
+
+# Frontend reads shared via Vite alias to shared/src — no shared build step
+# needed here. (Backend builds shared in its own Dockerfile.)
 COPY . .
 
 # VITE_* vars are inlined into the bundle at build time.
@@ -23,13 +34,13 @@ COPY . .
 #
 # Operators who terminate on a different origin (e.g. a separate api.example.com)
 # override this at build time so the SPA bundle calls that host directly:
-#   docker build --build-arg VITE_API_BASE_URL=https://api.example.com/api ./frontend
+#   docker build --build-arg VITE_API_BASE_URL=https://api.example.com/api .
 # In that case the operator must also configure CORS on the backend
 # (FRONTEND_URL) and accept the cross-origin cookie scoping consequences.
 ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
-RUN npm run build
+RUN npm -w story-editor-frontend run build
 
 # ---- dev (used by docker-compose.override.yml) ---------------------------
 # Placed before `runner` so a default `docker build` (no --target) lands on
@@ -44,6 +55,9 @@ ENV NODE_ENV=development
 RUN COREPACK_ENABLE_NPM=1 corepack enable npm \
  && corepack prepare npm@11.13.0 --activate
 COPY package.json package-lock.json ./
+COPY backend/package.json ./backend/
+COPY frontend/package.json ./frontend/
+COPY shared/package.json ./shared/
 RUN npm ci
 COPY . .
 EXPOSE 3000
@@ -56,10 +70,11 @@ WORKDIR /usr/share/nginx/html
 
 # Replace the default config with our SPA-fallback variant.
 RUN rm /etc/nginx/conf.d/default.conf
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY frontend/nginx.conf /etc/nginx/conf.d/default.conf
 
-# Static bundle.
-COPY --from=builder /app/dist .
+# Static bundle — Vite outputs to frontend/dist relative to the repo root
+# when built from the workspace root context.
+COPY --from=builder /app/frontend/dist .
 
 # nginx:alpine listens on 80 by default, but our config binds 3000.
 EXPOSE 3000
