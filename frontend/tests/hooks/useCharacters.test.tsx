@@ -220,8 +220,9 @@ describe('useCharacters runtime validation', () => {
     const { result } = renderHook(() => useCharactersQuery('story-id'), { wrapper: wrapQc() });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeDefined();
-    // ZodError has an `issues` array; thrown as a regular error through TanStack Query.
-    expect(String(result.current.error)).toMatch(/zod|issues|required/i);
+    // ZodError.name === 'ZodError'; toString() in Zod v4 returns a JSON array,
+    // not a string containing "zod", "issues", or "required".
+    expect(result.current.error?.name).toBe('ZodError');
   });
 
   it('returns parsed characters on valid response', async () => {
