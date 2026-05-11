@@ -136,3 +136,75 @@ describe('characterReorderSchema', () => {
     ).toThrow();
   });
 });
+
+import {
+  type Character,
+  type CharacterPromptInput,
+  toCharacterPromptInput,
+} from '../src/schemas/character';
+
+describe('CharacterPromptInput projection', () => {
+  const fullCharacter: Character = {
+    id: '550e8400-e29b-41d4-a716-446655440000',
+    storyId: '550e8400-e29b-41d4-a716-446655440001',
+    name: 'Imogen',
+    role: 'protagonist',
+    age: '34',
+    appearance: 'tall',
+    personality: 'wry',
+    voice: 'alto',
+    backstory: 'widow',
+    arc: 'insurgent',
+    relationships: 'sister to Felix',
+    orderIndex: 0,
+    color: null,
+    initial: null,
+    createdAt: '2026-05-11T00:00:00.000Z',
+    updatedAt: '2026-05-11T00:00:00.000Z',
+  };
+
+  it('toCharacterPromptInput returns only the 9 narrative fields', () => {
+    const projected = toCharacterPromptInput(fullCharacter);
+    expect(Object.keys(projected).sort()).toEqual(
+      [
+        'age',
+        'appearance',
+        'arc',
+        'backstory',
+        'name',
+        'personality',
+        'relationships',
+        'role',
+        'voice',
+      ].sort(),
+    );
+  });
+
+  it('preserves null values across all optional fields', () => {
+    const input: CharacterPromptInput = {
+      name: 'X',
+      role: null,
+      age: null,
+      appearance: null,
+      personality: null,
+      voice: null,
+      backstory: null,
+      arc: null,
+      relationships: null,
+    };
+    expect(toCharacterPromptInput(input)).toEqual(input);
+  });
+
+  it('preserves all populated values', () => {
+    const projected = toCharacterPromptInput(fullCharacter);
+    expect(projected.name).toBe('Imogen');
+    expect(projected.role).toBe('protagonist');
+    expect(projected.age).toBe('34');
+    expect(projected.appearance).toBe('tall');
+    expect(projected.personality).toBe('wry');
+    expect(projected.voice).toBe('alto');
+    expect(projected.backstory).toBe('widow');
+    expect(projected.arc).toBe('insurgent');
+    expect(projected.relationships).toBe('sister to Felix');
+  });
+});
