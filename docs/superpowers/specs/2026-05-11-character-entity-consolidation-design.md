@@ -121,7 +121,52 @@ export const characterReorderSchema = z.strictObject({
 export type Character = z.infer<typeof characterSchema>;
 export type CharacterCreateInput = z.infer<typeof characterCreateSchema>;
 export type CharacterUpdateInput = z.infer<typeof characterUpdateSchema>;
+
+// Narrow projection consumed by the prompt builder. Derived from Character
+// (no parallel definition), so the field list can't drift. Drops id /
+// storyId / orderIndex / color / initial / createdAt / updatedAt — none of
+// which the prompt builder reads, two of which (id, storyId) are leak risks
+// if a future contributor adds them to a template by accident.
+export type CharacterPromptInput = Pick<
+  Character,
+  | 'name'
+  | 'role'
+  | 'age'
+  | 'appearance'
+  | 'personality'
+  | 'voice'
+  | 'backstory'
+  | 'arc'
+  | 'relationships'
+>;
+
+// Helper for routes that have a Character-shaped (or repo-shaped) value and
+// need the narrowed projection. Accepts the structural subset so repo
+// outputs with `Date` timestamps still type-check — timestamps aren't read.
+export function toCharacterPromptInput(c: CharacterPromptInput): CharacterPromptInput {
+  return {
+    name: c.name,
+    role: c.role,
+    age: c.age,
+    appearance: c.appearance,
+    personality: c.personality,
+    voice: c.voice,
+    backstory: c.backstory,
+    arc: c.arc,
+    relationships: c.relationships,
+  };
+}
 ```
+
+### Exported from `shared/src/index.ts`
+
+The barrel re-exports everything the rest of the codebase consumes:
+
+- **Schemas (Zod)**: `characterSchema`, `characterCreateSchema`, `characterUpdateSchema`, `characterResponseSchema`, `charactersResponseSchema`, `characterReorderSchema`.
+- **Types (inferred)**: `Character`, `CharacterCreateInput`, `CharacterUpdateInput`.
+- **Prompt projection**: `CharacterPromptInput`, `toCharacterPromptInput`.
+
+No other types or schemas in this file are exported. The acceptance criteria reference this list — any deviation surfaces during review.
 
 Strictness in `z.strictObject` is preserved through `.partial()`, `.omit()`, and similar derivations — once strict at the source, derivative schemas inherit it. Both ingress (request-body validation) and egress (`respond()` parse) reject unknown keys.
 
@@ -145,46 +190,61 @@ The project adopts npm workspaces. The wiring touches the root, both Dockerfiles
   "name": "story-editor-shared",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "main": "./dist/index.js",
-  "types": "./dist/index.d.ts",
-  // Conditional exports: bundlers (Vite) and TypeScript pick `src` directly,
-  // so editing shared/src/* propagates to dev without a build step. Node
-  // (backend prod runtime, `node dist/...`) gets `dist/` via the `node`
-  // condition. Belt-and-braces in dev: `make dev` runs `tsc -w -p shared`
-  // alongside the backend dev server so a stale dist/ never burns the
-  // backend's ts-node-dev process either.
-  "exports": {
-    ".": {
-      "types": "./src/index.ts",
-      "node": "./dist/index.js",
-      "default": "./src/index.ts"
-    }
-  },
+  "types": "./src/index.ts",
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run"
   },
-  "dependencies": { "zod": "^4.4.3" },
-  "devDependencies": { "vitest": "^2.x" }
+  "dependencies": { "zod": "^4.4.3" }
 }
 ```
 
-Naming note: backend is `story-editor-backend`, frontend is `story-editor-frontend`, root is `story-editor` — all unscoped. The new workspace matches this convention as `story-editor-shared` rather than the scoped `story-editor-shared` an earlier draft used.
+Resolution semantics — chose plain `main + types` over a conditional `exports` map to dodge the Vitest-resolves-to-`dist/`-without-a-build cliff edge that conditional maps create:
 
-**`shared/tsconfig.json`** (new) — emits `dist/` for backend's prod runtime to consume:
+| Consumer | Hits | Resolves to | Build needed? |
+|---|---|---|---|
+| `tsc` typecheck / IDE | `types` | `src/index.ts` | no |
+| Backend runtime (`node dist/`) — CJS | `main` | `dist/index.js` | yes |
+| Backend Vitest — CJS | `main` | `dist/index.js` | yes |
+| Backend `ts-node-dev` (dev) | `main` | `dist/index.js` | yes (kept fresh by `tsc -w` sidecar in `make dev`) |
+| Frontend Vite (dev + prod bundle) | Vite alias | `shared/src/index.ts` | **no** |
+| Frontend Vitest (jsdom) | Vite alias | `shared/src/index.ts` | **no** |
+
+The frontend skips the build entirely via a Vite alias (`'story-editor-shared': path.resolve(__dirname, '../shared/src')` in `vite.config.ts`), which Vitest inherits because Vitest reads the same Vite config. **The frontend Dockerfile builder therefore needs no shared build step.** The backend Dockerfile builder DOES — `npm -w story-editor-shared run build` runs before `npm -w backend run build`.
+
+`vitest` is **hoisted to the root `devDependencies`** (both backend and frontend currently pin `^4.1.5` — match that). The shared workspace inherits via npm-workspace dep resolution; no per-workspace vitest pin needed. Hoisting also avoids the version-drift surface of three independent vitest copies.
+
+`shared/package.json` deliberately does NOT declare `"type": "module"` — it inherits CommonJS by default, matching backend (which is `"type": "commonjs"`). Backend's compiled CJS does `require('story-editor-shared')` and resolves to the workspace's `main`; no ESM/CJS interop needed.
+
+Naming note: backend is `story-editor-backend`, frontend is `story-editor-frontend`, root is `story-editor` — all unscoped. The new workspace matches this convention.
+
+**`shared/tsconfig.json`** (new) — broad include with `noEmit` so vitest, IDE, and `tsc --noEmit` cover both src and tests:
 ```jsonc
 {
   "compilerOptions": {
     "target": "ES2023",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["src/**/*", "tests/**/*"]
+}
+```
+
+**`shared/tsconfig.build.json`** (new) — extends the base, narrows include to `src/`, emits `dist/`:
+```jsonc
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
     "declaration": true,
-    "strict": true,
-    "esModuleInterop": true
+    "noEmit": false
   },
   "include": ["src/**/*"]
 }
@@ -203,7 +263,7 @@ export * from './schemas/character.ts';
 
 **Frontend wiring:**
 - `frontend/package.json` adds `"story-editor-shared": "*"` and `"zod": "^4.4.3"`.
-- `frontend/vite.config.ts` doesn't need a new alias — workspace symlink in `node_modules` resolves the import naturally. Vite handles the `.ts` source via the workspace's `main`/`types` fields. (Actually, since `main` points at `dist/index.js`, Vite resolves that. The workspace must be built before frontend's dev server starts. For dev ergonomics, add `vite.config.ts` plugin or `optimizeDeps.include: ['story-editor-shared']` if needed — small detail; plan task to verify.)
+- `frontend/vite.config.ts` adds an alias `'story-editor-shared': path.resolve(__dirname, '../shared/src')` so Vite consumes shared TS source directly, bypassing the workspace's `main`-pointed-`dist/`. No `optimizeDeps` entry needed, no shared build step required for the frontend dev server or production bundle. Vitest inherits the alias from the same Vite config.
 - `frontend/tsconfig.app.json` — confirm it resolves `story-editor-shared` via node module resolution (no `paths` entry needed; the `node_modules` symlink suffices for both type and runtime resolution).
 
 **`docker-compose.yml`:**
@@ -369,11 +429,12 @@ All other routes (stories, chapters, outline, chats, messages, ai/*, auth/*) are
 `backend/src/services/prompt.service.ts`:
 
 - Remove `CharacterContext`, `CharacterRecord`, `toCharacterContext`.
-- `BuildPromptInput.characters` becomes `Character[]` (imported from `story-editor-shared`).
-- New `renderCharacterTag(c: Character): string`:
+- `BuildPromptInput.characters` becomes `CharacterPromptInput[]` (imported from `story-editor-shared`). This is the narrow `Pick<Character, ...>` projection — `id`, `storyId`, structural fields, and timestamps are intentionally out of scope here. The narrower type is leak-defensive (a future contributor can't `${c.id}` into a template) and avoids forcing callers to serialize Date → ISO strings before calling `buildPrompt` (since timestamps aren't part of the type at all).
+- `ai.routes.ts` and `chat.routes.ts` call `rawCharacters.map(toCharacterPromptInput)` before passing to `buildPrompt` — explicit projection at the seam.
+- New `renderCharacterTag(c: CharacterPromptInput): string`:
 
 ```ts
-function renderCharacterTag(c: Character): string {
+function renderCharacterTag(c: CharacterPromptInput): string {
   if (!c.name) return '';
   const attrs = [
     ` name="${escapeXmlAttr(c.name)}"`,
@@ -402,7 +463,7 @@ function renderCharacterTag(c: Character): string {
 
 `charactersBlock` construction is unchanged in shape — `<characters>\n<character …>…</character>\n</characters>` — but each `<character>` is now multi-line.
 
-`ai.routes.ts` and `chat.routes.ts` drop their `.map(toCharacterContext)` calls and pass `rawCharacters` directly to `buildPrompt`.
+`ai.routes.ts` and `chat.routes.ts` replace their `.map(toCharacterContext)` calls with `.map(toCharacterPromptInput)` — the function lives in `story-editor-shared`, not the prompt service.
 
 ### Concrete output
 
@@ -441,7 +502,7 @@ XML escaping rules unchanged: `escapeXmlAttr` for attribute values; `escapeXmlTe
 
 This design closes the type-drift seams between backend, frontend, and prompt builder. It does **not** close the seam between Prisma's schema and the Zod schema. If a future contributor adds a `nickname` column to `Character` in Prisma without updating `characterSchema`, the repo will return a row containing `nickname` and the shared "single source of truth" silently isn't. Two mitigations:
 
-1. **Egress validation** (above) catches it at test time. The Zod schema's `parse()` rejects unknown fields by default (when `.strict()` is used on the egress schema), or accepts them silently (when not strict). The egress validator should use `.strict()` for the response schemas so this case fails loudly.
+1. **Egress validation** (above) catches it at test time. The schemas are declared with `z.strictObject` from the source — `characterSchema` itself rejects unknown keys, not just the wrapper. `respond()`'s `parse()` therefore fails loudly when Prisma adds a column without a Zod-schema update. No additional `.strict()` call at the use site is needed.
 2. **A future option** (out of scope here) is `prisma-zod-generator` — generates the Zod schema from Prisma. Would close this seam too. Not adopted now; flagged for consideration once the project has a second or third entity migrated to shared schemas and the pattern is settled.
 
 ## Testing
@@ -476,8 +537,10 @@ This design closes the type-drift seams between backend, frontend, and prompt bu
 ### Verify line for the bd issue
 
 ```
-npm --prefix shared run typecheck && npm --prefix backend run typecheck && npm --prefix frontend run typecheck && npm --prefix shared test && npm --prefix backend test -- tests/services/prompt.service.test.ts tests/repos/character.repo.test.ts tests/lib/respond.test.ts tests/routes/characters.test.ts tests/security/encryption-leak.test.ts && npm --prefix frontend test -- src/hooks/useCharacters src/components/CharacterSheet
+npm -w story-editor-shared run build && npm -w story-editor-shared run typecheck && npm -w story-editor-backend run typecheck && npm -w story-editor-frontend run typecheck && npm -w story-editor-shared test && npm -w story-editor-backend test -- tests/services/prompt.service.test.ts tests/repos/character.repo.test.ts tests/lib/respond.test.ts tests/routes/characters.test.ts tests/security/encryption-leak.test.ts && npm -w story-editor-frontend test -- src/hooks/useCharacters src/components/CharacterSheet
 ```
+
+The `npm -w story-editor-shared run build` step is **first** — backend Vitest resolves `story-editor-shared` to `dist/`, so dist must exist before any backend test runs. (Frontend Vitest reads source via the Vite alias and doesn't need it, but running the build once at the start is cheap.) The verify line uses `npm -w <workspace>` rather than `npm --prefix <subdir>` to align with the workspaces-adoption posture; both work, but `-w` is the canonical form.
 
 ## Migration ergonomics & forward compatibility
 
@@ -502,7 +565,7 @@ This PR is forward-compatible with multiple future paths:
 
 - **Workspaces adoption is a one-time cost.** Lockfile consolidation, Dockerfile context changes, `docker-compose.yml` context changes, Makefile sanity-check, CI workflow updates (concrete: `ci.yml` and `e2e.yml` both reference per-subdir lockfiles and per-subdir `working-directory: backend|frontend` patterns — see the wiring section above). Mitigation: land workspaces adoption as the first task block in the plan; verify `make dev`, a full `make test` cycle, and a CI dry-run all pass before any character-specific changes start.
 - **Frontend bundle cost.** Zod 4 adds ~13kb gzipped. Accepted; documented here.
-- **`shared/` build step.** The shared workspace compiles to `dist/` before backend's runtime consumes it. Implementer must confirm Vite picks up source TS via the workspace symlink correctly (may need `optimizeDeps.include` or similar). Small detail; verify during the wiring task.
+- **`shared/` build orchestration.** Backend Vitest and prod runtime both resolve `story-editor-shared` to its `main` (`dist/index.js`). Three orchestration points must build shared before backend tests/dev run: (1) `make dev` runs `tsc -w -p shared/tsconfig.build.json` as a sidecar so dist stays fresh during dev; (2) `make test` runs `npm -w story-editor-shared run build` before invoking workspace tests; (3) CI workflows do the same. The verify line below builds shared explicitly. Frontend is unaffected — its Vite alias bypasses dist.
 - **Egress validation latency.** Schema parse on every response adds <1ms in dev and is skipped in prod. Not a hot-path concern.
 - **Repo-boundary surface.** Prompt service consumes a richer `Character` shape but still receives decrypted plaintext from the repo. No new ciphertext-egress paths. `repo-boundary-reviewer` runs at close-gate as usual.
 - **Prisma↔Zod drift remains uncovered by static analysis.** Egress validation catches it at test time. Acknowledged honestly in its own section above.
@@ -562,6 +625,8 @@ Explicitly NOT in this PR:
 - No `Character` re-export from `useCharacters.ts`; all component import sites point at `story-editor-shared`.
 - Encryption leak test passes.
 - `lint:design` and all three typechecks (`shared`, `backend`, `frontend`) clean.
+- `shared/src/index.ts` re-exports exactly the documented set: `characterSchema`, `characterCreateSchema`, `characterUpdateSchema`, `characterResponseSchema`, `charactersResponseSchema`, `characterReorderSchema`, `Character`, `CharacterCreateInput`, `CharacterUpdateInput`, `CharacterPromptInput`, `toCharacterPromptInput`. No other symbols leak out.
+- Prompt builder consumes `CharacterPromptInput[]`, not `Character[]`. `ai.routes.ts` and `chat.routes.ts` call `toCharacterPromptInput` at the seam. No `id` / `storyId` / timestamp references inside `prompt.service.ts`.
 - Repo-boundary review CLEAN at close-gate.
 
 ## bd
