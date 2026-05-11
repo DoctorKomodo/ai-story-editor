@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import type { CharacterPromptInput } from 'story-editor-shared';
+import { describe, expect, it } from 'vitest';
 import {
   type BuildPromptInput,
   buildPrompt,
@@ -209,14 +209,42 @@ describe('buildPrompt — worldNotes and characters', () => {
   it('includes character name, role, and personality in the system message', () => {
     expect(
       systemContent({
-        characters: [{ name: 'Eira', role: 'Protagonist', age: null, appearance: null, personality: 'brave, reckless', voice: null, backstory: null, arc: null, relationships: null }],
+        characters: [
+          {
+            name: 'Eira',
+            role: 'Protagonist',
+            age: null,
+            appearance: null,
+            personality: 'brave, reckless',
+            voice: null,
+            backstory: null,
+            arc: null,
+            relationships: null,
+          },
+        ],
       }),
     ).toMatch(/Eira.*Protagonist.*brave, reckless/s);
   });
 
   it('handles characters with null role / prose fields gracefully', () => {
     expect(() =>
-      buildPrompt(baseInput({ characters: [{ name: 'Nobody', role: null, age: null, appearance: null, personality: null, voice: null, backstory: null, arc: null, relationships: null }] })),
+      buildPrompt(
+        baseInput({
+          characters: [
+            {
+              name: 'Nobody',
+              role: null,
+              age: null,
+              appearance: null,
+              personality: null,
+              voice: null,
+              backstory: null,
+              arc: null,
+              relationships: null,
+            },
+          ],
+        }),
+      ),
     ).not.toThrow();
   });
 });
@@ -275,7 +303,19 @@ describe('buildPrompt — chapterContent truncation', () => {
     expect(
       systemContent(
         baseInput({
-          characters: [{ name: 'BigChar', role: 'Hero', age: null, appearance: null, personality: fatTraits, voice: null, backstory: null, arc: null, relationships: null }],
+          characters: [
+            {
+              name: 'BigChar',
+              role: 'Hero',
+              age: null,
+              appearance: null,
+              personality: fatTraits,
+              voice: null,
+              backstory: null,
+              arc: null,
+              relationships: null,
+            },
+          ],
           modelContextLength: 4096,
         }),
       ),
@@ -290,7 +330,19 @@ describe('buildPrompt — scene action', () => {
     action: 'scene' as const,
     selectedText: '',
     chapterContent: 'The veranda was empty when she arrived.',
-    characters: [{ name: 'Jenny', role: 'protagonist', age: null, appearance: null, personality: 'curious', voice: null, backstory: null, arc: null, relationships: null }],
+    characters: [
+      {
+        name: 'Jenny',
+        role: 'protagonist',
+        age: null,
+        appearance: null,
+        personality: 'curious',
+        voice: null,
+        backstory: null,
+        arc: null,
+        relationships: null,
+      },
+    ],
     worldNotes: null,
     modelContextLength: 32_000,
     modelMaxCompletionTokens: 4096,
@@ -333,8 +385,28 @@ describe('buildPrompt — scene action', () => {
       ...baseSceneInput,
       worldNotes: 'The town is haunted.',
       characters: [
-        { name: 'Jenny', role: 'protagonist', age: null, appearance: null, personality: 'curious', voice: null, backstory: null, arc: null, relationships: null },
-        { name: 'Linda', role: null, age: null, appearance: null, personality: 'reserved', voice: null, backstory: null, arc: null, relationships: null },
+        {
+          name: 'Jenny',
+          role: 'protagonist',
+          age: null,
+          appearance: null,
+          personality: 'curious',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+        {
+          name: 'Linda',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: 'reserved',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
       ],
       chapterContent: 'The veranda was empty when she arrived.',
     });
@@ -370,7 +442,19 @@ describe('buildPrompt — canonical shape invariant (k1r)', () => {
       modelMaxCompletionTokens: 4096,
       chapterContent: 'CHAPTER_BODY_SENTINEL',
       worldNotes: 'WORLD_NOTES_SENTINEL',
-      characters: [{ name: 'Eira', role: 'protagonist', age: null, appearance: null, personality: 'CHAR_TRAIT_SENTINEL', voice: null, backstory: null, arc: null, relationships: null }],
+      characters: [
+        {
+          name: 'Eira',
+          role: 'protagonist',
+          age: null,
+          appearance: null,
+          personality: 'CHAR_TRAIT_SENTINEL',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ],
       // Provide instructions for the actions that require them.
       freeformInstruction: action === 'scene' || action === 'ask' ? 'do the thing' : undefined,
     });
@@ -418,8 +502,28 @@ describe('charactersBlock XML rendering (h0z)', () => {
   it('renders <characters>...</characters> with one <character> per entry', () => {
     const out = buildPrompt(
       baseInput([
-        { name: 'Imogen Thorne', role: 'protagonist', age: null, appearance: null, personality: 'wry', voice: null, backstory: null, arc: null, relationships: null },
-        { name: 'Felix', role: 'rival', age: null, appearance: null, personality: 'vain', voice: null, backstory: null, arc: null, relationships: null },
+        {
+          name: 'Imogen Thorne',
+          role: 'protagonist',
+          age: null,
+          appearance: null,
+          personality: 'wry',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+        {
+          name: 'Felix',
+          role: 'rival',
+          age: null,
+          appearance: null,
+          personality: 'vain',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
       ]),
     );
     const sys = out.messages[0].content;
@@ -432,12 +536,40 @@ describe('charactersBlock XML rendering (h0z)', () => {
   });
 
   it('self-closing form when all prose fields are null', () => {
-    const out = buildPrompt(baseInput([{ name: 'Bystander', role: null, age: null, appearance: null, personality: null, voice: null, backstory: null, arc: null, relationships: null }]));
+    const out = buildPrompt(
+      baseInput([
+        {
+          name: 'Bystander',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    );
     expect(out.messages[0].content).toContain('<character name="Bystander" />');
   });
 
   it('omits role attribute when role is null', () => {
-    const out = buildPrompt(baseInput([{ name: 'X', role: null, age: null, appearance: null, personality: 'flat', voice: null, backstory: null, arc: null, relationships: null }]));
+    const out = buildPrompt(
+      baseInput([
+        {
+          name: 'X',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: 'flat',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    );
     const sys = out.messages[0].content;
     expect(sys).toContain('<character name="X">');
     expect(sys).toContain('  <personality>flat</personality>');
@@ -448,8 +580,28 @@ describe('charactersBlock XML rendering (h0z)', () => {
   it('empty-name character is skipped entirely', () => {
     const out = buildPrompt(
       baseInput([
-        { name: '', role: 'rival', age: null, appearance: null, personality: 'noise', voice: null, backstory: null, arc: null, relationships: null },
-        { name: 'Real', role: 'protagonist', age: null, appearance: null, personality: 'ok', voice: null, backstory: null, arc: null, relationships: null },
+        {
+          name: '',
+          role: 'rival',
+          age: null,
+          appearance: null,
+          personality: 'noise',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+        {
+          name: 'Real',
+          role: 'protagonist',
+          age: null,
+          appearance: null,
+          personality: 'ok',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
       ]),
     );
     const sys = out.messages[0].content;
@@ -465,7 +617,19 @@ describe('charactersBlock XML rendering (h0z)', () => {
 
   it('escapes & < > " in attributes and & < > in text', () => {
     const out = buildPrompt(
-      baseInput([{ name: 'A & B "the kid"', role: '<rival>', age: null, appearance: 'has < and > and &', personality: null, voice: null, backstory: null, arc: null, relationships: null }]),
+      baseInput([
+        {
+          name: 'A & B "the kid"',
+          role: '<rival>',
+          age: null,
+          appearance: 'has < and > and &',
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
     );
     const sys = out.messages[0].content;
     expect(sys).toContain('name="A &amp; B &quot;the kid&quot;"');
@@ -474,7 +638,21 @@ describe('charactersBlock XML rendering (h0z)', () => {
   });
 
   it('collision test: name containing </character> does not close the tag prematurely', () => {
-    const out = buildPrompt(baseInput([{ name: '</character>', role: null, age: null, appearance: null, personality: 'ok', voice: null, backstory: null, arc: null, relationships: null }]));
+    const out = buildPrompt(
+      baseInput([
+        {
+          name: '</character>',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: 'ok',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    );
     const sys = out.messages[0].content;
     expect(sys).toContain('name="&lt;/character&gt;"');
     expect(sys).toContain('<character name="&lt;/character&gt;">');
@@ -661,102 +839,206 @@ describe('character XML rendering — full sheet', () => {
 
   it('renders all 9 fields — scalars as attrs, prose as nested children', () => {
     const sys = buildPrompt(baseInput([full])).messages[0].content;
-    expect(sys).toContain(
-      '<character name="Imogen Thorne" role="protagonist" age="34">',
-    );
+    expect(sys).toContain('<character name="Imogen Thorne" role="protagonist" age="34">');
     expect(sys).toContain('  <appearance>tall, auburn hair shorn at the jaw</appearance>');
     expect(sys).toContain('  <personality>wry, distrusts kindness, holds grudges</personality>');
     expect(sys).toContain('  <voice>measured alto with a Devon edge</voice>');
-    expect(sys).toContain('  <backstory>Widowed at 28 when her husband died in the mining collapse.</backstory>');
+    expect(sys).toContain(
+      '  <backstory>Widowed at 28 when her husband died in the mining collapse.</backstory>',
+    );
     expect(sys).toContain('  <arc>from grief-numbed widow to reluctant insurgent</arc>');
-    expect(sys).toContain('  <relationships>Sister to Felix; estranged from her father.</relationships>');
+    expect(sys).toContain(
+      '  <relationships>Sister to Felix; estranged from her father.</relationships>',
+    );
     expect(sys).toContain('</character>');
   });
 
   it('scalar-only character (no prose) → self-closing', () => {
-    const sys = buildPrompt(baseInput([{
-      name: 'X', role: 'rival', age: '40',
-      appearance: null, personality: null, voice: null,
-      backstory: null, arc: null, relationships: null,
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: 'X',
+          role: 'rival',
+          age: '40',
+          appearance: null,
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('<character name="X" role="rival" age="40" />');
   });
 
   it('name-only character → self-closing with name attribute only', () => {
-    const sys = buildPrompt(baseInput([{
-      name: 'Bystander', role: null, age: null,
-      appearance: null, personality: null, voice: null,
-      backstory: null, arc: null, relationships: null,
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: 'Bystander',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('<character name="Bystander" />');
   });
 
   it('omits attribute fields when null (role, age)', () => {
-    const sys = buildPrompt(baseInput([{
-      name: 'X', role: null, age: null,
-      appearance: 'tall', personality: null, voice: null,
-      backstory: null, arc: null, relationships: null,
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: 'X',
+          role: null,
+          age: null,
+          appearance: 'tall',
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('<character name="X">');
     expect(sys).not.toMatch(/role="null"/);
     expect(sys).not.toMatch(/age="null"/);
   });
 
   it('omits child elements for null/whitespace prose fields', () => {
-    const sys = buildPrompt(baseInput([{
-      name: 'X', role: null, age: null,
-      appearance: 'tall', personality: '   ', voice: '\t',
-      backstory: null, arc: null, relationships: null,
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: 'X',
+          role: null,
+          age: null,
+          appearance: 'tall',
+          personality: '   ',
+          voice: '\t',
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('<appearance>tall</appearance>');
     expect(sys).not.toContain('<personality>');
     expect(sys).not.toContain('<voice>');
   });
 
   it('empty-name character is skipped entirely', () => {
-    const sys = buildPrompt(baseInput([
-      { name: '', role: 'noise', age: null, appearance: null, personality: 'noise', voice: null, backstory: null, arc: null, relationships: null },
-      { name: 'Real', role: null, age: null, appearance: null, personality: 'real', voice: null, backstory: null, arc: null, relationships: null },
-    ])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: '',
+          role: 'noise',
+          age: null,
+          appearance: null,
+          personality: 'noise',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+        {
+          name: 'Real',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: 'real',
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).not.toContain('name=""');
     expect(sys).toContain('<character name="Real">');
   });
 
   it('escapes & < > " in attributes and & < > in nested text', () => {
-    const sys = buildPrompt(baseInput([{
-      name: 'A & B "the kid"', role: '<rival>', age: null,
-      appearance: 'has < and > and &', personality: null, voice: null,
-      backstory: null, arc: null, relationships: null,
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: 'A & B "the kid"',
+          role: '<rival>',
+          age: null,
+          appearance: 'has < and > and &',
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('name="A &amp; B &quot;the kid&quot;"');
     expect(sys).toContain('role="&lt;rival&gt;"');
     expect(sys).toContain('<appearance>has &lt; and &gt; and &amp;</appearance>');
   });
 
   it('collision: backstory containing </backstory> is escaped', () => {
-    const sys = buildPrompt(baseInput([{
-      name: 'X', role: null, age: null,
-      appearance: null, personality: null, voice: null,
-      backstory: 'open </backstory> close', arc: null, relationships: null,
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: 'X',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: null,
+          voice: null,
+          backstory: 'open </backstory> close',
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('<backstory>open &lt;/backstory&gt; close</backstory>');
   });
 
   it('collision: relationships containing </relationships> is escaped', () => {
-    const sys = buildPrompt(baseInput([{
-      name: 'X', role: null, age: null,
-      appearance: null, personality: null, voice: null,
-      backstory: null, arc: null, relationships: 'open </relationships> close',
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: 'X',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: 'open </relationships> close',
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('<relationships>open &lt;/relationships&gt; close</relationships>');
   });
 
   it('collision: name containing </character> is escaped + structure intact', () => {
-    const sys = buildPrompt(baseInput([{
-      name: '</character>', role: null, age: null,
-      appearance: 'ok', personality: null, voice: null,
-      backstory: null, arc: null, relationships: null,
-    }])).messages[0].content;
+    const sys = buildPrompt(
+      baseInput([
+        {
+          name: '</character>',
+          role: null,
+          age: null,
+          appearance: 'ok',
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+        },
+      ]),
+    ).messages[0].content;
     expect(sys).toContain('name="&lt;/character&gt;"');
     // Exactly one real opener and one real closer in the block:
     expect(sys.match(/<character /g)?.length).toBe(1);

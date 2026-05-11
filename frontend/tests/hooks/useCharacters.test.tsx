@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Character } from 'story-editor-shared';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   characterQueryKey,
   charactersQueryKey,
@@ -215,7 +215,7 @@ describe('useCharacters runtime validation', () => {
   it('surfaces ZodError when the server response is shape-drifted', async () => {
     // Mock api() to return a malformed body (missing required `name`).
     vi.spyOn(apiModule, 'api').mockResolvedValue({
-      characters: [{ id: '550e8400-e29b-41d4-a716-446655440000', /* name absent */ }],
+      characters: [{ id: '550e8400-e29b-41d4-a716-446655440000' /* name absent */ }],
     });
     const { result } = renderHook(() => useCharactersQuery('story-id'), { wrapper: wrapQc() });
     await waitFor(() => expect(result.current.isError).toBe(true));
@@ -227,16 +227,26 @@ describe('useCharacters runtime validation', () => {
 
   it('returns parsed characters on valid response', async () => {
     const valid = {
-      characters: [{
-        id: '550e8400-e29b-41d4-a716-446655440000',
-        storyId: '550e8400-e29b-41d4-a716-446655440001',
-        name: 'Imogen', role: null, age: null,
-        appearance: null, personality: null, voice: null,
-        backstory: null, arc: null, relationships: null,
-        orderIndex: 0, color: null, initial: null,
-        createdAt: '2026-05-11T00:00:00.000Z',
-        updatedAt: '2026-05-11T00:00:00.000Z',
-      }],
+      characters: [
+        {
+          id: '550e8400-e29b-41d4-a716-446655440000',
+          storyId: '550e8400-e29b-41d4-a716-446655440001',
+          name: 'Imogen',
+          role: null,
+          age: null,
+          appearance: null,
+          personality: null,
+          voice: null,
+          backstory: null,
+          arc: null,
+          relationships: null,
+          orderIndex: 0,
+          color: null,
+          initial: null,
+          createdAt: '2026-05-11T00:00:00.000Z',
+          updatedAt: '2026-05-11T00:00:00.000Z',
+        },
+      ],
     };
     vi.spyOn(apiModule, 'api').mockResolvedValue(valid);
     const { result } = renderHook(() => useCharactersQuery('story-id'), { wrapper: wrapQc() });
