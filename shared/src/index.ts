@@ -1,2 +1,15 @@
-// Barrel re-exports — populated by Task 6 and Task 7.
-export {};
+export type {
+  Character,
+  CharacterCreateInput,
+  CharacterPromptInput,
+  CharacterUpdateInput,
+} from './schemas/character';
+export {
+  characterCreateSchema,
+  characterReorderSchema,
+  characterResponseSchema,
+  characterSchema,
+  charactersResponseSchema,
+  characterUpdateSchema,
+  toCharacterPromptInput,
+} from './schemas/character';
