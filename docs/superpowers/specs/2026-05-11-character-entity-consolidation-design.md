@@ -467,13 +467,38 @@ This PR is forward-compatible with multiple future paths:
 Explicitly NOT in this PR:
 
 - ts-rest adoption for any route.
-- Migration of other entities' Zod schemas into `@story-editor/shared`. (Each is a small follow-up; can be done as needed.)
-- Character context truncation strategy (deferred per direction question — file as separate bd issue).
+- Migration of other entities' Zod schemas into `@story-editor/shared`. (Each is a small follow-up — see "Follow-up tasks" below.)
+- Character context truncation strategy (deferred per direction question — see "Follow-up tasks" below).
 - `prisma-zod-generator` adoption.
 - Production-mode egress validation (would add latency; not justified yet).
 - Storybook redesign of `CharacterSheet` (the new field uses the established pattern; no UI redesign).
 - `Story.systemPrompt` or other entities' consolidation.
 - Per-character / per-field "include in AI" flags.
+
+## Follow-up tasks
+
+**Each item below requires a separate bd issue to be filed after this PR lands.** The workspace foundation makes these cheap to execute individually; bundling them into this PR would balloon scope. They are listed here so they're not lost.
+
+### High-value, mechanical (unblocked by this PR's workspace adoption)
+
+- **Migrate `Story` Zod schemas → `@story-editor/shared`.** Move inline request validators from `backend/src/routes/stories.routes.ts` into `shared/src/schemas/story.ts`. Drop the frontend's hand-rolled `Story` interface in `frontend/src/hooks/useStories.ts`. Apply the `respond(schema, res, data)` egress pattern. Pattern identical to Character; file an issue per entity.
+- **Migrate `Chapter` Zod schemas → `@story-editor/shared`.** Same shape as Story. Note: chapter has a TipTap JSON body that needs careful schema treatment (likely `z.unknown()` or `z.record(z.unknown())` at the boundary — TipTap's internal structure is its own contract).
+- **Migrate `OutlineItem` Zod schemas → `@story-editor/shared`.** Same shape.
+- **Migrate `Chat` Zod schemas → `@story-editor/shared`.** Same shape.
+- **Migrate `Message` Zod schemas → `@story-editor/shared`.** Append-only entity (no update endpoint); slightly simpler schema set than the others.
+
+### Design-and-decide
+
+- **Character context truncation strategy.** Send-all is the right starting point but breaks down at scale. Three candidate shapes (per the original brainstorm): per-field soft caps; per-character or per-field `includeInAi` toggle; characters block becomes truncatable like chapters with `orderIndex` as priority. File when a user actually hits a context wall; pick based on the failure mode.
+- **`prisma-zod-generator` evaluation.** Closes the Prisma↔Zod drift seam acknowledged in this design. Worth revisiting once two or three entities have settled into the shared pattern — gives a concrete data point on how much per-PR boilerplate the generator would save vs. its setup + maintenance cost.
+- **Production-mode egress validation.** The `respond` helper currently skips parsing in production. Removing the skip catches drift in prod at a small latency cost (~<1ms per response). File when there's evidence drift is leaking past dev/test (recurring class of bug), or when the latency budget allows.
+- **OpenAPI / API documentation generation from shared schemas.** Once 3+ entities have migrated to `shared/`, the Zod schemas can drive an OpenAPI spec via `@anatine/zod-openapi` or similar. Useful for a generated API reference, Postman collection, or future external integrations. Out of scope until there's a concrete consumer.
+
+### Opportunistic
+
+- **Shared TS utilities cleanup.** Any cross-tree duplicates that surface as future contributors notice them — date formatters, ID generators, common parsing helpers. No forcing function; let them migrate when someone touches them.
+- **`Story.systemPrompt` consolidation.** The story-level system prompt override has its own type-drift surface (different from Character's). Worth its own design pass; not blocked by this PR but not enabled by it either.
+- **Per-character / per-field "include in AI" flags.** UX-bearing feature; depends on truncation strategy decision above. File when the truncation conversation reaches a UI question.
 
 ## Acceptance criteria
 
