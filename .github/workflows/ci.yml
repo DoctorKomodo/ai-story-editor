@@ -55,21 +55,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
-          cache-dependency-path: |
-            package-lock.json
-            backend/package-lock.json
-            frontend/package-lock.json
+          cache-dependency-path: package-lock.json
 
-      - name: Install root deps
+      - name: Install deps
         run: npm ci
 
-      - name: Install backend deps
-        working-directory: backend
-        run: npm ci
-
-      - name: Install frontend deps
-        working-directory: frontend
-        run: npm ci
+      - name: Build shared
+        run: npm -w story-editor-shared run build
 
       # ── Lint ───────────────────────────────────────────────────────────────
       - name: Biome (lint + format check)
@@ -83,21 +75,21 @@ jobs:
         run: npx prisma generate
 
       # ── Typecheck ──────────────────────────────────────────────────────────
+      - name: Shared typecheck
+        run: npm -w story-editor-shared run typecheck
+
       - name: Backend typecheck
-        working-directory: backend
-        run: npx tsc --noEmit
+        run: npm -w story-editor-backend run typecheck
 
       - name: Frontend typecheck
-        working-directory: frontend
-        run: npx tsc -b
+        run: npm -w story-editor-frontend run typecheck
 
       # ── Design-token drift check ───────────────────────────────────────────
       # See MIGRATION.md and frontend/scripts/lint-design.mjs. Catches raw
       # Tailwind palette colors, hex literals, mid-tier shadows, and
       # focus-rings that bypass the design-token system.
       - name: Frontend design-token lint
-        working-directory: frontend
-        run: npm run lint:design
+        run: npm -w story-editor-frontend run lint:design
 
       # ── Production build ───────────────────────────────────────────────────
       # The typechecks above are --noEmit; a real build catches a different
@@ -106,16 +98,13 @@ jobs:
       # (~2–3s each) and the only gate before a broken build would
       # otherwise surface in prod.
       - name: Backend build
-        working-directory: backend
-        run: npm run build
+        run: npm -w story-editor-backend run build
 
       - name: Frontend build
-        working-directory: frontend
-        run: npm run build
+        run: npm -w story-editor-frontend run build
 
       - name: Build Storybook
-        working-directory: frontend
-        run: npm run build-storybook -- --quiet
+        run: npm -w story-editor-frontend run build-storybook -- --quiet
 
       # ── Test ───────────────────────────────────────────────────────────────
       - name: Prisma migrate (test DB)
@@ -127,8 +116,7 @@ jobs:
       # collection-time regression (e.g. a missing peer dep making every
       # test file register 0 tests) can't sneak through CI as green.
       - name: Backend tests
-        working-directory: backend
-        run: npx vitest run --reporter=json --outputFile=vitest-result.json --reporter=default
+        run: npm -w story-editor-backend run test -- --reporter=json --outputFile=vitest-result.json --reporter=default
 
       - name: Assert backend ran > 0 tests
         working-directory: backend
@@ -141,8 +129,7 @@ jobs:
           fi
 
       - name: Frontend tests
-        working-directory: frontend
-        run: npx vitest run --reporter=json --outputFile=vitest-result.json --reporter=default
+        run: npm -w story-editor-frontend run test -- --reporter=json --outputFile=vitest-result.json --reporter=default
 
       - name: Assert frontend ran > 0 tests
         working-directory: frontend
