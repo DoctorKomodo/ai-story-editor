@@ -3,6 +3,7 @@ export type {
   CharacterCreateInput,
   CharacterPromptInput,
   CharacterUpdateInput,
+  NarrativeFieldKey,
 } from './schemas/character';
 export {
   characterCreateSchema,
@@ -11,5 +12,6 @@ export {
   characterSchema,
   charactersResponseSchema,
   characterUpdateSchema,
+  NARRATIVE_FIELD_KEYS,
   toCharacterPromptInput,
 } from './schemas/character';

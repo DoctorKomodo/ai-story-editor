@@ -5,6 +5,7 @@ import type {
   CharacterUpdateInput,
   CharacterCreateInput as SharedCharacterCreateInput,
 } from 'story-editor-shared';
+import { NARRATIVE_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
@@ -24,17 +25,10 @@ export type RepoCharacter = Omit<Character, 'createdAt' | 'updatedAt'> & {
   updatedAt: Date;
 };
 
-const ENCRYPTED_FIELDS = [
-  'name',
-  'role',
-  'age',
-  'appearance',
-  'voice',
-  'arc',
-  'personality',
-  'backstory',
-  'relationships',
-] as const;
+// Keep the ENCRYPTED_FIELDS name as a local invariant — what gets encrypted
+// today equals the narrative-field roster, but the two concepts could diverge
+// if a non-encrypted narrative field is added in future.
+const ENCRYPTED_FIELDS = NARRATIVE_FIELD_KEYS;
 
 // The repo's create input extends the shared narrative-only type with the
 // structural fields (storyId, orderIndex) that the route passes in separately.

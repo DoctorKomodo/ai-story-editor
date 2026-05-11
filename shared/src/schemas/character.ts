@@ -57,37 +57,40 @@ export type Character = z.infer<typeof characterSchema>;
 export type CharacterCreateInput = z.infer<typeof characterCreateSchema>;
 export type CharacterUpdateInput = z.infer<typeof characterUpdateSchema>;
 
+// Canonical roster of Character's narrative content fields. The tuple is the
+// single source of truth — adding a field here propagates to:
+// - `CharacterPromptInput` (via Pick)
+// - `toCharacterPromptInput` (via the loop)
+// - `character.repo.ts`'s ENCRYPTED_FIELDS (imported from here)
+// The Zod schema (`characterSchema`) still has to add the field separately —
+// that's deliberate (different shape per field: nullable/optional, validators)
+// and is checked at compile time when `Pick<Character, NarrativeFieldKey>`
+// would fail if the schema didn't include the key.
+export const NARRATIVE_FIELD_KEYS = [
+  'name',
+  'role',
+  'age',
+  'appearance',
+  'personality',
+  'voice',
+  'backstory',
+  'arc',
+  'relationships',
+] as const;
+export type NarrativeFieldKey = (typeof NARRATIVE_FIELD_KEYS)[number];
+
 // Narrow projection consumed by the prompt builder. Derived from Character
 // so it cannot drift; drops structural and timestamp fields that the
 // prompt builder doesn't read (and that `id` / `storyId` would be leak
 // risks if a future contributor interpolated them into a template).
-export type CharacterPromptInput = Pick<
-  Character,
-  | 'name'
-  | 'role'
-  | 'age'
-  | 'appearance'
-  | 'personality'
-  | 'voice'
-  | 'backstory'
-  | 'arc'
-  | 'relationships'
->;
+export type CharacterPromptInput = Pick<Character, NarrativeFieldKey>;
 
 // Helper for routes that have a Character-shaped value and need the
 // narrow projection. Accepts the structural subset so repo outputs with
 // `Date` timestamps still type-check at the call site — timestamps are
 // not read.
 export function toCharacterPromptInput(c: CharacterPromptInput): CharacterPromptInput {
-  return {
-    name: c.name,
-    role: c.role,
-    age: c.age,
-    appearance: c.appearance,
-    personality: c.personality,
-    voice: c.voice,
-    backstory: c.backstory,
-    arc: c.arc,
-    relationships: c.relationships,
-  };
+  return Object.fromEntries(
+    NARRATIVE_FIELD_KEYS.map((k) => [k, c[k]] as const),
+  ) as CharacterPromptInput;
 }
