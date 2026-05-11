@@ -24,10 +24,9 @@ describe('[E9] character.repo', () => {
       arc: 'reluctance → conviction',
       color: '#abc123',
       initial: 'A',
-      physicalDescription: 'lanky',
       personality: 'sharp, wary',
       backstory: 'raised in the coastal guild',
-      notes: 'left-handed duelist',
+      relationships: 'allied with the coastal guild elders',
     });
 
     expect(created.name).toBe('Astra');
@@ -39,6 +38,21 @@ describe('[E9] character.repo', () => {
     const raw = await prisma.character.findUniqueOrThrow({ where: { id: created.id as string } });
     expect(raw.backstoryCiphertext).toBeTruthy();
     expect(raw.personalityCiphertext).toBeTruthy();
+  });
+
+  it('encrypts + decrypts `relationships` round-trip', async () => {
+    const ctx = await makeUserContext();
+    const story = await createStoryRepo(ctx.req).create({ title: 's' });
+    const repo = createCharacterRepo(ctx.req);
+
+    const created = await repo.create({
+      storyId: story.id as string,
+      name: 'X',
+      orderIndex: 0,
+      relationships: 'Sister to Felix; estranged from her father.',
+    });
+    const reread = await repo.findById(created.id as string);
+    expect(reread?.relationships).toBe('Sister to Felix; estranged from her father.');
   });
 
   it('update only rewrites the fields the caller supplied', async () => {

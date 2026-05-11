@@ -1,7 +1,15 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
+import type {
+  CharacterUpdateInput,
+  CharacterCreateInput as SharedCharacterCreateInput,
+} from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
+
+// Re-export so the route file continues to compile until Task 13 migrates it
+// to the shared import directly.
+export type { CharacterUpdateInput };
 
 export class CharacterNotOwnedError extends Error {
   constructor() {
@@ -17,30 +25,17 @@ const ENCRYPTED_FIELDS = [
   'appearance',
   'voice',
   'arc',
-  'physicalDescription',
   'personality',
   'backstory',
-  'notes',
+  'relationships',
 ] as const;
 
-export interface CharacterCreateInput {
+// The repo's create input extends the shared narrative-only type with the
+// structural fields (storyId, orderIndex) that the route passes in separately.
+export interface CharacterCreateInput extends SharedCharacterCreateInput {
   storyId: string;
-  name: string;
   orderIndex: number;
-  role?: string | null;
-  age?: string | null;
-  appearance?: string | null;
-  voice?: string | null;
-  arc?: string | null;
-  color?: string | null;
-  initial?: string | null;
-  physicalDescription?: string | null;
-  personality?: string | null;
-  backstory?: string | null;
-  notes?: string | null;
 }
-
-export type CharacterUpdateInput = Partial<Omit<CharacterCreateInput, 'storyId'>>;
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -78,7 +73,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
         color: input.color ?? null,
         initial: input.initial ?? null,
         // Post-[E11]: all narrative fields (name, role, age, appearance,
-        // voice, arc, physicalDescription, personality, backstory, notes)
+        // voice, arc, personality, backstory, relationships)
         // are ciphertext-only. Plaintext siblings were dropped.
         ...encryptedDataFrom(req, input),
       },
