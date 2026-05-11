@@ -40,3 +40,6 @@ backups/*.sql.gz
 .dolt/
 *.db
 .beads-credential-key
+
+# make dev watcher PID file
+.watcher.pid

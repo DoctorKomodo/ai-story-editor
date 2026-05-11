@@ -23,7 +23,8 @@ services:
     # by [I1]'s verify and consumed by [I8]'s backup-restore drill.
     image: inkwell-backend:prod
     build:
-      context: ./backend
+      context: .
+      dockerfile: backend/Dockerfile
     restart: unless-stopped
     ports:
       - "4000:4000"
@@ -49,7 +50,8 @@ services:
   frontend:
     image: inkwell-frontend:prod
     build:
-      context: ./frontend
+      context: .
+      dockerfile: frontend/Dockerfile
       args:
         # Default: empty, so api.ts uses its origin-relative `/api` base and
         # nginx (in the runner stage) reverse-proxies to the backend service.

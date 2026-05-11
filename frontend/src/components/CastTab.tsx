@@ -17,6 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { useCallback, useRef, useState } from 'react';
+import type { Character } from 'story-editor-shared';
 import { CastSectionHeader } from '@/components/CastSectionHeader';
 import {
   CloseIcon,
@@ -26,7 +27,6 @@ import {
   useInlineConfirm,
 } from '@/design/primitives';
 import {
-  type Character,
   charactersQueryKey,
   computeReorderedCharacters,
   useDeleteCharacterMutation,

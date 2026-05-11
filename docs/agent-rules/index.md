@@ -31,6 +31,8 @@
 | `frontend/src/**` | `frontend.md` |
 | `frontend/tests/**` | `frontend.md` |
 | `tests/e2e/**` | `frontend.md` *(E2E sits at the frontend integration boundary)* |
+| `shared/src/**` | *(no digest)* — shared schemas are library-only and authoritative for the wire format; consumer-lane digests still apply for the consumer-side touch-set entries |
+| `shared/tests/**` | *(no digest)* |
 
 ## When the touch-set is mixed
 

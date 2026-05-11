@@ -96,14 +96,17 @@ export function stripCiphertextFields<T extends Record<string, unknown>>(row: T)
 
 // Combine readEncrypted + stripCiphertext for a set of narrative fields,
 // returning a plaintext-only object the caller can safely serialise.
+// The generic T lets callers assert the output shape at the call site; the
+// internal cast is necessary because the helper builds the projected object
+// dynamically and TypeScript cannot verify the shape at compile time.
 export function projectDecrypted<T extends Record<string, unknown>>(
   req: Request,
-  row: T,
+  row: Record<string, unknown>,
   fields: readonly string[],
-): Record<string, unknown> {
+): T {
   const projected: Record<string, unknown> = { ...stripCiphertextFields(row) };
   for (const f of fields) {
     projected[f] = readEncrypted(req, row, f);
   }
-  return projected;
+  return projected as unknown as T;
 }

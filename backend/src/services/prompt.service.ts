@@ -2,6 +2,8 @@
 // Pure, no IO, no async. `stream` and `model` are injected by the route
 // layer so this module stays unit-testable without HTTP or Venice deps.
 
+import type { CharacterPromptInput } from 'story-editor-shared';
+
 export class PromptValidationError extends Error {
   constructor(message: string) {
     super(message);
@@ -18,39 +20,6 @@ export type PromptAction =
   | 'describe'
   | 'scene'
   | 'ask';
-
-export interface CharacterContext {
-  name: string;
-  role?: string | null;
-  keyTraits?: string | null;
-}
-
-// [h0z] Permissive shape that matches the decrypted character row returned by
-// the character repo. Kept loose (`unknown` per field) so the pure prompt
-// service stays decoupled from the repo's narrative-character type.
-export interface CharacterRecord {
-  name?: unknown;
-  role?: unknown;
-  personality?: unknown;
-  arc?: unknown;
-  appearance?: unknown;
-  voice?: unknown;
-}
-
-// [h0z] Pure projection of a decrypted character row into the trimmed shape
-// the prompt builder consumes. Previously inlined in ai.routes.ts and
-// chat.routes.ts (byte-for-byte duplicate, modulo one stray comment).
-// The 120-char cap from the inlined version is removed by design.
-export function toCharacterContext(c: CharacterRecord): CharacterContext {
-  const name = typeof c.name === 'string' ? c.name : '';
-  const role = typeof c.role === 'string' ? c.role : null;
-  const traits: string[] = [];
-  for (const f of ['personality', 'arc', 'appearance', 'voice'] as const) {
-    const v = c[f];
-    if (typeof v === 'string' && v.trim().length > 0) traits.push(v.trim());
-  }
-  return { name, role, keyTraits: traits.join('; ') || null };
-}
 
 // [X29] Keys of the user-overridable prompt slice. `rewrite` covers both
 // 'rephrase' and 'rewrite' actions (collapsed at the override layer; the
@@ -71,7 +40,7 @@ export interface BuildPromptInput {
   action: PromptAction;
   selectedText: string;
   chapterContent: string;
-  characters: CharacterContext[];
+  characters: CharacterPromptInput[];
   worldNotes: string | null;
   modelContextLength: number;
   /** Per-model output cap from Venice's /v1/models. Required. */
@@ -158,14 +127,32 @@ function escapeXmlAttr(s: string): string {
     .replace(/"/g, '&quot;');
 }
 
-// ─── Per-character renderer (h0z) ────────────────────────────────────────────
+// ─── Per-character renderer ───────────────────────────────────────────────────
 
-function renderCharacterTag(c: CharacterContext): string {
-  if (!c.name) return ''; // skip malformed empty-name entries entirely
-  const nameAttr = ` name="${escapeXmlAttr(c.name)}"`;
-  const roleAttr = c.role ? ` role="${escapeXmlAttr(c.role)}"` : '';
-  if (!c.keyTraits) return `<character${nameAttr}${roleAttr} />`;
-  return `<character${nameAttr}${roleAttr}>${escapeXmlText(c.keyTraits)}</character>`;
+function renderCharacterTag(c: CharacterPromptInput): string {
+  if (!c.name) return '';
+  const attrs = [
+    ` name="${escapeXmlAttr(c.name)}"`,
+    c.role ? ` role="${escapeXmlAttr(c.role)}"` : '',
+    c.age ? ` age="${escapeXmlAttr(c.age)}"` : '',
+  ].join('');
+
+  const proseFields = [
+    ['appearance', c.appearance],
+    ['personality', c.personality],
+    ['voice', c.voice],
+    ['backstory', c.backstory],
+    ['arc', c.arc],
+    ['relationships', c.relationships],
+  ] as const;
+
+  const children = proseFields
+    .filter(([, v]) => v != null && v.trim().length > 0)
+    .map(([tag, v]) => `  <${tag}>${escapeXmlText(v!.trim())}</${tag}>`)
+    .join('\n');
+
+  if (children.length === 0) return `<character${attrs} />`;
+  return `<character${attrs}>\n${children}\n</character>`;
 }
 
 // ─── Resolution helper ────────────────────────────────────────────────────────

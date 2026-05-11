@@ -10,6 +10,7 @@
 
 import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
+import { toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
@@ -22,7 +23,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
-import { buildPrompt, type CharacterContext, toCharacterContext } from '../services/prompt.service';
+import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import {
   resolveIncludeVeniceSystemPrompt,
@@ -381,7 +382,7 @@ export function createChatMessagesRouter() {
 
       // ── 5. Load characters ────────────────────────────────────────────────
       const rawCharacters = await createCharacterRepo(req).findManyForStory(storyId);
-      const characters: CharacterContext[] = rawCharacters.map(toCharacterContext);
+      const characters = rawCharacters.map(toCharacterPromptInput);
 
       // ── 6. Build prompt from chapter + story context ──────────────────────
       const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
