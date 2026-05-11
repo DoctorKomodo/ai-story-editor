@@ -2,11 +2,11 @@
 
 ## Summary
 
-Consolidate `Character` into a single canonical entity that flows through every layer of the app. Today the schema has 10 ciphertext-encrypted narrative fields, the frontend type carries only 7, the `CharacterSheet` form exposes 7, and the prompt builder narrows further to a 3-field projection (`name`, `role`, `keyTraits` — a `; `-joined string of personality + arc + appearance + voice). Three of the schema's columns are encrypted dead weight (`physicalDescription`, `notes`, plus a yet-to-be-added `relationships`), and the prompt builder loses information at every interpolation. This design replaces all of that with one source-of-truth contract, surfaces every field in the form, and renders the full character into the prompt.
+Consolidate `Character` into a single canonical entity that flows through every layer of the app. Today the schema has 10 ciphertext-encrypted narrative fields, the frontend type carries only 7, the `CharacterSheet` form exposes 7, and the prompt builder narrows further to a 3-field projection (`name`, `role`, `keyTraits` — a `; `-joined string of personality + arc + appearance + voice). Three of the schema's columns are encrypted dead weight (`physicalDescription`, `notes`, plus a yet-to-be-added `relationships`), and the prompt builder loses information at every interpolation. This design replaces all of that with one source-of-truth Zod schema, surfaces every field in the form, and renders the full character into the prompt.
 
 The entity is also re-shaped: `physicalDescription` collapses into `appearance` (semantic duplication), `notes` is removed (was author-only scratchpad with no clear lifecycle), and a new `relationships` field is added (user-requested — describes character relationships in the prompt).
 
-The single source of truth is implemented via **ts-rest** for the character routes only — adopted as a mixed-pattern interim. ts-rest's contract becomes the canonical shape; Zod inference produces the TypeScript type; backend, frontend, and prompt builder all consume it. Other entities stay on raw Express + manual Zod for now, with this PR scaffolding the migration path.
+The single source of truth is implemented via **shared Zod schemas** in a new `/shared/` directory, consumed by both backend (where Zod is already the request validator) and frontend (which adds Zod as a dependency and runtime-validates response bodies). No new library, no router contract layer, no API client rewrite. The project keeps its existing Express + manual Zod + `frontend/src/lib/api.ts` shape; only the Zod schema *location* moves to `/shared/`. ts-rest was considered and rejected for this PR — see "Considered alternatives" below.
 
 ## Motivation
 
@@ -16,7 +16,7 @@ Today there are three drift seams:
 2. **UI vs. prompt builder.** The form collects 7 fields; `toCharacterContext` consumes only 4 (`personality`, `arc`, `appearance`, `voice`) and drops `age` entirely. The user's `age` input never reaches the model. The other fields are concatenated with `; ` into one opaque string — the model can't distinguish personality from voice.
 3. **Backend type vs. frontend type.** `CharacterCreateInput` (backend), `Character` (frontend `useCharacters.ts`), `CharacterContext` + `CharacterRecord` (prompt service) are four hand-maintained interfaces describing the same entity from different angles. Adding a field requires changing all four. Each lives in its own file with no automated drift detection.
 
-The goal is a single canonical `Character` shape — defined once, consumed everywhere, with the prompt builder receiving the full sheet.
+The goal is a single canonical `Character` shape — defined once as a Zod schema, consumed everywhere, with the prompt builder receiving the full sheet and the frontend runtime-validating every response against the schema.
 
 ## Field set
 
@@ -48,14 +48,14 @@ Pre-deployment per CLAUDE.md "General" rule — no data-migration branches. Migr
 
 ## Type architecture
 
-### Single source of truth: ts-rest contract
+### Single source of truth: shared Zod schemas
 
-New file: **`shared/contracts/character.contract.ts`**.
+New file: **`shared/schemas/character.ts`**.
 
 ```ts
-import { initContract } from '@ts-rest/core';
 import { z } from 'zod';
 
+// Full row, as returned by the API after decryption.
 export const characterSchema = z.object({
   id: z.string().uuid(),
   storyId: z.string().uuid(),
@@ -75,129 +75,83 @@ export const characterSchema = z.object({
   updatedAt: z.string(),
 });
 
-export const characterCreateSchema = characterSchema
-  .omit({ id: true, storyId: true, createdAt: true, updatedAt: true, orderIndex: true })
-  .extend({
-    name: z.string().min(1),
-    // role…relationships stay nullable (omitting is equivalent to passing null)
-  })
-  .partial({ role: true, age: true, appearance: true, personality: true, voice: true,
-             backstory: true, arc: true, relationships: true, color: true, initial: true });
+// Create input — name required; everything else optional.
+export const characterCreateSchema = z.object({
+  name: z.string().min(1),
+  role: z.string().nullable().optional(),
+  age: z.string().nullable().optional(),
+  appearance: z.string().nullable().optional(),
+  personality: z.string().nullable().optional(),
+  voice: z.string().nullable().optional(),
+  backstory: z.string().nullable().optional(),
+  arc: z.string().nullable().optional(),
+  relationships: z.string().nullable().optional(),
+  color: z.string().nullable().optional(),
+  initial: z.string().nullable().optional(),
+});
 
+// Update input — everything optional.
 export const characterUpdateSchema = characterCreateSchema.partial();
 
+// Response wrappers — match the existing API shape.
+export const characterResponseSchema = z.object({ character: characterSchema });
+export const charactersResponseSchema = z.object({ characters: z.array(characterSchema) });
+
+// Reorder payload.
+export const characterReorderSchema = z.object({
+  items: z.array(z.object({
+    id: z.string().uuid(),
+    orderIndex: z.number().int().nonnegative(),
+  })),
+});
+
+// Inferred types — consumed everywhere a Character is referenced.
 export type Character = z.infer<typeof characterSchema>;
 export type CharacterCreateInput = z.infer<typeof characterCreateSchema>;
 export type CharacterUpdateInput = z.infer<typeof characterUpdateSchema>;
-
-const c = initContract();
-
-export const characterContract = c.router({
-  list: {
-    method: 'GET',
-    path: '/api/stories/:storyId/characters',
-    pathParams: z.object({ storyId: z.string().uuid() }),
-    responses: { 200: z.object({ characters: z.array(characterSchema) }) },
-    summary: 'List characters for a story',
-  },
-  get: {
-    method: 'GET',
-    path: '/api/characters/:id',
-    pathParams: z.object({ id: z.string().uuid() }),
-    responses: { 200: z.object({ character: characterSchema }), 404: z.object({ error: z.object({ message: z.string(), code: z.string() }) }) },
-  },
-  create: {
-    method: 'POST',
-    path: '/api/stories/:storyId/characters',
-    pathParams: z.object({ storyId: z.string().uuid() }),
-    body: characterCreateSchema,
-    responses: { 201: z.object({ character: characterSchema }) },
-  },
-  update: {
-    method: 'PATCH',
-    path: '/api/characters/:id',
-    pathParams: z.object({ id: z.string().uuid() }),
-    body: characterUpdateSchema,
-    responses: { 200: z.object({ character: characterSchema }), 404: z.object({ error: z.object({ message: z.string(), code: z.string() }) }) },
-  },
-  remove: {
-    method: 'DELETE',
-    path: '/api/characters/:id',
-    pathParams: z.object({ id: z.string().uuid() }),
-    responses: { 204: z.null(), 404: z.object({ error: z.object({ message: z.string(), code: z.string() }) }) },
-  },
-  reorder: {
-    method: 'PATCH',
-    path: '/api/stories/:storyId/characters/reorder',
-    pathParams: z.object({ storyId: z.string().uuid() }),
-    body: z.object({ items: z.array(z.object({ id: z.string().uuid(), orderIndex: z.number().int().nonnegative() })) }),
-    responses: { 204: z.null() },
-  },
-});
 ```
-
-(Final endpoint shapes are inferred from current `characters.routes.ts` — adjusted only to express the contract.)
 
 ### Wiring
 
-- **Dependencies**: add `@ts-rest/core`, `@ts-rest/express`, `@ts-rest/react-query` (latest stable per the project's library-version-awareness rule — check `npm view` before pinning).
+- **Dependencies**:
+  - Backend already has Zod — no new dep.
+  - Frontend gets Zod added (`npm install zod` in `frontend/`). Bundle cost ~12kb gzipped; accepted trade-off for runtime response validation.
+  - No ts-rest, no @ts-rest/* packages.
 - **Path mapping**: `@shared/*` → `./shared/*` in both `backend/tsconfig.json` and `frontend/tsconfig.json`.
-- **No npm workspaces**: the project doesn't use them today; not adopting that scope. Path mapping alone suffices.
+- **No npm workspaces**: the project doesn't use them today; not adding that scope. Path mapping alone suffices.
 
 ### What gets deleted
 
 - `frontend/src/hooks/useCharacters.ts`'s hand-rolled `interface Character` (and `CharactersResponse`, `CharacterResponse`).
 - `backend/src/services/prompt.service.ts`'s `CharacterContext` interface, `CharacterRecord` interface, `toCharacterContext` function.
 - `backend/src/repos/character.repo.ts`'s `CharacterCreateInput`, `CharacterUpdateInput` interfaces (replaced by inferred types).
+- The existing inline Zod schemas in `backend/src/routes/characters.routes.ts` (request-body validators for create/update/reorder) — replaced by imports from `@shared/schemas/character`.
 - All tests for `toCharacterContext` (added in h0z Task 1) — function is gone.
 
-### Backwards-compat shim (one item)
+### No backwards-compat shim needed
 
-`useCharacters.ts` re-exports `Character` as an alias of the inferred response type so component imports (`import { type Character } from '../hooks/useCharacters'`) keep working without a frontend-wide find-and-replace:
-
-```ts
-export type Character = (typeof characterContract.list.responses)[200]['characters'][number];
-// or via @ts-rest's ClientInferResponses helper — pick whichever reads cleaner
-```
-
-This is migration ergonomics, not architectural debt. Each future entity migration faces the same shim-vs-update-imports choice independently.
+The inferred `Character` type from the shared schema is a **superset** of the current frontend `Character` interface (it adds `backstory`, `relationships`, and structural fields like `color`, `initial`, `id`, `storyId`, `createdAt`, `updatedAt` that the existing interface already had). Existing component imports of `import { type Character } from '../hooks/useCharacters'` continue to work as long as `useCharacters.ts` re-exports the inferred type under the same name — a one-line re-export. No find-and-replace across the frontend.
 
 ## API surface
 
 ### Backend
 
-`backend/src/routes/characters.routes.ts` becomes thin glue:
+`backend/src/routes/characters.routes.ts` keeps its current Express-style shape. Only the Zod request validators relocate:
 
 ```ts
-import { createExpressEndpoints, initServer } from '@ts-rest/express';
-import { characterContract } from '@shared/contracts/character.contract';
-import { createCharacterRepo } from '../repos/character.repo';
-import { requireAuth } from '../middleware/requireAuth';
-import { requireStoryOwnership } from '../middleware/ownership';
+import { characterCreateSchema, characterUpdateSchema, characterReorderSchema } from '@shared/schemas/character';
 
-const s = initServer();
-const router = s.router(characterContract, {
-  list: async ({ params, req }) => {
-    const characters = await createCharacterRepo(req).findManyForStory(params.storyId);
-    return { status: 200, body: { characters } };
-  },
-  // …
-});
-
-export function mountCharacterRoutes(app: Express) {
-  createExpressEndpoints(characterContract, router, app, {
-    globalMiddleware: [requireAuth],
-    // per-endpoint ownership middleware via the routerImpl above
-  });
-}
+// existing POST handler:
+const body = characterCreateSchema.parse(req.body);
+// ... existing logic unchanged ...
 ```
+
+Auth + ownership middleware unchanged. Request-scoped DEK cache unchanged.
 
 The repo (`backend/src/repos/character.repo.ts`) updates:
 - `ENCRYPTED_FIELDS` → `['name', 'role', 'age', 'appearance', 'voice', 'arc', 'personality', 'backstory', 'relationships']`.
-- `CharacterCreateInput` / `CharacterUpdateInput` interfaces deleted; replaced by ts-rest-inferred types.
+- `CharacterCreateInput` / `CharacterUpdateInput` interfaces deleted; replaced by inferred types from `@shared/schemas/character`.
 - All other repo behaviour unchanged (encrypt-on-write / decrypt-on-read, transaction logic for `remove`/`reorder`, ownership checks).
-
-Auth + ownership middleware unchanged. Request-scoped DEK cache unchanged.
 
 ### Frontend
 
@@ -208,22 +162,31 @@ Auth + ownership middleware unchanged. Request-scoped DEK cache unchanged.
 - Add `relationships: ''` to `EMPTY_CHARACTER`.
 
 `frontend/src/hooks/useCharacters.ts`:
-- Drops the hand-rolled `Character` interface.
-- Replaces direct `api()` calls with `initQueryClient(characterContract, { ... })`.
-- The ts-rest client uses a **custom fetcher** that delegates to the existing `api()` function — preserves auth header injection + refresh-retry semantics. No duplication of auth-retry logic.
-- Existing TanStack Query keys (`['characters', storyId]`, etc.) preserved; the typed client wraps mutations and queries with the existing key shape.
-- Re-exports `Character` as documented in the shim section above.
+- Drops the hand-rolled `Character` interface; re-exports `Character` from `@shared/schemas/character` for component-import compatibility:
+  ```ts
+  export type { Character } from '@shared/schemas/character';
+  ```
+- Keeps using the existing `api()` helper from `lib/api.ts` — no new HTTP client, no library swap.
+- **Adds runtime validation** on every response. Each fetched response body is parsed with the appropriate schema before being handed to TanStack Query:
+  ```ts
+  const raw = await api(`/api/stories/${storyId}/characters`);
+  const { characters } = charactersResponseSchema.parse(raw);
+  return characters;
+  ```
+  Validation errors throw a `z.ZodError`; the api error boundary catches them as it would any other thrown error. Drift between backend response shape and the schema surfaces immediately in dev.
+- TanStack Query keys preserved (`['characters', storyId]`, etc.).
+- Mutation paths gain the same `.parse(...)` on response bodies.
 
 ### What stays REST
 
-Stories, chapters, outline, chats, messages, ai/*, auth/* — untouched. Mixed pattern is explicit. Each future entity migration is a separate bd issue.
+All other routes (stories, chapters, outline, chats, messages, ai/*, auth/*) are untouched. Their existing Zod validators stay inline in the route files. Other entities can migrate their Zod schemas to `/shared/` incrementally in follow-up PRs — purely a file relocation, no architectural shift.
 
 ## Prompt builder
 
 `backend/src/services/prompt.service.ts`:
 
 - Remove `CharacterContext`, `CharacterRecord`, `toCharacterContext`.
-- `BuildPromptInput.characters` becomes `Character[]` (imported from `@shared/contracts/character.contract`).
+- `BuildPromptInput.characters` becomes `Character[]` (imported from `@shared/schemas/character`).
 - New `renderCharacterTag(c: Character): string`:
 
 ```ts
@@ -256,7 +219,7 @@ function renderCharacterTag(c: Character): string {
 
 `charactersBlock` construction is unchanged in shape — `<characters>\n<character …>…</character>\n</characters>` — but each `<character>` is now multi-line.
 
-`ai.routes.ts` and `chat.routes.ts` drop their `.map(toCharacterContext)` calls and pass `rawCharacters` directly. (`toCharacterContext` doesn't exist anymore.)
+`ai.routes.ts` and `chat.routes.ts` drop their `.map(toCharacterContext)` calls and pass `rawCharacters` directly to `buildPrompt`. (`toCharacterContext` doesn't exist anymore.)
 
 ### Concrete output
 
@@ -295,7 +258,7 @@ XML escaping rules unchanged: `escapeXmlAttr` for attribute values; `escapeXmlTe
 
 ### New tests
 
-- **`backend/tests/contracts/character.contract.test.ts`** — Zod schema unit tests: valid input round-trips, invalid input rejection, type inference smoke (a `expectTypeOf` assertion on the inferred shape).
+- **`backend/tests/schemas/character.schema.test.ts`** — Zod schema unit tests: valid input round-trips for `characterSchema` / `characterCreateSchema` / `characterUpdateSchema`, invalid input rejection, `characterResponseSchema` + `charactersResponseSchema` wrapper round-trips.
 - **`backend/tests/services/prompt.service.test.ts`** — new describe block `character XML rendering — full sheet`:
   - Full 9-field render with hybrid attrs+nested shape.
   - Scalar-only render (only name/role/age set).
@@ -303,16 +266,16 @@ XML escaping rules unchanged: `escapeXmlAttr` for attribute values; `escapeXmlTe
   - All-empty render → self-closing.
   - Escape across attributes (`& < > "`) and nested children (`& < >`).
   - Collision tests against new tag names: `</relationships>`, `</backstory>`, `</personality>`.
-  - Existing collision test against `</character>` extended to confirm structural integrity.
-- **`backend/tests/repos/character.repo.test.ts`** — `relationships` round-trip; verify `physicalDescription`/`notes` no longer accepted by the repo.
-- **`frontend/tests/hooks/useCharacters.test.tsx`** — coverage for the ts-rest typed client (mock at the custom-fetcher level since the ts-rest client is the new boundary).
+  - Existing collision test against `</character>` extended to confirm structural integrity with the new multi-line shape.
+- **`backend/tests/repos/character.repo.test.ts`** — `relationships` round-trip; verify `physicalDescription` / `notes` are no longer accepted by the repo (TS-level — the fields no longer exist on the input type).
+- **`frontend/tests/hooks/useCharacters.test.tsx`** — coverage for the runtime-validation path: schema parse on success, schema parse on drift (mock a response missing a required field, assert ZodError surfaces through the hook's error path).
 - **`frontend/src/components/CharacterSheet.stories.tsx`** — story variant with `relationships` populated.
 
 ### Updated tests
 
 - `backend/tests/services/prompt.service.test.ts`'s `toCharacterContext (h0z)` describe block — **deleted entirely**. Function is gone.
 - `backend/tests/services/prompt.service.test.ts`'s `charactersBlock XML rendering (h0z)` describe block — updated for hybrid shape (the existing tests assert the flat `<character name="…" role="…">traits</character>` form, which no longer renders).
-- `backend/tests/routes/characters.test.ts` — request/response shape assertions migrated to use the ts-rest contract types instead of literal shape assertions where reasonable.
+- `backend/tests/routes/characters.test.ts` — request/response shape assertions migrated to reference the shared schemas instead of literal shape duplication.
 
 ### Encryption leak test
 
@@ -321,41 +284,41 @@ XML escaping rules unchanged: `escapeXmlAttr` for attribute values; `escapeXmlTe
 ### Verify line for the bd issue
 
 ```
-npm --prefix backend run typecheck && npm --prefix frontend run typecheck && npm --prefix backend test -- tests/services/prompt.service.test.ts tests/repos/character.repo.test.ts tests/contracts/character.contract.test.ts tests/security/encryption-leak.test.ts && npm --prefix frontend test -- src/hooks/useCharacters
+npm --prefix backend run typecheck && npm --prefix frontend run typecheck && npm --prefix backend test -- tests/services/prompt.service.test.ts tests/repos/character.repo.test.ts tests/schemas/character.schema.test.ts tests/security/encryption-leak.test.ts && npm --prefix frontend test -- src/hooks/useCharacters
 ```
 
 ## Migration ergonomics & forward compatibility
 
-This PR is fully forward-compatible with completing the ts-rest migration across the rest of the API:
+This PR is fully forward-compatible with multiple future paths:
 
-- Each future entity gets a sibling file under `shared/contracts/`. Zero per-contract infrastructure.
-- ts-rest and Express coexist on the same Express app — `createExpressEndpoints` registers handlers as ordinary middleware. No conflict.
-- ts-rest's react-query client and the existing `frontend/src/lib/api.ts` coexist on the frontend. Both hit the same backend.
-- Ownership middleware threads through ts-rest via per-endpoint `middleware: [...]` config.
-- The custom-fetcher pattern (ts-rest delegating to `api()`) means the auth-retry logic isn't duplicated — when the second contract lands, factor `createTypedClient(contract)` to share fetcher + base URL config.
+- **Migrating other entities to shared schemas** — purely mechanical: move each entity's Zod schemas from its route file into `shared/schemas/<entity>.ts`, update imports. No architectural change.
+- **Adding ts-rest later** — if a future need arises for typed clients or automatic OpenAPI generation, ts-rest contracts can be added on top of the shared Zod schemas without redesign. The shared schemas are exactly what a ts-rest contract would consume.
+- **Adding runtime validation on backend egress** — currently the backend trusts that the repo's decrypted output matches `characterSchema`. A future "defensive parse on outbound responses too" can be added by parsing handler return bodies against the response schemas. Not in this PR (low value when the repo's output is already type-checked).
 
-When all entities have migrated, `frontend/src/lib/api.ts` either:
-- Stays as the low-level HTTP fetcher that ts-rest delegates to (clean separation: contract layer vs. HTTP layer), or
-- Gets deleted with auth-retry logic moved into a ts-rest-native interceptor.
+## Considered alternatives
 
-That decision is a follow-up, not constrained by this PR.
+**ts-rest mixed pattern (character routes only)** — initially proposed in an earlier draft; rejected. Trade-off summary: ts-rest gives stronger end-to-end inference and an OpenAPI-generation path "for free," but introduces a new library, a new client pattern on the frontend, a custom-fetcher delegation to preserve auth-retry semantics, and asymmetry against the rest of the API. Shared Zod schemas deliver the same single-source-of-truth without those costs. ts-rest remains an option for a later PR if the typed-client benefits become compelling.
 
-`@ts-rest/open-api` integration becomes a free win once all routes migrate — generated OpenAPI spec → potential client SDK / Postman collection. Out of scope here.
+**Generated types from Prisma** — rejected. Prisma's generated types model the database row shape, not the API response shape (decrypted columns, optional vs nullable mismatches, Date vs string serialization). Would require adapter types at the API edge — partially defeats the single-source goal.
+
+**Hand-keep types in sync, lint for drift** — rejected. Doesn't solve the problem; pays interest forever.
 
 ## Risks
 
-- **ts-rest learning curve.** First time the codebase uses it. Mitigated by following ts-rest's documented Express + react-query patterns directly (see https://ts-rest.com/docs/express/) and keeping the contract minimal.
-- **`@shared/*` path mapping drift.** Two tsconfigs must stay in sync. Add a small CI check (a script that grep-asserts both tsconfigs have the mapping; runs alongside `lint:design`). Belt-and-braces; small footprint.
+- **Frontend bundle cost.** Zod adds ~12kb gzipped. Accepted; documented here.
+- **`@shared/*` path mapping drift.** Two tsconfigs must stay in sync. A small CI check script asserts both have the mapping; runs alongside `lint:design`. Belt-and-braces; small footprint.
+- **Runtime validation latency.** Schema parse on every response adds <1ms in practice; negligible. If it becomes a hot path concern (e.g. a chat tab pulling characters every keystroke), parse can be moved into a `useMemo` or skipped on cached responses — handled per-call site if needed.
 - **Repo-boundary surface.** Prompt service consumes a richer `Character` shape but still receives decrypted plaintext from the repo. No new ciphertext-egress paths. `repo-boundary-reviewer` runs at close-gate as usual.
 
 ## Out of scope
 
 Explicitly NOT in this PR:
 
-- ts-rest migration of stories / chapters / outline / chats / messages / ai / auth routes.
+- ts-rest adoption for any route.
+- Migration of other entities' Zod schemas into `/shared/`. (Each is a small follow-up; can be done as needed.)
 - Character context truncation strategy (deferred per direction question — file as separate bd issue).
-- OpenAPI generation from contracts.
-- Decision on `lib/api.ts`'s long-term existence.
+- Runtime validation of backend response egress (not just inbound request bodies).
+- OpenAPI / Swagger generation from the Zod schemas.
 - Storybook redesign of `CharacterSheet` (the new field uses the established pattern; no UI redesign).
 - `Story.systemPrompt` or other entities' consolidation.
 - Per-character / per-field "include in AI" flags.
@@ -363,10 +326,10 @@ Explicitly NOT in this PR:
 ## Acceptance criteria
 
 - Schema migration runs cleanly; new `relationships*` triple present, old `physicalDescription*` / `notes*` triples gone.
-- Single canonical `Character` type in `shared/contracts/character.contract.ts`; no other hand-maintained `Character` interface in backend or frontend.
+- Single canonical `Character` Zod schema in `shared/schemas/character.ts`; no other hand-maintained `Character` interface in backend or frontend.
 - `CharacterSheet` form exposes all 9 narrative fields; `relationships` is fillable end-to-end (UI → API → DB → re-read → UI).
 - Prompt builder renders the full character with the hybrid XML shape; all 9 fields appear in the system message when populated; empty fields suppressed; escapes applied; collision tests pass for all new tag names.
-- ts-rest contract serves as the type source; backend handlers and frontend hooks both consume it.
+- Frontend runtime-validates API responses against the shared schemas; a drift smoke test (mocked malformed response) surfaces as a `ZodError` through the hook's error path.
 - Encryption leak test passes.
 - `lint:design` and both typechecks clean.
 - Repo-boundary review CLEAN at close-gate.
