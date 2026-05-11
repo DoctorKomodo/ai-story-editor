@@ -34,10 +34,9 @@ describe('Character model', () => {
     // Every narrative field is ciphertext-only and nullable.
     expect(character.nameCiphertext).toBeNull();
     expect(character.roleCiphertext).toBeNull();
-    expect(character.physicalDescriptionCiphertext).toBeNull();
+    expect(character.relationshipsCiphertext).toBeNull();
     expect(character.personalityCiphertext).toBeNull();
     expect(character.backstoryCiphertext).toBeNull();
-    expect(character.notesCiphertext).toBeNull();
     expect(character.storyId).toBe(story.id);
     expect(character.createdAt).toBeInstanceOf(Date);
     expect(character.updatedAt).toBeInstanceOf(Date);

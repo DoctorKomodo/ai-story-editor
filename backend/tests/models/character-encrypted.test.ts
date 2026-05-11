@@ -33,18 +33,15 @@ describe('[E6] Character — ciphertext columns', () => {
         arcCiphertext: SENTINEL.ciphertext,
         arcIv: SENTINEL.iv,
         arcAuthTag: SENTINEL.authTag,
-        physicalDescriptionCiphertext: SENTINEL.ciphertext,
-        physicalDescriptionIv: SENTINEL.iv,
-        physicalDescriptionAuthTag: SENTINEL.authTag,
+        relationshipsCiphertext: SENTINEL.ciphertext,
+        relationshipsIv: SENTINEL.iv,
+        relationshipsAuthTag: SENTINEL.authTag,
         personalityCiphertext: SENTINEL.ciphertext,
         personalityIv: SENTINEL.iv,
         personalityAuthTag: SENTINEL.authTag,
         backstoryCiphertext: SENTINEL.ciphertext,
         backstoryIv: SENTINEL.iv,
         backstoryAuthTag: SENTINEL.authTag,
-        notesCiphertext: SENTINEL.ciphertext,
-        notesIv: SENTINEL.iv,
-        notesAuthTag: SENTINEL.authTag,
       },
     });
     const read = await prisma.character.findUniqueOrThrow({ where: { id: created.id } });
@@ -55,10 +52,9 @@ describe('[E6] Character — ciphertext columns', () => {
       'appearanceCiphertext',
       'voiceCiphertext',
       'arcCiphertext',
-      'physicalDescriptionCiphertext',
+      'relationshipsCiphertext',
       'personalityCiphertext',
       'backstoryCiphertext',
-      'notesCiphertext',
     ] as const) {
       expect(read[f]).toBe(SENTINEL.ciphertext);
     }
