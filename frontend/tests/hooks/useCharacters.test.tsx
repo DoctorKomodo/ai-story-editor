@@ -2,15 +2,17 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Character } from 'story-editor-shared';
 import {
-  type Character,
   characterQueryKey,
   charactersQueryKey,
   computeCharactersAfterDelete,
   computeReorderedCharacters,
+  useCharactersQuery,
   useDeleteCharacterMutation,
   useReorderCharactersMutation,
 } from '@/hooks/useCharacters';
+import * as apiModule from '@/lib/api';
 import { resetApiClientForTests, setAccessToken } from '@/lib/api';
 
 function meta(id: string, orderIndex: number): Character {
@@ -21,12 +23,16 @@ function meta(id: string, orderIndex: number): Character {
     role: null,
     age: null,
     appearance: null,
-    voice: null,
-    arc: null,
     personality: null,
+    voice: null,
+    backstory: null,
+    arc: null,
+    relationships: null,
     orderIndex,
-    createdAt: '2026-04-01T00:00:00Z',
-    updatedAt: '2026-04-01T00:00:00Z',
+    color: null,
+    initial: null,
+    createdAt: '2026-04-01T00:00:00.000Z',
+    updatedAt: '2026-04-01T00:00:00.000Z',
   };
 }
 
@@ -188,5 +194,52 @@ describe('useDeleteCharacterMutation — optimistic reassign', () => {
       'a',
       'b',
     ]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Runtime validation (Zod schema) tests
+// ---------------------------------------------------------------------------
+
+function wrapQc() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const Wrapper: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
+  return Wrapper;
+}
+
+describe('useCharacters runtime validation', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('surfaces ZodError when the server response is shape-drifted', async () => {
+    // Mock api() to return a malformed body (missing required `name`).
+    vi.spyOn(apiModule, 'api').mockResolvedValue({
+      characters: [{ id: '550e8400-e29b-41d4-a716-446655440000', /* name absent */ }],
+    });
+    const { result } = renderHook(() => useCharactersQuery('story-id'), { wrapper: wrapQc() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeDefined();
+    // ZodError has an `issues` array; thrown as a regular error through TanStack Query.
+    expect(String(result.current.error)).toMatch(/zod|issues|required/i);
+  });
+
+  it('returns parsed characters on valid response', async () => {
+    const valid = {
+      characters: [{
+        id: '550e8400-e29b-41d4-a716-446655440000',
+        storyId: '550e8400-e29b-41d4-a716-446655440001',
+        name: 'Imogen', role: null, age: null,
+        appearance: null, personality: null, voice: null,
+        backstory: null, arc: null, relationships: null,
+        orderIndex: 0, color: null, initial: null,
+        createdAt: '2026-05-11T00:00:00.000Z',
+        updatedAt: '2026-05-11T00:00:00.000Z',
+      }],
+    };
+    vi.spyOn(apiModule, 'api').mockResolvedValue(valid);
+    const { result } = renderHook(() => useCharactersQuery('story-id'), { wrapper: wrapQc() });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data?.[0].name).toBe('Imogen');
   });
 });

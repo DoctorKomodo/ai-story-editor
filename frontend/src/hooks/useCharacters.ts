@@ -5,6 +5,11 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import {
+  characterResponseSchema,
+  charactersResponseSchema,
+  type Character,
+} from 'story-editor-shared';
 import { api } from '@/lib/api';
 
 /**
@@ -19,29 +24,10 @@ import { api } from '@/lib/api';
  * - DELETE /api/stories/:storyId/characters/:id    → 204
  *
  * See also F27 (Cast tab redesign) + F37 (character popover).
+ *
+ * Character type and response schemas are imported from story-editor-shared.
+ * Components must import `type Character` directly from 'story-editor-shared'.
  */
-export interface Character {
-  id: string;
-  storyId: string;
-  name: string;
-  role: string | null;
-  age: string | null;
-  appearance: string | null;
-  voice: string | null;
-  arc: string | null;
-  personality: string | null;
-  orderIndex: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface CharactersResponse {
-  characters: Character[];
-}
-
-export interface CharacterResponse {
-  character: Character;
-}
 
 /**
  * Query key for the character list belonging to a story.
@@ -55,10 +41,11 @@ export function useCharactersQuery(
   return useQuery({
     queryKey: charactersQueryKey(storyId ?? ''),
     queryFn: async (): Promise<Character[]> => {
-      const res = await api<CharactersResponse>(
+      const raw = await api<unknown>(
         `/stories/${encodeURIComponent(storyId ?? '')}/characters`,
       );
-      return res.characters;
+      const { characters } = charactersResponseSchema.parse(raw);
+      return characters;
     },
     enabled: Boolean(storyId),
     staleTime: 30_000,
@@ -87,14 +74,15 @@ export function useCreateCharacterMutation(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateCharacterInput): Promise<Character> => {
-      const res = await api<CharacterResponse>(
+      const raw = await api<unknown>(
         `/stories/${encodeURIComponent(storyId)}/characters`,
         {
           method: 'POST',
           body: input,
         },
       );
-      return res.character;
+      const { character } = characterResponseSchema.parse(raw);
+      return character;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: charactersQueryKey(storyId) });
@@ -117,12 +105,13 @@ export function useCharacterQuery(
   return useQuery({
     queryKey: characterQueryKey(storyId ?? '', characterId ?? ''),
     queryFn: async (): Promise<Character> => {
-      const res = await api<CharacterResponse>(
+      const raw = await api<unknown>(
         `/stories/${encodeURIComponent(storyId ?? '')}/characters/${encodeURIComponent(
           characterId ?? '',
         )}`,
       );
-      return res.character;
+      const { character } = characterResponseSchema.parse(raw);
+      return character;
     },
     enabled: storyId != null && characterId != null,
     staleTime: 30_000,
@@ -149,14 +138,15 @@ export function useUpdateCharacterMutation(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, patch }: UpdateCharacterInput): Promise<Character> => {
-      const res = await api<CharacterResponse>(
+      const raw = await api<unknown>(
         `/stories/${encodeURIComponent(storyId)}/characters/${encodeURIComponent(id)}`,
         {
           method: 'PATCH',
           body: patch,
         },
       );
-      return res.character;
+      const { character } = characterResponseSchema.parse(raw);
+      return character;
     },
     onSuccess: (_updated, { id }) => {
       void qc.invalidateQueries({ queryKey: characterQueryKey(storyId, id) });
