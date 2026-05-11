@@ -147,18 +147,15 @@ model Character {
   arcCiphertext                 String?
   arcIv                         String?
   arcAuthTag                    String?
-  physicalDescriptionCiphertext String?
-  physicalDescriptionIv         String?
-  physicalDescriptionAuthTag    String?
+  relationshipsCiphertext       String?
+  relationshipsIv               String?
+  relationshipsAuthTag          String?
   personalityCiphertext         String?
   personalityIv                 String?
   personalityAuthTag            String?
   backstoryCiphertext           String?
   backstoryIv                   String?
   backstoryAuthTag              String?
-  notesCiphertext               String?
-  notesIv                       String?
-  notesAuthTag                  String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
 
