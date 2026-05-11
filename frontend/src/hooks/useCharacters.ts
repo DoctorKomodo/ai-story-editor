@@ -6,9 +6,9 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import {
+  type Character,
   characterResponseSchema,
   charactersResponseSchema,
-  type Character,
 } from 'story-editor-shared';
 import { api } from '@/lib/api';
 
@@ -41,9 +41,7 @@ export function useCharactersQuery(
   return useQuery({
     queryKey: charactersQueryKey(storyId ?? ''),
     queryFn: async (): Promise<Character[]> => {
-      const raw = await api<unknown>(
-        `/stories/${encodeURIComponent(storyId ?? '')}/characters`,
-      );
+      const raw = await api<unknown>(`/stories/${encodeURIComponent(storyId ?? '')}/characters`);
       const { characters } = charactersResponseSchema.parse(raw);
       return characters;
     },
@@ -66,6 +64,8 @@ export interface CreateCharacterInput {
   voice?: string;
   arc?: string;
   personality?: string;
+  backstory?: string;
+  relationships?: string;
 }
 
 export function useCreateCharacterMutation(
@@ -74,13 +74,10 @@ export function useCreateCharacterMutation(
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (input: CreateCharacterInput): Promise<Character> => {
-      const raw = await api<unknown>(
-        `/stories/${encodeURIComponent(storyId)}/characters`,
-        {
-          method: 'POST',
-          body: input,
-        },
-      );
+      const raw = await api<unknown>(`/stories/${encodeURIComponent(storyId)}/characters`, {
+        method: 'POST',
+        body: input,
+      });
       const { character } = characterResponseSchema.parse(raw);
       return character;
     },
@@ -124,7 +121,18 @@ export function useCharacterQuery(
  * clears the stored value server-side.
  */
 export type UpdateCharacterPatch = Partial<
-  Pick<Character, 'name' | 'role' | 'age' | 'appearance' | 'voice' | 'arc' | 'personality'>
+  Pick<
+    Character,
+    | 'name'
+    | 'role'
+    | 'age'
+    | 'appearance'
+    | 'voice'
+    | 'arc'
+    | 'personality'
+    | 'backstory'
+    | 'relationships'
+  >
 >;
 
 export interface UpdateCharacterInput {
