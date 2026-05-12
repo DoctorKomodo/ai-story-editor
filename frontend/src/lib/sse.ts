@@ -31,6 +31,15 @@
  */
 import { type Citation, citationSchema } from 'story-editor-shared';
 
+// Narrow `unknown` to `Citation[]` via the shared schema. Returns the parsed
+// array on success, null otherwise. Using `safeParse(...).data` avoids the
+// `as Citation[]` cast that `safeParse(...).success` would require — `.success`
+// doesn't carry the parsed value, so consumers would otherwise reach for `as`.
+function tryParseCitations(value: unknown): Citation[] | null {
+  const parsed = citationSchema.array().safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
+
 export interface AiDelta {
   content?: string;
 }
@@ -62,11 +71,7 @@ function tryParseFrame(raw: string, eventName: string | null): AiStreamEvent | n
         // [V26][F50] Named-event frame carrying the assistant's web-search
         // citations. The payload may either be `{ citations: [...] }` or a
         // bare array — accept both, reject anything else.
-        const list = citationSchema.array().safeParse(obj.citations).success
-          ? (obj.citations as Citation[])
-          : citationSchema.array().safeParse(parsed).success
-            ? (parsed as Citation[])
-            : null;
+        const list = tryParseCitations(obj.citations) ?? tryParseCitations(parsed);
         if (list === null) return null;
         return { type: 'citations', citations: list };
       }
@@ -97,11 +102,10 @@ export function parseCitationsFrame(raw: string): Citation[] | null {
     const parsed: unknown = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object') {
       const obj = parsed as Record<string, unknown>;
-      if (citationSchema.array().safeParse(obj.citations).success)
-        return obj.citations as Citation[];
+      const fromObj = tryParseCitations(obj.citations);
+      if (fromObj !== null) return fromObj;
     }
-    if (citationSchema.array().safeParse(parsed).success) return parsed as Citation[];
-    return null;
+    return tryParseCitations(parsed);
   } catch {
     return null;
   }

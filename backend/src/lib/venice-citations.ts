@@ -2,9 +2,10 @@
 //
 // When the chat POST opts in with `enableWebSearch: true`, Venice prepends a
 // non-standard first chunk carrying `venice_search_results` — an array of
-// { title, url, content, date } objects. We project that raw shape to our
-// internal `Citation` shape (rename `content → snippet`, `date → publishedAt`)
-// before emitting on SSE and persisting on the assistant message.
+// { title, url, content, date } objects. We project that raw shape to the
+// canonical `Citation` shape from story-editor-shared (rename
+// `content → snippet`, `date → publishedAt`) before emitting on SSE and
+// persisting on the assistant message.
 //
 // The projector is intentionally defensive: Venice field names may drift, and
 // some items may be partial. Items missing `title` or `url` are dropped

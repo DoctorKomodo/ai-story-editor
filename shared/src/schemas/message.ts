@@ -14,15 +14,15 @@ export const messageAttachmentSchema = z.strictObject({
   chapterId: z.string().min(1),
 });
 
-// Wire/read shape. `content` is `z.string()` — every write site stores a
-// string today (body.content, accumulatedContent). Renamed from the legacy
+// Wire/read shape. `content: z.string().min(1)` matches the write contract
+// (sendMessageBodySchema also requires min(1)). Renamed from the legacy
 // `contentJson` (the Json suffix was inherited from an earlier design that
 // never materialised). The other two ciphertext fields keep their *Json
 // names because they actually carry JSON payloads.
 export const messageSchema = z.strictObject({
   id: z.string().min(1),
   role: messageRoleSchema,
-  content: z.string(),
+  content: z.string().min(1),
   attachmentJson: messageAttachmentSchema.nullable(),
   citationsJson: z.array(citationSchema).nullable(),
   model: z.string().nullable(),
