@@ -14,6 +14,9 @@ export function serializeCharacter(row: RepoCharacter): Character {
   };
 }
 
+// Explicit pick (not spread): RepoMessage's type omits chatId, but the runtime
+// row still carries it because projectDecrypted only strips ciphertext-triple
+// columns. Spreading into messagesResponseSchema (strictObject) would throw.
 export function serializeMessage(row: RepoMessage): Message {
   return {
     id: row.id,
