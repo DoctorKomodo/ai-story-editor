@@ -7,11 +7,13 @@ import {
   chatMessagesQueryKey,
   chatsBaseQueryKey,
   chatsQueryKey,
+  useChatMessagesQuery,
   useCreateChatMutation,
   useRemoveChatMutation,
   useRenameChatMutation,
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
+import * as apiModule from '@/lib/api';
 import { ApiError, apiStream, resetApiClientForTests, setAccessToken } from '@/lib/api';
 import { useChatDraftStore } from '@/store/chatDraft';
 
@@ -612,5 +614,53 @@ describe('useRemoveChatMutation', () => {
     expect(cached).toBeDefined();
     expect(cached?.find((c) => c.id === 'chat-delete')).toBeUndefined();
     expect(cached?.find((c) => c.id === 'chat-keep')).toBeDefined();
+  });
+});
+
+// ── useChatMessagesQuery — runtime validation (Zod schema) ────────────────────
+
+function wrapQc() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const Wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
+  return Wrapper;
+}
+
+describe('useChatMessagesQuery runtime validation', () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it('surfaces ZodError when the server response is shape-drifted', async () => {
+    // Return a malformed body: messages array contains an item missing `role`.
+    vi.spyOn(apiModule, 'api').mockResolvedValue({
+      messages: [{ id: 'msg-1', content: 'Hello' /* role absent */ }],
+    });
+    const { result } = renderHook(() => useChatMessagesQuery('chat-1'), { wrapper: wrapQc() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeDefined();
+    expect(result.current.error?.name).toBe('ZodError');
+  });
+
+  it('returns parsed messages on valid response', async () => {
+    const validResponse = {
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'user',
+          content: 'Hello',
+          attachmentJson: null,
+          citationsJson: null,
+          model: null,
+          tokens: null,
+          latencyMs: null,
+          createdAt: '2026-05-01T00:00:00.000Z',
+        },
+      ],
+    };
+    vi.spyOn(apiModule, 'api').mockResolvedValue(validResponse);
+    const { result } = renderHook(() => useChatMessagesQuery('chat-1'), { wrapper: wrapQc() });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data?.[0].content).toBe('Hello');
+    expect(result.current.data?.[0].role).toBe('user');
   });
 });

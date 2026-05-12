@@ -1,8 +1,8 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { Citation } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
 import { MessageCitations } from '@/components/MessageCitations';
-import type { Citation } from '@/hooks/useChat';
 
 const SAMPLE: Citation[] = [
   {
