@@ -16,12 +16,7 @@
 // Per the V26 spec §6, an empty array must NOT be stored — the caller should
 // persist `null` instead. See `backend/src/routes/chat.routes.ts`.
 
-export interface Citation {
-  title: string;
-  url: string;
-  snippet: string;
-  publishedAt: string | null;
-}
+import type { Citation } from 'story-editor-shared';
 
 const MAX_CITATIONS = 10;
 

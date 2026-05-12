@@ -10,12 +10,13 @@
 
 import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
+import type { Citation } from 'story-editor-shared';
 import { toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
-import { type Citation, projectVeniceCitations } from '../lib/venice-citations';
+import { projectVeniceCitations } from '../lib/venice-citations';
 import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { createChapterRepo } from '../repos/chapter.repo';
@@ -265,7 +266,7 @@ export function createChatMessagesRouter() {
       const messages = rows.map((m) => ({
         id: m.id,
         role: m.role,
-        contentJson: m.contentJson,
+        content: m.content,
         attachmentJson: m.attachmentJson ?? null,
         // [V26] `citationsJson` is `Citation[] | null` — null when the turn
         // had no web search or produced no valid results (see §6 of the spec).
@@ -399,9 +400,7 @@ export function createChatMessagesRouter() {
       // non-empty by superRefine when retry is false/omitted).
       // lastUserMsg is guaranteed non-null here for retry (checked above).
       const trailingUserContent: string = body.retry
-        ? typeof lastUserMsg!.contentJson === 'string'
-          ? lastUserMsg!.contentJson
-          : JSON.stringify(lastUserMsg!.contentJson)
+        ? lastUserMsg!.content
         : (body.content as string);
 
       const {
@@ -437,8 +436,7 @@ export function createChatMessagesRouter() {
       // docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md
       // §chat.routes.ts simplifications (a).
       const history = priorMessagesForHistory.map((m) => {
-        const rawContent =
-          typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
+        const rawContent = m.content;
 
         if (m.role === 'user' && m.attachmentJson != null) {
           const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
@@ -471,7 +469,7 @@ export function createChatMessagesRouter() {
         await messageRepo.create({
           chatId,
           role: 'user' as MessageRole,
-          contentJson: body.content as string,
+          content: body.content as string,
           attachmentJson: body.attachment ?? null,
           model: null,
           tokens: null,
@@ -691,7 +689,7 @@ export function createChatMessagesRouter() {
             await messageRepo.create({
               chatId,
               role: 'assistant' as MessageRole,
-              contentJson: accumulatedContent,
+              content: accumulatedContent,
               // [V26] Persist captured citations (null when none).
               citationsJson: capturedCitations,
               model: body.modelId,

@@ -1,5 +1,6 @@
-import type { Character } from 'story-editor-shared';
+import type { Character, Message } from 'story-editor-shared';
 import type { RepoCharacter } from '../repos/character.repo';
+import type { RepoMessage } from '../repos/message.repo';
 
 // Repo-shape input: narrative fields are already plaintext strings (decryption
 // happens in the repo), but timestamps are still Date objects from Prisma.
@@ -10,5 +11,12 @@ export function serializeCharacter(row: RepoCharacter): Character {
     ...row,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+export function serializeMessage(row: RepoMessage): Message {
+  return {
+    ...row,
+    createdAt: row.createdAt.toISOString(),
   };
 }
