@@ -148,8 +148,9 @@ describe('messageRoleSchema', () => {
 });
 
 describe('messagesResponseSchema', () => {
-  it('round-trips { messages: [validMessage] }', () => {
-    expect(() => messagesResponseSchema.parse({ messages: [validMessage] })).not.toThrow();
+  it('round-trips { messages: [validMessage, validMessage] }', () => {
+    const second = { ...validMessage, id: 'msg-2', role: 'assistant' as const };
+    expect(() => messagesResponseSchema.parse({ messages: [validMessage, second] })).not.toThrow();
   });
 
   it('round-trips { messages: [] }', () => {
