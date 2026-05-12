@@ -29,7 +29,7 @@
  * F16 later consumes response headers (rate-limit counters) separately; it
  * does not change the frame shape this parser produces.
  */
-import { type Citation, isCitationArray } from '@/lib/citations';
+import { type Citation, citationSchema } from 'story-editor-shared';
 
 export interface AiDelta {
   content?: string;
@@ -62,10 +62,10 @@ function tryParseFrame(raw: string, eventName: string | null): AiStreamEvent | n
         // [V26][F50] Named-event frame carrying the assistant's web-search
         // citations. The payload may either be `{ citations: [...] }` or a
         // bare array — accept both, reject anything else.
-        const list = isCitationArray(obj.citations)
-          ? obj.citations
-          : isCitationArray(parsed)
-            ? parsed
+        const list = citationSchema.array().safeParse(obj.citations).success
+          ? (obj.citations as Citation[])
+          : citationSchema.array().safeParse(parsed).success
+            ? (parsed as Citation[])
             : null;
         if (list === null) return null;
         return { type: 'citations', citations: list };
@@ -97,9 +97,10 @@ export function parseCitationsFrame(raw: string): Citation[] | null {
     const parsed: unknown = JSON.parse(trimmed);
     if (parsed && typeof parsed === 'object') {
       const obj = parsed as Record<string, unknown>;
-      if (isCitationArray(obj.citations)) return obj.citations;
+      if (citationSchema.array().safeParse(obj.citations).success)
+        return obj.citations as Citation[];
     }
-    if (isCitationArray(parsed)) return parsed;
+    if (citationSchema.array().safeParse(parsed).success) return parsed as Citation[];
     return null;
   } catch {
     return null;

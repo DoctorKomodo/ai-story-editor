@@ -1,13 +1,13 @@
 import { render, screen } from '@testing-library/react';
+import type { Message } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
 import { UserMessageRow } from '@/components/messageRow/UserMessageRow';
-import type { ChatMessage } from '@/hooks/useChat';
 
-function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+function makeMessage(overrides: Partial<Message> = {}): Message {
   return {
     id: 'msg-1',
     role: 'user',
-    contentJson: 'Hello world',
+    content: 'Hello world',
     attachmentJson: null,
     citationsJson: null,
     model: null,
@@ -20,7 +20,7 @@ function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
 
 describe('UserMessageRow', () => {
   it('renders user content in a right-aligned bubble', () => {
-    render(<UserMessageRow message={makeMessage({ contentJson: 'Hi there' })} />);
+    render(<UserMessageRow message={makeMessage({ content: 'Hi there' })} />);
     expect(screen.getByText('Hi there')).toBeInTheDocument();
   });
 

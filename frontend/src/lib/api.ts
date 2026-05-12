@@ -363,24 +363,3 @@ export async function patchChat(id: string, title: string): Promise<ChatRow> {
 export async function deleteChat(id: string): Promise<void> {
   await api<void>(`/chats/${encodeURIComponent(id)}`, { method: 'DELETE' });
 }
-
-/**
- * [SC17] GET /api/chats/:id/messages
- *
- * Fetches all persisted messages for a chat. Used by SceneTab to hydrate the
- * transcript when switching between scene sessions.
- */
-export interface MessageRow {
-  id: string;
-  role: string;
-  contentJson: string | Record<string, unknown>;
-  model: string | null;
-  createdAt: string;
-}
-
-export async function listMessagesForChat(chatId: string): Promise<MessageRow[]> {
-  const res = await api<{ messages: MessageRow[] }>(
-    `/chats/${encodeURIComponent(chatId)}/messages`,
-  );
-  return res.messages;
-}

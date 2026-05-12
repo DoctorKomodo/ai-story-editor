@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import type { Citation } from '@/hooks/useChat';
+import type { Citation } from 'story-editor-shared';
 
 /**
  * [F50] Inline disclosure under each assistant message that opted into

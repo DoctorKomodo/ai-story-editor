@@ -1,9 +1,8 @@
 import type { JSX } from 'react';
-import type { ChatMessage } from '@/hooks/useChat';
-import { getMessageText } from './utils';
+import type { Message } from 'story-editor-shared';
 
 export interface UserMessageRowProps {
-  message: ChatMessage;
+  message: Message;
   chapterTitle?: string | null;
 }
 
@@ -13,7 +12,7 @@ function chapterCaption(chapterTitle: string | null | undefined): string {
 }
 
 export function UserMessageRow({ message, chapterTitle }: UserMessageRowProps): JSX.Element {
-  const text = getMessageText(message.contentJson);
+  const text = message.content;
   const attachment = message.attachmentJson;
   const hasAttachmentText =
     attachment !== null &&

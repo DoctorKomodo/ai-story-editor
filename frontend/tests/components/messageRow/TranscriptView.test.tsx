@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
+import type { Message } from 'story-editor-shared';
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { TranscriptRow } from '@/components/messageRow/TranscriptView';
 import { TranscriptView } from '@/components/messageRow/TranscriptView';
-import type { ChatMessage } from '@/hooks/useChat';
 import { chatMessagesQueryKey } from '@/hooks/useChat';
 import { useChatDraftStore } from '@/store/chatDraft';
 
@@ -11,11 +11,11 @@ function makeQc(): QueryClient {
   return new QueryClient({ defaultOptions: { queries: { retry: false } } });
 }
 
-function makeMessage(over: Partial<ChatMessage> & { id: string }): ChatMessage {
+function makeMessage(over: Partial<Message> & { id: string }): Message {
   return {
     id: over.id,
     role: 'user',
-    contentJson: '',
+    content: '',
     attachmentJson: null,
     citationsJson: null,
     model: null,
@@ -64,8 +64,8 @@ describe('TranscriptView', () => {
   it('renders persisted messages via render-prop', () => {
     const qc = makeQc();
     qc.setQueryData(chatMessagesQueryKey('c-1'), [
-      makeMessage({ id: 'm-1', role: 'user', contentJson: 'hi' }),
-      makeMessage({ id: 'm-2', role: 'assistant', contentJson: 'hello' }),
+      makeMessage({ id: 'm-1', role: 'user', content: 'hi' }),
+      makeMessage({ id: 'm-2', role: 'assistant', content: 'hello' }),
     ]);
     render(
       <QueryClientProvider client={qc}>
@@ -75,7 +75,7 @@ describe('TranscriptView', () => {
               {rows.map((r) =>
                 r.kind === 'persisted' ? (
                   <li key={rowKey(r)} data-testid="persisted">
-                    {String(r.message.contentJson)}
+                    {r.message.content}
                   </li>
                 ) : null,
               )}
@@ -93,8 +93,8 @@ describe('TranscriptView', () => {
   it('merges draft pair after persisted messages', () => {
     const qc = makeQc();
     qc.setQueryData(chatMessagesQueryKey('c-1'), [
-      makeMessage({ id: 'm-1', role: 'user', contentJson: 'past' }),
-      makeMessage({ id: 'm-2', role: 'assistant', contentJson: 'old' }),
+      makeMessage({ id: 'm-1', role: 'user', content: 'past' }),
+      makeMessage({ id: 'm-2', role: 'assistant', content: 'old' }),
     ]);
     useChatDraftStore.getState().start({
       chatId: 'c-1',
@@ -111,7 +111,7 @@ describe('TranscriptView', () => {
                 if (r.kind === 'persisted')
                   return (
                     <li key={rowKey(r)} data-testid="persisted">
-                      {String(r.message.contentJson)}
+                      {r.message.content}
                     </li>
                   );
                 if (r.kind === 'draft-user')
@@ -142,7 +142,7 @@ describe('TranscriptView', () => {
     // redundant and would cause a duplicate flicker.
     const qc = makeQc();
     qc.setQueryData(chatMessagesQueryKey('c-1'), [
-      makeMessage({ id: 'm-X', role: 'user', contentJson: 'new question' }),
+      makeMessage({ id: 'm-X', role: 'user', content: 'new question' }),
     ]);
     useChatDraftStore.getState().start({
       chatId: 'c-1',
@@ -158,7 +158,7 @@ describe('TranscriptView', () => {
                 if (r.kind === 'persisted')
                   return (
                     <li key={rowKey(r)} data-testid="persisted">
-                      {String(r.message.contentJson)}
+                      {r.message.content}
                     </li>
                   );
                 if (r.kind === 'draft-user')
@@ -188,7 +188,7 @@ describe('TranscriptView', () => {
     // empty synthetic user bubble would be ugly.
     const qc = makeQc();
     qc.setQueryData(chatMessagesQueryKey('c-1'), [
-      makeMessage({ id: 'persisted-user', role: 'user', contentJson: 'previously sent' }),
+      makeMessage({ id: 'persisted-user', role: 'user', content: 'previously sent' }),
     ]);
     useChatDraftStore.getState().start({
       chatId: 'c-1',
@@ -205,7 +205,7 @@ describe('TranscriptView', () => {
                 if (r.kind === 'persisted')
                   return (
                     <li key={rowKey(r)} data-testid="persisted">
-                      {String(r.message.contentJson)}
+                      {r.message.content}
                     </li>
                   );
                 if (r.kind === 'draft-user')

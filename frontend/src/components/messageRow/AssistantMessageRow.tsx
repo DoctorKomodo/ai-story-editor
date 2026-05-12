@@ -1,10 +1,9 @@
 import type { JSX, ReactNode } from 'react';
-import type { ChatMessage } from '@/hooks/useChat';
+import type { Message } from 'story-editor-shared';
 import { AssistantBubble, CitationsSlot, MessageMeta, ThinkingBubble } from './primitives';
-import { getMessageText } from './utils';
 
 export interface AssistantMessageRowProps {
-  message: ChatMessage;
+  message: Message;
   actions: ReactNode;
   isStreaming?: boolean;
   thinkingLabel?: string;
@@ -16,7 +15,7 @@ export function AssistantMessageRow({
   isStreaming,
   thinkingLabel,
 }: AssistantMessageRowProps): JSX.Element {
-  const text = getMessageText(message.contentJson);
+  const text = message.content;
   const showThinking = isStreaming === true && text.length === 0;
 
   return (

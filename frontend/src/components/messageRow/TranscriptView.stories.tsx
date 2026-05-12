@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ChatMessage } from '@/hooks/useChat';
+import type { Message } from 'story-editor-shared';
 import { chatMessagesQueryKey } from '@/hooks/useChat';
 import type { Model } from '@/hooks/useModels';
 import { modelsQueryKey } from '@/hooks/useModels';
@@ -9,12 +9,12 @@ import { CopyAction, MessageActions, RegenerateAction } from './primitives';
 import { TranscriptView } from './TranscriptView';
 import { UserMessageRow } from './UserMessageRow';
 
-function buildMessages(): ChatMessage[] {
+function buildMessages(): Message[] {
   return [
     {
       id: 'm-1',
       role: 'user',
-      contentJson: 'Could you suggest an alternative title for this chapter?',
+      content: 'Could you suggest an alternative title for this chapter?',
       attachmentJson: null,
       citationsJson: null,
       model: null,
@@ -25,8 +25,7 @@ function buildMessages(): ChatMessage[] {
     {
       id: 'm-2',
       role: 'assistant',
-      contentJson:
-        'Three alternative titles: "After the Fog"; "Silent Moors"; "What Came That Night."',
+      content: 'Three alternative titles: "After the Fog"; "Silent Moors"; "What Came That Night."',
       attachmentJson: null,
       citationsJson: null,
       model: 'venice-test',
@@ -51,7 +50,7 @@ const FIXTURE_MODEL: Model = {
   defaultTopP: 1,
 };
 
-function withSeed(messages: ChatMessage[]): QueryClient {
+function withSeed(messages: Message[]): QueryClient {
   const qc = new QueryClient();
   qc.setQueryData(chatMessagesQueryKey('demo-chat'), messages);
   qc.setQueryData<Model[]>(modelsQueryKey, [FIXTURE_MODEL]);

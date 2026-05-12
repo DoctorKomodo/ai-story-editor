@@ -1,11 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import type { ChatMessage } from '@/hooks/useChat';
+import type { Message } from 'story-editor-shared';
 import { UserMessageRow } from './UserMessageRow';
 
-const baseMessage: ChatMessage = {
+const baseMessage: Message = {
   id: 'msg-1',
   role: 'user',
-  contentJson: 'Could you suggest an alternative title for this chapter?',
+  content: 'Could you suggest an alternative title for this chapter?',
   attachmentJson: null,
   citationsJson: null,
   model: null,
@@ -50,7 +50,7 @@ export const LongContent: Story = {
   args: {
     message: {
       ...baseMessage,
-      contentJson:
+      content:
         'Could you draft three alternative chapter titles that emphasize tension rather than mystery? The current one is fine but feels too detached for the pacing of this section.',
     },
   },
