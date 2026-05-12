@@ -167,7 +167,7 @@ export interface MessageCreateInput {
 }
 ```
 
-Read sites switch from the loose `projectDecrypted(req, row, ENCRYPTED_FIELDS)` (returning `Record<string, unknown>`) to typed `projectDecrypted<RepoMessage>(…)` per the character.repo template. The post-projection JSON-parse loop stays as-is — it operates on the same field tuple.
+Read sites switch from the loose `projectDecrypted(req, row, ENCRYPTED_FIELDS)` (returning `Record<string, unknown>`) to a typed projection. **The cast point differs from Character:** Character's encrypted fields are plain strings, so `projectDecrypted<RepoCharacter>(…)` is shape-correct at the projection call. Message's encrypted fields are JSON payloads stored as serialised strings, and only become their typed shape (`MessageAttachment`, `Citation[]`) after the `shape()` helper's `JSON.parse` loop. So the projection call stays loosely typed and the `as unknown as RepoMessage` cast lands at the end of `shape()` after `JSON.parse` — not inline at `projectDecrypted` as Character does. Equivalent rigour, different placement, dictated by the parse-after-decrypt step.
 
 ### 5.2 `backend/src/routes/chat.routes.ts`
 
@@ -175,12 +175,20 @@ Read sites switch from the loose `projectDecrypted(req, row, ENCRYPTED_FIELDS)` 
 - Replace inline `type MessageRole = 'user' | 'assistant' | 'system'` with `import { type MessageRole } from 'story-editor-shared'`.
 - `GET /api/chats/:chatId/messages` — wrap the response in a new `serializeMessage(row: RepoMessage)` helper, then `respond(messagesResponseSchema, res, { messages }, 200)`. The inline shape-construction at lines 265–277 becomes one `.map(serializeMessage)` call.
 - POST handler stream path is unchanged structurally (still SSE), but its calls into `messageRepo.create(…)` type-check against the canonical `MessageCreateInput` whose field types now derive from shared.
+- **Remove the now-unreachable defensive branches in the same PR.** Tightening `contentJson` to `z.string()` (both on the wire and in `MessageCreateInput`) means `m.contentJson` is provably a string at every read site. The legacy `typeof … === 'string' ? … : JSON.stringify(...)` fallbacks become dead code. Drop them at:
+  - **`chat.routes.ts:402-404`** — `trailingUserContent` becomes `const trailingUserContent: string = body.retry ? lastUserMsg!.contentJson : (body.content as string);`.
+  - **`chat.routes.ts:440-441`** — history mapping's `rawContent` becomes `const rawContent = m.contentJson;` (already typed `string` once `RepoMessage.contentJson: string` flows through `findManyForChat`).
 
-### 5.3 `backend/src/lib/venice-citations.ts`
+  Leaving these branches would mean the runtime continues defending against a state the schema declares impossible — exactly the drift this work targets.
 
-- Drop the local `export interface Citation { … }`.
-- `export type { Citation } from 'story-editor-shared'` so the two call sites that `import { type Citation } from '../lib/venice-citations'` (`chat.routes.ts`, `message.repo.ts`) keep compiling unchanged.
-- `projectVeniceCitations` stays — it's wire-adapter logic that turns Venice's `venice_search_results` shape into `Citation[]`, not a type definition.
+### 5.3 `backend/src/lib/venice-citations.ts` and backend `Citation` imports
+
+Rip-and-replace, matching the frontend stance (no transitional re-exports anywhere):
+
+- **`venice-citations.ts`**: delete the `export interface Citation { … }` entirely. Do **not** add a re-export. The file's exported surface becomes just `projectVeniceCitations` (the wire-adapter function), which is its single responsibility.
+- **`backend/src/routes/chat.routes.ts:18`**: change `import { type Citation, projectVeniceCitations } from '../lib/venice-citations'` to two separate imports — `type Citation` from `'story-editor-shared'`, `projectVeniceCitations` from `'../lib/venice-citations'`.
+- **`backend/src/repos/message.repo.ts:4`**: change `import type { Citation } from '../lib/venice-citations'` to `import type { Citation } from 'story-editor-shared'`.
+- `projectVeniceCitations` returns `Citation[]` typed from the shared `citationSchema` — no behaviour change, just one source of truth for the return type.
 
 ### 5.4 `backend/src/lib/serialize.ts`
 
@@ -219,36 +227,49 @@ Delete the file. The two exports it provided:
 
 - `Citation` → re-exported from `story-editor-shared` (callers update their imports).
 - `isCitationArray(value)` → replaced by `citationSchema.array().safeParse(value).success` at the four call sites that still need a runtime guard (all in `frontend/src/lib/sse.ts` — used twice by `parseCitationsFrame` and twice by `recoverCitationsFromTerminator`). The `useChat.ts` `export { isCitationArray }` re-export line is deleted; no `MessageCitations` call site (it consumes already-validated `Citation[]` from the hook).
+- **Strictness change is intentional.** `citationSchema` uses `z.strictObject`, so the new guard rejects citation objects with keys beyond `{title, url, snippet, publishedAt}`. The hand-rolled `isCitationArray` accepted unknown keys. This change is safe today because `projectVeniceCitations` (server-side, runs before SSE emission) drops every key outside the canonical four — so the wire frames the client guard inspects are already in the 4-key shape. If a future producer adds a 5th field without updating the schema, the guard treats the frame as malformed and the existing `recoverCitationsFromTerminator` fallback in `sse.ts` picks it up. We do **not** add a second loose schema for the guard — uniformity beats hedging against a hypothetical that the wire-adapter actively prevents.
 
 ### 6.4 Component / hook / test / story import-site updates
 
 Every file below changes `import { type ChatMessage } from '@/hooks/useChat'` → `import { type Message } from 'story-editor-shared'` (plus the symbol rename `ChatMessage` → `Message` and `ChatRole` → `MessageRole`):
 
-**Source files:**
+Full enumerated set (verified via `grep -rn "from '@/lib/citations'\|from '@/hooks/useChat'" frontend/{src,tests}`):
+
+**Source files importing from `@/hooks/useChat` (`ChatMessage` / `ChatRole` / `ChatMessageAttachment` / `Citation` re-export):**
 
 - `frontend/src/components/SceneTab.tsx`
 - `frontend/src/components/ChatTab.tsx`
-- `frontend/src/components/ChatComposer.tsx`
-- `frontend/src/components/ChatPanel.tsx`
-- `frontend/src/components/MessageCitations.tsx`
+- `frontend/src/components/ChatComposer.tsx` *(only if it types message props)*
+- `frontend/src/components/ChatPanel.tsx` *(only if it types message props)*
+- `frontend/src/components/MessageCitations.tsx` (imports `Citation` via the `useChat` re-export — switches to `story-editor-shared` direct)
 - `frontend/src/components/messageRow/TranscriptView.tsx`
 - `frontend/src/components/messageRow/UserMessageRow.tsx`
 - `frontend/src/components/messageRow/AssistantMessageRow.tsx`
-- `frontend/src/components/messageRow/primitives.tsx`
 - `frontend/src/hooks/useBannerRetry.ts`
-- `frontend/src/lib/sse.ts` (if it imports `Citation` from `@/lib/citations`)
 
-**Tests / stories:**
+**Source files importing from `@/lib/citations`:**
 
-- `frontend/tests/hooks/useChat.test.tsx`
-- `frontend/tests/components/SceneTab.test.tsx`
-- `frontend/tests/components/ChatTab.test.tsx` (if present)
+- `frontend/src/lib/sse.ts` — `type Citation` + `isCitationArray`. Switches `Citation` import to `story-editor-shared` and replaces the four `isCitationArray(…)` call sites with `citationSchema.array().safeParse(…).success`.
+- `frontend/src/lib/streamingAI.ts` — `type Citation`. Switches to `story-editor-shared`.
+- `frontend/src/components/messageRow/primitives.tsx` — `type Citation`. Switches to `story-editor-shared`.
+
+**Tests:**
+
+- `frontend/tests/hooks/useChat.test.tsx` — `ChatMessage` references rename + add `messagesResponseSchema.parse(…)` round-trip tests.
+- `frontend/tests/hooks/useBannerRetry.test.tsx` — `ChatMessage` rename.
+- `frontend/tests/components/SceneTab.test.tsx` — already imports only `chatMessagesQueryKey`/`chatsQueryKey` from `useChat` (no shape rename needed), but any inline `ChatMessage`-shaped fixtures rename.
+- `frontend/tests/components/messageRow/TranscriptView.test.tsx` — `ChatMessage` rename.
+- `frontend/tests/components/messageRow/UserMessageRow.test.tsx` — `ChatMessage` rename.
+- `frontend/tests/components/messageRow/AssistantMessageRow.test.tsx` — `ChatMessage` rename.
+- `frontend/tests/components/MessageCitations.test.tsx` — `Citation` import path switches.
+
+**Stories:**
+
 - `frontend/src/components/messageRow/TranscriptView.stories.tsx`
-- `frontend/src/components/messageRow/AssistantMessageRow.stories.tsx`
 - `frontend/src/components/messageRow/UserMessageRow.stories.tsx`
-- Any other `*.stories.tsx` or test file that types fixtures against `ChatMessage`/`ChatRole`/`Citation`.
+- `frontend/src/components/messageRow/AssistantMessageRow.stories.tsx`
 
-The implementer pass should grep `import.*\\b(ChatMessage|ChatRole|ChatMessageAttachment)\\b.*from` + `import.*Citation.*from '@/lib/citations'` to catch the full set; the verify-line typecheck is the safety net.
+The implementer pass should re-run the grep above as a sanity check and rely on the verify-line typecheck (both `npm -w story-editor-frontend run typecheck` and `npm -w story-editor-backend run typecheck`) as the final safety net.
 
 ## 7. Tests
 
