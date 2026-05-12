@@ -131,6 +131,13 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   return { create, findById, findManyForChat, countForChat, deleteAllAfter };
 }
 
+// The `as unknown as RepoMessage` cast lands at end-of-function (not at the
+// projectDecrypted call) because Message has heterogeneous encrypted
+// payloads: `content` is plain-string and shape-correct after decrypt, but
+// `attachmentJson` / `citationsJson` are still serialised JSON strings at
+// that point. Only after the JSON.parse loop converges does the runtime
+// shape match RepoMessage. Character's repo casts at the projectDecrypted
+// call because none of its encrypted fields are JSON payloads.
 function shape(row: unknown, req: Request): RepoMessage {
   const projected = projectDecrypted(req, row as Record<string, unknown>, ENCRYPTED_FIELDS);
   for (const f of JSON_PAYLOAD_FIELDS) {
