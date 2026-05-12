@@ -21,7 +21,7 @@ describe('[E9] message.repo', () => {
   beforeEach(resetAllTables);
   afterEach(resetAllTables);
 
-  it('round-trips contentJson + attachmentJson + citationsJson as JSON objects', async () => {
+  it('round-trips content + attachmentJson + citationsJson (plain string + JSON payloads)', async () => {
     const ctx = await makeUserContext();
     const story = await createStoryRepo(ctx.req).create({ title: 's' });
     const chapter = await createChapterRepo(ctx.req).create({
@@ -32,13 +32,14 @@ describe('[E9] message.repo', () => {
     const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id as string });
     const repo = createMessageRepo(ctx.req);
 
-    const content = { parts: ['Hello', 'world'] };
-    const attachment = { selectionText: 'draft passage', chapterId: chapter.id };
-    const citations = [{ title: 'Source', url: 'https://example.test/s', content: null }];
+    const attachment = { selectionText: 'draft passage', chapterId: chapter.id as string };
+    const citations = [
+      { title: 'Source', url: 'https://example.test/s', snippet: 'snip', publishedAt: null },
+    ];
     const m = await repo.create({
       chatId: chat.id as string,
       role: 'user',
-      contentJson: content,
+      content: 'Hello world',
       attachmentJson: attachment,
       citationsJson: citations,
       model: 'venice-m1',
@@ -46,7 +47,7 @@ describe('[E9] message.repo', () => {
       latencyMs: 12,
     });
 
-    expect(m.contentJson).toEqual(content);
+    expect(m.content).toBe('Hello world');
     expect(m.attachmentJson).toEqual(attachment);
     expect(m.citationsJson).toEqual(citations);
     expect(m.role).toBe('user');
@@ -54,7 +55,7 @@ describe('[E9] message.repo', () => {
     expect(m.tokens).toBe(3);
 
     const raw = await prisma.message.findUniqueOrThrow({ where: { id: m.id as string } });
-    expect(raw.contentJsonCiphertext).toBeTruthy();
+    expect(raw.contentCiphertext).toBeTruthy();
     expect(raw.attachmentJsonCiphertext).toBeTruthy();
     // [V26] citationsJson must also land as ciphertext, not plaintext.
     expect(raw.citationsJsonCiphertext).toBeTruthy();
@@ -73,8 +74,8 @@ describe('[E9] message.repo', () => {
 
     expect(await repo.countForChat(chat.id as string)).toBe(0);
 
-    await repo.create({ chatId: chat.id as string, role: 'user', contentJson: 'q1' });
-    await repo.create({ chatId: chat.id as string, role: 'assistant', contentJson: 'a1' });
+    await repo.create({ chatId: chat.id as string, role: 'user', content: 'q1' });
+    await repo.create({ chatId: chat.id as string, role: 'assistant', content: 'a1' });
 
     expect(await repo.countForChat(chat.id as string)).toBe(2);
   });
@@ -92,7 +93,7 @@ describe('[E9] message.repo', () => {
     await createMessageRepo(ctxA.req).create({
       chatId: chat.id as string,
       role: 'user',
-      contentJson: 'secret message',
+      content: 'secret message',
     });
 
     // User B tries to count messages for that chat — should get 0, not throw.
@@ -113,17 +114,17 @@ describe('[E9] message.repo', () => {
     const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id as string });
     const repo = createMessageRepo(ctx.req);
 
-    await repo.create({ chatId: chat.id as string, role: 'user', contentJson: { parts: ['q1'] } });
+    await repo.create({ chatId: chat.id as string, role: 'user', content: 'q1' });
     await repo.create({
       chatId: chat.id as string,
       role: 'assistant',
-      contentJson: { parts: ['a1'] },
+      content: 'a1',
     });
 
     const list = await repo.findManyForChat(chat.id as string);
     expect(list).toHaveLength(2);
-    expect((list[0]!.contentJson as { parts: string[] }).parts).toEqual(['q1']);
-    expect((list[1]!.contentJson as { parts: string[] }).parts).toEqual(['a1']);
+    expect(list[0]!.content).toBe('q1');
+    expect(list[1]!.content).toBe('a1');
   });
 });
 
@@ -140,14 +141,14 @@ describe('MessageRepo.deleteAllAfter', () => {
     const userMsg = await repo.create({
       chatId: chat.id as string,
       role: 'user',
-      contentJson: 'first',
+      content: 'first',
     });
     // Force later createdAt by sleeping 2ms (Prisma's createdAt has ms precision).
     await new Promise((r) => setTimeout(r, 2));
     await repo.create({
       chatId: chat.id as string,
       role: 'assistant',
-      contentJson: 'reply',
+      content: 'reply',
     });
 
     const result = await repo.deleteAllAfter(chat.id as string, userMsg.id as string);
@@ -165,7 +166,7 @@ describe('MessageRepo.deleteAllAfter', () => {
 
     // Two messages at exactly the same instant via raw Prisma to construct the
     // same-millisecond collision case. Post-[E11] there is no plaintext
-    // `contentJson` column — only ciphertext triples, which we leave null here
+    // `content` column — only ciphertext triples, which we leave null here
     // since we are only testing the deletion predicate, not content round-trips.
     const ts = new Date();
     const userMsg = await prisma.message.create({
@@ -210,13 +211,13 @@ describe('MessageRepo.deleteAllAfter', () => {
     const userMsgB = await repoBviaB.create({
       chatId: chatB.id as string,
       role: 'user',
-      contentJson: 'b',
+      content: 'b',
     });
     await new Promise((r) => setTimeout(r, 2));
     await repoBviaB.create({
       chatId: chatB.id as string,
       role: 'assistant',
-      contentJson: 'reply',
+      content: 'reply',
     });
 
     // userA's repo asked to delete after userMsgB — ensureChatOwned throws (consistent with siblings).
@@ -239,20 +240,20 @@ describe('MessageRepo.deleteAllAfter', () => {
     const _userMsgA = await repo.create({
       chatId: chatA.id as string,
       role: 'user',
-      contentJson: 'A user',
+      content: 'A user',
     });
     await new Promise((r) => setTimeout(r, 2));
     await repo.create({
       chatId: chatA.id as string,
       role: 'assistant',
-      contentJson: 'A assistant',
+      content: 'A assistant',
     });
 
     // One message in chat B.
     const userMsgB = await repo.create({
       chatId: chatB.id as string,
       role: 'user',
-      contentJson: 'B user',
+      content: 'B user',
     });
 
     // Asking to delete in chat A with a ref id from chat B → no-op.
@@ -290,7 +291,7 @@ describe('messageRepo.create — Chat.lastActivityAt bump (story-editor-loj)', (
     await createMessageRepo(req).create({
       chatId,
       role: 'user',
-      contentJson: { type: 'doc', content: [{ type: 'text', text: 'hello' }] },
+      content: 'hello',
     });
 
     const chatAfter = await prisma.chat.findUnique({ where: { id: chatId } });

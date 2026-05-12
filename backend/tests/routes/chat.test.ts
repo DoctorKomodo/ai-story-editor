@@ -307,7 +307,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     // Linear retry: old assistant is replaced; exactly one assistant survives with the new content.
     const assistants = after.body.messages.filter((m: { role: string }) => m.role === 'assistant');
     expect(assistants).toHaveLength(1);
-    expect(assistants[0].contentJson).toBe('Retry reply.');
+    expect(assistants[0].content).toBe('Retry reply.');
   });
 
   it('400 when retry=true and the trailing message is not a user turn', async () => {
@@ -412,7 +412,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     // Exactly one assistant — the old one was deleted before the new one was created.
     expect(assistants).toHaveLength(1);
     // The surviving assistant carries the new reply content.
-    expect(assistants[0].contentJson).toBe('second reply');
+    expect(assistants[0].content).toBe('second reply');
   });
 
   it('[9ph] retry on ask preserves chapter context (regression)', async () => {
@@ -498,7 +498,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     // Seed only a user message via the repo layer — no assistant is ever created,
     // modelling a mid-stream error where the server died before persisting the reply.
     const messageRepo = createMessageRepo(makeFakeReq(accessToken));
-    await messageRepo.create({ chatId, role: 'user', contentJson: 'hello' });
+    await messageRepo.create({ chatId, role: 'user', content: 'hello' });
 
     // Confirm we are at user-only state.
     const midState = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
@@ -524,7 +524,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     // user + new assistant = 2
     expect(after.body.messages).toHaveLength(2);
     expect(after.body.messages[1].role).toBe('assistant');
-    expect(after.body.messages[1].contentJson).toBe('reply');
+    expect(after.body.messages[1].content).toBe('reply');
   });
 });
 

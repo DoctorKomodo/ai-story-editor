@@ -9,7 +9,7 @@
 //   - tokens + latencyMs captured on assistant message
 //   - 409 + no messages when user has no BYOK key (error occurs before persist)
 //   - Post-persist Venice failure: user message exists, assistant does not
-//   - Ciphertext check: sentinel must not appear in raw contentJsonCiphertext
+//   - Ciphertext check: sentinel must not appear in raw contentCiphertext
 //   - History included on subsequent message (prior user+assistant pair present)
 
 import { createHash } from 'node:crypto';
@@ -491,7 +491,7 @@ describe('Chat persistence [V15]', () => {
     expect(msgs[0].role).toBe('user');
   });
 
-  it('ciphertext check: sentinel does not appear in raw contentJsonCiphertext', async () => {
+  it('ciphertext check: sentinel does not appear in raw contentCiphertext', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
@@ -520,8 +520,8 @@ describe('Chat persistence [V15]', () => {
       where: { chatId, role: 'user' },
     });
     expect(rawMsg).not.toBeNull();
-    expect(rawMsg!.contentJsonCiphertext).not.toBeNull();
-    expect(rawMsg!.contentJsonCiphertext).not.toContain(MSG_SENTINEL);
+    expect(rawMsg!.contentCiphertext).not.toBeNull();
+    expect(rawMsg!.contentCiphertext).not.toContain(MSG_SENTINEL);
   });
 
   it('history included on subsequent message', async () => {

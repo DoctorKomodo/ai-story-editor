@@ -5,8 +5,8 @@
 //   - 404 for nonexistent chat
 //   - 404 for unowned chat (scoped via chapter→story→user)
 //   - 200 empty { messages: [] } for an owned chat with no messages
-//   - 200 returns decrypted contentJson / attachmentJson, ordered by createdAt asc
-//   - projected fields match the contract (id, role, contentJson, attachmentJson,
+//   - 200 returns decrypted content / attachmentJson, ordered by createdAt asc
+//   - projected fields match the contract (id, role, content, attachmentJson,
 //     model, tokens, latencyMs, createdAt) with no ciphertext / *Iv / *AuthTag leak
 
 import request from 'supertest';
@@ -17,6 +17,7 @@ import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
+import { prisma } from '../setup';
 import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
 
 async function setupStoryChapterChat(
@@ -97,7 +98,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     await messageRepo.create({
       chatId,
       role: 'user',
-      contentJson: 'first user turn',
+      content: 'first user turn',
       attachmentJson: { selectionText: 'hello', chapterId: 'irrelevant-for-projection' },
       model: null,
       tokens: null,
@@ -108,7 +109,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     await messageRepo.create({
       chatId,
       role: 'assistant',
-      contentJson: 'first assistant reply',
+      content: 'first assistant reply',
       model: 'llama-test',
       tokens: 42,
       latencyMs: 1234,
@@ -121,7 +122,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     const messages = res.body.messages as Array<Record<string, unknown>>;
     expect(messages).toHaveLength(2);
     expect(messages[0].role).toBe('user');
-    expect(messages[0].contentJson).toBe('first user turn');
+    expect(messages[0].content).toBe('first user turn');
     expect(messages[0].attachmentJson).toEqual({
       selectionText: 'hello',
       chapterId: 'irrelevant-for-projection',
@@ -133,7 +134,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     expect(typeof messages[0].createdAt).toBe('string');
 
     expect(messages[1].role).toBe('assistant');
-    expect(messages[1].contentJson).toBe('first assistant reply');
+    expect(messages[1].content).toBe('first assistant reply');
     expect(messages[1].attachmentJson).toBeNull();
     expect(messages[1].model).toBe('llama-test');
     expect(messages[1].tokens).toBe(42);
@@ -147,5 +148,25 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
         expect(k.endsWith('AuthTag')).toBe(false);
       }
     }
+  });
+
+  it('returns 500 when repo row has null content (egress schema rejects it)', async () => {
+    const accessToken = await registerAndLogin('chat-msg-u4');
+    const req = makeFakeReq(accessToken);
+    const { chatId } = await setupStoryChapterChat(req);
+
+    // Insert a raw message row with null content ciphertext — the repo's
+    // shape() will decrypt to content: null, serializeMessage will pass it
+    // through, and respond() will throw ZodError because content: z.string()
+    // rejects null.
+    await prisma.message.create({
+      data: { chatId, role: 'user' },
+    });
+
+    const res = await request(app)
+      .get(`/api/chats/${chatId}/messages`)
+      .set('Authorization', `Bearer ${accessToken}`);
+    expect(res.status).toBe(500);
+    expect(res.body.error.stack).toMatch(/ZodError/);
   });
 });
