@@ -129,7 +129,10 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       chatId: chat.id as string,
       role: 'user',
       content: `message-content ${SENTINEL}`,
-      attachmentJson: { ref: `message-attach ${SENTINEL}` },
+      attachmentJson: {
+        selectionText: `message-attach ${SENTINEL}`,
+        chapterId: chapter.id as string,
+      },
       // [V26] Also seed the new encrypted-at-rest citations column.
       citationsJson: [
         {

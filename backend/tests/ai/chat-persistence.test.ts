@@ -302,7 +302,7 @@ describe('Chat persistence [V15]', () => {
     expect(res.status).toBe(401);
   });
 
-  // [V20] strict schema — unknown top-level key on PostMessageBody.
+  // [V20] strict schema — unknown top-level key on sendMessageBodySchema.
   it('POST /api/chats/:chatId/messages returns 400 validation_error on unknown top-level key', async () => {
     const accessToken = await registerAndLogin();
     const res = await request(app)

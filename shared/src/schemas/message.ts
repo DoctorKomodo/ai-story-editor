@@ -14,15 +14,19 @@ export const messageAttachmentSchema = z.strictObject({
   chapterId: z.string().min(1),
 });
 
-// Wire/read shape. `content: z.string().min(1)` matches the write contract
-// (sendMessageBodySchema also requires min(1)). Renamed from the legacy
-// `contentJson` (the Json suffix was inherited from an earlier design that
-// never materialised). The other two ciphertext fields keep their *Json
-// names because they actually carry JSON payloads.
+// Wire/read shape. `content: z.string()` (not `.min(1)`) — the write
+// contract requires non-empty for user turns, but assistant turns are
+// produced by Venice and can legitimately be empty (e.g. a stream
+// terminated before any delta chunk; a refusal that emits no content).
+// Tightening here would force a "skip persist when empty" workaround
+// that hides the state from the UI. Renamed from the legacy `contentJson`
+// (the Json suffix was inherited from an earlier design that never
+// materialised). The other two ciphertext fields keep their *Json names
+// because they actually carry JSON payloads.
 export const messageSchema = z.strictObject({
   id: z.string().min(1),
   role: messageRoleSchema,
-  content: z.string().min(1),
+  content: z.string(),
   attachmentJson: messageAttachmentSchema.nullable(),
   citationsJson: z.array(citationSchema).nullable(),
   model: z.string().nullable(),

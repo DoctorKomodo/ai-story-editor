@@ -1,5 +1,7 @@
+import { messagesResponseSchema } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
-import { serializeCharacter } from '../../src/lib/serialize';
+import { serializeCharacter, serializeMessage } from '../../src/lib/serialize';
+import type { RepoMessage } from '../../src/repos/message.repo';
 
 const dbRow = {
   id: '550e8400-e29b-41d4-a716-446655440000',
@@ -41,5 +43,40 @@ describe('serializeCharacter()', () => {
     serializeCharacter(dbRow);
     expect(dbRow.createdAt).toEqual(snapshot.createdAt);
     expect(dbRow.updatedAt).toEqual(snapshot.updatedAt);
+  });
+});
+
+describe('serializeMessage()', () => {
+  // RepoMessage's TYPE omits chatId, but the runtime row from messageRepo
+  // still carries it (projectDecrypted strips only ciphertext triples).
+  // serializeMessage uses an explicit pick rather than spread specifically
+  // to keep chatId out of the wire shape — this fixture deliberately
+  // includes an extra chatId at runtime to lock that invariant.
+  const dbRow = {
+    id: 'msg-1',
+    chatId: 'chat-extra-should-not-leak',
+    role: 'user' as const,
+    content: 'Hello',
+    attachmentJson: null,
+    citationsJson: null,
+    model: null,
+    tokens: null,
+    latencyMs: null,
+    createdAt: new Date('2026-05-12T00:00:00.000Z'),
+  } as unknown as RepoMessage;
+
+  it('ISO-strings createdAt', () => {
+    expect(serializeMessage(dbRow).createdAt).toBe('2026-05-12T00:00:00.000Z');
+  });
+
+  it('excludes chatId from the wire shape', () => {
+    const wire = serializeMessage(dbRow) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('chatId');
+  });
+
+  it('produces a value that satisfies messagesResponseSchema egress validation', () => {
+    expect(() =>
+      messagesResponseSchema.parse({ messages: [serializeMessage(dbRow)] }),
+    ).not.toThrow();
   });
 });

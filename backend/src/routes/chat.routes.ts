@@ -636,28 +636,21 @@ export function createChatMessagesRouter() {
 
         // ── 13. Persist assistant message before [DONE] ───────────────────
         if (!clientClosed) {
-          // Skip the persist when accumulatedContent is empty (e.g. Venice
-          // closed the stream before any delta chunk). The wire schema
-          // requires content.min(1) on read, so persisting empty would make
-          // the next GET throw ZodError. The [DONE] frame still fires so the
-          // client knows the stream ended.
-          if (accumulatedContent.length > 0) {
-            const latencyMs = Date.now() - startedAt;
-            try {
-              await messageRepo.create({
-                chatId,
-                role: 'assistant' as MessageRole,
-                content: accumulatedContent,
-                // [V26] Persist captured citations (null when none).
-                citationsJson: capturedCitations,
-                model: body.modelId,
-                tokens: capturedTotalTokens,
-                latencyMs,
-              });
-            } catch (persistErr) {
-              // DB error after stream completes — log server-side, still send [DONE].
-              console.error('[V15] Failed to persist assistant message', persistErr);
-            }
+          const latencyMs = Date.now() - startedAt;
+          try {
+            await messageRepo.create({
+              chatId,
+              role: 'assistant' as MessageRole,
+              content: accumulatedContent,
+              // [V26] Persist captured citations (null when none).
+              citationsJson: capturedCitations,
+              model: body.modelId,
+              tokens: capturedTotalTokens,
+              latencyMs,
+            });
+          } catch (persistErr) {
+            // DB error after stream completes — log server-side, still send [DONE].
+            console.error('[V15] Failed to persist assistant message', persistErr);
           }
           res.write('data: [DONE]\n\n');
         }
