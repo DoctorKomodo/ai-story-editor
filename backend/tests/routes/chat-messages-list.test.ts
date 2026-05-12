@@ -155,10 +155,8 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     const req = makeFakeReq(accessToken);
     const { chatId } = await setupStoryChapterChat(req);
 
-    // Insert a raw message row with null content ciphertext — the repo's
-    // shape() will decrypt to content: null, serializeMessage will pass it
-    // through, and respond() will throw ZodError because content: z.string()
-    // rejects null.
+    // Raw Prisma: messageRepo.create always encrypts content on write — only a
+    // direct insert can produce the null-ciphertext state this test needs.
     await prisma.message.create({
       data: { chatId, role: 'user' },
     });
@@ -167,6 +165,8 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
       .get(`/api/chats/${chatId}/messages`)
       .set('Authorization', `Bearer ${accessToken}`);
     expect(res.status).toBe(500);
+    // `error.stack` is only populated when NODE_ENV !== 'production' (test env).
+    expect(res.body.error.stack).toBeDefined();
     expect(res.body.error.stack).toMatch(/ZodError/);
   });
 });
