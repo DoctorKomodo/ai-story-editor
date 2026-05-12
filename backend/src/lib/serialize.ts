@@ -16,7 +16,14 @@ export function serializeCharacter(row: RepoCharacter): Character {
 
 export function serializeMessage(row: RepoMessage): Message {
   return {
-    ...row,
+    id: row.id,
+    role: row.role,
+    content: row.content,
+    attachmentJson: row.attachmentJson,
+    citationsJson: row.citationsJson,
+    model: row.model,
+    tokens: row.tokens,
+    latencyMs: row.latencyMs,
     createdAt: row.createdAt.toISOString(),
   };
 }
