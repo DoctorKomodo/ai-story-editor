@@ -13,7 +13,6 @@ import {
   useRenameChatMutation,
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
-import * as apiModule from '@/lib/api';
 import { ApiError, apiStream, resetApiClientForTests, setAccessToken } from '@/lib/api';
 import { useChatDraftStore } from '@/store/chatDraft';
 
@@ -628,13 +627,31 @@ function wrapQc() {
 }
 
 describe('useChatMessagesQuery runtime validation', () => {
-  beforeEach(() => vi.restoreAllMocks());
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('tok');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
 
   it('surfaces ZodError when the server response is shape-drifted', async () => {
-    // Return a malformed body: messages array contains an item missing `role`.
-    vi.spyOn(apiModule, 'api').mockResolvedValue({
-      messages: [{ id: 'msg-1', content: 'Hello' /* role absent */ }],
-    });
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { messages: [{ id: 'msg-1', content: 'Hello' /* role absent */ }] }),
+    );
     const { result } = renderHook(() => useChatMessagesQuery('chat-1'), { wrapper: wrapQc() });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.error).toBeDefined();
@@ -657,7 +674,7 @@ describe('useChatMessagesQuery runtime validation', () => {
         },
       ],
     };
-    vi.spyOn(apiModule, 'api').mockResolvedValue(validResponse);
+    fetchMock.mockResolvedValue(jsonResponse(200, validResponse));
     const { result } = renderHook(() => useChatMessagesQuery('chat-1'), { wrapper: wrapQc() });
     await waitFor(() => expect(result.current.data).toBeDefined());
     expect(result.current.data?.[0].content).toBe('Hello');
