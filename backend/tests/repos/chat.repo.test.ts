@@ -134,19 +134,13 @@ describe('chatRepo.findManyForChapter — most-recent-activity ordering (story-e
     await messageRepo.create({
       chatId: chatAId,
       role: 'user',
-      contentJson: {
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'a' }] }],
-      },
+      content: 'a',
     });
     await new Promise((r) => setTimeout(r, 15));
     await messageRepo.create({
       chatId: chatBId,
       role: 'user',
-      contentJson: {
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'b' }] }],
-      },
+      content: 'b',
     });
 
     const list = await createChatRepo(req).findManyForChapter(chapterId);

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { prisma } from '../setup';
 
-// Post-[E11] Message.contentJson + Message.attachmentJson are ciphertext-only
+// Post-[E11] Message.content + Message.attachmentJson are ciphertext-only
 // (stored as serialised JSON in the ciphertext triple). Round-trip is covered
 // by tests/repos/message.repo.test.ts. Here we only test schema shape + the
 // plaintext telemetry columns (role, model, tokens, latencyMs).
@@ -39,7 +39,7 @@ describe('Message model', () => {
     expect(msg.model).toBeNull();
     expect(msg.tokens).toBeNull();
     expect(msg.latencyMs).toBeNull();
-    expect(msg.contentJsonCiphertext).toBeNull();
+    expect(msg.contentCiphertext).toBeNull();
     expect(msg.attachmentJsonCiphertext).toBeNull();
     expect(msg.createdAt).toBeInstanceOf(Date);
   });

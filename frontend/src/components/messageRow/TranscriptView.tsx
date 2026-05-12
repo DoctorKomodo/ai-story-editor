@@ -1,16 +1,16 @@
 import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
+import type { Message } from 'story-editor-shared';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
-import { type ChatMessage, useChatMessagesQuery } from '@/hooks/useChat';
+import { useChatMessagesQuery } from '@/hooks/useChat';
 import {
   type ChatDraftAttachment,
   type ChatDraftError,
   type ChatDraftStatus,
   useChatDraftStore,
 } from '@/store/chatDraft';
-import { getMessageText } from './utils';
 
 export type TranscriptRow =
-  | { kind: 'persisted'; message: ChatMessage }
+  | { kind: 'persisted'; message: Message }
   | {
       kind: 'draft-user';
       userContent: string;
@@ -35,7 +35,7 @@ export interface TranscriptViewProps {
 }
 
 function buildRows(
-  messages: ChatMessage[],
+  messages: Message[],
   draft:
     | {
         userContent: string;
@@ -60,7 +60,7 @@ function buildRows(
   // Either rule on its own leaves a duplicate-user flicker in the other case.
   const trailingUser = [...messages].reverse().find((m) => m.role === 'user');
   const trailingUserMatches =
-    trailingUser !== undefined && getMessageText(trailingUser.contentJson) === draft.userContent;
+    trailingUser !== undefined && trailingUser.content === draft.userContent;
   const skipDraftUser = draft.userContent === '' || trailingUserMatches;
   if (!skipDraftUser) {
     rows.push({

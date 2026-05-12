@@ -150,21 +150,11 @@ talks to Venice.ai directly.
   (`no .skip`/`.only`, no DB mocking, no real-API calls in default
   suite).
 
-## TypeScript discipline
+## Library-version awareness (backend lane)
 
-- Strict mode is on. **No `any` types.** Prefer `unknown` plus a
-  narrowing guard when the shape is genuinely dynamic; reach for
-  `as` casts only when there's no alternative and document the
-  invariant in a single-line comment.
-
-## Library-version awareness
-
-- For fast-moving libraries (Express, Prisma, Zod, Vitest, Helmet,
-  argon2id), **prefer the Context7 MCP `query-docs` tool over
-  muscle-memory recall** for syntax and migration questions —
-  training data lags. This applies whenever you'd otherwise type
-  out an API call from memory for a library that has shipped a
-  major version in the last ~12 months.
+- Fast-moving libraries in this lane: Express, Prisma, Zod, Vitest,
+  Helmet, argon2id. (General principle — prefer Context7 MCP
+  `query-docs` over muscle-memory — lives in `general.md`.)
 
 ## Forbidden
 
@@ -180,7 +170,3 @@ talks to Venice.ai directly.
   sentinel.)
 - Bypassing the repo layer for any narrative entity.
 - Module-level caching of unwrapped DEKs.
-- Pre-deployment data-migration branches (dual-write / lazy-backfill /
-  legacy-read fallbacks for populations that don't exist). If you
-  see a task that looks like one, implement the post-rollout shape
-  directly. See CLAUDE.md "General" for the rationale.

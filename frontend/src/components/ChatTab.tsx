@@ -1,5 +1,6 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useEffect, useRef, useState } from 'react';
+import type { Message } from 'story-editor-shared';
 import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatComposer';
 import { ChatEmptyState } from '@/components/ChatEmptyState';
 import { AssistantMessageRow } from '@/components/messageRow/AssistantMessageRow';
@@ -9,7 +10,6 @@ import { UserMessageRow } from '@/components/messageRow/UserMessageRow';
 import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
 import {
-  type ChatMessage,
   useChatsQuery,
   useCreateChatMutation,
   useRemoveChatMutation,
@@ -167,12 +167,8 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
   const { copy: copyToClipboard, status: copyStatus } = useCopyToClipboard();
 
   const onCopy = useCallback(
-    (message: ChatMessage) => {
-      const text =
-        typeof message.contentJson === 'string'
-          ? message.contentJson
-          : JSON.stringify(message.contentJson);
-      void copyToClipboard(text);
+    (message: Message) => {
+      void copyToClipboard(message.content);
     },
     [copyToClipboard],
   );
@@ -257,7 +253,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                   message={{
                     id: 'draft-user',
                     role: 'user',
-                    contentJson: r.userContent,
+                    content: r.userContent,
                     attachmentJson: r.attachment,
                     citationsJson: null,
                     model: null,
@@ -275,7 +271,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                   message={{
                     id: 'draft-assistant',
                     role: 'assistant',
-                    contentJson: r.assistantText,
+                    content: r.assistantText,
                     attachmentJson: null,
                     citationsJson: null,
                     model: null,
@@ -285,8 +281,6 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                   }}
                   actions={null}
                   isStreaming
-                  // Chat passes no label — ThinkingDots renders its default
-                  // dots-only animation. (Scene passes "Generating scene…".)
                 />
               );
             }

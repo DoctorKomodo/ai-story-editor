@@ -541,7 +541,7 @@ describe('SceneTab — [4] insert-at-end', () => {
     const assistantMsg = {
       id: 'a1',
       role: 'assistant' as const,
-      contentJson: 'Linda was already on the veranda.',
+      content: 'Linda was already on the veranda.',
       attachmentJson: null,
       citationsJson: null,
       model: 'venice-scene-1',
@@ -552,7 +552,7 @@ describe('SceneTab — [4] insert-at-end', () => {
     const userMsg = {
       id: 'u1',
       role: 'user' as const,
-      contentJson: 'Jenny approaches Linda.',
+      content: 'Jenny approaches Linda.',
       attachmentJson: null,
       citationsJson: null,
       model: null,
@@ -646,7 +646,7 @@ describe('SceneTab — [5] retry semantics', () => {
     const userMsg = {
       id: 'u1',
       role: 'user' as const,
-      contentJson: 'Jenny approaches Linda.',
+      content: 'Jenny approaches Linda.',
       attachmentJson: null,
       citationsJson: null,
       model: null,
@@ -657,7 +657,7 @@ describe('SceneTab — [5] retry semantics', () => {
     const assistantMsg = {
       id: 'a1',
       role: 'assistant' as const,
-      contentJson: 'Linda was already on the veranda.',
+      content: 'Linda was already on the veranda.',
       attachmentJson: null,
       citationsJson: null,
       model: 'venice-scene-1',
@@ -981,7 +981,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
     const userMsg = {
       id: 'u1',
       role: 'user' as const,
-      contentJson: 'Jenny approaches Linda.',
+      content: 'Jenny approaches Linda.',
       attachmentJson: null,
       citationsJson: null,
       model: null,

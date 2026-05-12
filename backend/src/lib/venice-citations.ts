@@ -2,9 +2,10 @@
 //
 // When the chat POST opts in with `enableWebSearch: true`, Venice prepends a
 // non-standard first chunk carrying `venice_search_results` — an array of
-// { title, url, content, date } objects. We project that raw shape to our
-// internal `Citation` shape (rename `content → snippet`, `date → publishedAt`)
-// before emitting on SSE and persisting on the assistant message.
+// { title, url, content, date } objects. We project that raw shape to the
+// canonical `Citation` shape from story-editor-shared (rename
+// `content → snippet`, `date → publishedAt`) before emitting on SSE and
+// persisting on the assistant message.
 //
 // The projector is intentionally defensive: Venice field names may drift, and
 // some items may be partial. Items missing `title` or `url` are dropped
@@ -16,12 +17,7 @@
 // Per the V26 spec §6, an empty array must NOT be stored — the caller should
 // persist `null` instead. See `backend/src/routes/chat.routes.ts`.
 
-export interface Citation {
-  title: string;
-  url: string;
-  snippet: string;
-  publishedAt: string | null;
-}
+import type { Citation } from 'story-editor-shared';
 
 const MAX_CITATIONS = 10;
 

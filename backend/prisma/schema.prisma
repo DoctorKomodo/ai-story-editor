@@ -227,14 +227,15 @@ model Message {
   model          String?
   tokens         Int?
   latencyMs      Int?
-  // [E8] ciphertext triples for the JSON payloads (encrypted as serialised
-  // JSON strings) — now the SOLE source of truth. `role`, `model`, `tokens`,
-  // `latencyMs`, timestamps remain plaintext — needed for the chat header
-  // meta row + regeneration flows. Plaintext `contentJson` + `attachmentJson`
-  // were dropped in [E11].
-  contentJsonCiphertext    String?
-  contentJsonIv            String?
-  contentJsonAuthTag       String?
+  // [E8] ciphertext triples — now the SOLE source of truth. `role`, `model`,
+  // `tokens`, `latencyMs`, timestamps remain plaintext — needed for the chat
+  // header meta row + regeneration flows. Plaintext `contentJson` +
+  // `attachmentJson` were dropped in [E11]. `content*` encrypts a plain
+  // string; `attachmentJson*` and `citationsJson*` encrypt serialised JSON
+  // payloads.
+  contentCiphertext        String?
+  contentIv                String?
+  contentAuthTag           String?
   attachmentJsonCiphertext String?
   attachmentJsonIv         String?
   attachmentJsonAuthTag    String?

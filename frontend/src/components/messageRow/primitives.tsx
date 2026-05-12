@@ -1,8 +1,8 @@
 import type { JSX, ReactNode } from 'react';
+import type { Citation } from 'story-editor-shared';
 import { MessageCitations } from '@/components/MessageCitations';
 import { ThinkingDots } from '@/design/ThinkingDots';
 import { useModelsQuery } from '@/hooks/useModels';
-import type { Citation } from '@/lib/citations';
 
 /* ---------------- AssistantBubble ---------------- */
 

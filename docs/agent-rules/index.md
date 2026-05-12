@@ -13,26 +13,33 @@
 
 ## Mapping
 
+> **`general.md` is part of every match.** It carries cross-cutting
+> rules (TS strict, comments policy, YAGNI, no data-migration
+> branches, dependency policy, secrets, library-version awareness)
+> that apply regardless of lane. Listed explicitly on every row so
+> the union mechanism stays uniform — no special-case "always
+> prepend" logic in the bridge skill.
+
 | Path glob | Digests to prepend |
 |---|---|
-| `backend/src/**` | `backend.md` |
-| `backend/src/repos/**` | `backend.md` + `repo-boundary.md` |
-| `backend/src/routes/stories.routes.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/src/routes/chapters.routes.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/src/routes/characters.routes.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/src/routes/outline.routes.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/src/routes/chat.routes.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/src/services/content-crypto.service.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/src/services/prompt.service.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/src/services/ai.service.ts` | `backend.md` + `repo-boundary.md` |
-| `backend/prisma/schema.prisma` | `backend.md` + `repo-boundary.md` *(narrative tables present)* |
-| `backend/prisma/migrations/**` | `backend.md` + `repo-boundary.md` *(if migration touches narrative columns; otherwise drop `repo-boundary.md`)* |
-| `backend/tests/**` | `backend.md` |
-| `frontend/src/**` | `frontend.md` |
-| `frontend/tests/**` | `frontend.md` |
-| `tests/e2e/**` | `frontend.md` *(E2E sits at the frontend integration boundary)* |
-| `shared/src/**` | *(no digest)* — shared schemas are library-only and authoritative for the wire format; consumer-lane digests still apply for the consumer-side touch-set entries |
-| `shared/tests/**` | *(no digest)* |
+| `backend/src/**` | `general.md` + `backend.md` |
+| `backend/src/repos/**` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/routes/stories.routes.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/routes/chapters.routes.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/routes/characters.routes.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/routes/outline.routes.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/routes/chat.routes.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/services/content-crypto.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/services/prompt.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/services/ai.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/prisma/schema.prisma` | `general.md` + `backend.md` + `repo-boundary.md` *(narrative tables present)* |
+| `backend/prisma/migrations/**` | `general.md` + `backend.md` + `repo-boundary.md` *(if migration touches narrative columns; otherwise drop `repo-boundary.md`)* |
+| `backend/tests/**` | `general.md` + `backend.md` |
+| `frontend/src/**` | `general.md` + `frontend.md` |
+| `frontend/tests/**` | `general.md` + `frontend.md` |
+| `tests/e2e/**` | `general.md` + `frontend.md` *(E2E sits at the frontend integration boundary)* |
+| `shared/src/**` | `general.md` *(shared schemas are library-only and authoritative for the wire format; consumer-lane digests still apply for the consumer-side touch-set entries in cross-boundary plans)* |
+| `shared/tests/**` | `general.md` |
 
 ## When the touch-set is mixed
 

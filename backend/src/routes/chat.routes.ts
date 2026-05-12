@@ -10,12 +10,20 @@
 
 import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
-import { toCharacterPromptInput } from 'story-editor-shared';
+import {
+  type Citation,
+  type MessageRole,
+  messagesResponseSchema,
+  sendMessageBodySchema,
+  toCharacterPromptInput,
+} from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
+import { respond } from '../lib/respond';
+import { serializeMessage } from '../lib/serialize';
 import { getVeniceClient } from '../lib/venice';
-import { type Citation, projectVeniceCitations } from '../lib/venice-citations';
+import { projectVeniceCitations } from '../lib/venice-citations';
 import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { createChapterRepo } from '../repos/chapter.repo';
@@ -33,10 +41,6 @@ import {
 import { veniceModelsService } from '../services/venice.models.service';
 import type { UserSettings } from './user-settings.routes';
 
-// ─── Role type ────────────────────────────────────────────────────────────────
-
-type MessageRole = 'user' | 'assistant' | 'system';
-
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
 const ChatKind = z.enum(['ask', 'scene']);
@@ -53,45 +57,6 @@ const ListChatsQuery = z
     kind: ChatKind.optional(),
   })
   .strict();
-
-const PostMessageBody = z
-  .object({
-    content: z.string().min(1).optional(),
-    modelId: z.string().min(1),
-    // [SC6] When retry=true the handler replays the existing trailing user
-    // turn against a fresh Venice completion without persisting a new user
-    // message. `content` is not required in this case.
-    retry: z.boolean().optional(),
-    // [V16] Optional attachment — selection from the current chapter.
-    attachment: z
-      .object({
-        selectionText: z.string().min(1),
-        chapterId: z.string().min(1),
-      })
-      .strict()
-      .optional(),
-    // [V26] Opt-in web search for this chat turn. When true, the handler
-    // enables Venice web search + citations + in-stream delivery; when
-    // false/omitted, the stream behaves exactly as today.
-    enableWebSearch: z.boolean().optional(),
-  })
-  .strict()
-  .superRefine((body, ctx) => {
-    if (!body.retry && !body.content) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'content is required unless retry is true',
-        path: ['content'],
-      });
-    }
-    if (body.retry && body.content !== undefined) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'content must be omitted when retry is true',
-        path: ['content'],
-      });
-    }
-  });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -262,20 +227,8 @@ export function createChatMessagesRouter() {
       }
 
       const rows = await createMessageRepo(req).findManyForChat(chatId);
-      const messages = rows.map((m) => ({
-        id: m.id,
-        role: m.role,
-        contentJson: m.contentJson,
-        attachmentJson: m.attachmentJson ?? null,
-        // [V26] `citationsJson` is `Citation[] | null` — null when the turn
-        // had no web search or produced no valid results (see §6 of the spec).
-        citationsJson: m.citationsJson ?? null,
-        model: m.model ?? null,
-        tokens: m.tokens ?? null,
-        latencyMs: m.latencyMs ?? null,
-        createdAt: m.createdAt,
-      }));
-      res.status(200).json({ messages });
+      const messages = rows.map(serializeMessage);
+      return respond(messagesResponseSchema, res, { messages });
     } catch (err) {
       console.error('[chat.messages.list]', err);
       next(err);
@@ -289,7 +242,7 @@ export function createChatMessagesRouter() {
     const chatId = req.params.chatId as string;
     const userId = req.user!.id;
 
-    const parsed = PostMessageBody.safeParse(req.body);
+    const parsed = sendMessageBodySchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -399,9 +352,7 @@ export function createChatMessagesRouter() {
       // non-empty by superRefine when retry is false/omitted).
       // lastUserMsg is guaranteed non-null here for retry (checked above).
       const trailingUserContent: string = body.retry
-        ? typeof lastUserMsg!.contentJson === 'string'
-          ? lastUserMsg!.contentJson
-          : JSON.stringify(lastUserMsg!.contentJson)
+        ? lastUserMsg!.content
         : (body.content as string);
 
       const {
@@ -437,8 +388,7 @@ export function createChatMessagesRouter() {
       // docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md
       // §chat.routes.ts simplifications (a).
       const history = priorMessagesForHistory.map((m) => {
-        const rawContent =
-          typeof m.contentJson === 'string' ? m.contentJson : JSON.stringify(m.contentJson);
+        const rawContent = m.content;
 
         if (m.role === 'user' && m.attachmentJson != null) {
           const att = m.attachmentJson as { selectionText?: string; chapterId?: string };
@@ -457,7 +407,7 @@ export function createChatMessagesRouter() {
       });
       // [k1r] On retry the trailing history entry equals what
       // buildUserPayload would emit for the same inputs (both are built from
-      // lastUserMsg.contentJson + lastUserMsg.attachmentJson under the
+      // lastUserMsg.content + lastUserMsg.attachmentJson under the
       // unified history mapping). So the retry path uses [systemMsg, ...history]
       // and the trailing entry IS the user message — chapter / characters /
       // world-notes context lives in systemMsg in both branches, so the
@@ -471,7 +421,7 @@ export function createChatMessagesRouter() {
         await messageRepo.create({
           chatId,
           role: 'user' as MessageRole,
-          contentJson: body.content as string,
+          content: body.content as string,
           attachmentJson: body.attachment ?? null,
           model: null,
           tokens: null,
@@ -691,7 +641,7 @@ export function createChatMessagesRouter() {
             await messageRepo.create({
               chatId,
               role: 'assistant' as MessageRole,
-              contentJson: accumulatedContent,
+              content: accumulatedContent,
               // [V26] Persist captured citations (null when none).
               citationsJson: capturedCitations,
               model: body.modelId,

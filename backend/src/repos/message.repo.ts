@@ -1,24 +1,26 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
+import type { Citation, Message, MessageAttachment, MessageRole } from 'story-editor-shared';
+import { MESSAGE_ENCRYPTED_FIELD_KEYS, MESSAGE_JSON_PAYLOAD_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import type { Citation } from '../lib/venice-citations';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
-const ENCRYPTED_FIELDS = ['contentJson', 'attachmentJson', 'citationsJson'] as const;
+const ENCRYPTED_FIELDS = MESSAGE_ENCRYPTED_FIELD_KEYS;
+const JSON_PAYLOAD_FIELDS = MESSAGE_JSON_PAYLOAD_FIELD_KEYS;
 
 export interface MessageCreateInput {
   chatId: string;
-  role: string;
-  contentJson: unknown;
-  attachmentJson?: unknown;
-  // [V26] Optional — only assistant turns backed by Venice web search carry
-  // a non-null `Citation[]`. An empty array must NOT be passed here; the
-  // caller is expected to translate `[]` → `null` per the null-vs-empty rule.
+  role: MessageRole;
+  content: string;
+  attachmentJson?: MessageAttachment | null;
+  // null when web search is disabled or produced no valid results; `[]` must not be passed.
   citationsJson?: Citation[] | null;
   model?: string | null;
   tokens?: number | null;
   latencyMs?: number | null;
 }
+
+export type RepoMessage = Omit<Message, 'createdAt'> & { createdAt: Date };
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -46,9 +48,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   async function create(input: MessageCreateInput) {
     const userId = resolveUserId(req);
     await ensureChatOwned(client, input.chatId, userId);
-    // story-editor-loj: bump Chat.lastActivityAt so findManyForChapter can
-    // order by recency. Transactional: a message insert without the parent's
-    // lastActivityAt bump (or vice versa) would leave the list ordering stale.
+    // Bump Chat.lastActivityAt atomically with the insert — ordering by recency depends on it.
     const row = await client.$transaction(async (tx) => {
       const created = await tx.message.create({
         data: {
@@ -57,13 +57,8 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
           model: input.model ?? null,
           tokens: input.tokens ?? null,
           latencyMs: input.latencyMs ?? null,
-          // Post-[E11]: JSON payloads live only in the ciphertext triples —
-          // serialised + encrypted. Plaintext `contentJson` / `attachmentJson`
-          // columns were dropped.
-          ...writeEncrypted(req, 'contentJson', serialiseJsonField(input.contentJson)),
+          ...writeEncrypted(req, 'content', input.content),
           ...writeEncrypted(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
-          // [V26] `citationsJson` follows the same ciphertext-triple pattern.
-          // Null input → null triple → `projectDecrypted` returns `null` on read.
           ...writeEncrypted(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
         },
       });
@@ -136,13 +131,20 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   return { create, findById, findManyForChat, countForChat, deleteAllAfter };
 }
 
-function shape(row: unknown, req: Request) {
+// The `as unknown as RepoMessage` cast lands at end-of-function (not at the
+// projectDecrypted call) because Message has heterogeneous encrypted
+// payloads: `content` is plain-string and shape-correct after decrypt, but
+// `attachmentJson` / `citationsJson` are still serialised JSON strings at
+// that point. Only after the JSON.parse loop converges does the runtime
+// shape match RepoMessage. Character's repo casts at the projectDecrypted
+// call because none of its encrypted fields are JSON payloads.
+function shape(row: unknown, req: Request): RepoMessage {
   const projected = projectDecrypted(req, row as Record<string, unknown>, ENCRYPTED_FIELDS);
-  for (const f of ENCRYPTED_FIELDS) {
+  for (const f of JSON_PAYLOAD_FIELDS) {
     const v = projected[f];
     if (typeof v === 'string' && v.length > 0) {
       projected[f] = JSON.parse(v);
     }
   }
-  return projected;
+  return projected as unknown as RepoMessage;
 }

@@ -29,7 +29,7 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
     expect(read.titleCiphertext).toBe(SENTINEL.ciphertext);
   });
 
-  it('Message persists contentJson + attachmentJson ciphertext triples', async () => {
+  it('Message persists content + attachmentJson ciphertext triples', async () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
     const chapter = await createChapterRow(story.id);
@@ -38,16 +38,16 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
       data: {
         chatId: chat.id,
         role: 'user',
-        contentJsonCiphertext: SENTINEL.ciphertext,
-        contentJsonIv: SENTINEL.iv,
-        contentJsonAuthTag: SENTINEL.authTag,
+        contentCiphertext: SENTINEL.ciphertext,
+        contentIv: SENTINEL.iv,
+        contentAuthTag: SENTINEL.authTag,
         attachmentJsonCiphertext: SENTINEL.ciphertext,
         attachmentJsonIv: SENTINEL.iv,
         attachmentJsonAuthTag: SENTINEL.authTag,
       },
     });
     const read = await prisma.message.findUniqueOrThrow({ where: { id: created.id } });
-    expect(read.contentJsonCiphertext).toBe(SENTINEL.ciphertext);
+    expect(read.contentCiphertext).toBe(SENTINEL.ciphertext);
     expect(read.attachmentJsonCiphertext).toBe(SENTINEL.ciphertext);
   });
 

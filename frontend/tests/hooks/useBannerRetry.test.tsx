@@ -1,15 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { useRef } from 'react';
+import type { Message } from 'story-editor-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
-import { type ChatMessage, chatMessagesQueryKey } from '@/hooks/useChat';
+import { chatMessagesQueryKey } from '@/hooks/useChat';
 
-function makeMessage(over: Partial<ChatMessage> & { id: string }): ChatMessage {
+function makeMessage(over: Partial<Message> & { id: string }): Message {
   return {
     id: over.id,
     role: 'user',
-    contentJson: '',
+    content: '',
     attachmentJson: null,
     citationsJson: null,
     model: null,
@@ -71,9 +72,9 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
   it('case B — cache trailing is user (X persisted, no following assistant) → retry: true', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), [
-      makeMessage({ id: 'old-user', role: 'user', contentJson: 'past' }),
-      makeMessage({ id: 'old-asst', role: 'assistant', contentJson: 'past-reply' }),
-      makeMessage({ id: 'new-user-X', role: 'user', contentJson: 'new question' }),
+      makeMessage({ id: 'old-user', role: 'user', content: 'past' }),
+      makeMessage({ id: 'old-asst', role: 'assistant', content: 'past-reply' }),
+      makeMessage({ id: 'new-user-X', role: 'user', content: 'new question' }),
     ]);
     const onSend = vi.fn();
     const mutation = makeFakeMutation();
@@ -110,8 +111,8 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
   it('case D — prior turn exists; trailing is assistant-1 → fresh send (assistant-1 untouched)', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), [
-      makeMessage({ id: 'user-1', role: 'user', contentJson: 'hi' }),
-      makeMessage({ id: 'assistant-1', role: 'assistant', contentJson: 'hello' }),
+      makeMessage({ id: 'user-1', role: 'user', content: 'hi' }),
+      makeMessage({ id: 'assistant-1', role: 'assistant', content: 'hello' }),
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
@@ -138,15 +139,15 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
 
     expect(onSend).toHaveBeenCalledWith(lastSendArgs);
     expect(mutation.mutateAsync).not.toHaveBeenCalled();
-    const after = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey('chat-1'));
+    const after = qc.getQueryData<Message[]>(chatMessagesQueryKey('chat-1'));
     expect(after?.some((m) => m.id === 'assistant-1')).toBe(true);
   });
 
   it('case E — content collision; trailing is assistant; "hello" matches user-1 content → fresh send (role-based)', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), [
-      makeMessage({ id: 'user-1', role: 'user', contentJson: 'hello' }),
-      makeMessage({ id: 'assistant-1', role: 'assistant', contentJson: 'hi back' }),
+      makeMessage({ id: 'user-1', role: 'user', content: 'hello' }),
+      makeMessage({ id: 'assistant-1', role: 'assistant', content: 'hi back' }),
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
@@ -182,10 +183,10 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     // trailing is X1's assistant. Trailing-role correctly picks fresh send;
     // a captured-at-onMutate lastIdBefore would have falsely fired retry: true.
     qc.setQueryData(chatMessagesQueryKey('chat-1'), [
-      makeMessage({ id: 'older-user', role: 'user', contentJson: 'older' }),
-      makeMessage({ id: 'older-asst', role: 'assistant', contentJson: 'older-reply' }),
-      makeMessage({ id: 'X1-user', role: 'user', contentJson: 'X1' }),
-      makeMessage({ id: 'X1-assistant', role: 'assistant', contentJson: 'X1-reply' }),
+      makeMessage({ id: 'older-user', role: 'user', content: 'older' }),
+      makeMessage({ id: 'older-asst', role: 'assistant', content: 'older-reply' }),
+      makeMessage({ id: 'X1-user', role: 'user', content: 'X1' }),
+      makeMessage({ id: 'X1-assistant', role: 'assistant', content: 'X1-reply' }),
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
@@ -213,7 +214,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     expect(onSend).toHaveBeenCalledWith(lastSendArgs);
     expect(mutation.mutateAsync).not.toHaveBeenCalled();
     // X1's assistant is preserved.
-    const after = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey('chat-1'));
+    const after = qc.getQueryData<Message[]>(chatMessagesQueryKey('chat-1'));
     expect(after?.some((m) => m.id === 'X1-assistant')).toBe(true);
   });
 
@@ -225,7 +226,7 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     // dependent on internal microtask ordering rather than the explicit
     // refetch step.
     qc.setQueryDefaults(chatMessagesQueryKey('chat-1'), {
-      queryFn: () => new Promise<ChatMessage[]>((resolve) => setTimeout(() => resolve([]), 30)),
+      queryFn: () => new Promise<Message[]>((resolve) => setTimeout(() => resolve([]), 30)),
       retry: false,
     });
     qc.setQueryData(chatMessagesQueryKey('chat-1'), []);

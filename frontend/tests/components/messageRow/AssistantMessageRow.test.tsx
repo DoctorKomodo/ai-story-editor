@@ -1,15 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
+import type { Message } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
 import { AssistantMessageRow } from '@/components/messageRow/AssistantMessageRow';
-import type { ChatMessage } from '@/hooks/useChat';
 import { modelsQueryKey } from '@/hooks/useModels';
 
-function makeMessage(overrides: Partial<ChatMessage> = {}): ChatMessage {
+function makeMessage(overrides: Partial<Message> = {}): Message {
   return {
     id: 'msg-a1',
     role: 'assistant',
-    contentJson: 'Here is my response.',
+    content: 'Here is my response.',
     attachmentJson: null,
     citationsJson: null,
     model: 'venice-test',
@@ -46,7 +46,7 @@ describe('AssistantMessageRow', () => {
   it('renders ThinkingBubble with custom label when isStreaming + empty content + label', () => {
     withQc(
       <AssistantMessageRow
-        message={makeMessage({ contentJson: '' })}
+        message={makeMessage({ content: '' })}
         actions={null}
         isStreaming
         thinkingLabel="Generating scene…"
@@ -58,7 +58,7 @@ describe('AssistantMessageRow', () => {
 
   it('renders ThinkingBubble (default) when isStreaming + empty content + no label, and AI border-left class present', () => {
     const { container } = withQc(
-      <AssistantMessageRow message={makeMessage({ contentJson: '' })} actions={null} isStreaming />,
+      <AssistantMessageRow message={makeMessage({ content: '' })} actions={null} isStreaming />,
       { models: MODELS },
     );
     // ThinkingBubble is rendered (default label)
@@ -70,7 +70,7 @@ describe('AssistantMessageRow', () => {
   });
 
   it('renders regular AssistantBubble (not thinking) when content empty but isStreaming is false', () => {
-    withQc(<AssistantMessageRow message={makeMessage({ contentJson: '' })} actions={null} />, {
+    withQc(<AssistantMessageRow message={makeMessage({ content: '' })} actions={null} />, {
       models: MODELS,
     });
     // Should NOT render a status/thinking element
@@ -83,7 +83,7 @@ describe('AssistantMessageRow', () => {
   it('renders bubble (not thinking) when isStreaming + non-empty content — transition state', () => {
     withQc(
       <AssistantMessageRow
-        message={makeMessage({ contentJson: 'Partial text…' })}
+        message={makeMessage({ content: 'Partial text…' })}
         actions={null}
         isStreaming
       />,

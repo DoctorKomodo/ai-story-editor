@@ -7,6 +7,7 @@ import {
   chatMessagesQueryKey,
   chatsBaseQueryKey,
   chatsQueryKey,
+  useChatMessagesQuery,
   useCreateChatMutation,
   useRemoveChatMutation,
   useRenameChatMutation,
@@ -612,5 +613,71 @@ describe('useRemoveChatMutation', () => {
     expect(cached).toBeDefined();
     expect(cached?.find((c) => c.id === 'chat-delete')).toBeUndefined();
     expect(cached?.find((c) => c.id === 'chat-keep')).toBeDefined();
+  });
+});
+
+// ── useChatMessagesQuery — runtime validation (Zod schema) ────────────────────
+
+function wrapQc() {
+  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const Wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+  );
+  return Wrapper;
+}
+
+describe('useChatMessagesQuery runtime validation', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('tok');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
+
+  it('surfaces ZodError when the server response is shape-drifted', async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { messages: [{ id: 'msg-1', content: 'Hello' /* role absent */ }] }),
+    );
+    const { result } = renderHook(() => useChatMessagesQuery('chat-1'), { wrapper: wrapQc() });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeDefined();
+    expect(result.current.error?.name).toBe('ZodError');
+  });
+
+  it('returns parsed messages on valid response', async () => {
+    const validResponse = {
+      messages: [
+        {
+          id: 'msg-1',
+          role: 'user',
+          content: 'Hello',
+          attachmentJson: null,
+          citationsJson: null,
+          model: null,
+          tokens: null,
+          latencyMs: null,
+          createdAt: '2026-05-01T00:00:00.000Z',
+        },
+      ],
+    };
+    fetchMock.mockResolvedValue(jsonResponse(200, validResponse));
+    const { result } = renderHook(() => useChatMessagesQuery('chat-1'), { wrapper: wrapQc() });
+    await waitFor(() => expect(result.current.data).toBeDefined());
+    expect(result.current.data?.[0].content).toBe('Hello');
+    expect(result.current.data?.[0].role).toBe('user');
   });
 });

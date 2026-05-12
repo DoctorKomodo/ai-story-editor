@@ -1,5 +1,5 @@
+import type { Citation } from 'story-editor-shared';
 import { ApiError, apiStream } from '@/lib/api';
-import type { Citation } from '@/lib/citations';
 import { parseAiSseStream } from '@/lib/sse';
 
 export interface StreamingAIOptions {

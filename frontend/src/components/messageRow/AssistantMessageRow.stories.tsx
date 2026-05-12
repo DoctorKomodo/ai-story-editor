@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ChatMessage } from '@/hooks/useChat';
+import type { Message } from 'story-editor-shared';
 import { type Model, modelsQueryKey } from '@/hooks/useModels';
 import { AssistantMessageRow } from './AssistantMessageRow';
 import { CopyAction, InsertAtEndAction, MessageActions, RegenerateAction } from './primitives';
@@ -30,10 +30,10 @@ const decorator = (Story: () => React.ReactNode) => (
   </QueryClientProvider>
 );
 
-const baseMessage: ChatMessage = {
+const baseMessage: Message = {
   id: 'msg-a1',
   role: 'assistant',
-  contentJson:
+  content:
     'The fog rolled in over the moors that night, slow and silent, as if the land itself were exhaling after a long day of pretending to be ordinary.',
   attachmentJson: null,
   citationsJson: null,
@@ -71,7 +71,7 @@ export const SceneVariant: Story = {
     message: {
       ...baseMessage,
       id: 'msg-a2',
-      contentJson:
+      content:
         'She adjusted her collar against the wind and stepped onto the empty platform. No one had come to meet her. No one ever did anymore.',
     },
     actions: (
@@ -90,7 +90,7 @@ export const StreamingChat: Story = {
     message: {
       ...baseMessage,
       id: 'msg-a3',
-      contentJson: '',
+      content: '',
       tokens: null,
       latencyMs: null,
     },
@@ -105,7 +105,7 @@ export const StreamingScene: Story = {
     message: {
       ...baseMessage,
       id: 'msg-a4',
-      contentJson: '',
+      content: '',
       tokens: null,
       latencyMs: null,
     },

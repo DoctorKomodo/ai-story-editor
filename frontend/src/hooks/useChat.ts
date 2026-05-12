@@ -6,58 +6,24 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useRef } from 'react';
+import { type Message, messagesResponseSchema } from 'story-editor-shared';
 import { ApiError, api, type ChatRow, deleteChat } from '@/lib/api';
-import { type Citation, isCitationArray } from '@/lib/citations';
 import { runStreamingAI } from '@/lib/streamingAI';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 /**
- * [F39] Chat-related query hooks.
+ * Chat-related query hooks.
  *
  * Backend contract:
  *   GET /api/chats/:chatId/messages
- *     -> { messages: [{ id, role, contentJson, attachmentJson, citationsJson,
- *                       model, tokens, latencyMs, createdAt }] }
+ *     -> { messages: [...] }  — validated at runtime against messagesResponseSchema
  *
  *   GET /api/chapters/:chapterId/chats
  *     -> { chats: [{ id, chapterId, title, createdAt, messageCount }] }
  *
- * `contentJson` / `attachmentJson` / `citationsJson` may be a string or a
- * structured object — the chat repo passes through whatever was stored. The
- * messages route in particular always serialises `contentJson` to a string
- * before responding, but we keep `unknown` here so tests + future shapes
- * survive without a re-type.
- *
- * F39 only consumes `useChatMessagesQuery`; the chat-list query lives here so
- * F38 / F50 follow-ups can pick a chat without a second hook file. Mutations
- * (send-message, regenerate, fork) belong to later tasks and live elsewhere.
+ * The chat-list query lives here so chat-picker consumers can share the hook
+ * file. Mutations (send-message, regenerate, fork) are in this file too.
  */
-
-export type ChatRole = 'user' | 'assistant' | 'system';
-
-export interface ChatMessageAttachment {
-  selectionText?: string;
-  chapterId?: string;
-}
-
-// Re-export so existing callers (`MessageCitations`, tests, etc.) that
-// import `Citation` / `isCitationArray` from `@/hooks/useChat` keep working
-// without a cascade of import-site changes.
-export type { Citation };
-export { isCitationArray };
-
-export interface ChatMessage {
-  id: string;
-  role: ChatRole;
-  /** Typically a string; may be a JSON-serialisable object. */
-  contentJson: unknown;
-  attachmentJson: ChatMessageAttachment | null;
-  citationsJson: Citation[] | null;
-  model: string | null;
-  tokens: number | null;
-  latencyMs: number | null;
-  createdAt: string;
-}
 
 /**
  * Chat list item returned by GET /api/chapters/:chapterId/chats.
@@ -69,10 +35,6 @@ export interface ChatMessage {
  * the two shapes from drifting independently.
  */
 export type ChatSummary = Omit<ChatRow, 'messageCount'> & { messageCount: number };
-
-interface ChatMessagesResponse {
-  messages: ChatMessage[];
-}
 
 interface ChatsResponse {
   chats: ChatSummary[];
@@ -97,14 +59,12 @@ export const chatsQueryKey = (
 ): readonly [string, string, string, string | undefined] =>
   ['chapter', chapterId, 'chats', kind] as const;
 
-export function useChatMessagesQuery(chatId: string | null): UseQueryResult<ChatMessage[], Error> {
+export function useChatMessagesQuery(chatId: string | null): UseQueryResult<Message[], Error> {
   return useQuery({
     queryKey: chatMessagesQueryKey(chatId ?? ''),
-    queryFn: async (): Promise<ChatMessage[]> => {
-      const res = await api<ChatMessagesResponse>(
-        `/chats/${encodeURIComponent(chatId ?? '')}/messages`,
-      );
-      return res.messages;
+    queryFn: async (): Promise<Message[]> => {
+      const res = await api<unknown>(`/chats/${encodeURIComponent(chatId ?? '')}/messages`);
+      return messagesResponseSchema.parse(res).messages;
     },
     enabled: chatId !== null,
   });

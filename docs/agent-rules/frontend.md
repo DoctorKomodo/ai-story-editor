@@ -146,20 +146,17 @@ entry — call `useFooStore.persist.clearStorage()` from
   for component-level regression — when you add a component, add a
   peer `*.stories.tsx`.
 
-## TypeScript discipline
+## TypeScript discipline (frontend lane)
 
-- Strict mode is on. **No `any` types.** Prefer `unknown` plus a
-  narrowing guard. Use generic `T` parameters on TanStack Query
-  hooks rather than casting fetched data.
+- **Use generic `T` parameters on TanStack Query hooks** rather than
+  casting fetched data. (General principle — strict mode, no `any`,
+  prefer `unknown` + narrowing — lives in `general.md`.)
 
-## Library-version awareness
+## Library-version awareness (frontend lane)
 
-- TipTap, Vite, Tailwind, TanStack Query, and Zustand all move fast.
-  **Prefer the Context7 MCP `query-docs` tool over muscle-memory
-  recall** for syntax and migration questions — training data lags.
-  This applies whenever you'd otherwise type out an API call from
-  memory for a library that has shipped a major version in the last
-  ~12 months.
+- Fast-moving libraries in this lane: TipTap, Vite, Tailwind,
+  TanStack Query, Zustand. (General principle — prefer Context7 MCP
+  `query-docs` over muscle-memory — lives in `general.md`.)
 
 ## Forbidden
 

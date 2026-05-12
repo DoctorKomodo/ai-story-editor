@@ -1,12 +1,9 @@
 import { useQueryClient } from '@tanstack/react-query';
 import type { RefObject } from 'react';
 import { useCallback, useState } from 'react';
+import type { Message } from 'story-editor-shared';
 import type { SendArgs as ChatSendArgs } from '@/components/ChatComposer';
-import {
-  type ChatMessage,
-  chatMessagesQueryKey,
-  type useSendChatMessageMutation,
-} from '@/hooks/useChat';
+import { chatMessagesQueryKey, type useSendChatMessageMutation } from '@/hooks/useChat';
 
 export interface UseBannerRetryOptions {
   chatId: string | null;
@@ -60,7 +57,7 @@ export function useBannerRetry({
     setIsDispatching(true);
     try {
       await qc.refetchQueries({ queryKey: chatMessagesQueryKey(chatId) });
-      const after = qc.getQueryData<ChatMessage[]>(chatMessagesQueryKey(chatId)) ?? [];
+      const after = qc.getQueryData<Message[]>(chatMessagesQueryKey(chatId)) ?? [];
       const trailing = after[after.length - 1];
 
       if (trailing?.role === 'user') {
