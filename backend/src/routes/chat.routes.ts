@@ -455,7 +455,7 @@ export function createChatMessagesRouter() {
       });
       // [k1r] On retry the trailing history entry equals what
       // buildUserPayload would emit for the same inputs (both are built from
-      // lastUserMsg.contentJson + lastUserMsg.attachmentJson under the
+      // lastUserMsg.content + lastUserMsg.attachmentJson under the
       // unified history mapping). So the retry path uses [systemMsg, ...history]
       // and the trailing entry IS the user message — chapter / characters /
       // world-notes context lives in systemMsg in both branches, so the

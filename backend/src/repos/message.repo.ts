@@ -13,6 +13,7 @@ export interface MessageCreateInput {
   role: MessageRole;
   content: string;
   attachmentJson?: MessageAttachment | null;
+  // null when web search is disabled or produced no valid results; `[]` must not be passed.
   citationsJson?: Citation[] | null;
   model?: string | null;
   tokens?: number | null;
@@ -47,6 +48,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   async function create(input: MessageCreateInput) {
     const userId = resolveUserId(req);
     await ensureChatOwned(client, input.chatId, userId);
+    // Bump Chat.lastActivityAt atomically with the insert — ordering by recency depends on it.
     const row = await client.$transaction(async (tx) => {
       const created = await tx.message.create({
         data: {
