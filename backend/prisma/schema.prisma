@@ -232,9 +232,12 @@ model Message {
   // `latencyMs`, timestamps remain plaintext — needed for the chat header
   // meta row + regeneration flows. Plaintext `contentJson` + `attachmentJson`
   // were dropped in [E11].
-  contentJsonCiphertext    String?
-  contentJsonIv            String?
-  contentJsonAuthTag       String?
+  // [j76] `contentJson*` renamed to `content*` — the column never held JSON
+  // directly; the `Json` suffix was a misnomer. `attachmentJson*` and
+  // `citationsJson*` keep their suffix (they do carry JSON payloads).
+  contentCiphertext        String?
+  contentIv                String?
+  contentAuthTag           String?
   attachmentJsonCiphertext String?
   attachmentJsonIv         String?
   attachmentJsonAuthTag    String?
