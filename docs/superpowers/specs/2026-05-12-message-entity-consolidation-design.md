@@ -34,15 +34,17 @@ After this work lands:
 - The Message GET endpoint passes through `respond(messagesResponseSchema, …)` for egress validation in dev/test.
 - The frontend `useChat` hook runtime-validates every fetched message via `messagesResponseSchema.parse(…)`, matching `useCharacters`.
 - Adding or removing a Message field (especially an encrypted one) propagates from one tuple (`MESSAGE_ENCRYPTED_FIELD_KEYS`) and one schema (`messageSchema`) instead of N parallel definitions.
+- **The `contentJson` field is renamed to `content`** end-to-end — Prisma columns, wire schema, repo input, frontend hook, components, tests. The `Json` suffix was a legacy from when chat content was expected to be TipTap JSON; it has always stored a plain string. The rename also drops the misleading `JSON.stringify("hello") → "\"hello\""` round-trip in the repo for this field specifically (the other two stay).
 
-Non-goals: Prisma schema change, migration, SSE protocol change, any change to `projectVeniceCitations` adapter logic.
+Non-goals: SSE protocol change, any change to `projectVeniceCitations` adapter logic, any change to `attachmentJson` / `citationsJson` storage shape (those remain JSON-payload ciphertext triples).
 
 ## 3. Constraints
 
 - **Append-only entity.** No PATCH, no DELETE of individual messages, no reorder. So: no `messageUpdateSchema`, no `messageReorderSchema`. (`Chat.delete` cascades, and the repo's `deleteAllAfter` is an internal retry-flow helper, not a wire surface.)
-- **Encrypted-at-rest fields are JSON payloads, not narrative strings.** `contentJson`, `attachmentJson`, `citationsJson` go through the ciphertext-triple pattern with a serialise/parse step on each side of the encrypt/decrypt boundary. That repo-internal mechanics stays — only the typing of inputs/outputs changes.
+- **Two distinct ciphertext payload shapes.** `content` is a plain encrypted string (no JSON round-trip). `attachmentJson` and `citationsJson` are JSON payloads serialised before encryption and `JSON.parse`d after decryption. The repo's `ENCRYPTED_FIELDS` tuple drives both encrypt and decrypt; a separate `JSON_PAYLOAD_FIELDS` subset drives the JSON-parse loop in `shape()`.
 - **SSE bypasses `respond()`.** The POST handler streams `event: …\ndata: …` frames; egress validation only applies to the GET handler.
 - **Citation is wire-adjacent — it's a field on Message.** Consolidating Message into shared *requires* a citation schema in shared, so `Citation` moves too in the same PR.
+- **Pre-deployment, no data migration branches.** The Prisma column rename for `content` is a structural rename only. The ciphertext-format change (no JSON wrap) is safe because no rows exist; post-deployment this would be a true data migration, which is out of scope and not needed.
 
 ## 4. Canonical schemas (shared/src/schemas/message.ts)
 
@@ -63,14 +65,15 @@ export const messageAttachmentSchema = z.strictObject({
   chapterId: z.string().min(1),
 });
 
-// Wire/read shape. `contentJson` is `z.string()` — every write site stores
-// a string today (body.content, accumulatedContent). Tightening from the
-// legacy `unknown` lets the egress-validation gate catch any future drift
-// that tries to store an object.
+// Wire/read shape. `content` is `z.string()` — every write site stores a
+// string today (body.content, accumulatedContent). Renamed from the legacy
+// `contentJson` (the Json suffix was inherited from an earlier design that
+// never materialised). The other two ciphertext fields keep their *Json
+// names because they actually carry JSON payloads.
 export const messageSchema = z.strictObject({
   id: z.string().min(1),
   role: messageRoleSchema,
-  contentJson: z.string(),
+  content: z.string(),
   attachmentJson: messageAttachmentSchema.nullable(),
   citationsJson: z.array(citationSchema).nullable(),
   model: z.string().nullable(),
@@ -115,7 +118,17 @@ export const sendMessageBodySchema = z
 // Mirrors the NARRATIVE_FIELD_KEYS pattern from character.ts: adding an
 // encrypted field here propagates to the repo's write+read paths.
 export const MESSAGE_ENCRYPTED_FIELD_KEYS = [
-  'contentJson',
+  'content',
+  'attachmentJson',
+  'citationsJson',
+] as const;
+
+// Subset of encrypted fields whose decrypted plaintext is itself JSON
+// (object or array) — these get the JSON.stringify-before-encrypt /
+// JSON.parse-after-decrypt round-trip in the repo. `content` is excluded
+// because it's a plain string; serialising it would re-introduce the
+// `"\"hello\""` storage jank the rename eliminates.
+export const MESSAGE_JSON_PAYLOAD_FIELD_KEYS = [
   'attachmentJson',
   'citationsJson',
 ] as const;
@@ -126,6 +139,7 @@ export type MessageAttachment = z.infer<typeof messageAttachmentSchema>;
 export type Citation = z.infer<typeof citationSchema>;
 export type SendMessageInput = z.infer<typeof sendMessageBodySchema>;
 export type MessageEncryptedFieldKey = (typeof MESSAGE_ENCRYPTED_FIELD_KEYS)[number];
+export type MessageJsonPayloadFieldKey = (typeof MESSAGE_JSON_PAYLOAD_FIELD_KEYS)[number];
 ```
 
 **Why no `messageCreateSchema`:** Character's create schema mirrored the wire `POST /api/stories/:storyId/characters` body. For Message, the equivalent wire-create body is `sendMessageBodySchema` — a higher-level "send a turn" request that orchestrates Venice + persistence, not a CRUD create. The repo's `MessageCreateInput` (a different, internal shape) stays in `message.repo.ts`.
@@ -133,6 +147,34 @@ export type MessageEncryptedFieldKey = (typeof MESSAGE_ENCRYPTED_FIELD_KEYS)[num
 **`shared/src/index.ts`** adds re-exports for every symbol above, matching the alphabetical-ish layout already established for Character.
 
 ## 5. Backend changes
+
+### 5.0 Prisma + migration
+
+The Message model's three `contentJson*` ciphertext columns are renamed:
+
+```prisma
+// backend/prisma/schema.prisma — model Message
+- contentJsonCiphertext    String?
+- contentJsonIv            String?
+- contentJsonAuthTag       String?
++ contentCiphertext        String?
++ contentIv                String?
++ contentAuthTag           String?
+```
+
+`attachmentJson*` and `citationsJson*` triples are unchanged.
+
+A new migration `<timestamp>_rename_message_contentjson_to_content` performs the rename:
+
+```sql
+ALTER TABLE "Message" RENAME COLUMN "contentJsonCiphertext" TO "contentCiphertext";
+ALTER TABLE "Message" RENAME COLUMN "contentJsonIv"         TO "contentIv";
+ALTER TABLE "Message" RENAME COLUMN "contentJsonAuthTag"    TO "contentAuthTag";
+```
+
+`RENAME COLUMN` rather than drop-and-add — there's no data to migrate (pre-deployment per CLAUDE.md's no-data-migration-branches rule), but `RENAME` keeps the migration semantically a rename rather than a destructive replacement. Generated via `npx prisma migrate dev --name rename_message_contentjson_to_content`; the generated SQL should be inspected to confirm it emits `RENAME COLUMN` (Prisma usually does for model-field renames when no type change is involved; if it emits drop-and-add, hand-edit to `RENAME COLUMN` before applying).
+
+The ciphertext-format change (no JSON wrap for `content` going forward) does **not** require a separate migration — it's a code-level change in how the repo serialises before writing.
 
 ### 5.1 `backend/src/repos/message.repo.ts`
 
@@ -143,22 +185,30 @@ import type {
   MessageAttachment,
   MessageRole,
 } from 'story-editor-shared';
-import { MESSAGE_ENCRYPTED_FIELD_KEYS } from 'story-editor-shared';
+import {
+  MESSAGE_ENCRYPTED_FIELD_KEYS,
+  MESSAGE_JSON_PAYLOAD_FIELD_KEYS,
+} from 'story-editor-shared';
 
+// All three encrypted fields go through writeEncrypted / projectDecrypted.
 const ENCRYPTED_FIELDS = MESSAGE_ENCRYPTED_FIELD_KEYS;
 
-// Repo-shape: narrative payloads are plaintext (post-decrypt); createdAt is
-// a Date (Prisma raw). Mirrors RepoCharacter. Message has no updatedAt.
+// Only these two get the JSON.stringify-before-encrypt / JSON.parse-after-
+// decrypt round-trip — `content` is a plain string.
+const JSON_PAYLOAD_FIELDS = MESSAGE_JSON_PAYLOAD_FIELD_KEYS;
+
+// Repo-shape: narrative payloads are plaintext (post-decrypt + post-JSON-parse
+// for the two JSON-payload fields). createdAt is a Date (Prisma raw). Mirrors
+// RepoCharacter. Message has no updatedAt.
 export type RepoMessage = Omit<Message, 'createdAt'> & { createdAt: Date };
 
 // Repo-internal create input. Narrative-payload types come from the canonical
-// shared types; structural fields (chatId) and write-side metadata stay here.
-// `contentJson` was previously `unknown` — tightened to `string` to match the
-// wire schema and the actual write sites in chat.routes.ts.
+// shared types. `content` is the renamed-and-tightened replacement for the
+// legacy `contentJson: unknown`.
 export interface MessageCreateInput {
   chatId: string;
   role: MessageRole;
-  contentJson: string;
+  content: string;
   attachmentJson?: MessageAttachment | null;
   citationsJson?: Citation[] | null;
   model?: string | null;
@@ -167,7 +217,16 @@ export interface MessageCreateInput {
 }
 ```
 
-Read sites switch from the loose `projectDecrypted(req, row, ENCRYPTED_FIELDS)` (returning `Record<string, unknown>`) to a typed projection. **The cast point differs from Character:** Character's encrypted fields are plain strings, so `projectDecrypted<RepoCharacter>(…)` is shape-correct at the projection call. Message's encrypted fields are JSON payloads stored as serialised strings, and only become their typed shape (`MessageAttachment`, `Citation[]`) after the `shape()` helper's `JSON.parse` loop. So the projection call stays loosely typed and the `as unknown as RepoMessage` cast lands at the end of `shape()` after `JSON.parse` — not inline at `projectDecrypted` as Character does. Equivalent rigour, different placement, dictated by the parse-after-decrypt step.
+Write path:
+- `writeEncrypted(req, 'content', input.content)` — passes the plain string directly. No `serialiseJsonField` wrap.
+- `writeEncrypted(req, 'attachmentJson', serialiseJsonField(input.attachmentJson))` and the same for `citationsJson` — unchanged behaviour, just typed inputs.
+
+Read path (`shape()` helper):
+- `projectDecrypted(req, row, ENCRYPTED_FIELDS)` returns `Record<string, unknown>` with `content` already as a plaintext string and `attachmentJson` / `citationsJson` as plaintext *strings* (the JSON-serialised form).
+- Iterate `JSON_PAYLOAD_FIELDS` only (not `ENCRYPTED_FIELDS`) and `JSON.parse` each non-empty value in-place.
+- Final `as unknown as RepoMessage` cast at the end of `shape()` — same placement reasoning as before: Message's two JSON-payload fields only reach their typed shape after the parse loop, so the cast cannot live at the `projectDecrypted` call.
+
+**The cast point differs from Character:** Character's encrypted fields are plain strings, so `projectDecrypted<RepoCharacter>(…)` is shape-correct at the projection call. Message has both kinds — `content` is plain-string (shape-correct after projection) and `attachmentJson` / `citationsJson` are still serialised JSON at that point. The end-of-`shape()` cast resolves both in one place. Equivalent rigour, different placement, dictated by the heterogeneous payload mix.
 
 ### 5.2 `backend/src/routes/chat.routes.ts`
 
@@ -175,9 +234,9 @@ Read sites switch from the loose `projectDecrypted(req, row, ENCRYPTED_FIELDS)` 
 - Replace inline `type MessageRole = 'user' | 'assistant' | 'system'` with `import { type MessageRole } from 'story-editor-shared'`.
 - `GET /api/chats/:chatId/messages` — wrap the response in a new `serializeMessage(row: RepoMessage)` helper, then `respond(messagesResponseSchema, res, { messages }, 200)`. The inline shape-construction at lines 265–277 becomes one `.map(serializeMessage)` call.
 - POST handler stream path is unchanged structurally (still SSE), but its calls into `messageRepo.create(…)` type-check against the canonical `MessageCreateInput` whose field types now derive from shared.
-- **Remove the now-unreachable defensive branches in the same PR.** Tightening `contentJson` to `z.string()` (both on the wire and in `MessageCreateInput`) means `m.contentJson` is provably a string at every read site. The legacy `typeof … === 'string' ? … : JSON.stringify(...)` fallbacks become dead code. Drop them at:
-  - **`chat.routes.ts:402-404`** — `trailingUserContent` becomes `const trailingUserContent: string = body.retry ? lastUserMsg!.contentJson : (body.content as string);`.
-  - **`chat.routes.ts:440-441`** — history mapping's `rawContent` becomes `const rawContent = m.contentJson;` (already typed `string` once `RepoMessage.contentJson: string` flows through `findManyForChat`).
+- **Remove the now-unreachable defensive branches in the same PR.** Renaming to `content: string` (both on the wire and in `MessageCreateInput`) means `m.content` is provably a string at every read site. The legacy `typeof … === 'string' ? … : JSON.stringify(...)` fallbacks become dead code. Drop them at:
+  - **`chat.routes.ts:402-404`** — `trailingUserContent` becomes `const trailingUserContent: string = body.retry ? lastUserMsg!.content : (body.content as string);`.
+  - **`chat.routes.ts:440-441`** — history mapping's `rawContent` becomes `const rawContent = m.content;` (already typed `string` once `RepoMessage.content: string` flows through `findManyForChat`).
 
   Leaving these branches would mean the runtime continues defending against a state the schema declares impossible — exactly the drift this work targets.
 
@@ -211,6 +270,19 @@ export function serializeMessage(row: RepoMessage): Message {
 - Delete the `Citation` re-export (the file's `export type { Citation }` line) and the `isCitationArray` re-export — call sites switch to importing from shared directly.
 - `useChatMessagesQuery` wraps its fetch response in `messagesResponseSchema.parse(res)` before returning. Matches `useCharacters` runtime validation.
 - The hook keeps its query-key helpers (`chatMessagesQueryKey`, `chatsBaseQueryKey`, `chatsQueryKey`) and its `ChatSummary` derived type (those are TanStack-Query orchestration, not wire shape).
+
+### 6.1a `frontend/src/components/messageRow/utils.ts` — drop `getMessageText`
+
+```ts
+// existing — defensive coercion for `unknown` content:
+export function getMessageText(contentJson: unknown): string {
+  if (typeof contentJson === 'string') return contentJson;
+  if (contentJson === null || contentJson === undefined) return '';
+  try { return JSON.stringify(contentJson); } catch { return ''; }
+}
+```
+
+After the rename, `Message.content: string` — callers just read `message.content` directly. Delete `getMessageText` and its file (or just the function if `utils.ts` has other exports). Update its two call sites (`UserMessageRow.tsx`, `AssistantMessageRow.tsx`) to read the field directly. This is the function-level analog of the dead-defensive-branch cleanup from §5.2.
 
 ### 6.2 `frontend/src/lib/api.ts`
 
@@ -283,27 +355,34 @@ Mirroring `shared/tests/character.schema.test.ts`:
 - `messageRoleSchema` accepts `user|assistant|system`; rejects everything else.
 - `messagesResponseSchema.parse({ messages: [valid, valid] })` round-trips.
 - `sendMessageBodySchema` superRefine cases: retry=true + content present → fail; retry=false + content missing → fail; retry=true + content omitted → pass; retry=false + content present → pass.
-- `MESSAGE_ENCRYPTED_FIELD_KEYS` is exactly `['contentJson', 'attachmentJson', 'citationsJson']`.
+- `MESSAGE_ENCRYPTED_FIELD_KEYS` is exactly `['content', 'attachmentJson', 'citationsJson']`.
+- `MESSAGE_JSON_PAYLOAD_FIELD_KEYS` is exactly `['attachmentJson', 'citationsJson']` (no `content`).
 
 ### 7.2 Updated: `backend/tests/routes/chat-messages-list.test.ts`
 
-- Existing happy-path stays.
+- Existing happy-path stays, with `contentJson` → `content` in fixtures and assertions.
 - Add: a malformed-row test (e.g. via repo stub returning a row with a stray key) confirms `respond()` throws `ZodError` in test mode, producing a 500 with the validation message visible.
 
 ### 7.3 Updated: `backend/tests/routes/chat.test.ts`
 
 - `PostMessageBody` references in test text/fixtures swap to `sendMessageBodySchema`.
+- Existing `contentJson` references in fixtures and assertions rename to `content` (lines around 310, 415, 501, 527 per `grep -n contentJson backend/tests/routes/chat.test.ts`).
 - Behaviour assertions (retry+content combinations, attachment shape, enableWebSearch flag) stay the same.
 
-### 7.4 Updated: `frontend/tests/hooks/useChat.test.tsx`
+### 7.4 Updated: `backend/tests/routes/chat-messages-list.test.ts` — `contentJson` → `content`
 
-- Add: mock-fetch responses that violate `messagesResponseSchema` (extra key, wrong type) cause the hook's `queryFn` to throw, and a well-formed response round-trips. Matches the `useCharacters` test pattern from PR #100.
-- Existing query-key and enabled-flag tests stay.
+Lines around 8-9 (comment), 100, 111, 124 per the existing grep. All `contentJson` references in fixtures and assertions rename. The "decrypted contentJson / attachmentJson" comment becomes "decrypted content / attachmentJson".
 
-### 7.5 Unchanged
+### 7.5 Updated: `backend/tests/security/encryption-leak.test.ts`
 
-- `backend/tests/security/encryption-leak.test.ts` — already scans `contentJsonCiphertext`, `attachmentJsonCiphertext`, `citationsJsonCiphertext` with the sentinel. No schema change required.
-- `backend/tests/repos/message.repo.test.ts` — repo internals (transaction shape, JSON serialise/parse round-trip, ownership chain) don't change.
+- The Message fixture at `encryption-leak.test.ts:131` currently uses an object sentinel: `contentJson: { parts: [\`message-content ${SENTINEL}\`] }`. After the rename + JSON-wrap drop, this becomes `content: \`message-content ${SENTINEL}\`` (plain string; the sentinel embeds directly).
+- The column scan logic needs to switch `contentJsonCiphertext` → `contentCiphertext`. Verify by reading the test's column-iteration code — it likely walks Prisma's `dmmf` or has a hardcoded list per model.
+
+### 7.6 Updated: `backend/tests/repos/message.repo.test.ts`
+
+- Any test that asserts on the JSON-wrapped storage of `content` (e.g. inspecting raw ciphertext or asserting a JSON-string round-trip) updates to the plain-string contract.
+- `MessageCreateInput.contentJson` → `.content` at every fixture.
+- Transaction shape, ownership chain assertions unchanged.
 
 ### 7.6 Verify line (replaces the one in bd `--notes`)
 
@@ -319,20 +398,24 @@ The bd-update step (`bash scripts/bd-link-plan.sh story-editor-j76 <plan>`) at l
 
 ## 8. Out-of-scope (intentional)
 
-- **Prisma schema** — Message columns and ciphertext triples are already in their post-`[E11]` shape.
+- **`attachmentJson` / `citationsJson` storage shape** — both stay as JSON-payload ciphertext triples. The chain-of-cascades (Chapter → Chat → Message) closes the referential-integrity gap that would have motivated splitting `attachmentJson` into two columns; the citation list is variable-length and benefits from a single ciphertext triple over a per-row Citation table.
 - **SSE protocol** — citation frames, content chunks, `[DONE]` sentinel all unchanged.
-- **`projectVeniceCitations`** — wire-adapter logic; stays in `backend/src/lib/venice-citations.ts`.
+- **`projectVeniceCitations`** — wire-adapter logic; stays in `backend/src/lib/venice-citations.ts` as that file's sole export.
 - **`projectDecrypted`'s return type** — PR #100 flagged this as a tightening opportunity (`Record<string, unknown>` → generic-typed). That's repo-layer plumbing affecting every entity; if we tighten it, it's a separate task across all repos, not a Message-only change. The Message migration uses the same `as unknown as` cast pattern Character does until that's done.
 
 ## 9. Risks
 
-- **Rip-and-replace surface area.** ~15 frontend files plus tests. Mitigated by: typecheck-gated verify line; PR #100 already established the exact import substitution at every site; the change is mechanical (rename `ChatMessage` → `Message`, swap import path).
-- **`isCitationArray` callers.** Need to swap to `citationSchema.array().safeParse(x).success` at every site (likely 2–3). If a caller relied on the runtime guard's exact narrowing behaviour, the safeParse approach is structurally equivalent.
-- **Tightening `contentJson` from `unknown` to `string`.** Risk: any production write path that stores an object would now fail egress validation in dev/test before reaching the DB-side ciphertext columns. Mitigation: confirmed via grep that all three write sites in `chat.routes.ts` stringify before persisting, and the repo's `serialiseJsonField` happily takes a string. Net effect is the wire contract matches reality.
-- **Citation type move.** Two callers in backend (`venice-citations.ts`, `message.repo.ts`) and one in frontend (`citations.ts`) plus its consumers. Backend ones become re-exports from shared; frontend `citations.ts` is deleted. Verify-line typecheck catches anything missed.
+- **Rip-and-replace surface area.** ~15 frontend files plus tests, plus the Prisma migration. Mitigated by: typecheck-gated verify line on both workspaces; PR #100 already established the exact import substitution at every site; the change is mechanical (rename `ChatMessage` → `Message`, `contentJson` → `content`, swap import path).
+- **Prisma column rename emitted as drop-and-add.** If `prisma migrate dev` generates `DROP COLUMN` + `ADD COLUMN` instead of `RENAME COLUMN`, that's a destructive op (silent in pre-deployment since no data exists, but the wrong shape semantically). Mitigation: inspect the generated SQL before applying; hand-edit to `RENAME COLUMN` if needed. Pre-deployment safety net: no rows would be lost anyway.
+- **Ciphertext format change for `content`.** Existing rows (if any existed) would no longer round-trip — the repo would `JSON.parse` a bare string `"hello"` and throw. Mitigation: pre-deployment, no rows exist. The `JSON.parse` is removed from the read path for `content` in the same change (split `JSON_PAYLOAD_FIELDS` tuple).
+- **Tightening `content` to `string`.** Any production write path that stored an object would now fail egress validation in dev/test before reaching the DB-side ciphertext columns. Mitigation: confirmed via grep that all three write sites in `chat.routes.ts` stringify before persisting. Net effect is the wire contract matches reality.
+- **Citation type move.** Two backend callers, three frontend callers, all enumerated in §5.3 / §6.4. Verify-line typecheck catches anything missed.
+- **`getMessageText` removal.** The defensive coercion stops existing. Any call site that relied on its null/undefined/object fallback now reads `message.content` directly. Since `Message.content` is a non-nullable `z.string()`, the fallback paths are unreachable — but if a non-message-shaped object accidentally typed as `Message` would have hit the fallback before, it'll now show `undefined` in the UI. Mitigation: typecheck + the runtime `.parse()` in the hook ensure only valid `Message` rows ever reach the UI.
 
 ## 10. Rollout
 
-Single PR, single commit if it fits (mirrors PR #100's shape). Branch name: `feature/message-entity-consolidation`. Plan link goes into `bd update story-editor-j76 --notes` via `scripts/bd-link-plan.sh`. `/bd-execute story-editor-j76` runs the implementer + spec-reviewer + code-quality-reviewer loop; close-gate runs `repo-boundary-reviewer` (touches `backend/src/repos/message.repo.ts` + a narrative-entity route) before `bd close`.
+Single PR, single commit if it fits (mirrors PR #100's shape). Branch name: `feature/message-entity-consolidation` (already created). Plan link goes into `bd update story-editor-j76 --notes` via `scripts/bd-link-plan.sh`. `/bd-execute story-editor-j76` runs the implementer + spec-reviewer + code-quality-reviewer loop; close-gate runs `repo-boundary-reviewer` (touches `backend/src/repos/message.repo.ts` + a narrative-entity route) before `bd close`.
+
+The migration runs as part of normal `make migrate` / `prisma migrate deploy` — no special ordering. Generated SQL must be inspected and hand-edited to `RENAME COLUMN` if Prisma emits drop-and-add.
 
 ---
