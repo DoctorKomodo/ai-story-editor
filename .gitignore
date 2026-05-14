@@ -40,4 +40,3 @@ backups/*.sql.gz
 .dolt/
 *.db
 .beads-credential-key
-
