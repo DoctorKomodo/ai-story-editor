@@ -13,10 +13,15 @@ shared-build:
 shared-watch:
 	npx -w story-editor-shared tsc -p tsconfig.build.json --watch
 
+# Extra flags for `docker compose up` in the `dev` target. Empty for a plain
+# `make dev`; the `rebuild*` targets set it to --renew-anon-volumes so a freshly
+# built image's node_modules replace the (otherwise reused) anonymous volumes.
+COMPOSE_UP_FLAGS ?=
+
 dev: shared-build
 	@( npx -w story-editor-shared tsc -p tsconfig.build.json --watch & BGPID=$$!; ps -o pgid= -p $$BGPID > .watcher.pid ) ; \
 	 echo "shared watcher running in background; backend container will pick up shared/dist changes via bind-mount"
-	docker compose up -d
+	docker compose up -d $(COMPOSE_UP_FLAGS)
 	@echo "Frontend: http://localhost:3000"
 	@echo "Backend:  http://localhost:4000"
 
@@ -26,20 +31,21 @@ stop:
 
 # Rebuild a service image after a dependency change (e.g. new npm package),
 # then bring the stack back up. Use this whenever package.json changes —
-# the dev compose mounts source via bind-mount but keeps node_modules
-# inside the image (anonymous volume), so a fresh `npm install` only takes
-# effect after the image is rebuilt.
+# the dev compose bind-mounts source but keeps every node_modules tree in
+# anonymous volumes. `docker compose up` reuses those volumes by default, so
+# rebuilding alone is not enough: these targets pass --renew-anon-volumes (via
+# COMPOSE_UP_FLAGS) so the freshly installed node_modules actually propagate.
 rebuild: stop
 	docker compose build
-	$(MAKE) dev
+	$(MAKE) dev COMPOSE_UP_FLAGS=--renew-anon-volumes
 
 rebuild-frontend: stop
 	docker compose build frontend
-	$(MAKE) dev
+	$(MAKE) dev COMPOSE_UP_FLAGS=--renew-anon-volumes
 
 rebuild-backend: stop
 	docker compose build backend
-	$(MAKE) dev
+	$(MAKE) dev COMPOSE_UP_FLAGS=--renew-anon-volumes
 
 migrate:
 	cd backend && npx prisma migrate deploy

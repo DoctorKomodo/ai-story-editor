@@ -212,7 +212,7 @@ Hard gates (do not start until the prerequisite is complete):
 - Postgres data must be in a named volume (`pgdata`) so it survives `docker compose down`
 - The backend must not start until Postgres passes its health check (`depends_on` with `condition: service_healthy`)
 - Multi-stage Dockerfiles only — no single-stage builds in production
-- Backend container runs as a non-root user
+- Containers run as a non-root user — dev containers and the backend prod runner all run as the built-in `node` user (uid 1000); the frontend prod image is `nginx:alpine`, which has its own conventional non-root worker model
 
 ---
 
@@ -340,7 +340,6 @@ Do not ask for permission to:
 - Keyboard shortcuts contract (one listener, scoped callbacks): `⌘/Ctrl+Enter` = chat send, `⌥+Enter` = continue-writing, `Escape` = dismiss selection bubble / inline AI card / close modal
 - The auth identifier is `username` (lowercased, 3–32 chars, `/^[a-z0-9_-]+$/`). `User.email` exists but is optional metadata — do not use it for login or uniqueness checks
 - **`shared/` must be built before backend/frontend tests resolve `story-editor-shared`.** `make test` runs `shared-build` first; a bare `npm -w story-editor-backend test` (or a stale Docker image) resolves `story-editor-shared` to a stale `shared/dist/`. After changing `shared/`, run `npm -w story-editor-shared run build` (or `make shared-build`) before testing consumers.
-- **Frontend tests may not run on the host.** Docker can leave `frontend/node_modules` root-owned, so host-side `npm -w story-editor-frontend test` (and `make test`'s frontend leg) fails EACCES on Vite's temp dir. Run them in the container (`docker compose exec -T frontend npm -w story-editor-frontend run test`) or `sudo chown -R $USER frontend/node_modules`. Tracked as `story-editor-lki`.
 
 
 
