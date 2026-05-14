@@ -140,11 +140,17 @@ jobs:
         env:
           NODE_ENV: production
         run: |
+          # Synthetic all-zero key: env-validation.ts only checks length (32 bytes).
+          # Not a real key — the runner is ephemeral and it wraps no real Venice keys.
           export APP_ENCRYPTION_KEY=$(node -p "Buffer.alloc(32, 0).toString('base64')")
           node --enable-source-maps dist/index.js &
           APP_PID=$!
           ok=
           for i in $(seq 1 30); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "::error::backend built artifact exited before /api/health became healthy" >&2
+              break
+            fi
             if wget -qO- http://localhost:4001/api/health 2>/dev/null | grep -q '"status":"ok"'; then
               ok=1; break
             fi
