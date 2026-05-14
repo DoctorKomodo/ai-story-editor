@@ -129,6 +129,7 @@ describe('Story detail routes [B2]', () => {
       expect(key.endsWith('Iv')).toBe(false);
       expect(key.endsWith('AuthTag')).toBe(false);
     }
+    expect(story).not.toHaveProperty('userId');
   });
 
   // ── PATCH /api/stories/:id ────────────────────────────────────────────────
@@ -204,6 +205,7 @@ describe('Story detail routes [B2]', () => {
       expect(key.endsWith('Iv')).toBe(false);
       expect(key.endsWith('AuthTag')).toBe(false);
     }
+    expect(patchRes.body.story).not.toHaveProperty('userId');
   });
 
   it('PATCH /:id clears a nullable field when null is passed', async () => {
