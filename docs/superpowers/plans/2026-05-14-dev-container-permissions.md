@@ -264,8 +264,7 @@ COPY --chown=node:node . .
 # Shared must be built before backend tsc — backend's compiled CJS will
 # `require('story-editor-shared')` which resolves to shared/dist.
 RUN npm -w story-editor-shared run build
-ENV DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL}
-RUN npx -w story-editor-backend prisma generate
+RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx -w story-editor-backend prisma generate
 RUN npm -w story-editor-backend run build
 
 # ---- dev (used by docker-compose.override.yml) ---------------------------
@@ -390,8 +389,9 @@ services:
     environment:
       NODE_ENV: development
     volumes:
-      # Bind-mount the source for hot reload. ./shared is mounted so the
-      # host-side shared watcher's shared/dist/ rebuilds reach the container.
+      # Bind-mount both source trees for hot reload: ./backend, and ./shared
+      # so the host-side shared watcher's shared/dist/ rebuilds reach the
+      # container.
       - ./backend:/app/backend
       - ./shared:/app/shared
       # Anonymous volumes shield every node_modules tree from the bind mounts
@@ -422,14 +422,15 @@ services:
       # shared/src directly via a Vite alias.
       - ./frontend:/app/frontend
       - ./shared:/app/shared
-      # Anonymous volumes shield every node_modules tree (root hoisted + each
-      # per-workspace tree) from the bind mounts above — chiefly Vite's
-      # node_modules/.vite + .vite-temp churn.
+      # Anonymous volumes shield every node_modules tree from the bind mounts
+      # above — the root hoisted tree plus each per-workspace tree. Without
+      # the per-workspace ones, the dev process writes node_modules churn
+      # (chiefly Vite's .vite + .vite-temp cache) into the host's ./frontend
+      # and ./shared trees.
       - /app/node_modules
       - /app/frontend/node_modules
       - /app/shared/node_modules
     # Start command comes from the Dockerfile dev-stage CMD — no override needed.
-    # Vite's HMR talks back over the exposed port; nothing else changes.
 ```
 
 - [ ] **Step 2: Verify the merged compose config parses**
