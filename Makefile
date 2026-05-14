@@ -38,7 +38,9 @@ seed:
 	docker compose exec backend npx prisma generate
 	docker compose restart backend
 	@sleep 3
-	docker compose exec backend npx ts-node --transpile-only prisma/seed.ts
+	# -e NODE_OPTIONS=--conditions=source: the seed subprocess resolves
+	# story-editor-shared from shared/src (no shared/dist is built for dev).
+	docker compose exec -e NODE_OPTIONS=--conditions=source backend npx ts-node --transpile-only prisma/seed.ts
 
 reset-db:
 	docker compose down -v
