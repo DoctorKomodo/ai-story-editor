@@ -48,10 +48,9 @@ ENV NODE_ENV=development
 COPY --chown=node:node . .
 # NOTE: unlike the `builder` stage, `dev` does NOT run
 # `npm -w story-editor-shared run build`. The dev server resolves
-# story-editor-shared straight from shared/src via the `source` export
-# condition (NODE_OPTIONS=--conditions=source in backend/package.json's
-# `dev` script) — `dev` relies entirely on shared/src at runtime and
-# never generates shared/dist itself.
+# story-editor-shared straight from shared/src via the package's `main`
+# field (tsx watch reads it directly) — `dev` relies entirely on
+# shared/src at runtime and never generates shared/dist itself.
 RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx -w story-editor-backend prisma generate
 # Inherits the `node` user from `deps`. The dev server runs as uid 1000;
 # anything it writes into the bind-mounted ./backend and ./shared is owned by

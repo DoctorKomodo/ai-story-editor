@@ -8,12 +8,12 @@
     "build": "tsup",
     "typecheck": "tsc --noEmit",
     "start": "node --enable-source-maps dist/index.js",
-    "dev": "NODE_OPTIONS=--conditions=source ts-node-dev --respawn --transpile-only src/index.ts",
+    "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "test:backend": "vitest",
     "db:test:reset": "bash ../scripts/db-test-reset.sh",
     "test:live": "bash -c 'OUT=$(vitest run --config vitest.live.config.ts \"$@\" 2>&1); CODE=$?; echo \"$OUT\"; exit $CODE' --",
-    "venice:probe": "ts-node scripts/venice-probe.ts"
+    "venice:probe": "tsx scripts/venice-probe.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.8.0",
@@ -43,8 +43,8 @@
     "@types/supertest": "^7.2.0",
     "story-editor-shared": "*",
     "supertest": "^7.2.2",
-    "ts-node-dev": "^2.0.0",
     "tsup": "^8.5.1",
+    "tsx": "^4.22.0",
     "typescript": "^6.0.3"
   }
 }
