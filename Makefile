@@ -1,6 +1,5 @@
 .PHONY: dev stop rebuild rebuild-frontend rebuild-backend migrate seed reset-db test test-e2e logs
 
-
 # Extra flags for `docker compose up` in the `dev` target. Empty for a plain
 # `make dev`; the `rebuild*` targets set it to --renew-anon-volumes so a freshly
 # built image's node_modules replace the (otherwise reused) anonymous volumes.
