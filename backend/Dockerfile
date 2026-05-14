@@ -46,7 +46,11 @@ FROM deps AS dev
 ARG PRISMA_GENERATE_DATABASE_URL
 ENV NODE_ENV=development
 COPY --chown=node:node . .
-RUN npm -w story-editor-shared run build
+# NOTE: unlike the `builder` stage, `dev` does NOT run
+# `npm -w story-editor-shared run build`. The dev server resolves
+# story-editor-shared straight from shared/src via the `source` export
+# condition (NODE_OPTIONS=--conditions=source in backend/package.json's
+# `dev` script) — there is no shared/dist for dev to build.
 RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx -w story-editor-backend prisma generate
 # Inherits the `node` user from `deps`. The dev server runs as uid 1000;
 # anything it writes into the bind-mounted ./backend and ./shared is owned by

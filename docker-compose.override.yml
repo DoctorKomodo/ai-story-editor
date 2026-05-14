@@ -18,8 +18,9 @@ services:
       NODE_ENV: development
     volumes:
       # Bind-mount both source trees for hot reload: ./backend, and ./shared
-      # so the host-side shared watcher's shared/dist/ rebuilds reach the
-      # container.
+      # so editing a shared Zod schema hot-reloads the backend — ts-node-dev
+      # resolves story-editor-shared straight from shared/src via the `source`
+      # export condition, the same way ./frontend's Vite alias works.
       - ./backend:/app/backend
       - ./shared:/app/shared
       # Anonymous volumes shield every node_modules tree from the bind mounts
