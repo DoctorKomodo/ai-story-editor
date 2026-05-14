@@ -339,8 +339,6 @@ Do not ask for permission to:
 - Selection bubble: use `onMouseDown: preventDefault()` on the bubble so clicking it doesn't collapse the user's selection
 - Keyboard shortcuts contract (one listener, scoped callbacks): `⌘/Ctrl+Enter` = chat send, `⌥+Enter` = continue-writing, `Escape` = dismiss selection bubble / inline AI card / close modal
 - The auth identifier is `username` (lowercased, 3–32 chars, `/^[a-z0-9_-]+$/`). `User.email` exists but is optional metadata — do not use it for login or uniqueness checks
-- **`shared/` must be built before backend/frontend tests resolve `story-editor-shared`.** `make test` runs `shared-build` first; a bare `npm -w story-editor-backend test` (or a stale Docker image) resolves `story-editor-shared` to a stale `shared/dist/`. After changing `shared/`, run `npm -w story-editor-shared run build` (or `make shared-build`) before testing consumers.
-
 
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
