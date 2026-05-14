@@ -35,3 +35,24 @@ export {
   messagesResponseSchema,
   sendMessageBodySchema,
 } from './schemas/message';
+
+export type {
+  Story,
+  StoryCreateInput,
+  StoryEncryptedFieldKey,
+  StoryListItem,
+  StoryUpdateInput,
+} from './schemas/story';
+export {
+  STORY_ENCRYPTED_FIELD_KEYS,
+  STORY_GENRE_MAX,
+  STORY_SYNOPSIS_MAX,
+  STORY_TITLE_MAX,
+  STORY_WORLD_NOTES_MAX,
+  storiesResponseSchema,
+  storyCreateSchema,
+  storyListItemSchema,
+  storyResponseSchema,
+  storySchema,
+  storyUpdateSchema,
+} from './schemas/story';
