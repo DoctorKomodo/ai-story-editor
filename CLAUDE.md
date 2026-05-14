@@ -333,7 +333,7 @@ Do not ask for permission to:
 - Venice.ai streaming responses use SSE — use `ReadableStream` on the frontend to consume them, not a standard `fetch().then(res => res.json())`
 - `wordCount` on `Chapter` must be computed from the TipTap JSON tree **before encryption** — you can't derive it from ciphertext. Order: parse JSON → count words → write ciphertext + plaintext wordCount in one repo call.
 - Refresh token rotation: when a refresh token is used, delete the old one and create a new one in the same transaction
-- Docker hot reload for the backend requires `ts-node-dev` or `nodemon` in the override compose file — the production Dockerfile does not include these
+- Docker hot reload for the backend uses `tsx watch` (the `dev` script). `tsx` is a backend devDependency — the production image runs the bundled `dist/index.js` via plain `node` and ships no TS runner. The backend `build` script is `tsup`, which inlines `story-editor-shared` into the bundle; there is no `shared/dist` and nothing resolves a `story-editor-shared` specifier at prod runtime
 - BYOK Venice key: only `content-crypto.service` / `crypto.service` touch the plaintext key, and only within the lifetime of a single request. Never log it, never echo it, never serialize it to an error object
 - `Chapter.content` plaintext mirror from `[D4]`/`[D10]` is intentionally **dropped** in `[E5]`/`[E11]` — TipTap JSON (decrypted on read via the chapter repo) is the sole source of truth for chapter bodies after that point; plaintext is derived on demand for export / AI prompts, never stored
 - Selection bubble: use `onMouseDown: preventDefault()` on the bubble so clicking it doesn't collapse the user's selection
