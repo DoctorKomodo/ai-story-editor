@@ -14,12 +14,13 @@
 // req.user.id and needs the request-scoped DEK attached by the middleware.
 
 import { type NextFunction, type Request, type Response, Router } from 'express';
+import type { StoryUpdateInput } from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { createChapterRepo } from '../repos/chapter.repo';
-import { createStoryRepo, type StoryUpdateInput } from '../repos/story.repo';
+import { createStoryRepo } from '../repos/story.repo';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
