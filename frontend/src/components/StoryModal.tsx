@@ -1,6 +1,14 @@
 import type { JSX } from 'react';
 import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import {
+  STORY_GENRE_MAX,
+  STORY_SYNOPSIS_MAX,
+  STORY_TITLE_MAX,
+  STORY_WORLD_NOTES_MAX,
+  type StoryCreateInput,
+  type StoryUpdateInput,
+} from 'story-editor-shared';
+import {
   Button,
   Field,
   Input,
@@ -10,11 +18,7 @@ import {
   ModalHeader,
   Textarea,
 } from '@/design/primitives';
-import {
-  type StoryInput,
-  useCreateStoryMutation,
-  useUpdateStoryMutation,
-} from '@/hooks/useStories';
+import { useCreateStoryMutation, useUpdateStoryMutation } from '@/hooks/useStories';
 import { ApiError } from '@/lib/api';
 
 export type StoryModalMode = 'create' | 'edit';
@@ -34,11 +38,6 @@ export interface StoryModalProps {
   initial?: StoryModalInitial;
 }
 
-const TITLE_MAX = 500;
-const GENRE_MAX = 200;
-const SYNOPSIS_MAX = 10_000;
-const WORLD_NOTES_MAX = 50_000;
-
 function nullable(v: string): string | null {
   const trimmed = v.trim();
   return trimmed.length === 0 ? null : trimmed;
@@ -53,8 +52,8 @@ function mapError(err: unknown): string {
 function diffForPatch(
   initial: StoryModalInitial,
   current: { title: string; genre: string; synopsis: string; worldNotes: string },
-): Partial<StoryInput> {
-  const payload: Partial<StoryInput> = {};
+): StoryUpdateInput {
+  const payload: StoryUpdateInput = {};
 
   const initialTitle = initial.title ?? '';
   if (current.title.trim() !== initialTitle.trim()) {
@@ -121,7 +120,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
   if (!open) return null;
 
   const trimmedTitle = title.trim();
-  const titleInvalid = trimmedTitle.length === 0 || trimmedTitle.length > TITLE_MAX;
+  const titleInvalid = trimmedTitle.length === 0 || trimmedTitle.length > STORY_TITLE_MAX;
   const submitDisabled = titleInvalid || pending;
   const showTitleError = titleTouched && titleInvalid;
 
@@ -133,7 +132,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
 
     try {
       if (mode === 'create') {
-        const payload: StoryInput = {
+        const payload: StoryCreateInput = {
           title: trimmedTitle,
           genre: nullable(genre),
           synopsis: nullable(synopsis),
@@ -185,7 +184,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
                 ref={titleInputRef}
                 name="title"
                 value={title}
-                maxLength={TITLE_MAX}
+                maxLength={STORY_TITLE_MAX}
                 required
                 aria-required="true"
                 invalid={showTitleError}
@@ -205,7 +204,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
                 id={genreId}
                 name="genre"
                 value={genre}
-                maxLength={GENRE_MAX}
+                maxLength={STORY_GENRE_MAX}
                 onChange={(e) => {
                   setGenre(e.target.value);
                 }}
@@ -217,7 +216,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
                 id={synopsisId}
                 name="synopsis"
                 value={synopsis}
-                maxLength={SYNOPSIS_MAX}
+                maxLength={STORY_SYNOPSIS_MAX}
                 rows={3}
                 onChange={(e) => {
                   setSynopsis(e.target.value);
@@ -230,7 +229,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
                 id={worldNotesId}
                 name="worldNotes"
                 value={worldNotes}
-                maxLength={WORLD_NOTES_MAX}
+                maxLength={STORY_WORLD_NOTES_MAX}
                 rows={5}
                 onChange={(e) => {
                   setWorldNotes(e.target.value);

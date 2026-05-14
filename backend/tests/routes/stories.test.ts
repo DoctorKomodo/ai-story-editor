@@ -135,6 +135,7 @@ describe('Stories routes [B1]', () => {
       expect(key.endsWith('Iv')).toBe(false);
       expect(key.endsWith('AuthTag')).toBe(false);
     }
+    expect(story).not.toHaveProperty('userId');
   });
 
   it('POST /api/stories accepts minimal body (title only)', async () => {
@@ -176,6 +177,7 @@ describe('Stories routes [B1]', () => {
     // Strictly: B's story must not leak in.
     for (const s of res.body.stories) {
       expect(s.title).not.toBe('B-Only-Story');
+      expect(s).not.toHaveProperty('userId');
     }
   });
 

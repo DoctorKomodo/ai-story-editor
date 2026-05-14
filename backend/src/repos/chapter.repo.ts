@@ -263,18 +263,6 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     return out;
   }
 
-  async function listWordCountsForStory(
-    storyId: string,
-  ): Promise<Array<{ id: string; wordCount: number }>> {
-    const userId = resolveUserId(req);
-    const rows = await client.chapter.findMany({
-      where: { storyId, story: { userId } },
-      orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
-      select: { id: true, wordCount: true },
-    });
-    return rows.map((r) => ({ id: r.id, wordCount: r.wordCount }));
-  }
-
   return {
     create,
     findById,
@@ -284,7 +272,6 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     reorder,
     maxOrderIndex,
     aggregateForStories,
-    listWordCountsForStory,
   };
 }
 

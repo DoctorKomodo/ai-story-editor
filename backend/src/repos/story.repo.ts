@@ -1,25 +1,22 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
+import type { Story, StoryCreateInput, StoryUpdateInput } from 'story-editor-shared';
+import { STORY_ENCRYPTED_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
-const ENCRYPTED_FIELDS = ['title', 'synopsis', 'worldNotes'] as const;
+// Keep the local ENCRYPTED_FIELDS name as the repo-local invariant (same as
+// character.repo.ts) — sourced from the shared tuple.
+const ENCRYPTED_FIELDS = STORY_ENCRYPTED_FIELD_KEYS;
 
-export interface StoryCreateInput {
-  title: string;
-  synopsis?: string | null;
-  genre?: string | null;
-  worldNotes?: string | null;
-  targetWords?: number | null;
-}
-
-export interface StoryUpdateInput {
-  title?: string;
-  synopsis?: string | null;
-  genre?: string | null;
-  worldNotes?: string | null;
-  targetWords?: number | null;
-}
+// Repo-layer shape: narrative fields are plaintext strings (decrypted by the
+// repo), timestamps are Date objects (Prisma's raw output). Distinct from the
+// wire `Story` type (story-editor-shared), which has ISO string timestamps.
+// serialize.ts converts between the two at the handler boundary.
+export type RepoStory = Omit<Story, 'createdAt' | 'updatedAt'> & {
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -46,14 +43,22 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
         ...encCols,
       },
     });
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoStory>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function findById(id: string) {
     const userId = resolveUserId(req);
     const row = await client.story.findFirst({ where: { id, userId } });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoStory>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function findManyForUser() {
@@ -63,7 +68,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
       orderBy: { updatedAt: 'desc' },
     });
     return rows.map((r) =>
-      projectDecrypted(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
+      projectDecrypted<RepoStory>(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
     );
   }
 
@@ -91,7 +96,11 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     if (updated.count === 0) return null;
     const row = await client.story.findFirst({ where: { id, userId } });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoStory>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function remove(id: string) {
@@ -100,19 +109,5 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     return deleted.count > 0;
   }
 
-  // Plaintext scalar lookup used by the progress endpoint. Keeps the route off
-  // the narrative-table surface — Prisma access stays inside the repo.
-  // Returns `undefined` when the story is missing/unowned; `null` when the
-  // column is explicitly null.
-  async function findTargetWords(id: string): Promise<number | null | undefined> {
-    const userId = resolveUserId(req);
-    const row = await client.story.findFirst({
-      where: { id, userId },
-      select: { targetWords: true },
-    });
-    if (!row) return undefined;
-    return row.targetWords ?? null;
-  }
-
-  return { create, findById, findManyForUser, update, remove, findTargetWords };
+  return { create, findById, findManyForUser, update, remove };
 }

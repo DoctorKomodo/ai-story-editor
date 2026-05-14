@@ -1,7 +1,9 @@
-import { messagesResponseSchema } from 'story-editor-shared';
+import { messagesResponseSchema, storyResponseSchema } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
-import { serializeCharacter, serializeMessage } from '../../src/lib/serialize';
+import { serializeCharacter, serializeMessage, serializeStory } from '../../src/lib/serialize';
+import type { RepoCharacter } from '../../src/repos/character.repo';
 import type { RepoMessage } from '../../src/repos/message.repo';
+import type { RepoStory } from '../../src/repos/story.repo';
 
 const dbRow = {
   id: '550e8400-e29b-41d4-a716-446655440000',
@@ -44,6 +46,15 @@ describe('serializeCharacter()', () => {
     expect(dbRow.createdAt).toEqual(snapshot.createdAt);
     expect(dbRow.updatedAt).toEqual(snapshot.updatedAt);
   });
+
+  it('excludes any stray runtime key from the wire shape (explicit pick)', () => {
+    const rowWithExtra = {
+      ...dbRow,
+      leakedColumn: 'should not appear',
+    } as unknown as RepoCharacter;
+    const wire = serializeCharacter(rowWithExtra) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('leakedColumn');
+  });
 });
 
 describe('serializeMessage()', () => {
@@ -78,5 +89,39 @@ describe('serializeMessage()', () => {
     expect(() =>
       messagesResponseSchema.parse({ messages: [serializeMessage(dbRow)] }),
     ).not.toThrow();
+  });
+});
+
+describe('serializeStory()', () => {
+  // RepoStory's TYPE omits userId, but the runtime row from storyRepo still
+  // carries it (projectDecrypted strips only ciphertext triples). serializeStory
+  // uses an explicit pick rather than spread specifically to keep userId out of
+  // the wire shape — this fixture deliberately includes an extra userId at
+  // runtime to lock that invariant.
+  const dbRow = {
+    id: 'story-1',
+    userId: 'user-extra-should-not-leak',
+    title: 'The First Draft',
+    synopsis: 'A synopsis.',
+    genre: 'literary',
+    worldNotes: 'World notes.',
+    targetWords: 50000,
+    createdAt: new Date('2026-05-14T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-14T01:00:00.000Z'),
+  } as unknown as RepoStory;
+
+  it('ISO-strings Date fields', () => {
+    const wire = serializeStory(dbRow);
+    expect(wire.createdAt).toBe('2026-05-14T00:00:00.000Z');
+    expect(wire.updatedAt).toBe('2026-05-14T01:00:00.000Z');
+  });
+
+  it('excludes userId from the wire shape', () => {
+    const wire = serializeStory(dbRow) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('userId');
+  });
+
+  it('produces a value that satisfies storyResponseSchema egress validation', () => {
+    expect(() => storyResponseSchema.parse({ story: serializeStory(dbRow) })).not.toThrow();
   });
 });

@@ -5,78 +5,40 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import {
+  type Story,
+  type StoryCreateInput,
+  type StoryListItem,
+  type StoryUpdateInput,
+  storiesResponseSchema,
+  storyResponseSchema,
+} from 'story-editor-shared';
 import { api } from '@/lib/api';
 
 /**
- * Narrow story shape the dashboard + modal need. Deliberately does NOT mirror
- * the full Prisma row — ciphertext fields are stripped server-side, and the
- * dashboard only needs the summary payload.
+ * Story list queries + create mutation (F6).
+ * Single-story query + update mutation for the editor (F7).
+ *
+ * Backend contract (B1):
+ * - GET   /api/stories          → { stories: StoryListItem[] }  (includes chapterCount, totalWordCount aggregates)
+ * - POST  /api/stories          → { story: Story }
+ * - GET   /api/stories/:id      → { story: Story }
+ * - PATCH /api/stories/:id      → { story: Story }
+ *
+ * Story and StoryListItem types and response schemas are imported from story-editor-shared.
+ * Components must import `type Story` / `type StoryListItem` directly from 'story-editor-shared'.
  */
-export interface StoryListItem {
-  id: string;
-  title: string;
-  genre: string | null;
-  synopsis: string | null;
-  worldNotes: string | null;
-  targetWords: number | null;
-  chapterCount: number;
-  totalWordCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface StoriesResponse {
-  stories: StoryListItem[];
-}
-
-export interface StoryResponse {
-  story: StoryListItem;
-}
-
-/**
- * Single-story shape fetched by the editor. The editor needs the narrative
- * fields a dashboard card doesn't (worldNotes, ...), but still never sees
- * ciphertext — the repo layer strips it on read. Chapters are fetched
- * separately by F10 (`useChapters(storyId)`), so this shape does not embed
- * them.
- */
-export interface Story {
-  id: string;
-  title: string;
-  genre: string | null;
-  synopsis: string | null;
-  worldNotes: string | null;
-  targetWords: number | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface StoryDetailResponse {
-  story: Story;
-}
 
 export const storyQueryKey = (id: string): readonly [string, string] => ['story', id] as const;
-
-/**
- * Fields accepted by both `POST /stories` and `PATCH /stories/:id`. All
- * optional fields accept `null` to clear the value server-side.
- */
-export interface StoryInput {
-  title: string;
-  genre?: string | null;
-  synopsis?: string | null;
-  worldNotes?: string | null;
-  targetWords?: number | null;
-}
-
 export const storiesQueryKey = ['stories'] as const;
 
 export function useStoriesQuery(): UseQueryResult<StoryListItem[], Error> {
   return useQuery({
     queryKey: storiesQueryKey,
     queryFn: async (): Promise<StoryListItem[]> => {
-      const res = await api<StoriesResponse>('/stories');
-      return res.stories;
+      const raw = await api<unknown>('/stories');
+      const { stories } = storiesResponseSchema.parse(raw);
+      return stories;
     },
   });
 }
@@ -91,22 +53,21 @@ export function useStoryQuery(id: string | undefined): UseQueryResult<Story, Err
   return useQuery({
     queryKey: storyQueryKey(id ?? ''),
     queryFn: async (): Promise<Story> => {
-      const res = await api<StoryDetailResponse>(`/stories/${encodeURIComponent(id ?? '')}`);
-      return res.story;
+      const raw = await api<unknown>(`/stories/${encodeURIComponent(id ?? '')}`);
+      const { story } = storyResponseSchema.parse(raw);
+      return story;
     },
     enabled: Boolean(id),
   });
 }
 
-export function useCreateStoryMutation(): UseMutationResult<StoryListItem, Error, StoryInput> {
+export function useCreateStoryMutation(): UseMutationResult<Story, Error, StoryCreateInput> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: StoryInput): Promise<StoryListItem> => {
-      const res = await api<StoryResponse>('/stories', {
-        method: 'POST',
-        body: input,
-      });
-      return res.story;
+    mutationFn: async (input: StoryCreateInput): Promise<Story> => {
+      const raw = await api<unknown>('/stories', { method: 'POST', body: input });
+      const { story } = storyResponseSchema.parse(raw);
+      return story;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: storiesQueryKey });
@@ -116,18 +77,16 @@ export function useCreateStoryMutation(): UseMutationResult<StoryListItem, Error
 
 export interface UpdateStoryArgs {
   id: string;
-  input: Partial<StoryInput>;
+  input: StoryUpdateInput;
 }
 
-export function useUpdateStoryMutation(): UseMutationResult<StoryListItem, Error, UpdateStoryArgs> {
+export function useUpdateStoryMutation(): UseMutationResult<Story, Error, UpdateStoryArgs> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, input }: UpdateStoryArgs): Promise<StoryListItem> => {
-      const res = await api<StoryResponse>(`/stories/${id}`, {
-        method: 'PATCH',
-        body: input,
-      });
-      return res.story;
+    mutationFn: async ({ id, input }: UpdateStoryArgs): Promise<Story> => {
+      const raw = await api<unknown>(`/stories/${id}`, { method: 'PATCH', body: input });
+      const { story } = storyResponseSchema.parse(raw);
+      return story;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: storiesQueryKey });

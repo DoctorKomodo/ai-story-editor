@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { StoryListItem } from 'story-editor-shared';
 import { Button } from '@/design/primitives';
-import type { StoryListItem } from '@/hooks/useStories';
 import { storiesQueryKey } from '@/hooks/useStories';
 import { StoryPicker } from './StoryPicker';
 
