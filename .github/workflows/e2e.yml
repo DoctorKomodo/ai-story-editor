@@ -1,19 +1,18 @@
 name: E2E (Playwright)
 
-# E2E scaffold for [T8]. Brings up the full docker-compose stack (postgres
-# + backend + frontend), waits for healthchecks, and runs Playwright against
-# the running frontend. Intentionally on manual trigger only until T8 ships
-# real tests — right now `tests/smoke.spec.ts` asserts the nginx placeholder,
-# which passes but doesn't prove anything useful.
+# Brings up the full docker-compose stack (postgres + backend + frontend),
+# waits for healthchecks, and runs the Playwright suite under tests/e2e/
+# against the running app. T8 / T8.1 shipped real coverage (full-flow +
+# smoke specs) — see docs/done/done-T.md.
 #
-# To enable on every push/PR once T8 lands: uncomment the `push` and
-# `pull_request` triggers below. Current gate is `workflow_dispatch` (manual
-# run from the Actions tab) so the workflow is discoverable and already
-# green before it starts blocking merges.
+# This workflow currently runs on manual trigger (workflow_dispatch) only.
+# Whether it should also gate PRs (done-T.md and playwright.config.ts both
+# describe T8 as "tier-2 PR-blocking") is an open CI-policy decision tracked
+# in story-editor-7ns — do not flip the triggers without resolving that.
 
 on:
   workflow_dispatch:
-  # Once [T8] ships real E2E coverage, flip these on:
+  # PR/push triggers intentionally left off pending story-editor-7ns:
   # push:
   #   branches: [main]
   # pull_request:
@@ -43,9 +42,6 @@ jobs:
 
       - name: Install root deps
         run: npm ci
-
-      - name: Build shared
-        run: npm -w story-editor-shared run build
 
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium

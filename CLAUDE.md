@@ -12,8 +12,8 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ```
 /
 ├── frontend/                  React + Vite + TypeScript + TailwindCSS + TipTap + Zustand + TanStack Query
-├── backend/                   Node.js + Express + TypeScript + Prisma
-├── db/                        Prisma schema and migrations
+├── backend/                   Node.js + Express + TypeScript + Prisma (schema/migrations/seed under backend/prisma/)
+├── shared/                    story-editor-shared — canonical Zod schemas + wire types, imported by frontend AND backend
 ├── scripts/                   Utility shell scripts (backup, seed, reset)
 ├── docs/                      Architecture documentation — data-model, api-contract, venice-integration, encryption
 ├── mockups/archive/v1-2025-11/ Read-only archive of the original HTML prototype (Storybook is the live design surface)
@@ -212,7 +212,7 @@ Hard gates (do not start until the prerequisite is complete):
 - Postgres data must be in a named volume (`pgdata`) so it survives `docker compose down`
 - The backend must not start until Postgres passes its health check (`depends_on` with `condition: service_healthy`)
 - Multi-stage Dockerfiles only — no single-stage builds in production
-- Backend container runs as a non-root user
+- Containers run as a non-root user — dev containers and the backend prod runner all run as the built-in `node` user (uid 1000); the frontend prod image is `nginx:alpine`, which has its own conventional non-root worker model
 
 ---
 
@@ -341,8 +341,7 @@ Do not ask for permission to:
 - The auth identifier is `username` (lowercased, 3–32 chars, `/^[a-z0-9_-]+$/`). `User.email` exists but is optional metadata — do not use it for login or uniqueness checks
 
 
-
-<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
+<!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
 ## Beads Issue Tracker
 
 This project uses **bd (beads)** for issue tracking. Run `bd prime` to see full workflow context and commands.
@@ -362,6 +361,8 @@ bd close <id>         # Complete work
 - Run `bd prime` for detailed command reference and session close protocol
 - Use `bd remember` for persistent knowledge — do NOT use MEMORY.md files
 
+**Architecture in one line:** issues live in a local Dolt DB; sync uses `refs/dolt/data` on your git remote; `.beads/issues.jsonl` is a passive export. See https://github.com/gastownhall/beads/blob/main/docs/SYNC_CONCEPTS.md for details and anti-patterns.
+
 ## Session Completion
 
 **When ending a work session**, you MUST complete ALL steps below. Work is NOT complete until `git push` succeeds.
@@ -374,7 +375,6 @@ bd close <id>         # Complete work
 4. **PUSH TO REMOTE** - This is MANDATORY:
    ```bash
    git pull --rebase
-   bd dolt push
    git push
    git status  # MUST show "up to date with origin"
    ```

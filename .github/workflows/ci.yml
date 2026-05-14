@@ -60,9 +60,6 @@ jobs:
       - name: Install deps
         run: npm ci
 
-      - name: Build shared
-        run: npm -w story-editor-shared run build
-
       # ── Lint ───────────────────────────────────────────────────────────────
       - name: Biome (lint + format check)
         run: npx biome ci .

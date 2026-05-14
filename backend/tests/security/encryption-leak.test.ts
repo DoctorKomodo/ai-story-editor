@@ -239,6 +239,12 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
         REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET ?? 'test-refresh-secret',
         APP_ENCRYPTION_KEY:
           process.env.APP_ENCRYPTION_KEY ?? Buffer.alloc(32, 0xab).toString('base64'),
+        // The seed transitively imports backend/src modules that import
+        // story-editor-shared. As a spawned subprocess it inherits neither the
+        // vitest resolve.alias nor the backend `dev` script's --conditions=source,
+        // so without this it resolves the package's `default` export to
+        // shared/dist — which isn't built for dev/test/CI after story-editor-at5.
+        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--conditions=source'].filter(Boolean).join(' '),
       },
       encoding: 'utf8',
       // 2 minutes is generous — the seed does ~4× argon2id derivations (~400ms)
