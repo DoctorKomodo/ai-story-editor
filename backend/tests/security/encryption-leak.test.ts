@@ -202,7 +202,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
   });
 
   // [E13] Seed-script leak proof. The verify command for [E13] is
-  //   npx ts-node prisma/seed.ts && vitest ... --grep seed
+  //   npx tsx prisma/seed.ts && vitest ... --grep seed
   // so THIS test is what the "--grep seed" half runs. Without a matching test,
   // Vitest exits 0 with zero tests — which would technically pass but defeat
   // the spec's intent. We spawn the real seed script against the test DB and
@@ -225,7 +225,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     // depending on how it's invoked.
     const backendRoot = path.resolve(__dirname, '..', '..');
 
-    const result = spawnSync('npx', ['ts-node', 'prisma/seed.ts'], {
+    const result = spawnSync('npx', ['tsx', 'prisma/seed.ts'], {
       cwd: backendRoot,
       env: {
         ...process.env,
@@ -239,12 +239,6 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
         REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET ?? 'test-refresh-secret',
         APP_ENCRYPTION_KEY:
           process.env.APP_ENCRYPTION_KEY ?? Buffer.alloc(32, 0xab).toString('base64'),
-        // The seed transitively imports backend/src modules that import
-        // story-editor-shared. As a spawned subprocess it inherits neither the
-        // vitest resolve.alias nor the backend `dev` script's --conditions=source,
-        // so without this it resolves the package's `default` export to
-        // shared/dist — which isn't built for dev/test/CI after story-editor-at5.
-        NODE_OPTIONS: [process.env.NODE_OPTIONS, '--conditions=source'].filter(Boolean).join(' '),
       },
       encoding: 'utf8',
       // 2 minutes is generous — the seed does ~4× argon2id derivations (~400ms)

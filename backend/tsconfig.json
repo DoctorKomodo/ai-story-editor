@@ -20,8 +20,5 @@
     "tsBuildInfoFile": "./tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist", "tests"],
-  "ts-node": {
-    "transpileOnly": true
-  }
+  "exclude": ["node_modules", "dist", "tests"]
 }

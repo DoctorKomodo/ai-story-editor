@@ -140,7 +140,7 @@ function parseCliArgs(argv: string[]): CliArgs | { error: string } {
 
 function printUsage(): void {
   process.stderr.write(
-    'Usage: ts-node prisma/scripts/force-recovery-rotation.ts --username <name> [--dry-run]\n',
+    'Usage: tsx prisma/scripts/force-recovery-rotation.ts --username <name> [--dry-run]\n',
   );
 }
 

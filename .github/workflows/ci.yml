@@ -97,6 +97,24 @@ jobs:
       - name: Backend build
         run: npm -w story-editor-backend run build
 
+      # The backend build is a tsup bundle: story-editor-shared (pure Zod/TS)
+      # is inlined, every node_modules dep stays external. Assert both — a
+      # regression either way (shared not inlined, or a heavy dep wrongly
+      # bundled) is a prod-resolution bug the vitest suites can't catch
+      # because they use vitest's own resolver, never the bundle.
+      - name: Assert backend bundle inlined shared, kept deps external
+        working-directory: backend
+        run: |
+          if grep -q '"story-editor-shared"' dist/index.js; then
+            echo "::error::story-editor-shared was not inlined into the backend bundle" >&2
+            exit 1
+          fi
+          if ! grep -q '"@prisma/client"' dist/index.js; then
+            echo "::error::@prisma/client is missing from the bundle externals — it was wrongly bundled" >&2
+            exit 1
+          fi
+          echo "bundle OK: story-editor-shared inlined, @prisma/client external"
+
       - name: Frontend build
         run: npm -w story-editor-frontend run build
 
@@ -110,6 +128,40 @@ jobs:
       - name: Prisma migrate (test DB)
         working-directory: backend
         run: npx prisma migrate deploy
+
+      # Boot the actual built artifact (node dist/index.js) against the CI
+      # Postgres and hit /api/health. This is the one CI guard that the prod
+      # entry path resolves and boots — the vitest suites never touch the
+      # bundle. NODE_ENV=production so it boots the way prod does; if
+      # backend/src/boot/env-validation.ts requires more env in production
+      # mode, add it here (the goal is a representative prod boot).
+      - name: Backend boot smoke (built artifact)
+        working-directory: backend
+        env:
+          NODE_ENV: production
+        run: |
+          # Synthetic all-zero key: env-validation.ts only checks length (32 bytes).
+          # Not a real key — the runner is ephemeral and it wraps no real Venice keys.
+          export APP_ENCRYPTION_KEY=$(node -p "Buffer.alloc(32, 0).toString('base64')")
+          node --enable-source-maps dist/index.js &
+          APP_PID=$!
+          ok=
+          for i in $(seq 1 30); do
+            if ! kill -0 "$APP_PID" 2>/dev/null; then
+              echo "::error::backend built artifact exited before /api/health became healthy" >&2
+              break
+            fi
+            if wget -qO- http://localhost:4001/api/health 2>/dev/null | grep -q '"status":"ok"'; then
+              ok=1; break
+            fi
+            sleep 1
+          done
+          kill "$APP_PID" 2>/dev/null || true
+          if [ -z "$ok" ]; then
+            echo "::error::backend built artifact did not become healthy on :4001" >&2
+            exit 1
+          fi
+          echo "boot smoke OK: built artifact resolved and served /api/health"
 
       # Vitest's JSON reporter emits `numTotalTests`. We assert it > 0 on
       # top of `passWithNoTests: false` in each vitest.config.ts so a
