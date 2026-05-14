@@ -10,4 +10,4 @@ echo "[entrypoint] running prisma migrate deploy"
 npx prisma migrate deploy
 
 echo "[entrypoint] starting backend"
-exec node dist/index.js
+exec node --enable-source-maps dist/index.js

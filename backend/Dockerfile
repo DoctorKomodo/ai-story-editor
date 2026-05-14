@@ -35,9 +35,9 @@ RUN mkdir -p frontend/node_modules backend/node_modules shared/node_modules
 FROM deps AS builder
 ARG PRISMA_GENERATE_DATABASE_URL
 COPY --chown=node:node . .
-# Shared must be built before backend tsc — backend's compiled CJS will
-# `require('story-editor-shared')` which resolves to shared/dist.
-RUN npm -w story-editor-shared run build
+# `npm run build` runs tsup, which inlines story-editor-shared (pure Zod/TS)
+# straight into backend/dist — there is no separate shared build step, and the
+# prod artifact carries no `story-editor-shared` runtime specifier.
 RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx -w story-editor-backend prisma generate
 RUN npm -w story-editor-backend run build
 
@@ -46,11 +46,10 @@ FROM deps AS dev
 ARG PRISMA_GENERATE_DATABASE_URL
 ENV NODE_ENV=development
 COPY --chown=node:node . .
-# NOTE: unlike the `builder` stage, `dev` does NOT run
-# `npm -w story-editor-shared run build`. The dev server resolves
-# story-editor-shared straight from shared/src via the package's `main`
-# field (tsx watch reads it directly) — `dev` relies entirely on
-# shared/src at runtime and never generates shared/dist itself.
+# NOTE: `dev` builds nothing ahead of time. The dev server runs
+# `tsx watch src/index.ts` (backend/package.json's `dev` script) and resolves
+# story-editor-shared straight from shared/src via the package's `main` field
+# — no compiled shared/dist is ever produced for dev.
 RUN DATABASE_URL=${PRISMA_GENERATE_DATABASE_URL} npx -w story-editor-backend prisma generate
 # Inherits the `node` user from `deps`. The dev server runs as uid 1000;
 # anything it writes into the bind-mounted ./backend and ./shared is owned by
@@ -78,14 +77,13 @@ COPY package.json package-lock.json ./
 COPY backend/package.json ./backend/
 COPY frontend/package.json ./frontend/
 COPY shared/package.json ./shared/
-RUN npm ci --omit=dev --ignore-scripts -w story-editor-backend -w story-editor-shared --include-workspace-root
+RUN npm ci --omit=dev --ignore-scripts -w story-editor-backend --include-workspace-root
 
-# Bring in the compiled output for backend AND shared. Backend's runtime
-# does `require('story-editor-shared')` → resolves via workspace symlink in
-# node_modules/ → shared/dist/index.js.
+# Bring in the bundled backend artifact. `npm run build` (tsup) inlined
+# story-editor-shared into backend/dist, so the runtime needs no shared
+# package and no shared/dist — just the self-contained bundle.
 COPY --from=builder /app/backend/dist ./backend/dist
 COPY --from=builder /app/backend/prisma ./backend/prisma
-COPY --from=builder /app/shared/dist ./shared/dist
 COPY backend/prisma.config.ts ./backend/prisma.config.ts
 COPY backend/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
