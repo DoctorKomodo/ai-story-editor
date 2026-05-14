@@ -302,4 +302,19 @@ describe('StoryPicker (F30)', () => {
       ).toBeInTheDocument();
     });
   });
+
+  it('surfaces an error when the /stories response is malformed (schema drift)', async () => {
+    // chapterCount as a string violates storyListItemSchema — the hook's
+    // storiesResponseSchema.parse() throws a ZodError, so the query lands in
+    // its error state and StoryPicker renders the role="alert" branch.
+    fetchMock.mockResolvedValue(
+      jsonResponse(200, { stories: [makeStory('s1', { chapterCount: 'not-a-number' })] }),
+    );
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+
+    expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toBeInTheDocument();
+    expect(screen.queryByTestId('story-picker-row-s1')).toBeNull();
+  });
 });
