@@ -112,43 +112,6 @@ export function createStoriesRouter() {
 
   const ownStory = requireOwnership('story', { idParam: 'id' });
 
-  // GET /api/stories/:id/progress — aggregate for the sidebar progress footer.
-  // Returns { wordCount, targetWords, percent, chapters: [{ id, wordCount }] }.
-  // `wordCount` is plaintext on chapters (not narrative content), so reading
-  // it directly via Prisma is fine — nothing ciphertext-adjacent is selected.
-  // `percent` is floor((wordCount / targetWords) * 100); 0 when targetWords is
-  // null or 0. Not clamped at 100: over-target stories render >100% in the UI.
-  router.get('/:id/progress', ownStory, async (req: Request, res: Response, next: NextFunction) => {
-    const id = req.params.id as string;
-    try {
-      // Both lookups go through repos so the route never touches Prisma
-      // for narrative tables directly. `targetWords` and per-chapter
-      // `wordCount` are plaintext columns — the repos expose them via
-      // dedicated aggregate methods that never return ciphertext.
-      const targetWords = await createStoryRepo(req).findTargetWords(id);
-      if (targetWords === undefined) {
-        // Race: ownership middleware saw the row, then it got deleted.
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
-
-      const chapters = await createChapterRepo(req).listWordCountsForStory(id);
-
-      const wordCount = chapters.reduce((sum, c) => sum + c.wordCount, 0);
-      const percent =
-        targetWords && targetWords > 0 ? Math.floor((wordCount / targetWords) * 100) : 0;
-
-      res.status(200).json({
-        wordCount,
-        targetWords,
-        percent,
-        chapters,
-      });
-    } catch (err) {
-      next(err);
-    }
-  });
-
   // GET /api/stories/:id — return the decrypted story.
   router.get('/:id', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     // Express types `req.params[k]` as `string | string[]`; ownership
