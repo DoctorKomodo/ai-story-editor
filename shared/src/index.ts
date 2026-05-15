@@ -1,4 +1,28 @@
 export type {
+  Chapter,
+  ChapterCreateInput,
+  ChapterEncryptedFieldKey,
+  ChapterMeta,
+  ChapterMetaEncryptedFieldKey,
+  ChapterReorderInput,
+  ChapterStatus,
+  ChapterUpdateInput,
+} from './schemas/chapter';
+export {
+  CHAPTER_ENCRYPTED_FIELD_KEYS,
+  CHAPTER_META_ENCRYPTED_FIELD_KEYS,
+  CHAPTER_TITLE_MAX,
+  CHAPTER_TITLE_MIN,
+  chapterCreateSchema,
+  chapterMetaSchema,
+  chapterReorderSchema,
+  chapterResponseSchema,
+  chapterSchema,
+  chapterStatusSchema,
+  chaptersResponseSchema,
+  chapterUpdateSchema,
+} from './schemas/chapter';
+export type {
   Character,
   CharacterCreateInput,
   CharacterPromptInput,
@@ -15,7 +39,6 @@ export {
   NARRATIVE_FIELD_KEYS,
   toCharacterPromptInput,
 } from './schemas/character';
-
 export type {
   Chat,
   ChatCreateInput,
