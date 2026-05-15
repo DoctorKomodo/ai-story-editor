@@ -9,8 +9,8 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import {
   ChapterNotOwnedError,
-  type ChapterUpdateInput,
   createChapterRepo,
+  type RepoChapterUpdateInput,
 } from '../repos/chapter.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
 
@@ -233,7 +233,7 @@ export function createChaptersRouter() {
           return;
         }
 
-        const input: ChapterUpdateInput = {};
+        const input: RepoChapterUpdateInput = {};
         if (body.title !== undefined) input.title = body.title;
         if (body.status !== undefined) input.status = body.status;
         if (body.orderIndex !== undefined) input.orderIndex = body.orderIndex;
