@@ -3,8 +3,16 @@
 
 import { Prisma } from '@prisma/client';
 import { type NextFunction, type Request, type Response, Router } from 'express';
-import { z } from 'zod';
+import {
+  outlineCreateSchema,
+  outlineItemResponseSchema,
+  outlineListResponseSchema,
+  outlineReorderSchema,
+  outlineUpdateSchema,
+} from 'story-editor-shared';
 import { badRequestFromZod } from '../lib/bad-request';
+import { respond } from '../lib/respond';
+import { serializeOutlineItem } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import {
@@ -21,42 +29,6 @@ function isPrismaUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
-const CreateOutlineBody = z
-  .object({
-    title: z.string().min(1).max(300),
-    sub: z.string().max(2000).nullable().optional(),
-    // `status` is intentionally free-form (frontend uses 'queued' / 'active' /
-    // 'done' today, but there's no server-side enum contract yet). Bounded to
-    // keep the encrypted-column footprint reasonable.
-    status: z.string().min(1).max(40),
-  })
-  .strict();
-
-const UpdateOutlineBody = z
-  .object({
-    title: z.string().min(1).max(300).optional(),
-    sub: z.string().max(2000).nullable().optional(),
-    status: z.string().min(1).max(40).optional(),
-    order: z.number().int().min(0).optional(),
-  })
-  .strict();
-
-const ReorderOutlineBody = z
-  .object({
-    items: z
-      .array(
-        z
-          .object({
-            id: z.string().min(1),
-            order: z.number().int().min(0),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(500),
-  })
-  .strict();
-
 export function createOutlineRouter() {
   const router = Router({ mergeParams: true });
   router.use(requireAuth);
@@ -67,8 +39,8 @@ export function createOutlineRouter() {
   router.get('/', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
     try {
-      const outline = await createOutlineRepo(req).findManyForStory(storyId);
-      res.status(200).json({ outline });
+      const rows = await createOutlineRepo(req).findManyForStory(storyId);
+      respond(outlineListResponseSchema, res, { outline: rows.map(serializeOutlineItem) });
     } catch (err) {
       next(err);
     }
@@ -77,7 +49,7 @@ export function createOutlineRouter() {
   router.post('/', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
 
-    const parsed = CreateOutlineBody.safeParse(req.body);
+    const parsed = outlineCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -115,7 +87,7 @@ export function createOutlineRouter() {
         throw lastErr ?? new Error('outline POST: failed to allocate order');
       }
 
-      res.status(201).json({ outlineItem: created });
+      respond(outlineItemResponseSchema, res, { outlineItem: serializeOutlineItem(created) }, 201);
     } catch (err) {
       next(err);
     }
@@ -126,7 +98,7 @@ export function createOutlineRouter() {
   router.patch('/reorder', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
 
-    const parsed = ReorderOutlineBody.safeParse(req.body);
+    const parsed = outlineReorderSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -180,12 +152,12 @@ export function createOutlineRouter() {
       const storyId = req.params.storyId as string;
       const outlineId = req.params.outlineId as string;
       try {
-        const outlineItem = await createOutlineRepo(req).findById(outlineId);
-        if (!outlineItem || outlineItem.storyId !== storyId) {
+        const row = await createOutlineRepo(req).findById(outlineId);
+        if (!row || row.storyId !== storyId) {
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
         }
-        res.status(200).json({ outlineItem });
+        respond(outlineItemResponseSchema, res, { outlineItem: serializeOutlineItem(row) });
       } catch (err) {
         next(err);
       }
@@ -200,7 +172,7 @@ export function createOutlineRouter() {
       const storyId = req.params.storyId as string;
       const outlineId = req.params.outlineId as string;
 
-      const parsed = UpdateOutlineBody.safeParse(req.body);
+      const parsed = outlineUpdateSchema.safeParse(req.body);
       if (!parsed.success) {
         badRequestFromZod(res, parsed.error);
         return;
@@ -222,12 +194,12 @@ export function createOutlineRouter() {
         if ('status' in body) input.status = body.status;
         if ('order' in body) input.order = body.order;
 
-        const outlineItem = await createOutlineRepo(req).update(outlineId, input);
-        if (!outlineItem) {
+        const updated = await createOutlineRepo(req).update(outlineId, input);
+        if (!updated) {
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
         }
-        res.status(200).json({ outlineItem });
+        respond(outlineItemResponseSchema, res, { outlineItem: serializeOutlineItem(updated) });
       } catch (err) {
         next(err);
       }
