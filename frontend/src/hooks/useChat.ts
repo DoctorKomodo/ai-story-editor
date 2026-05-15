@@ -22,12 +22,9 @@ import { useChatDraftStore } from '@/store/chatDraft';
 /**
  * Chat-related query hooks.
  *
- * Backend contract:
- *   GET /api/chats/:chatId/messages
- *     -> { messages: [...] }  — validated at runtime against messagesResponseSchema
- *
- *   GET /api/chapters/:chapterId/chats
- *     -> { chats: [{ id, chapterId, title, createdAt, messageCount }] }
+ * Wire shapes are validated at runtime against `messagesResponseSchema` and
+ * `chatsResponseSchema` (story-editor-shared) — those are the authoritative
+ * field lists.
  *
  * The chat-list query lives here so chat-picker consumers can share the hook
  * file. Mutations (send-message, regenerate, fork) are in this file too.

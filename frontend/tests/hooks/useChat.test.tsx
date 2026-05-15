@@ -471,6 +471,7 @@ describe('useCreateChatMutation cache invalidation', () => {
     const cached = qc.getQueryData<ChatSummary[]>(askKey);
     expect(cached).toBeDefined();
     expect(cached?.[0]?.id).toBe('chat-new');
+    expect(cached?.[0]?.messageCount).toBe(0);
     expect(cached?.[1]?.id).toBe('chat-old');
   });
 });

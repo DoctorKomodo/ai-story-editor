@@ -116,6 +116,7 @@ describe('ChatTab — smoke', () => {
               title: 'How do I describe rain?',
               chapterId: 'ch1',
               kind: 'ask',
+              messageCount: 0,
               createdAt: new Date().toISOString(),
               updatedAt: new Date().toISOString(),
               lastActivityAt: new Date().toISOString(),
@@ -186,16 +187,18 @@ describe('ChatTab — smoke', () => {
     }
 
     const now = new Date().toISOString();
+    // POST /chats returns a Chat (no messageCount — chatResponseSchema is strict).
     const newChat = {
       id: 'c1',
       chapterId: 'ch1',
       title: null,
       kind: 'ask',
-      messageCount: 0,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
     };
+    // GET /chats returns ChatSummary (messageCount required by chatSummarySchema).
+    const newChatSummary = { ...newChat, messageCount: 0 };
 
     // Stateful mock: after the POST create, GET /chats returns the new session.
     let chatCreated = false;
@@ -205,7 +208,7 @@ describe('ChatTab — smoke', () => {
 
       // List chats — returns the created chat once it exists
       if (url.includes('/chapters/ch1/chats') && method === 'GET') {
-        return jsonResponse(200, { chats: chatCreated ? [newChat] : [] });
+        return jsonResponse(200, { chats: chatCreated ? [newChatSummary] : [] });
       }
       // Create chat
       if (url.includes('/chapters/ch1/chats') && method === 'POST') {

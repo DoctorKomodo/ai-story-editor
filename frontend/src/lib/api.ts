@@ -20,8 +20,6 @@ import {
   chatsResponseSchema,
 } from 'story-editor-shared';
 
-export type { Chat, ChatKind, ChatSummary };
-
 const DEFAULT_BASE_URL = '/api';
 
 function resolveBaseUrl(): string {
