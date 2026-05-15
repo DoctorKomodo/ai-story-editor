@@ -17,6 +17,27 @@ export {
 } from './schemas/character';
 
 export type {
+  Chat,
+  ChatCreateInput,
+  ChatEncryptedFieldKey,
+  ChatKind,
+  ChatSummary,
+  ChatUpdateInput,
+} from './schemas/chat';
+export {
+  CHAT_ENCRYPTED_FIELD_KEYS,
+  CHAT_TITLE_MAX,
+  CHAT_TITLE_MIN,
+  chatCreateSchema,
+  chatKindSchema,
+  chatResponseSchema,
+  chatSchema,
+  chatSummarySchema,
+  chatsResponseSchema,
+  chatUpdateSchema,
+} from './schemas/chat';
+
+export type {
   Citation,
   Message,
   MessageAttachment,

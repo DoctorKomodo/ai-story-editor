@@ -12,6 +12,14 @@
  * The access token is held in a module-level variable so the session store can
  * push updates (`setAccessToken`) without creating a circular import.
  */
+import {
+  type Chat,
+  type ChatKind,
+  type ChatSummary,
+  chatResponseSchema,
+  chatsResponseSchema,
+} from 'story-editor-shared';
+
 const DEFAULT_BASE_URL = '/api';
 
 function resolveBaseUrl(): string {
@@ -294,18 +302,6 @@ export async function apiStream(path: string, init?: ApiRequestInit): Promise<Re
 // All auth, 401-retry, and error handling is delegated to `doRequest` via
 // `api()` / `apiStream()` — do not call `fetch` directly here.
 
-/** Shape returned by all chat CRUD endpoints. */
-export interface ChatRow {
-  id: string;
-  chapterId: string;
-  title: string | null;
-  kind: 'ask' | 'scene';
-  createdAt: string;
-  updatedAt: string;
-  lastActivityAt: string; // story-editor-loj: bumped on every message create
-  messageCount?: number;
-}
-
 /**
  * [SC14] GET /api/chapters/:chapterId/chats
  *
@@ -314,13 +310,11 @@ export interface ChatRow {
  */
 export async function listChats(
   chapterId: string,
-  opts?: { kind?: 'ask' | 'scene' },
-): Promise<ChatRow[]> {
+  opts?: { kind?: ChatKind },
+): Promise<ChatSummary[]> {
   const params = opts?.kind !== undefined ? `?kind=${encodeURIComponent(opts.kind)}` : '';
-  const res = await api<{ chats: ChatRow[] }>(
-    `/chapters/${encodeURIComponent(chapterId)}/chats${params}`,
-  );
-  return res.chats;
+  const res = await api<unknown>(`/chapters/${encodeURIComponent(chapterId)}/chats${params}`);
+  return chatsResponseSchema.parse(res).chats;
 }
 
 /**
@@ -330,16 +324,16 @@ export async function listChats(
  */
 export async function createChat(
   chapterId: string,
-  opts?: { title?: string; kind?: 'ask' | 'scene' },
-): Promise<ChatRow> {
+  opts?: { title?: string; kind?: ChatKind },
+): Promise<Chat> {
   const body: Record<string, unknown> = {};
   if (opts?.title !== undefined) body.title = opts.title;
   if (opts?.kind !== undefined) body.kind = opts.kind;
-  const res = await api<{ chat: ChatRow }>(`/chapters/${encodeURIComponent(chapterId)}/chats`, {
+  const res = await api<unknown>(`/chapters/${encodeURIComponent(chapterId)}/chats`, {
     method: 'POST',
     body,
   });
-  return res.chat;
+  return chatResponseSchema.parse(res).chat;
 }
 
 /**
@@ -347,12 +341,12 @@ export async function createChat(
  *
  * Renames an existing chat.
  */
-export async function patchChat(id: string, title: string): Promise<ChatRow> {
-  const res = await api<{ chat: ChatRow }>(`/chats/${encodeURIComponent(id)}`, {
+export async function patchChat(id: string, title: string): Promise<Chat> {
+  const res = await api<unknown>(`/chats/${encodeURIComponent(id)}`, {
     method: 'PATCH',
     body: { title },
   });
-  return res.chat;
+  return chatResponseSchema.parse(res).chat;
 }
 
 /**

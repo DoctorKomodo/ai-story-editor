@@ -1,5 +1,6 @@
-import type { Character, Message, OutlineItem, Story } from 'story-editor-shared';
+import type { Character, Chat, Message, OutlineItem, Story } from 'story-editor-shared';
 import type { RepoCharacter } from '../repos/character.repo';
+import type { RepoChat } from '../repos/chat.repo';
 import type { RepoMessage } from '../repos/message.repo';
 import type { RepoOutlineItem } from '../repos/outline.repo';
 import type { RepoStory } from '../repos/story.repo';
@@ -43,6 +44,20 @@ export function serializeMessage(row: RepoMessage): Message {
     tokens: row.tokens,
     latencyMs: row.latencyMs,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+// Explicit pick (not spread): forces the compiler to surface any repo field
+// the wire shape does NOT carry (matches serializeMessage / serializeOutlineItem).
+export function serializeChat(row: RepoChat): Chat {
+  return {
+    id: row.id,
+    chapterId: row.chapterId,
+    title: row.title,
+    kind: row.kind,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    lastActivityAt: row.lastActivityAt.toISOString(),
   };
 }
 

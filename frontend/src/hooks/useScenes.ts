@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
-import { type ChatRow, createChat, deleteChat, listChats, patchChat } from '@/lib/api';
+import type { ChatSummary } from 'story-editor-shared';
+import { createChat, deleteChat, listChats, patchChat } from '@/lib/api';
 
 const sceneListKey = (chapterId: string) => ['scenes', chapterId] as const;
 
@@ -24,7 +25,11 @@ export function useScenes(chapterId: string | null) {
       if (chapterId) {
         // Optimistically prepend so the just-created chat appears in `sessions`
         // immediately. The invalidate below reconciles with the server.
-        qc.setQueryData<ChatRow[]>(sceneListKey(chapterId), (prev) => [newChat, ...(prev ?? [])]);
+        const summary: ChatSummary = { ...newChat, messageCount: 0 };
+        qc.setQueryData<ChatSummary[]>(sceneListKey(chapterId), (prev) => [
+          summary,
+          ...(prev ?? []),
+        ]);
       }
       invalidate();
     },
@@ -37,7 +42,7 @@ export function useScenes(chapterId: string | null) {
         // Use the server-returned title rather than vars.title so that any
         // server-side normalisation (trim, truncation) is reflected immediately
         // in the cache without waiting for the invalidate refetch.
-        qc.setQueryData<ChatRow[]>(sceneListKey(chapterId), (prev) =>
+        qc.setQueryData<ChatSummary[]>(sceneListKey(chapterId), (prev) =>
           (prev ?? []).map((c) => (c.id === vars.id ? { ...c, title: updatedChat.title } : c)),
         );
       }
@@ -49,7 +54,7 @@ export function useScenes(chapterId: string | null) {
     mutationFn: (id: string) => deleteChat(id),
     onSuccess: (_, deletedId) => {
       if (chapterId) {
-        qc.setQueryData<ChatRow[]>(sceneListKey(chapterId), (prev) =>
+        qc.setQueryData<ChatSummary[]>(sceneListKey(chapterId), (prev) =>
           (prev ?? []).filter((c) => c.id !== deletedId),
         );
       }
@@ -68,4 +73,4 @@ export function useScenes(chapterId: string | null) {
 }
 
 export type UseScenesReturn = ReturnType<typeof useScenes>;
-export type SceneRow = ChatRow & { kind: 'scene' };
+export type SceneRow = ChatSummary & { kind: 'scene' };

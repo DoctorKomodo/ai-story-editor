@@ -12,6 +12,11 @@ import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 import {
   type Citation,
+  chatCreateSchema,
+  chatKindSchema,
+  chatResponseSchema,
+  chatsResponseSchema,
+  chatUpdateSchema,
   type MessageRole,
   messagesResponseSchema,
   sendMessageBodySchema,
@@ -21,7 +26,7 @@ import { z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
-import { serializeMessage } from '../lib/serialize';
+import { serializeChat, serializeMessage } from '../lib/serialize';
 import { getVeniceClient } from '../lib/venice';
 import { projectVeniceCitations } from '../lib/venice-citations';
 import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
@@ -43,20 +48,7 @@ import type { UserSettings } from './user-settings.routes';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
-const ChatKind = z.enum(['ask', 'scene']);
-
-const CreateChatBody = z
-  .object({
-    title: z.string().optional(),
-    kind: ChatKind.optional(),
-  })
-  .strict();
-
-const ListChatsQuery = z
-  .object({
-    kind: ChatKind.optional(),
-  })
-  .strict();
+const ListChatsQuery = z.strictObject({ kind: chatKindSchema.optional() });
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,7 +67,7 @@ export function createChapterChatsRouter() {
   router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const chapterId = req.params.chapterId as string;
 
-    const parsed = CreateChatBody.safeParse(req.body);
+    const parsed = chatCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -96,7 +88,7 @@ export function createChapterChatsRouter() {
         kind: body.kind ?? 'ask',
       });
 
-      res.status(201).json({ chat });
+      return respond(chatResponseSchema, res, { chat: serializeChat(chat) }, 201);
     } catch (err) {
       console.error('[chat.create]', err);
       next(err);
@@ -126,13 +118,13 @@ export function createChapterChatsRouter() {
 
       // Enrich each chat with its message count (via repo layer — ownership enforced).
       const enriched = await Promise.all(
-        chats.map(async (chat) => {
-          const messageCount = await createMessageRepo(req).countForChat(chat.id as string);
-          return { ...chat, messageCount };
-        }),
+        chats.map(async (chat) => ({
+          ...serializeChat(chat),
+          messageCount: await createMessageRepo(req).countForChat(chat.id as string),
+        })),
       );
 
-      res.status(200).json({ chats: enriched });
+      return respond(chatsResponseSchema, res, { chats: enriched });
     } catch (err) {
       console.error('[chat.list]', err);
       next(err);
@@ -144,19 +136,13 @@ export function createChapterChatsRouter() {
 
 // ─── Router 3: chat-level CRUD (rename, etc.) ────────────────────────────────
 
-const PatchChatBody = z
-  .object({
-    title: z.string().min(1).max(200),
-  })
-  .strict();
-
 export function createChatCrudRouter() {
   const router = Router();
   router.use(requireAuth);
 
   router.patch('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const id = req.params.id as string;
-    const parsed = PatchChatBody.safeParse(req.body);
+    const parsed = chatUpdateSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -177,7 +163,7 @@ export function createChatCrudRouter() {
         res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
         return;
       }
-      res.status(200).json({ chat: updated });
+      return respond(chatResponseSchema, res, { chat: serializeChat(updated) }, 200);
     } catch (err) {
       console.error('[chat.patch]', err);
       next(err);

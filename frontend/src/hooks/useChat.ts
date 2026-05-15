@@ -6,39 +6,29 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { useRef } from 'react';
-import { type Message, messagesResponseSchema } from 'story-editor-shared';
-import { ApiError, api, type ChatRow, deleteChat } from '@/lib/api';
+import {
+  type Chat,
+  type ChatKind,
+  type ChatSummary,
+  chatResponseSchema,
+  chatsResponseSchema,
+  type Message,
+  messagesResponseSchema,
+} from 'story-editor-shared';
+import { ApiError, api, deleteChat } from '@/lib/api';
 import { runStreamingAI } from '@/lib/streamingAI';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 /**
  * Chat-related query hooks.
  *
- * Backend contract:
- *   GET /api/chats/:chatId/messages
- *     -> { messages: [...] }  — validated at runtime against messagesResponseSchema
- *
- *   GET /api/chapters/:chapterId/chats
- *     -> { chats: [{ id, chapterId, title, createdAt, messageCount }] }
+ * Wire shapes are validated at runtime against `messagesResponseSchema` and
+ * `chatsResponseSchema` (story-editor-shared) — those are the authoritative
+ * field lists.
  *
  * The chat-list query lives here so chat-picker consumers can share the hook
  * file. Mutations (send-message, regenerate, fork) are in this file too.
  */
-
-/**
- * Chat list item returned by GET /api/chapters/:chapterId/chats.
- *
- * Alias of `ChatRow` from `@/lib/api` with `messageCount` narrowed to
- * `number` (required) — the list endpoint always enriches each row with
- * a message count, whereas single-chat endpoints (PATCH/DELETE) do not.
- * Keeping this as a derived type rather than a parallel interface prevents
- * the two shapes from drifting independently.
- */
-export type ChatSummary = Omit<ChatRow, 'messageCount'> & { messageCount: number };
-
-interface ChatsResponse {
-  chats: ChatSummary[];
-}
 
 export const chatMessagesQueryKey = (chatId: string): readonly [string, string, string] =>
   ['chat', chatId, 'messages'] as const;
@@ -55,7 +45,7 @@ export const chatsBaseQueryKey = (chapterId: string): readonly [string, string, 
 
 export const chatsQueryKey = (
   chapterId: string,
-  kind?: 'ask' | 'scene',
+  kind?: ChatKind,
 ): readonly [string, string, string, string | undefined] =>
   ['chapter', chapterId, 'chats', kind] as const;
 
@@ -72,17 +62,17 @@ export function useChatMessagesQuery(chatId: string | null): UseQueryResult<Mess
 
 export function useChatsQuery(
   chapterId: string | null,
-  opts?: { kind?: 'ask' | 'scene' },
+  opts?: { kind?: ChatKind },
 ): UseQueryResult<ChatSummary[], Error> {
   const kind = opts?.kind;
   return useQuery({
     queryKey: chatsQueryKey(chapterId ?? '', kind),
     queryFn: async (): Promise<ChatSummary[]> => {
       const params = kind !== undefined ? `?kind=${encodeURIComponent(kind)}` : '';
-      const res = await api<ChatsResponse>(
+      const res = await api<unknown>(
         `/chapters/${encodeURIComponent(chapterId ?? '')}/chats${params}`,
       );
-      return res.chats;
+      return chatsResponseSchema.parse(res).chats;
     },
     enabled: chapterId !== null,
   });
@@ -93,25 +83,26 @@ export function useChatsQuery(
 export interface CreateChatArgs {
   chapterId: string;
   title?: string;
-  kind?: 'ask' | 'scene';
+  kind?: ChatKind;
 }
 
-export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, CreateChatArgs> {
+export function useCreateChatMutation(): UseMutationResult<Chat, Error, CreateChatArgs> {
   const qc = useQueryClient();
-  return useMutation<ChatSummary, Error, CreateChatArgs>({
+  return useMutation<Chat, Error, CreateChatArgs>({
     mutationFn: async ({ chapterId, title, kind }) => {
       const body: Record<string, unknown> = {};
       if (title !== undefined) body.title = title;
       if (kind !== undefined) body.kind = kind;
-      const res = await api<{ chat: ChatSummary }>(
-        `/chapters/${encodeURIComponent(chapterId)}/chats`,
-        { method: 'POST', body },
-      );
-      return res.chat;
+      const res = await api<unknown>(`/chapters/${encodeURIComponent(chapterId)}/chats`, {
+        method: 'POST',
+        body,
+      });
+      return chatResponseSchema.parse(res).chat;
     },
     onSuccess: (chat, vars) => {
+      const summary: ChatSummary = { ...chat, messageCount: 0 };
       const key = chatsQueryKey(chat.chapterId, vars.kind);
-      qc.setQueryData<ChatSummary[]>(key, (prev) => [chat, ...(prev ?? [])]);
+      qc.setQueryData<ChatSummary[]>(key, (prev) => [summary, ...(prev ?? [])]);
       // Invalidate by the 3-element prefix so ALL kind variants
       // (ask, scene, undefined) are swept — not just the undefined slot.
       void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chat.chapterId) });
@@ -121,16 +112,16 @@ export function useCreateChatMutation(): UseMutationResult<ChatSummary, Error, C
 
 export function useRenameChatMutation(
   chapterId: string | null,
-  kind: 'ask' | 'scene' = 'ask',
-): UseMutationResult<ChatSummary, Error, { id: string; title: string }> {
+  kind: ChatKind = 'ask',
+): UseMutationResult<Chat, Error, { id: string; title: string }> {
   const qc = useQueryClient();
-  return useMutation<ChatSummary, Error, { id: string; title: string }>({
+  return useMutation<Chat, Error, { id: string; title: string }>({
     mutationFn: async ({ id, title }) => {
-      const res = await api<{ chat: ChatSummary }>(`/chats/${encodeURIComponent(id)}`, {
+      const res = await api<unknown>(`/chats/${encodeURIComponent(id)}`, {
         method: 'PATCH',
         body: { title },
       });
-      return res.chat;
+      return chatResponseSchema.parse(res).chat;
     },
     onSuccess: (updated, vars) => {
       if (chapterId === null) return;
@@ -145,7 +136,7 @@ export function useRenameChatMutation(
 
 export function useRemoveChatMutation(
   chapterId: string | null,
-  kind: 'ask' | 'scene' = 'ask',
+  kind: ChatKind = 'ask',
 ): UseMutationResult<void, Error, string> {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({

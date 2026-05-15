@@ -336,19 +336,19 @@ describe('SceneTab — [2] auto-rename on first turn', () => {
       chapterId: 'ch1',
       title: null,
       kind: 'scene',
-      messageCount: 0,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
     };
 
     let chatCreated = false;
+    const newChatSummary = { ...newChat, messageCount: 0 };
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method?.toUpperCase() ?? 'GET';
 
       if (url.includes('/chapters/ch1/chats') && method === 'GET') {
-        return jsonResponse(200, { chats: chatCreated ? [newChat] : [] });
+        return jsonResponse(200, { chats: chatCreated ? [newChatSummary] : [] });
       }
       if (url.includes('/chapters/ch1/chats') && method === 'POST') {
         chatCreated = true;
@@ -439,7 +439,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 title: 'Veranda',
                 chapterId: 'c1',
                 messageCount: 0,
-                createdAt: '',
+                createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
                 lastActivityAt: new Date().toISOString(),
               },
@@ -479,7 +479,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 title: 'Veranda',
                 chapterId: 'c1',
                 messageCount: 0,
-                createdAt: '',
+                createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
                 lastActivityAt: new Date().toISOString(),
               },
@@ -826,11 +826,11 @@ describe('SceneTab — [8] enableWebSearch propagation', () => {
       chapterId: 'ch1',
       title: null,
       kind: 'scene',
-      messageCount: 0,
       createdAt: now,
       updatedAt: now,
       lastActivityAt: now,
     };
+    const newChatSummary = { ...newChat, messageCount: 0 };
 
     let chatCreated = false;
     fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -838,7 +838,7 @@ describe('SceneTab — [8] enableWebSearch propagation', () => {
       const method = init?.method?.toUpperCase() ?? 'GET';
 
       if (url.includes('/chapters/ch1/chats') && method === 'GET') {
-        return jsonResponse(200, { chats: chatCreated ? [newChat] : [] });
+        return jsonResponse(200, { chats: chatCreated ? [newChatSummary] : [] });
       }
       if (url.includes('/chapters/ch1/chats') && method === 'POST') {
         chatCreated = true;
