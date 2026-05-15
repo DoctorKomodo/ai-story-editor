@@ -12,7 +12,7 @@ import {
   chapterStatusSchema,
   chaptersResponseSchema,
   chapterUpdateSchema,
-} from './chapter.js';
+} from '../src/schemas/chapter';
 
 const VALID_META = {
   id: 'c1',
