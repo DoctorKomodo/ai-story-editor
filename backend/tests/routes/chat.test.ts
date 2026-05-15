@@ -57,6 +57,10 @@ describe('POST /api/chapters/:chapterId/chats — kind', () => {
       .send({ title: 's1', kind: 'scene' })
       .expect(201);
     expect(res.body.chat.kind).toBe('scene');
+    expect(res.body.chat).not.toHaveProperty('messageCount');
+    expect(typeof res.body.chat.createdAt).toBe('string');
+    expect(typeof res.body.chat.updatedAt).toBe('string');
+    expect(typeof res.body.chat.lastActivityAt).toBe('string');
   });
 
   it('defaults to kind="ask" when omitted', async () => {
@@ -66,6 +70,10 @@ describe('POST /api/chapters/:chapterId/chats — kind', () => {
       .send({ title: 'a1' })
       .expect(201);
     expect(res.body.chat.kind).toBe('ask');
+    expect(res.body.chat).not.toHaveProperty('messageCount');
+    expect(typeof res.body.chat.createdAt).toBe('string');
+    expect(typeof res.body.chat.updatedAt).toBe('string');
+    expect(typeof res.body.chat.lastActivityAt).toBe('string');
   });
 
   it('rejects unknown kind values', async () => {
@@ -99,6 +107,10 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
       .expect(200);
     expect(res.body.chats).toHaveLength(1);
     expect(res.body.chats[0].kind).toBe('scene');
+    expect(typeof res.body.chats[0].messageCount).toBe('number');
+    expect(typeof res.body.chats[0].createdAt).toBe('string');
+    expect(typeof res.body.chats[0].updatedAt).toBe('string');
+    expect(typeof res.body.chats[0].lastActivityAt).toBe('string');
   });
 
   // [D1] ?kind=ask filter
@@ -113,6 +125,10 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
       .expect(200);
     expect(res.body.chats).toHaveLength(1);
     expect(res.body.chats[0].kind).toBe('ask');
+    expect(typeof res.body.chats[0].messageCount).toBe('number');
+    expect(typeof res.body.chats[0].createdAt).toBe('string');
+    expect(typeof res.body.chats[0].updatedAt).toBe('string');
+    expect(typeof res.body.chats[0].lastActivityAt).toBe('string');
   });
 
   // [D1] ?kind=bogus → 400
@@ -131,6 +147,13 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
     // [D1] Assert both kinds are present
     const kinds = res.body.chats.map((c: { kind: string }) => c.kind).sort();
     expect(kinds).toEqual(['ask', 'scene']);
+    // All entries carry messageCount and ISO date strings.
+    for (const chat of res.body.chats as Array<Record<string, unknown>>) {
+      expect(typeof chat.messageCount).toBe('number');
+      expect(typeof chat.createdAt).toBe('string');
+      expect(typeof chat.updatedAt).toBe('string');
+      expect(typeof chat.lastActivityAt).toBe('string');
+    }
   });
 
   // [loj] Each chat in the response must carry a lastActivityAt string field so
@@ -143,6 +166,7 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
     expect(res.body.chats).toHaveLength(1);
     expect(typeof res.body.chats[0].lastActivityAt).toBe('string');
     expect(res.body.chats[0].lastActivityAt).not.toBe('');
+    expect(typeof res.body.chats[0].messageCount).toBe('number');
   });
 });
 
@@ -559,6 +583,10 @@ describe('PATCH /api/chats/:id', () => {
 
     const res = await agent.patch(`/api/chats/${chatId}`).send({ title: 'new title' }).expect(200);
     expect(res.body.chat.title).toBe('new title');
+    expect(res.body.chat).not.toHaveProperty('messageCount');
+    expect(typeof res.body.chat.createdAt).toBe('string');
+    expect(typeof res.body.chat.updatedAt).toBe('string');
+    expect(typeof res.body.chat.lastActivityAt).toBe('string');
   });
 
   it('returns 404 for unknown id', async () => {
@@ -616,6 +644,10 @@ describe('PATCH /api/chats/:id', () => {
       .send({ title: 'b'.repeat(200) })
       .expect(200);
     expect(res.body.chat.title).toBe('b'.repeat(200));
+    expect(res.body.chat).not.toHaveProperty('messageCount');
+    expect(typeof res.body.chat.createdAt).toBe('string');
+    expect(typeof res.body.chat.updatedAt).toBe('string');
+    expect(typeof res.body.chat.lastActivityAt).toBe('string');
   });
 });
 
