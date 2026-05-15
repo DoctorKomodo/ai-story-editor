@@ -518,11 +518,8 @@ describe('OutlineTab schema drift', () => {
     // The malformed-item title never reaches the DOM — the query fails its
     // runtime parse and stays in error state. The component falls back to
     // its existing empty/error UI.
-    await waitFor(
-      () => {
-        expect(screen.queryByText(/broken-item/)).not.toBeInTheDocument();
-      },
-      { timeout: 3000 },
-    );
+    const alert = await screen.findByRole('alert', {}, { timeout: 3000 });
+    expect(alert.textContent ?? '').toMatch(/failed to load outline/i);
+    expect(screen.queryByText(/broken-item/)).not.toBeInTheDocument();
   });
 });
