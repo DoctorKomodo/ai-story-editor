@@ -1,14 +1,18 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
+import { CHAT_ENCRYPTED_FIELD_KEYS, type ChatKind } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
+import type { RepoChat } from '../lib/serialize';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
-const ENCRYPTED_FIELDS = ['title'] as const;
+const ENCRYPTED_FIELDS = CHAT_ENCRYPTED_FIELD_KEYS;
 
+// Repo-local input shapes. The shared chatCreateSchema can't cover these
+// directly because `chapterId` comes from the URL (not the request body).
 export interface ChatCreateInput {
   chapterId: string;
   title?: string | null;
-  kind?: 'ask' | 'scene';
+  kind?: ChatKind;
 }
 
 export interface ChatUpdateInput {
@@ -44,7 +48,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
         ...writeEncrypted(req, 'title', input.title ?? null),
       },
     });
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
   }
 
   async function findById(id: string) {
@@ -53,7 +57,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
       where: { id, chapter: { story: { userId } } },
     });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
   }
 
   async function findManyForChapter(chapterId: string, opts?: { kind?: 'ask' | 'scene' }) {
@@ -73,9 +77,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
       // intuition: dormant-newer-created beats dormant-older-created.
       orderBy: [{ lastActivityAt: 'desc' }, { createdAt: 'desc' }],
     });
-    return rows.map((r) =>
-      projectDecrypted(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
-    );
+    return rows.map((r) => projectDecrypted<RepoChat>(req, r, ENCRYPTED_FIELDS));
   }
 
   async function update(id: string, input: ChatUpdateInput) {
@@ -91,7 +93,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
       where: { id, chapter: { story: { userId } } },
     });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
   }
 
   async function remove(id: string) {

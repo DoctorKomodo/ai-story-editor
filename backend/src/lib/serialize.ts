@@ -49,7 +49,9 @@ export function serializeMessage(row: RepoMessage): Message {
 // Repo-layer shape. Dates arrive as `Date` from Prisma; serialize converts to ISO.
 // Plaintext-only at this boundary — `titleCiphertext` etc. have been projected
 // out by chat.repo.ts via `projectDecrypted<RepoChat>`.
-export interface RepoChat {
+// Defined as a `type` alias (not `interface`) so it satisfies the
+// `Record<string, unknown>` constraint on `projectDecrypted<T>`.
+export type RepoChat = {
   id: string;
   chapterId: string;
   title: string | null;
@@ -57,7 +59,7 @@ export interface RepoChat {
   createdAt: Date;
   updatedAt: Date;
   lastActivityAt: Date;
-}
+};
 
 // Explicit pick (not spread): forces the compiler to surface any repo field
 // the wire shape does NOT carry (matches serializeMessage / serializeOutlineItem).
