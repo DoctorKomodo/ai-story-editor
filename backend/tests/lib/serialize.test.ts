@@ -177,7 +177,7 @@ describe('serializeOutlineItem()', () => {
     const rowWithExtra = {
       ...validRow,
       stray: 'should-not-leak',
-    } as unknown as Parameters<typeof serializeOutlineItem>[0];
+    } as unknown as RepoOutlineItem;
     const wire = serializeOutlineItem(rowWithExtra) as Record<string, unknown>;
     expect(wire).not.toHaveProperty('stray');
   });
