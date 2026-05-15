@@ -124,7 +124,7 @@ export function OutlineTab({ storyId, onAddItem, onEditItem }: OutlineTabProps):
       reorder.mutate(
         {
           items: next.map((it) => ({ id: it.id, order: it.order })),
-          previousItems: next,
+          optimisticItems: next,
         },
         {
           onError: () => {

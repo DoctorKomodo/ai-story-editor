@@ -38,7 +38,9 @@ export const outlineCreateSchema = z.strictObject({
 // repositioning (bulk reorder goes through outlineReorderSchema). First
 // migrated entity to use .partial().extend(...). In Zod 4 (the project's
 // pinned version) both `.partial()` and `.extend()` on a strictObject preserve
-// strictness, so unknown keys are still rejected on PATCH.
+// strictness, so unknown keys are still rejected on PATCH — verified in
+// shared/tests/outline.schema.test.ts (the "rejects unknown keys (strictness
+// preserved through .partial().extend())" assertion).
 export const outlineUpdateSchema = outlineCreateSchema.partial().extend({
   order: z.number().int().nonnegative().optional(),
 });

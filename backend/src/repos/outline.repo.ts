@@ -9,6 +9,8 @@ import {
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
+// Keep the local ENCRYPTED_FIELDS name as the repo-local invariant (same as
+// character.repo.ts) — sourced from the shared tuple.
 const ENCRYPTED_FIELDS = OUTLINE_ENCRYPTED_FIELD_KEYS;
 
 // The shared OutlineCreateInput is the request-body shape (no storyId, no
@@ -73,14 +75,22 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
         ...writeEncrypted(req, 'sub', input.sub ?? null),
       },
     });
-    return projectDecrypted<RepoOutlineItem>(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoOutlineItem>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function findById(id: string) {
     const userId = resolveUserId(req);
     const row = await client.outlineItem.findFirst({ where: { id, story: { userId } } });
     if (!row) return null;
-    return projectDecrypted<RepoOutlineItem>(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoOutlineItem>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function findManyForStory(storyId: string) {
@@ -91,7 +101,11 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
       orderBy: { order: 'asc' },
     });
     return rows.map((r) =>
-      projectDecrypted<RepoOutlineItem>(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
+      projectDecrypted<RepoOutlineItem>(
+        req,
+        r as unknown as Record<string, unknown>,
+        ENCRYPTED_FIELDS,
+      ),
     );
   }
 
@@ -111,7 +125,11 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
       where: { id, story: { userId } },
     });
     if (!row) return null;
-    return projectDecrypted<RepoOutlineItem>(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoOutlineItem>(
+      req,
+      row as unknown as Record<string, unknown>,
+      ENCRYPTED_FIELDS,
+    );
   }
 
   async function remove(id: string) {

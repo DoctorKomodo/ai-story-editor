@@ -51,10 +51,13 @@ describe('serializeCharacter()', () => {
   });
 
   it('does not mutate the input row', () => {
-    const snapshot = { ...dbRow, createdAt: dbRow.createdAt, updatedAt: dbRow.updatedAt };
+    const snapshot = {
+      ...dbRow,
+      createdAt: new Date(dbRow.createdAt.getTime()),
+      updatedAt: new Date(dbRow.updatedAt.getTime()),
+    };
     serializeCharacter(dbRow);
-    expect(dbRow.createdAt).toEqual(snapshot.createdAt);
-    expect(dbRow.updatedAt).toEqual(snapshot.updatedAt);
+    expect(dbRow).toEqual(snapshot);
   });
 
   it('excludes any stray runtime key from the wire shape (explicit pick)', () => {
@@ -168,7 +171,11 @@ describe('serializeOutlineItem()', () => {
   });
 
   it('does not mutate the input row', () => {
-    const before = { ...validRow };
+    const before = {
+      ...validRow,
+      createdAt: new Date(validRow.createdAt.getTime()),
+      updatedAt: new Date(validRow.updatedAt.getTime()),
+    };
     serializeOutlineItem(validRow);
     expect(validRow).toEqual(before);
   });
@@ -176,10 +183,10 @@ describe('serializeOutlineItem()', () => {
   it('excludes any stray runtime key from the wire shape (explicit pick)', () => {
     const rowWithExtra = {
       ...validRow,
-      stray: 'should-not-leak',
+      titleCiphertext: 'should-not-leak',
     } as unknown as RepoOutlineItem;
     const wire = serializeOutlineItem(rowWithExtra) as Record<string, unknown>;
-    expect(wire).not.toHaveProperty('stray');
+    expect(wire).not.toHaveProperty('titleCiphertext');
   });
 
   it('produces a value that satisfies outlineItemResponseSchema egress validation', () => {

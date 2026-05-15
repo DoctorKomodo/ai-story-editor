@@ -160,11 +160,11 @@ export interface ReorderOutlineMutationContext {
 }
 
 // `items` derived from the shared schema so a wire-shape change surfaces here
-// as a type error, not a runtime drift. `previousItems` has no wire analog
-// (frontend-only optimistic rollback), so it stays as a hook-local field.
+// as a type error, not a runtime drift. `optimisticItems` has no wire analog
+// (frontend-only optimistic cache write), so it stays as a hook-local field.
 export interface ReorderOutlineInputArgs {
   items: OutlineReorderInput['items'];
-  previousItems: OutlineItem[];
+  optimisticItems: OutlineItem[];
 }
 
 export function useReorderOutlineMutation(
@@ -179,11 +179,11 @@ export function useReorderOutlineMutation(
       });
     },
     onMutate: async ({
-      previousItems,
+      optimisticItems,
     }: ReorderOutlineInputArgs): Promise<ReorderOutlineMutationContext> => {
       await qc.cancelQueries({ queryKey: outlineQueryKey(storyId) });
       const previous = qc.getQueryData<OutlineItem[]>(outlineQueryKey(storyId));
-      qc.setQueryData<OutlineItem[]>(outlineQueryKey(storyId), previousItems);
+      qc.setQueryData<OutlineItem[]>(outlineQueryKey(storyId), optimisticItems);
       return { previous };
     },
     onError: (_err, _vars, context) => {

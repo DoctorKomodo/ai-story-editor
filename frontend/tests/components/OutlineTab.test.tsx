@@ -359,7 +359,7 @@ describe('useReorderOutlineMutation', () => {
     act(() => {
       result.current.mutate({
         items: reordered!.map((it) => ({ id: it.id, order: it.order })),
-        previousItems: reordered!,
+        optimisticItems: reordered!,
       });
     });
 
@@ -412,7 +412,7 @@ describe('useReorderOutlineMutation', () => {
     act(() => {
       result.current.mutate({
         items: reordered.map((it) => ({ id: it.id, order: it.order })),
-        previousItems: reordered,
+        optimisticItems: reordered,
       });
     });
 
@@ -449,7 +449,7 @@ describe('useReorderOutlineMutation', () => {
     act(() => {
       result.current.mutate({
         items: reordered.map((it) => ({ id: it.id, order: it.order })),
-        previousItems: reordered,
+        optimisticItems: reordered,
       });
     });
 
