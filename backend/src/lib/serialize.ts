@@ -104,10 +104,10 @@ export function serializeOutlineItem(row: RepoOutlineItem): OutlineItem {
   };
 }
 
-// Explicit pick (not spread): RepoChapter's runtime row from projectDecrypted
-// still carries ciphertext triples (titleCiphertext/Iv/AuthTag,
-// bodyCiphertext/Iv/AuthTag) that must never reach the wire. Explicit pick
-// locks out any stray column at both compile time and runtime.
+// Explicit pick (not spread): forces the compiler to surface any repo field
+// the wire shape does NOT carry. projectDecrypted strips ciphertext triples
+// but nothing else — a future non-ciphertext column on the Prisma row would
+// otherwise slip into the response.
 export function serializeChapter(row: RepoChapter): Chapter {
   return {
     id: row.id,

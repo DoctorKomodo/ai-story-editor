@@ -74,6 +74,10 @@ describe('chapterSchema', () => {
   it('preserves strictness through .extend() — rejects keys beyond meta + bodyJson', () => {
     expect(() => chapterSchema.parse({ ...VALID_META, bodyJson: null, userId: 'u1' })).toThrow();
   });
+
+  it('rejects Story-side denormalisation drift (e.g. chapterCount)', () => {
+    expect(() => chapterSchema.parse({ ...VALID_META, bodyJson: null, chapterCount: 1 })).toThrow();
+  });
 });
 
 describe('chapterCreateSchema', () => {
@@ -162,6 +166,10 @@ describe('chapterResponseSchema / chaptersResponseSchema', () => {
     expect(chaptersResponseSchema.parse({ chapters: [VALID_META] })).toEqual({
       chapters: [VALID_META],
     });
+  });
+
+  it('chaptersResponseSchema rejects extra envelope keys', () => {
+    expect(() => chaptersResponseSchema.parse({ chapters: [VALID_META], total: 1 })).toThrow();
   });
 
   it('chaptersResponseSchema rejects bodyJson on individual entries', () => {
