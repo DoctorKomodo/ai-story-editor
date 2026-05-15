@@ -1,7 +1,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
 import { z } from 'zod';
-import { validateBody, validateQuery } from '../../src/middleware/validate.js';
+import { validateBody, validateQuery } from '../../src/middleware/validate';
 
 function makeMocks(
   body: unknown,

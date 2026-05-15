@@ -1,6 +1,6 @@
 import type { Response } from 'express';
 import { describe, expect, it, vi } from 'vitest';
-import { badRequest } from '../../src/lib/bad-request.js';
+import { badRequest } from '../../src/lib/bad-request';
 
 describe('badRequest', () => {
   it('emits canonical envelope with synthesised issues array', () => {

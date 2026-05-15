@@ -1,6 +1,6 @@
 import type { Request, RequestHandler, Response } from 'express';
 import type { ZodType, z } from 'zod';
-import { badRequestFromZod } from '../lib/bad-request.js';
+import { badRequestFromZod } from '../lib/bad-request';
 
 export function validateBody<S extends ZodType>(
   schema: S,

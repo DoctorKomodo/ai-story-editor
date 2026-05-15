@@ -25,7 +25,7 @@ import { respond } from '../lib/respond';
 import { serializeStory } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
-import { validateBody } from '../middleware/validate.js';
+import { validateBody } from '../middleware/validate';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createStoryRepo } from '../repos/story.repo';
 
