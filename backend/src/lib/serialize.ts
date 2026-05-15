@@ -1,4 +1,13 @@
-import type { Character, Chat, Message, OutlineItem, Story } from 'story-editor-shared';
+import type {
+  Chapter,
+  ChapterMeta,
+  Character,
+  Chat,
+  Message,
+  OutlineItem,
+  Story,
+} from 'story-editor-shared';
+import type { RepoChapter, RepoChapterMeta } from '../repos/chapter.repo';
 import type { RepoCharacter } from '../repos/character.repo';
 import type { RepoChat } from '../repos/chat.repo';
 import type { RepoMessage } from '../repos/message.repo';
@@ -90,6 +99,40 @@ export function serializeOutlineItem(row: RepoOutlineItem): OutlineItem {
     sub: row.sub,
     status: row.status,
     order: row.order,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+// Explicit pick (not spread): forces the compiler to surface any repo field
+// the wire shape does NOT carry. projectDecrypted strips ciphertext triples
+// but nothing else — a future non-ciphertext column on the Prisma row would
+// otherwise slip into the response.
+export function serializeChapter(row: RepoChapter): Chapter {
+  return {
+    id: row.id,
+    storyId: row.storyId,
+    title: row.title,
+    bodyJson: row.bodyJson,
+    wordCount: row.wordCount,
+    orderIndex: row.orderIndex,
+    status: row.status,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+// Explicit pick (not spread): metadata-only projection — bodyJson is
+// intentionally absent from the wire shape (callers that need the body
+// must use the single-chapter GET endpoint).
+export function serializeChapterMeta(row: RepoChapterMeta): ChapterMeta {
+  return {
+    id: row.id,
+    storyId: row.storyId,
+    title: row.title,
+    wordCount: row.wordCount,
+    orderIndex: row.orderIndex,
+    status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

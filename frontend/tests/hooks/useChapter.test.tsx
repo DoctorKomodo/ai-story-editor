@@ -1,10 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { JSX, ReactNode } from 'react';
+import type { Chapter, ChapterMeta } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  type Chapter,
-  type ChapterMeta,
   chapterQueryKey,
   chaptersQueryKey,
   computeChaptersAfterDelete,

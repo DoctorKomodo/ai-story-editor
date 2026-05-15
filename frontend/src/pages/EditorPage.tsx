@@ -28,6 +28,7 @@ import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import type { Chapter } from 'story-editor-shared';
 import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
 import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
@@ -55,7 +56,6 @@ import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
 import {
-  type Chapter,
   chapterQueryKey,
   useChapterQuery,
   useChaptersQuery,

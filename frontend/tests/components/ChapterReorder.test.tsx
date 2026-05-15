@@ -1,10 +1,10 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import type { ChapterMeta } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   arrayMove,
-  type ChapterMeta,
   chaptersQueryKey,
   computeReorderedChapters,
   useReorderChaptersMutation,

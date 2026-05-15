@@ -311,7 +311,7 @@ export function createChatMessagesRouter() {
         res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
         return;
       }
-      const storyId = chapter.storyId as string;
+      const storyId = chapter.storyId;
 
       const story = await createStoryRepo(req).findById(storyId);
       if (!story) {

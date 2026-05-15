@@ -6,43 +6,15 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import {
+  type Chapter,
+  type ChapterCreateInput,
+  type ChapterMeta,
+  type ChapterUpdateInput,
+  chapterResponseSchema,
+  chaptersResponseSchema,
+} from 'story-editor-shared';
 import { api } from '@/lib/api';
-
-/**
- * Metadata-only chapter shape, returned by the list endpoint
- * (`GET /api/stories/:storyId/chapters`). The list does NOT include `bodyJson`
- * — sidebar / list consumers don't need it, and decrypting every chapter on
- * every list refresh is expensive at scale. The single-chapter
- * `useChapterQuery` is the sole authority for `bodyJson`.
- */
-export interface ChapterMeta {
-  id: string;
-  storyId: string;
-  title: string;
-  wordCount: number;
-  orderIndex: number;
-  status: 'draft' | 'revision' | 'final';
-  createdAt: string;
-  updatedAt: string;
-}
-
-/**
- * Full chapter shape, returned by the single-chapter endpoint
- * (`GET /api/stories/:storyId/chapters/:chapterId`) and by create / update
- * mutations. `bodyJson` is the TipTap document tree (or `null` for an empty
- * chapter), decrypted by the backend chapter repo.
- */
-export interface Chapter extends ChapterMeta {
-  bodyJson: unknown;
-}
-
-export interface ChaptersResponse {
-  chapters: ChapterMeta[];
-}
-
-export interface ChapterResponse {
-  chapter: Chapter;
-}
 
 /**
  * Query key for the ordered chapter list belonging to a story.
@@ -56,31 +28,24 @@ export function useChaptersQuery(
   return useQuery({
     queryKey: chaptersQueryKey(storyId ?? ''),
     queryFn: async (): Promise<ChapterMeta[]> => {
-      const res = await api<ChaptersResponse>(
-        `/stories/${encodeURIComponent(storyId ?? '')}/chapters`,
-      );
-      return res.chapters;
+      const res = await api<unknown>(`/stories/${encodeURIComponent(storyId ?? '')}/chapters`);
+      return chaptersResponseSchema.parse(res).chapters;
     },
     enabled: Boolean(storyId),
   });
 }
 
-export interface CreateChapterInput {
-  title: string;
-  bodyJson?: unknown;
-}
-
 export function useCreateChapterMutation(
   storyId: string,
-): UseMutationResult<Chapter, Error, CreateChapterInput> {
+): UseMutationResult<Chapter, Error, ChapterCreateInput> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateChapterInput): Promise<Chapter> => {
-      const res = await api<ChapterResponse>(`/stories/${encodeURIComponent(storyId)}/chapters`, {
+    mutationFn: async (input: ChapterCreateInput): Promise<Chapter> => {
+      const res = await api<unknown>(`/stories/${encodeURIComponent(storyId)}/chapters`, {
         method: 'POST',
         body: input,
       });
-      return res.chapter;
+      return chapterResponseSchema.parse(res).chapter;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: chaptersQueryKey(storyId) });
@@ -251,10 +216,10 @@ export function useChapterQuery(
       if (typeof storyId !== 'string' || storyId.length === 0) {
         throw new Error('useChapterQuery: storyId required');
       }
-      const res = await api<ChapterResponse>(
+      const res = await api<unknown>(
         `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}`,
       );
-      return res.chapter;
+      return chapterResponseSchema.parse(res).chapter;
     },
     staleTime: 30_000,
   });
@@ -262,15 +227,10 @@ export function useChapterQuery(
 
 // ---- update chapter (F52) ----
 
-export interface UpdateChapterInput {
-  bodyJson?: unknown;
-  title?: string;
-}
-
 export interface UpdateChapterArgs {
   storyId: string;
   chapterId: string;
-  input: UpdateChapterInput;
+  input: ChapterUpdateInput;
 }
 
 export interface DeleteChapterArgs {
@@ -333,11 +293,11 @@ export function useUpdateChapterMutation(): UseMutationResult<Chapter, Error, Up
   const qc = useQueryClient();
   return useMutation<Chapter, Error, UpdateChapterArgs>({
     mutationFn: async ({ storyId, chapterId, input }) => {
-      const res = await api<ChapterResponse>(
+      const res = await api<unknown>(
         `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}`,
         { method: 'PATCH', body: input as Record<string, unknown> },
       );
-      return res.chapter;
+      return chapterResponseSchema.parse(res).chapter;
     },
     onSuccess: (chapter) => {
       // List cache is metadata-only — strip `bodyJson` before merging.
@@ -345,7 +305,7 @@ export function useUpdateChapterMutation(): UseMutationResult<Chapter, Error, Up
       void _bodyJson;
       qc.setQueryData<ChapterMeta[] | undefined>(chaptersQueryKey(chapter.storyId), (prev) => {
         if (!prev) return prev;
-        return prev.map((c) => (c.id === chapter.id ? (meta as ChapterMeta) : c));
+        return prev.map((c) => (c.id === chapter.id ? meta : c));
       });
       // Per-chapter cache holds the full body — feeds the next render of Paper.
       qc.setQueryData<Chapter>(chapterQueryKey(chapter.id), chapter);

@@ -3,14 +3,22 @@
 
 import { Prisma } from '@prisma/client';
 import { type NextFunction, type Request, type Response, Router } from 'express';
-import { z } from 'zod';
+import {
+  chapterCreateSchema,
+  chapterReorderSchema,
+  chapterResponseSchema,
+  chaptersResponseSchema,
+  chapterUpdateSchema,
+} from 'story-editor-shared';
 import { badRequestFromZod } from '../lib/bad-request';
+import { respond } from '../lib/respond';
+import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import {
   ChapterNotOwnedError,
-  type ChapterUpdateInput,
   createChapterRepo,
+  type RepoChapterUpdateInput,
 } from '../repos/chapter.repo';
 import { tipTapJsonToText } from '../services/tiptap-text';
 
@@ -25,41 +33,6 @@ const POST_ORDER_RETRY_ATTEMPTS = 3;
 function isPrismaUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
-
-const ChapterStatus = z.enum(['draft', 'revision', 'final']);
-
-const CreateChapterBody = z
-  .object({
-    title: z.string().min(1).max(500),
-    bodyJson: z.unknown().optional(),
-    status: ChapterStatus.optional(),
-  })
-  .strict();
-
-const UpdateChapterBody = z
-  .object({
-    title: z.string().min(1).max(500).optional(),
-    bodyJson: z.unknown().optional(),
-    status: ChapterStatus.optional(),
-    orderIndex: z.number().int().min(0).optional(),
-  })
-  .strict();
-
-const ReorderChaptersBody = z
-  .object({
-    chapters: z
-      .array(
-        z
-          .object({
-            id: z.string().min(1),
-            orderIndex: z.number().int().min(0),
-          })
-          .strict(),
-      )
-      .min(1)
-      .max(500),
-  })
-  .strict();
 
 function computeWordCount(bodyJson: unknown): number {
   const text = tipTapJsonToText(bodyJson).trim();
@@ -77,8 +50,8 @@ export function createChaptersRouter() {
   router.get('/', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
     try {
-      const chapters = await createChapterRepo(req).findManyForStory(storyId);
-      res.status(200).json({ chapters });
+      const rows = await createChapterRepo(req).findManyForStory(storyId);
+      respond(chaptersResponseSchema, res, { chapters: rows.map(serializeChapterMeta) });
     } catch (err) {
       next(err);
     }
@@ -87,7 +60,7 @@ export function createChaptersRouter() {
   router.post('/', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
 
-    const parsed = CreateChapterBody.safeParse(req.body);
+    const parsed = chapterCreateSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -131,7 +104,7 @@ export function createChaptersRouter() {
         throw lastErr ?? new Error('chapters POST: failed to allocate orderIndex');
       }
 
-      res.status(201).json({ chapter: created });
+      respond(chapterResponseSchema, res, { chapter: serializeChapter(created) }, 201);
     } catch (err) {
       next(err);
     }
@@ -142,7 +115,7 @@ export function createChaptersRouter() {
   router.patch('/reorder', ownStory, async (req: Request, res: Response, next: NextFunction) => {
     const storyId = req.params.storyId as string;
 
-    const parsed = ReorderChaptersBody.safeParse(req.body);
+    const parsed = chapterReorderSchema.safeParse(req.body);
     if (!parsed.success) {
       badRequestFromZod(res, parsed.error);
       return;
@@ -204,7 +177,7 @@ export function createChaptersRouter() {
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
         }
-        res.status(200).json({ chapter });
+        respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
       } catch (err) {
         next(err);
       }
@@ -219,7 +192,7 @@ export function createChaptersRouter() {
       const storyId = req.params.storyId as string;
       const chapterId = req.params.chapterId as string;
 
-      const parsed = UpdateChapterBody.safeParse(req.body);
+      const parsed = chapterUpdateSchema.safeParse(req.body);
       if (!parsed.success) {
         badRequestFromZod(res, parsed.error);
         return;
@@ -233,7 +206,7 @@ export function createChaptersRouter() {
           return;
         }
 
-        const input: ChapterUpdateInput = {};
+        const input: RepoChapterUpdateInput = {};
         if (body.title !== undefined) input.title = body.title;
         if (body.status !== undefined) input.status = body.status;
         if (body.orderIndex !== undefined) input.orderIndex = body.orderIndex;
@@ -247,7 +220,7 @@ export function createChaptersRouter() {
           res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
           return;
         }
-        res.status(200).json({ chapter });
+        respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
       } catch (err) {
         next(err);
       }

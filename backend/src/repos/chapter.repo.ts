@@ -1,16 +1,19 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
+import {
+  CHAPTER_ENCRYPTED_FIELD_KEYS,
+  CHAPTER_META_ENCRYPTED_FIELD_KEYS,
+  type ChapterStatus,
+} from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
-const ENCRYPTED_FIELDS = ['title', 'body'] as const;
 // `findManyForStory` is metadata-only — no body fetched, no body decrypted.
 // Sidebar / list consumers don't need the body, and skipping it saves a full
 // AES-GCM decrypt + JSON.parse per chapter on every list refresh. The single-
 // chapter `findById` is the sole authority for `bodyJson`.
-const META_ENCRYPTED_FIELDS = ['title'] as const;
 
-export interface ChapterCreateInput {
+export interface RepoChapterCreateInput {
   storyId: string;
   title: string;
   // Body is stored encrypted as a serialised JSON string. Caller passes the
@@ -24,13 +27,37 @@ export interface ChapterCreateInput {
   wordCount?: number;
 }
 
-export interface ChapterUpdateInput {
+export interface RepoChapterUpdateInput {
   title?: string;
   bodyJson?: unknown;
   status?: string;
   orderIndex?: number;
   wordCount?: number;
 }
+
+/**
+ * Internal repo shape for a fully-decrypted chapter (post-rename of `body`
+ * column to `bodyJson` parsed object — see `shape()`). Defined as a `type`
+ * alias, not `interface`, so it satisfies `Record<string, unknown>` (the
+ * constraint on `projectDecrypted<T>`'s generic).
+ */
+export type RepoChapter = {
+  id: string;
+  storyId: string;
+  title: string;
+  bodyJson: unknown;
+  wordCount: number;
+  orderIndex: number;
+  status: ChapterStatus;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+/**
+ * Metadata-only repo shape — same as RepoChapter minus `bodyJson`. Returned
+ * by `shapeMeta()`.
+ */
+export type RepoChapterMeta = Omit<RepoChapter, 'bodyJson'>;
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -61,7 +88,7 @@ export class ChapterNotOwnedError extends Error {
 }
 
 export function createChapterRepo(req: Request, client: PrismaClient = defaultPrisma) {
-  async function create(input: ChapterCreateInput) {
+  async function create(input: RepoChapterCreateInput) {
     const userId = resolveUserId(req);
     await ensureStoryOwned(client, input.storyId, userId);
 
@@ -125,7 +152,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     return rows.map((r) => shapeMeta(r, req));
   }
 
-  async function update(id: string, input: ChapterUpdateInput) {
+  async function update(id: string, input: RepoChapterUpdateInput) {
     const userId = resolveUserId(req);
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) {
@@ -279,19 +306,27 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
 // triple only — body ciphertext columns are not selected at the DB layer, so
 // `bodyJson` is intentionally absent from the projected output. Callers that
 // need the body must use `findById`.
-function shapeMeta(row: unknown, req: Request) {
-  return projectDecrypted(req, row as Record<string, unknown>, META_ENCRYPTED_FIELDS);
+function shapeMeta(row: unknown, req: Request): RepoChapterMeta {
+  return projectDecrypted<RepoChapterMeta>(
+    req,
+    row as Record<string, unknown>,
+    CHAPTER_META_ENCRYPTED_FIELD_KEYS,
+  );
 }
 
-function shape(row: unknown, req: Request) {
-  const projected = projectDecrypted(req, row as Record<string, unknown>, ENCRYPTED_FIELDS);
+function shape(row: unknown, req: Request): RepoChapter {
+  const projected = projectDecrypted(
+    req,
+    row as Record<string, unknown>,
+    CHAPTER_ENCRYPTED_FIELD_KEYS,
+  );
   // The encrypted column is named `body` (matching `bodyCiphertext/Iv/AuthTag`),
   // but the API contract surfaces the TipTap document tree as `bodyJson`. Parse
   // the serialised JSON and rename the field on the way out.
   let bodyJson: unknown = null;
   if (typeof projected.body === 'string' && projected.body.length > 0) {
     try {
-      bodyJson = JSON.parse(projected.body);
+      bodyJson = JSON.parse(projected.body as string);
     } catch {
       // Non-JSON plaintext — shouldn't happen post-[E11]; surface as-is so
       // the caller can see something went wrong rather than crash.
@@ -300,5 +335,5 @@ function shape(row: unknown, req: Request) {
   }
   delete projected.body;
   projected.bodyJson = bodyJson;
-  return projected;
+  return projected as RepoChapter;
 }
