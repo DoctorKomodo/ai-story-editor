@@ -1,4 +1,4 @@
-.PHONY: dev stop rebuild rebuild-frontend rebuild-backend migrate seed reset-db test test-e2e logs
+.PHONY: dev stop rebuild rebuild-frontend rebuild-backend migrate seed reset-db test test-e2e logs clean-docker
 
 # Extra flags for `docker compose up` in the `dev` target. Empty for a plain
 # `make dev`; the `rebuild*` targets set it to --renew-anon-volumes so a freshly
@@ -22,14 +22,25 @@ stop:
 rebuild: stop
 	docker compose build
 	$(MAKE) dev COMPOSE_UP_FLAGS=--renew-anon-volumes
+	$(MAKE) clean-docker
 
 rebuild-frontend: stop
 	docker compose build frontend
 	$(MAKE) dev COMPOSE_UP_FLAGS=--renew-anon-volumes
+	$(MAKE) clean-docker
 
 rebuild-backend: stop
 	docker compose build backend
 	$(MAKE) dev COMPOSE_UP_FLAGS=--renew-anon-volumes
+	$(MAKE) clean-docker
+
+# Reclaim disk from `make rebuild*`. Only removes resources unused by any
+# container (so the running stack is safe) and older than 24h (so an image you
+# just pulled but haven't started yet is spared). Run standalone any time:
+#   make clean-docker
+clean-docker:
+	docker system prune -f --filter "until=24h"
+	docker volume prune -f
 
 migrate:
 	cd backend && npx prisma migrate deploy
