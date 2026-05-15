@@ -17,6 +17,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { useCallback, useRef, useState } from 'react';
+import type { ChapterMeta } from 'story-editor-shared';
 import { ChapterListSectionHeader } from '@/components/ChapterListSectionHeader';
 import {
   CloseIcon,
@@ -26,7 +27,6 @@ import {
   useInlineConfirm,
 } from '@/design/primitives';
 import {
-  type ChapterMeta,
   chaptersQueryKey,
   computeReorderedChapters,
   useChaptersQuery,

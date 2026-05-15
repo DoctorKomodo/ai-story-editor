@@ -16,9 +16,6 @@ import {
 } from 'story-editor-shared';
 import { api } from '@/lib/api';
 
-// Re-export shared types so existing callers that import from this hook keep working.
-export type { Chapter, ChapterMeta };
-
 /**
  * Query key for the ordered chapter list belonging to a story.
  */
