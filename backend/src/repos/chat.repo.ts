@@ -2,7 +2,6 @@ import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { CHAT_ENCRYPTED_FIELD_KEYS, type ChatKind } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import type { RepoChat } from '../lib/serialize';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = CHAT_ENCRYPTED_FIELD_KEYS;
@@ -18,6 +17,21 @@ export interface ChatCreateInput {
 export interface ChatUpdateInput {
   title?: string | null;
 }
+
+// Repo-layer shape. Dates arrive as `Date` from Prisma; serialize converts to ISO.
+// Plaintext-only at this boundary — `titleCiphertext` etc. have been projected
+// out by chat.repo.ts via `projectDecrypted<RepoChat>`.
+// Defined as a `type` alias (not `interface`) so it satisfies the
+// `Record<string, unknown>` constraint on `projectDecrypted<T>`.
+export type RepoChat = {
+  id: string;
+  chapterId: string;
+  title: string | null;
+  kind: 'ask' | 'scene';
+  createdAt: Date;
+  updatedAt: Date;
+  lastActivityAt: Date;
+};
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -60,7 +74,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
   }
 
-  async function findManyForChapter(chapterId: string, opts?: { kind?: 'ask' | 'scene' }) {
+  async function findManyForChapter(chapterId: string, opts?: { kind?: ChatKind }) {
     const userId = resolveUserId(req);
     await ensureChapterOwned(client, chapterId, userId);
     const rows = await client.chat.findMany({

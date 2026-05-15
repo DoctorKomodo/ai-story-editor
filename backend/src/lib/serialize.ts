@@ -1,5 +1,6 @@
 import type { Character, Chat, Message, OutlineItem, Story } from 'story-editor-shared';
 import type { RepoCharacter } from '../repos/character.repo';
+import type { RepoChat } from '../repos/chat.repo';
 import type { RepoMessage } from '../repos/message.repo';
 import type { RepoOutlineItem } from '../repos/outline.repo';
 import type { RepoStory } from '../repos/story.repo';
@@ -45,21 +46,6 @@ export function serializeMessage(row: RepoMessage): Message {
     createdAt: row.createdAt.toISOString(),
   };
 }
-
-// Repo-layer shape. Dates arrive as `Date` from Prisma; serialize converts to ISO.
-// Plaintext-only at this boundary — `titleCiphertext` etc. have been projected
-// out by chat.repo.ts via `projectDecrypted<RepoChat>`.
-// Defined as a `type` alias (not `interface`) so it satisfies the
-// `Record<string, unknown>` constraint on `projectDecrypted<T>`.
-export type RepoChat = {
-  id: string;
-  chapterId: string;
-  title: string | null;
-  kind: 'ask' | 'scene';
-  createdAt: Date;
-  updatedAt: Date;
-  lastActivityAt: Date;
-};
 
 // Explicit pick (not spread): forces the compiler to surface any repo field
 // the wire shape does NOT carry (matches serializeMessage / serializeOutlineItem).
