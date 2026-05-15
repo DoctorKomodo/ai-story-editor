@@ -21,11 +21,11 @@ import {
   storyResponseSchema,
   storyUpdateSchema,
 } from 'story-editor-shared';
-import { badRequestFromZod } from '../lib/bad-request';
 import { respond } from '../lib/respond';
 import { serializeStory } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
+import { validateBody } from '../middleware/validate.js';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createStoryRepo } from '../repos/story.repo';
 
@@ -59,15 +59,9 @@ export function createStoriesRouter() {
   });
 
   // POST /api/stories — create a new story for the caller.
-  router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-    const parsed = storyCreateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      badRequestFromZod(res, parsed.error);
-      return;
-    }
-    const body = parsed.data;
-
-    try {
+  router.post(
+    '/',
+    validateBody(storyCreateSchema, async (body, req, res) => {
       const story = await createStoryRepo(req).create({
         title: body.title,
         synopsis: body.synopsis ?? null,
@@ -77,10 +71,8 @@ export function createStoriesRouter() {
       });
 
       respond(storyResponseSchema, res, { story: serializeStory(story) }, 201);
-    } catch (err) {
-      next(err);
-    }
-  });
+    }),
+  );
 
   // ── /:id routes (B2) ────────────────────────────────────────────────────
   // Ownership middleware param defaults to `${type}Id` (storyId); our route
@@ -110,25 +102,21 @@ export function createStoriesRouter() {
   });
 
   // PATCH /api/stories/:id — partial update; nullable fields accept `null`.
-  router.patch('/:id', ownStory, async (req: Request, res: Response, next: NextFunction) => {
-    const id = req.params.id as string;
-    const parsed = storyUpdateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      badRequestFromZod(res, parsed.error);
-      return;
-    }
+  router.patch(
+    '/:id',
+    ownStory,
+    validateBody(storyUpdateSchema, async (body, req, res) => {
+      const id = req.params.id as string;
 
-    // Forward only the keys the caller actually supplied so we preserve the
-    // `undefined` vs `null` contract that the repo relies on.
-    const body = parsed.data;
-    const input: StoryUpdateInput = {};
-    if (body.title !== undefined) input.title = body.title;
-    if (body.synopsis !== undefined) input.synopsis = body.synopsis;
-    if (body.genre !== undefined) input.genre = body.genre;
-    if (body.worldNotes !== undefined) input.worldNotes = body.worldNotes;
-    if (body.targetWords !== undefined) input.targetWords = body.targetWords;
+      // Forward only the keys the caller actually supplied so we preserve the
+      // `undefined` vs `null` contract that the repo relies on.
+      const input: StoryUpdateInput = {};
+      if (body.title !== undefined) input.title = body.title;
+      if (body.synopsis !== undefined) input.synopsis = body.synopsis;
+      if (body.genre !== undefined) input.genre = body.genre;
+      if (body.worldNotes !== undefined) input.worldNotes = body.worldNotes;
+      if (body.targetWords !== undefined) input.targetWords = body.targetWords;
 
-    try {
       const story = await createStoryRepo(req).update(id, input);
       // Race: ownership middleware confirmed ownership, then the row disappeared
       // before the update landed. Return 404 rather than masking it as success.
@@ -137,10 +125,8 @@ export function createStoriesRouter() {
         return;
       }
       respond(storyResponseSchema, res, { story: serializeStory(story) });
-    } catch (err) {
-      next(err);
-    }
-  });
+    }),
+  );
 
   // DELETE /api/stories/:id — hard delete; schema cascades to chapters/etc.
   router.delete('/:id', ownStory, async (req: Request, res: Response, next: NextFunction) => {
