@@ -1,4 +1,4 @@
-.PHONY: dev stop rebuild rebuild-frontend rebuild-backend migrate seed reset-db test test-e2e logs clean-docker
+.PHONY: dev stop rebuild rebuild-frontend rebuild-backend migrate seed reset-db lint typecheck test test-e2e verify logs clean-docker
 
 # Extra flags for `docker compose up` in the `dev` target. Empty for a plain
 # `make dev`; the `rebuild*` targets set it to --renew-anon-volumes so a freshly
@@ -57,12 +57,32 @@ reset-db:
 	@sleep 3
 	cd backend && npx prisma migrate reset --force
 
+lint:
+	npx biome check
+
+typecheck:
+	npm -w story-editor-shared run typecheck
+	npm -w story-editor-backend run typecheck
+	npm -w story-editor-frontend run typecheck
+
 test:
+	npm -w story-editor-shared run test
 	npm -w story-editor-backend run test
 	npm -w story-editor-frontend run test
 
 test-e2e:
 	npx playwright test
+
+# Local CI-equivalent: lint, three typechecks, design-token lint, backend +
+# frontend builds, three test suites. Backend tests require Postgres up
+# (`make dev`) — vitest globalSetup hits the compose stack on every invocation.
+verify: lint typecheck
+	npm -w story-editor-frontend run lint:design
+	npm -w story-editor-backend run build
+	npm -w story-editor-frontend run build
+	npm -w story-editor-shared run test
+	npm -w story-editor-backend run test
+	npm -w story-editor-frontend run test
 
 logs:
 	docker compose logs -f --tail=100

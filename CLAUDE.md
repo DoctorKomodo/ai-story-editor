@@ -48,11 +48,20 @@ make rebuild-backend        # rebuild + restart after a backend package.json cha
 make rebuild                # rebuild + restart both images
 
 # Testing (from repo root)
-make test                   # backend (vitest) + frontend (vitest) suites
+make test                   # shared + backend + frontend (vitest) suites
 make test-e2e               # playwright against a running stack
-cd backend && npm run db:test:reset   # reset the test DB before a full suite
+npm -w story-editor-backend run db:test:reset   # reset the test DB before a full suite
 
-# Typecheck (both subprojects expose a `typecheck` script)
+# Lint / typecheck / verify (from repo root)
+make lint                   # biome check across the whole repo
+make typecheck              # shared + backend + frontend typecheck
+make verify                 # local CI-equivalent: lint + typecheck + design-lint + builds + tests
+                            # (backend tests require `make dev` up — vitest globalSetup hits Postgres)
+
+# Per-workspace typecheck commands. The `shared` workspace is source-only —
+# no `build` script; the backend tsup build inlines it via `noExternal`.
+# Use `typecheck` for the equivalent compile-time gate.
+npm --prefix shared run typecheck     # tsc --noEmit (shared, source-only — no build artifact)
 npm --prefix backend run typecheck    # tsc --noEmit (backend)
 npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
 
@@ -194,7 +203,7 @@ Hard gates (do not start until the prerequisite is complete):
 ## Testing Rules
 
 - Backend tests use a separate test database defined in `.env.test` — never run tests against the development database
-- Run `npm run db:test:reset` before a full test suite run to ensure a clean state
+- Run `npm -w story-editor-backend run db:test:reset` before a full test suite run to ensure a clean state
 - Each test file sets up its own test data and tears it down — no test should depend on data created by another test
 - Do not mock the database in integration tests — use the test DB with real Prisma queries
 - Integration tests against narrative entities go through the **repo layer**, not raw Prisma — otherwise the test doesn't exercise the encrypt/decrypt path and is unrepresentative

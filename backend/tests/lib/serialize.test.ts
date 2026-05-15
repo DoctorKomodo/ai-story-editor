@@ -1,8 +1,18 @@
-import { messagesResponseSchema, storyResponseSchema } from 'story-editor-shared';
+import {
+  messagesResponseSchema,
+  outlineItemResponseSchema,
+  storyResponseSchema,
+} from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
-import { serializeCharacter, serializeMessage, serializeStory } from '../../src/lib/serialize';
+import {
+  serializeCharacter,
+  serializeMessage,
+  serializeOutlineItem,
+  serializeStory,
+} from '../../src/lib/serialize';
 import type { RepoCharacter } from '../../src/repos/character.repo';
 import type { RepoMessage } from '../../src/repos/message.repo';
+import type { RepoOutlineItem } from '../../src/repos/outline.repo';
 import type { RepoStory } from '../../src/repos/story.repo';
 
 const dbRow = {
@@ -41,10 +51,13 @@ describe('serializeCharacter()', () => {
   });
 
   it('does not mutate the input row', () => {
-    const snapshot = { ...dbRow, createdAt: dbRow.createdAt, updatedAt: dbRow.updatedAt };
+    const snapshot = {
+      ...dbRow,
+      createdAt: new Date(dbRow.createdAt.getTime()),
+      updatedAt: new Date(dbRow.updatedAt.getTime()),
+    };
     serializeCharacter(dbRow);
-    expect(dbRow.createdAt).toEqual(snapshot.createdAt);
-    expect(dbRow.updatedAt).toEqual(snapshot.updatedAt);
+    expect(dbRow).toEqual(snapshot);
   });
 
   it('excludes any stray runtime key from the wire shape (explicit pick)', () => {
@@ -123,5 +136,61 @@ describe('serializeStory()', () => {
 
   it('produces a value that satisfies storyResponseSchema egress validation', () => {
     expect(() => storyResponseSchema.parse({ story: serializeStory(dbRow) })).not.toThrow();
+  });
+});
+
+describe('serializeOutlineItem()', () => {
+  // RepoOutlineItem omits no extra columns today, but use explicit pick to
+  // match the established pattern across all four serialize* helpers. Also
+  // locks the contract via a stray-key assertion.
+  const validRow = {
+    id: 'cm0outline00001',
+    storyId: 'cm0story0000001',
+    title: 'Chapter 1 — the call',
+    sub: 'protagonist receives the inciting incident',
+    status: 'active',
+    order: 0,
+    createdAt: new Date('2026-05-15T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-15T01:00:00.000Z'),
+  };
+
+  it('ISO-strings Date fields', () => {
+    const wire = serializeOutlineItem(validRow);
+    expect(wire.createdAt).toBe('2026-05-15T00:00:00.000Z');
+    expect(wire.updatedAt).toBe('2026-05-15T01:00:00.000Z');
+  });
+
+  it('passes narrative + structural fields through unchanged', () => {
+    const wire = serializeOutlineItem(validRow);
+    expect(wire.id).toBe(validRow.id);
+    expect(wire.storyId).toBe(validRow.storyId);
+    expect(wire.title).toBe(validRow.title);
+    expect(wire.sub).toBe(validRow.sub);
+    expect(wire.status).toBe(validRow.status);
+    expect(wire.order).toBe(validRow.order);
+  });
+
+  it('does not mutate the input row', () => {
+    const before = {
+      ...validRow,
+      createdAt: new Date(validRow.createdAt.getTime()),
+      updatedAt: new Date(validRow.updatedAt.getTime()),
+    };
+    serializeOutlineItem(validRow);
+    expect(validRow).toEqual(before);
+  });
+
+  it('excludes any stray runtime key from the wire shape (explicit pick)', () => {
+    const rowWithExtra = {
+      ...validRow,
+      titleCiphertext: 'should-not-leak',
+    } as unknown as RepoOutlineItem;
+    const wire = serializeOutlineItem(rowWithExtra) as Record<string, unknown>;
+    expect(wire).not.toHaveProperty('titleCiphertext');
+  });
+
+  it('produces a value that satisfies outlineItemResponseSchema egress validation', () => {
+    const wire = serializeOutlineItem(validRow);
+    expect(() => outlineItemResponseSchema.parse({ outlineItem: wire })).not.toThrow();
   });
 });

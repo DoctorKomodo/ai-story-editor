@@ -5,6 +5,14 @@ import {
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
+import {
+  type OutlineCreateInput,
+  type OutlineItem,
+  type OutlineReorderInput,
+  type OutlineUpdateInput,
+  outlineItemResponseSchema,
+  outlineListResponseSchema,
+} from 'story-editor-shared';
 import { api } from '@/lib/api';
 
 /**
@@ -18,30 +26,12 @@ import { api } from '@/lib/api';
  * - DELETE /api/stories/:storyId/outline/:id            → 204
  * - PATCH  /api/stories/:storyId/outline/reorder        → 204 (body { items: [{id, order}] })
  *
- * `status` is intentionally free-form on the backend (z.string().min(1).max(40)).
- * The frontend convention is `'queued' | 'active' | 'done'`, but we keep the
- * client-side type wide so unknown statuses round-trip cleanly.
+ * Types and response schemas are imported from `story-editor-shared`. The
+ * `OutlineStatus` union below is a frontend-only UI rendering convention —
+ * the wire contract / DB column are both free-form string, by deliberate
+ * design (see outline.routes.ts:28-30 and schema.prisma:175).
  */
 export type OutlineStatus = 'queued' | 'active' | 'done';
-
-export interface OutlineItem {
-  id: string;
-  storyId: string;
-  title: string;
-  sub: string | null;
-  status: string;
-  order: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface OutlineListResponse {
-  outline: OutlineItem[];
-}
-
-export interface OutlineItemResponse {
-  outlineItem: OutlineItem;
-}
 
 export const outlineQueryKey = (storyId: string): readonly ['outline', string] =>
   ['outline', storyId] as const;
@@ -50,39 +40,30 @@ export function useOutlineQuery(storyId: string | undefined): UseQueryResult<Out
   return useQuery({
     queryKey: outlineQueryKey(storyId ?? ''),
     queryFn: async (): Promise<OutlineItem[]> => {
-      const res = await api<OutlineListResponse>(
-        `/stories/${encodeURIComponent(storyId ?? '')}/outline`,
-      );
+      const raw = await api<unknown>(`/stories/${encodeURIComponent(storyId ?? '')}/outline`);
+      const { outline } = outlineListResponseSchema.parse(raw);
       // Sort defensively — the backend already returns ordered, but the cache
       // shape this hook commits to is "sorted ascending by `order`" so the
       // optimistic-reorder path can skip a sort step.
-      return [...res.outline].sort((a, b) => a.order - b.order);
+      return [...outline].sort((a, b) => a.order - b.order);
     },
     enabled: Boolean(storyId),
     staleTime: 30_000,
   });
 }
 
-export interface CreateOutlineInput {
-  title: string;
-  sub?: string | null;
-  status: string;
-}
-
 export function useCreateOutlineMutation(
   storyId: string,
-): UseMutationResult<OutlineItem, Error, CreateOutlineInput> {
+): UseMutationResult<OutlineItem, Error, OutlineCreateInput> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (input: CreateOutlineInput): Promise<OutlineItem> => {
-      const res = await api<OutlineItemResponse>(
-        `/stories/${encodeURIComponent(storyId)}/outline`,
-        {
-          method: 'POST',
-          body: input,
-        },
-      );
-      return res.outlineItem;
+    mutationFn: async (input: OutlineCreateInput): Promise<OutlineItem> => {
+      const raw = await api<unknown>(`/stories/${encodeURIComponent(storyId)}/outline`, {
+        method: 'POST',
+        body: input,
+      });
+      const { outlineItem } = outlineItemResponseSchema.parse(raw);
+      return outlineItem;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: outlineQueryKey(storyId) });
@@ -90,32 +71,26 @@ export function useCreateOutlineMutation(
   });
 }
 
-export type UpdateOutlinePatch = Partial<{
-  title: string;
-  sub: string | null;
-  status: string;
-  order: number;
-}>;
-
-export interface UpdateOutlineInput {
+export interface UpdateOutlineArgs {
   id: string;
-  patch: UpdateOutlinePatch;
+  patch: OutlineUpdateInput;
 }
 
 export function useUpdateOutlineMutation(
   storyId: string,
-): UseMutationResult<OutlineItem, Error, UpdateOutlineInput> {
+): UseMutationResult<OutlineItem, Error, UpdateOutlineArgs> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, patch }: UpdateOutlineInput): Promise<OutlineItem> => {
-      const res = await api<OutlineItemResponse>(
+    mutationFn: async ({ id, patch }: UpdateOutlineArgs): Promise<OutlineItem> => {
+      const raw = await api<unknown>(
         `/stories/${encodeURIComponent(storyId)}/outline/${encodeURIComponent(id)}`,
         {
           method: 'PATCH',
           body: patch,
         },
       );
-      return res.outlineItem;
+      const { outlineItem } = outlineItemResponseSchema.parse(raw);
+      return outlineItem;
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: outlineQueryKey(storyId) });
@@ -123,16 +98,12 @@ export function useUpdateOutlineMutation(
   });
 }
 
-export interface DeleteOutlineInput {
-  id: string;
-}
-
 export function useDeleteOutlineMutation(
   storyId: string,
-): UseMutationResult<void, Error, DeleteOutlineInput> {
+): UseMutationResult<void, Error, { id: string }> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id }: DeleteOutlineInput): Promise<void> => {
+    mutationFn: async ({ id }: { id: string }): Promise<void> => {
       await api<void>(`/stories/${encodeURIComponent(storyId)}/outline/${encodeURIComponent(id)}`, {
         method: 'DELETE',
       });
@@ -188,37 +159,31 @@ export interface ReorderOutlineMutationContext {
   previous: OutlineItem[] | undefined;
 }
 
-export interface ReorderOutlineInput {
-  items: { id: string; order: number }[];
-  previousItems: OutlineItem[];
+// `items` derived from the shared schema so a wire-shape change surfaces here
+// as a type error, not a runtime drift. `optimisticItems` has no wire analog
+// (frontend-only optimistic cache write), so it stays as a hook-local field.
+export interface ReorderOutlineInputArgs {
+  items: OutlineReorderInput['items'];
+  optimisticItems: OutlineItem[];
 }
 
-/**
- * F29 — outline reorder with optimistic cache update + rollback on failure.
- *
- * Caller supplies the *already-reordered* item list (typically produced by
- * `computeReorderedOutline`) under `previousItems` for the optimistic write,
- * plus the `items: [{id, order}]` payload that goes on the wire. Mirrors the
- * shape of `useReorderChaptersMutation` — the only differences are the body
- * key (`items` vs `chapters`) and field name (`order` vs `orderIndex`).
- */
 export function useReorderOutlineMutation(
   storyId: string,
-): UseMutationResult<void, Error, ReorderOutlineInput, ReorderOutlineMutationContext> {
+): UseMutationResult<void, Error, ReorderOutlineInputArgs, ReorderOutlineMutationContext> {
   const qc = useQueryClient();
-  return useMutation<void, Error, ReorderOutlineInput, ReorderOutlineMutationContext>({
-    mutationFn: async ({ items }: ReorderOutlineInput): Promise<void> => {
+  return useMutation<void, Error, ReorderOutlineInputArgs, ReorderOutlineMutationContext>({
+    mutationFn: async ({ items }: ReorderOutlineInputArgs): Promise<void> => {
       await api<void>(`/stories/${encodeURIComponent(storyId)}/outline/reorder`, {
         method: 'PATCH',
         body: { items },
       });
     },
     onMutate: async ({
-      previousItems,
-    }: ReorderOutlineInput): Promise<ReorderOutlineMutationContext> => {
+      optimisticItems,
+    }: ReorderOutlineInputArgs): Promise<ReorderOutlineMutationContext> => {
       await qc.cancelQueries({ queryKey: outlineQueryKey(storyId) });
       const previous = qc.getQueryData<OutlineItem[]>(outlineQueryKey(storyId));
-      qc.setQueryData<OutlineItem[]>(outlineQueryKey(storyId), previousItems);
+      qc.setQueryData<OutlineItem[]>(outlineQueryKey(storyId), optimisticItems);
       return { previous };
     },
     onError: (_err, _vars, context) => {
