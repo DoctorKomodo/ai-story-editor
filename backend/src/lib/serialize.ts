@@ -1,6 +1,7 @@
-import type { Character, Message, Story } from 'story-editor-shared';
+import type { Character, Message, OutlineItem, Story } from 'story-editor-shared';
 import type { RepoCharacter } from '../repos/character.repo';
 import type { RepoMessage } from '../repos/message.repo';
+import type { RepoOutlineItem } from '../repos/outline.repo';
 import type { RepoStory } from '../repos/story.repo';
 
 // Explicit pick (not spread): keeps every serialize* helper on one safe
@@ -57,6 +58,23 @@ export function serializeStory(row: RepoStory): Story {
     genre: row.genre,
     worldNotes: row.worldNotes,
     targetWords: row.targetWords,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+  };
+}
+
+// Explicit pick (not spread): keeps every serialize* helper on one safe
+// pattern. RepoOutlineItem happens to carry no extra runtime columns today,
+// but picking hardens the example so a future entity author doesn't copy a
+// spread that leaks an extra column.
+export function serializeOutlineItem(row: RepoOutlineItem): OutlineItem {
+  return {
+    id: row.id,
+    storyId: row.storyId,
+    title: row.title,
+    sub: row.sub,
+    status: row.status,
+    order: row.order,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };

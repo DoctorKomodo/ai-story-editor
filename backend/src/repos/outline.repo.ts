@@ -1,19 +1,35 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
+import {
+  OUTLINE_ENCRYPTED_FIELD_KEYS,
+  type OutlineCreateInput,
+  type OutlineItem,
+  type OutlineUpdateInput,
+} from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
 
-const ENCRYPTED_FIELDS = ['title', 'sub'] as const;
+const ENCRYPTED_FIELDS = OUTLINE_ENCRYPTED_FIELD_KEYS;
 
-export interface OutlineCreateInput {
+// The shared OutlineCreateInput is the request-body shape (no storyId, no
+// order — storyId comes from req.params and order is auto-allocated by the
+// route's POST handler). The repo's create() needs both, so augment locally.
+export type RepoCreateOutlineInput = OutlineCreateInput & {
   storyId: string;
   order: number;
-  title: string;
-  sub?: string | null;
-  status: string;
-}
+};
 
-export type OutlineUpdateInput = Partial<Omit<OutlineCreateInput, 'storyId'>>;
+// Re-export the shared OutlineUpdateInput so existing callers can keep
+// importing UpdateInput from this repo if they want to (minimises consumer
+// churn — the route currently imports `type OutlineUpdateInput` from here).
+export type { OutlineUpdateInput };
+
+// Repo-typed projection: the wire shape (OutlineItem) has ISO-string
+// createdAt/updatedAt; the repo returns Date objects from Prisma.
+export type RepoOutlineItem = Omit<OutlineItem, 'createdAt' | 'updatedAt'> & {
+  createdAt: Date;
+  updatedAt: Date;
+};
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -44,7 +60,7 @@ export class OutlineNotOwnedError extends Error {
 }
 
 export function createOutlineRepo(req: Request, client: PrismaClient = defaultPrisma) {
-  async function create(input: OutlineCreateInput) {
+  async function create(input: RepoCreateOutlineInput) {
     const userId = resolveUserId(req);
     await ensureStoryOwned(client, input.storyId, userId);
     const row = await client.outlineItem.create({
@@ -57,14 +73,14 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
         ...writeEncrypted(req, 'sub', input.sub ?? null),
       },
     });
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoOutlineItem>(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 
   async function findById(id: string) {
     const userId = resolveUserId(req);
     const row = await client.outlineItem.findFirst({ where: { id, story: { userId } } });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoOutlineItem>(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 
   async function findManyForStory(storyId: string) {
@@ -75,7 +91,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
       orderBy: { order: 'asc' },
     });
     return rows.map((r) =>
-      projectDecrypted(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
+      projectDecrypted<RepoOutlineItem>(req, r as unknown as Record<string, unknown>, ENCRYPTED_FIELDS),
     );
   }
 
@@ -95,7 +111,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
       where: { id, story: { userId } },
     });
     if (!row) return null;
-    return projectDecrypted(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
+    return projectDecrypted<RepoOutlineItem>(req, row as unknown as Record<string, unknown>, ENCRYPTED_FIELDS);
   }
 
   async function remove(id: string) {
