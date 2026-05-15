@@ -1,5 +1,5 @@
+import type { ChapterMeta } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
-import type { ChapterMeta } from '@/hooks/useChapters';
 import { computeReorderedChapters } from '@/hooks/useChapters';
 
 function meta(id: string, orderIndex: number): ChapterMeta {
