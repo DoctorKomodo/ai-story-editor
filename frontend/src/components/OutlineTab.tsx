@@ -4,9 +4,9 @@ import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
 import type { JSX } from 'react';
 import { useCallback, useState } from 'react';
+import type { OutlineItem } from 'story-editor-shared';
 import {
   computeReorderedOutline,
-  type OutlineItem,
   outlineQueryKey,
   useOutlineQuery,
   useReorderOutlineMutation,

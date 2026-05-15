@@ -2,12 +2,12 @@ import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JSX, ReactNode } from 'react';
+import type { OutlineItem } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { OutlineTab } from '@/components/OutlineTab';
 import {
   arrayMove,
   computeReorderedOutline,
-  type OutlineItem,
   outlineQueryKey,
   useReorderOutlineMutation,
   withSequentialOrder,
@@ -461,5 +461,68 @@ describe('useReorderOutlineMutation', () => {
       const cached = qc.getQueryData<OutlineItem[]>(outlineQueryKey('story-1'));
       expect(cached?.map((i) => i.id)).toEqual(['b', 'c', 'a']);
     });
+  });
+});
+
+describe('OutlineTab schema drift', () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('tok-1');
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
+  });
+
+  // A malformed wire response must surface as a ZodError through the hook's
+  // runtime parse — NOT silently render garbage. Locks the consolidation
+  // contract: shared/src/schemas/outline.ts ↔ /api/stories/:id/outline.
+  it('does not render content when /outline omits a required field (order)', async () => {
+    const malformed = {
+      outline: [
+        {
+          id: 'cm0',
+          storyId: 'story-1',
+          title: 'broken-item',
+          sub: null,
+          status: 'queued',
+          // order deliberately omitted — schema requires it
+          createdAt: '2026-05-15T00:00:00.000Z',
+          updatedAt: '2026-05-15T00:00:00.000Z',
+        },
+      ],
+    };
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/outline')) {
+        return Promise.resolve(jsonResponse(200, malformed));
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    renderTab();
+
+    // The malformed-item title never reaches the DOM — the query fails its
+    // runtime parse and stays in error state. The component falls back to
+    // its existing empty/error UI.
+    await waitFor(
+      () => {
+        expect(screen.queryByText(/broken-item/)).not.toBeInTheDocument();
+      },
+      { timeout: 3000 },
+    );
   });
 });
