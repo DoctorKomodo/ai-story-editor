@@ -35,7 +35,25 @@ export {
   messagesResponseSchema,
   sendMessageBodySchema,
 } from './schemas/message';
-
+export type {
+  OutlineCreateInput,
+  OutlineEncryptedFieldKey,
+  OutlineItem,
+  OutlineReorderInput,
+  OutlineUpdateInput,
+} from './schemas/outline';
+export {
+  OUTLINE_ENCRYPTED_FIELD_KEYS,
+  OUTLINE_STATUS_MAX,
+  OUTLINE_SUB_MAX,
+  OUTLINE_TITLE_MAX,
+  outlineCreateSchema,
+  outlineItemResponseSchema,
+  outlineItemSchema,
+  outlineListResponseSchema,
+  outlineReorderSchema,
+  outlineUpdateSchema,
+} from './schemas/outline';
 export type {
   Story,
   StoryCreateInput,
