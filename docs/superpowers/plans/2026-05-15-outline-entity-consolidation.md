@@ -331,11 +331,11 @@ export {
 } from './schemas/outline';
 ```
 
-- [ ] **1f. Build the shared workspace; expect clean.**
+- [ ] **1f. Typecheck the shared workspace; expect clean.**
 
-Run: `npm -w story-editor-shared run build`
+Run: `npm -w story-editor-shared run typecheck`
 
-Expected: tsup completes, `shared/dist/` updated, no errors.
+Expected: `tsc --noEmit` completes, no errors. (The shared workspace is source-only — no `build` script; the backend `tsup` build inlines it via `noExternal: ['story-editor-shared']`. `typecheck` is the equivalent compile-time gate.)
 
 - [ ] **1g. Commit.**
 

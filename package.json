@@ -13,6 +13,7 @@
     "lint:fix": "biome check --write",
     "format": "biome format --write",
     "format:check": "biome format",
+    "verify": "make verify",
     "test:e2e:visual": "playwright test --config=playwright.visual.config.ts",
     "prepare": "simple-git-hooks"
   },

@@ -67,9 +67,11 @@ All commands are run from the repo root unless otherwise noted.
 
 | Command | Scope |
 |---|---|
-| `make test` | backend (vitest) + frontend (vitest) |
+| `make test` | shared (vitest) + backend (vitest) + frontend (vitest) |
+| `make verify` | local CI-equivalent: lint + typecheck + design-lint + builds + all three test suites (backend tests require `make dev` up) |
+| `npm -w story-editor-shared run test` | shared schemas (Zod contract) |
 | `cd backend && npm test` | backend unit + integration |
-| `cd backend && npm run db:test:reset` | reset the test DB before a full backend run |
+| `npm -w story-editor-backend run db:test:reset` | reset the test DB before a full backend run |
 | `cd backend && npm run test:live` | opt-in live Venice tests (requires `backend/.env.live` — never in CI) |
 | `cd frontend && npm test` | frontend unit + integration (jsdom) |
 | `make test-e2e` | Playwright E2E (requires the stack to be up) |
@@ -77,17 +79,22 @@ All commands are run from the repo root unless otherwise noted.
 
 Single-task verify is part of the close gate: `/bd-close-reviewed <BD_ID>` (project-local slash command, see `.claude/skills/bd-close-reviewed/`) runs the issue's `verify:` line, typechecks affected workspaces, and fans path-matched surface reviewers before calling `bd close`.
 
-### Lint and format
+### Lint, typecheck, verify
 
 | Command | Scope |
 |---|---|
-| `npm run lint` | Biome check across the whole repo |
+| `make lint` | Biome check across the whole repo (also `npm run lint`) |
+| `make typecheck` | shared + backend + frontend typecheck |
+| `make verify` | local CI-equivalent gate (`npm run verify` calls the same target) |
 | `npm run lint:fix` | Biome with `--write` |
 | `npm run format` | Biome format with `--write` |
 | `npm run format:check` | Biome format dry-run |
 | `cd frontend && npm run lint:design` | design-token guard (forbids raw Tailwind colour utilities) |
+| `npm --prefix shared run typecheck` | shared typecheck (`tsc --noEmit` — source-only workspace, no build) |
 | `npm --prefix backend run typecheck` | backend typecheck (`tsc --noEmit`) |
 | `npm --prefix frontend run typecheck` | frontend typecheck (`tsc -b`, project references) |
+
+The `shared` workspace is source-only — it has no `build` script. The backend `tsup` build inlines it via `noExternal: ['story-editor-shared']`, so there's no `shared/dist` artifact at runtime; `typecheck` is the equivalent compile-time gate.
 
 A `lint-staged` + Biome pre-commit hook runs automatically on `git commit` (see `Pre-commit hook` below).
 
