@@ -6,12 +6,15 @@ import {
 } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
 import {
+  serializeChapter,
+  serializeChapterMeta,
   serializeCharacter,
   serializeChat,
   serializeMessage,
   serializeOutlineItem,
   serializeStory,
 } from '../../src/lib/serialize';
+import type { RepoChapter, RepoChapterMeta } from '../../src/repos/chapter.repo';
 import type { RepoCharacter } from '../../src/repos/character.repo';
 import type { RepoMessage } from '../../src/repos/message.repo';
 import type { RepoOutlineItem } from '../../src/repos/outline.repo';
@@ -248,5 +251,99 @@ describe('serializeChat()', () => {
   it('produces a value that satisfies chatResponseSchema egress validation', () => {
     const wire = serializeChat(baseRow);
     expect(() => chatResponseSchema.parse({ chat: wire })).not.toThrow();
+  });
+});
+
+const ISO = '2026-05-15T00:00:00.000Z';
+const REPO_CHAPTER: RepoChapter = {
+  id: 'c1',
+  storyId: 's1',
+  title: 'Chapter One',
+  bodyJson: { type: 'doc', content: [] },
+  wordCount: 12,
+  orderIndex: 0,
+  status: 'draft',
+  createdAt: new Date(ISO),
+  updatedAt: new Date(ISO),
+};
+
+const REPO_CHAPTER_META: RepoChapterMeta = {
+  id: 'c1',
+  storyId: 's1',
+  title: 'Chapter One',
+  wordCount: 12,
+  orderIndex: 0,
+  status: 'draft',
+  createdAt: new Date(ISO),
+  updatedAt: new Date(ISO),
+};
+
+describe('serializeChapter', () => {
+  it('emits the wire-shape Chapter from a RepoChapter row', () => {
+    expect(serializeChapter(REPO_CHAPTER)).toEqual({
+      id: 'c1',
+      storyId: 's1',
+      title: 'Chapter One',
+      bodyJson: { type: 'doc', content: [] },
+      wordCount: 12,
+      orderIndex: 0,
+      status: 'draft',
+      createdAt: ISO,
+      updatedAt: ISO,
+    });
+  });
+
+  it('converts Date instances to ISO strings', () => {
+    const out = serializeChapter(REPO_CHAPTER);
+    expect(out.createdAt).toBe(ISO);
+    expect(out.updatedAt).toBe(ISO);
+  });
+
+  it('passes bodyJson through unchanged (including null)', () => {
+    const empty: RepoChapter = { ...REPO_CHAPTER, bodyJson: null };
+    expect(serializeChapter(empty).bodyJson).toBeNull();
+  });
+
+  it('does not leak stray fields from the repo row', () => {
+    // Explicit-pick contract: any future column added to RepoChapter that
+    // isn't on the wire shape must not slip through to the response.
+    const row = {
+      ...REPO_CHAPTER,
+      titleCiphertext: Buffer.from('xx'),
+    } as unknown as RepoChapter;
+    const out = serializeChapter(row);
+    expect(out).not.toHaveProperty('titleCiphertext');
+  });
+});
+
+describe('serializeChapterMeta', () => {
+  it('emits the wire-shape ChapterMeta from a RepoChapterMeta row', () => {
+    expect(serializeChapterMeta(REPO_CHAPTER_META)).toEqual({
+      id: 'c1',
+      storyId: 's1',
+      title: 'Chapter One',
+      wordCount: 12,
+      orderIndex: 0,
+      status: 'draft',
+      createdAt: ISO,
+      updatedAt: ISO,
+    });
+  });
+
+  it('does not leak bodyJson if accidentally present on the input', () => {
+    // Defensive: if a caller somehow feeds a RepoChapter (with bodyJson) into
+    // serializeChapterMeta, the explicit pick still omits bodyJson.
+    const wide = { ...REPO_CHAPTER_META, bodyJson: 'sneaky' } as unknown as RepoChapterMeta;
+    const out = serializeChapterMeta(wide);
+    expect(out).not.toHaveProperty('bodyJson');
+  });
+
+  it('does not leak stray fields from the repo row', () => {
+    const row = {
+      ...REPO_CHAPTER_META,
+      titleCiphertext: Buffer.from('xx'),
+    } as unknown as RepoChapterMeta;
+    const out = serializeChapterMeta(row);
+    expect(out).not.toHaveProperty('titleCiphertext');
   });
 });
