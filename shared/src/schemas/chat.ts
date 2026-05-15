@@ -48,7 +48,9 @@ export const chatsResponseSchema = z.strictObject({
 });
 
 // Single source of truth for which Chat fields are encrypted at rest.
-// Imported by backend/src/repos/chat.repo.ts as ENCRYPTED_FIELDS.
+// Imported by backend/src/repos/chat.repo.ts as ENCRYPTED_FIELDS. Repo-only
+// consumer, but the tuple belongs beside the schema describing the same entity
+// (matches the STORY / MESSAGE pattern).
 export const CHAT_ENCRYPTED_FIELD_KEYS = ['title'] as const;
 
 export type Chat = z.infer<typeof chatSchema>;
