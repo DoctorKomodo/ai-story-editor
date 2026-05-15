@@ -6,6 +6,7 @@ import {
 import { describe, expect, it } from 'vitest';
 import {
   serializeCharacter,
+  serializeChat,
   serializeMessage,
   serializeOutlineItem,
   serializeStory,
@@ -192,5 +193,50 @@ describe('serializeOutlineItem()', () => {
   it('produces a value that satisfies outlineItemResponseSchema egress validation', () => {
     const wire = serializeOutlineItem(validRow);
     expect(() => outlineItemResponseSchema.parse({ outlineItem: wire })).not.toThrow();
+  });
+});
+
+describe('serializeChat', () => {
+  const baseRow = {
+    id: 'cm0chat00000001',
+    chapterId: 'cm0chap00000001',
+    title: 'Brainstorming',
+    kind: 'ask' as const,
+    createdAt: new Date('2026-05-15T00:00:00.000Z'),
+    updatedAt: new Date('2026-05-15T01:00:00.000Z'),
+    lastActivityAt: new Date('2026-05-15T02:00:00.000Z'),
+  };
+
+  it('converts Date fields to ISO strings', () => {
+    const out = serializeChat(baseRow);
+    expect(out.createdAt).toBe('2026-05-15T00:00:00.000Z');
+    expect(out.updatedAt).toBe('2026-05-15T01:00:00.000Z');
+    expect(out.lastActivityAt).toBe('2026-05-15T02:00:00.000Z');
+  });
+
+  it('returns null title when null on the repo row', () => {
+    const out = serializeChat({ ...baseRow, title: null });
+    expect(out.title).toBeNull();
+  });
+
+  it('rejects stray repo-internal keys via explicit pick', () => {
+    const out = serializeChat({
+      ...baseRow,
+      titleCiphertext: Buffer.from('xx'),
+    } as unknown as Parameters<typeof serializeChat>[0]);
+    expect((out as unknown as Record<string, unknown>).titleCiphertext).toBeUndefined();
+  });
+
+  it('does not mutate input', () => {
+    const row = {
+      ...baseRow,
+      createdAt: new Date(baseRow.createdAt),
+      updatedAt: new Date(baseRow.updatedAt),
+      lastActivityAt: new Date(baseRow.lastActivityAt),
+    };
+    serializeChat(row);
+    expect(row.createdAt).toBeInstanceOf(Date);
+    expect(row.updatedAt).toBeInstanceOf(Date);
+    expect(row.lastActivityAt).toBeInstanceOf(Date);
   });
 });
