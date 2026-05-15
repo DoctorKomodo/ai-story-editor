@@ -1,9 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
+import type { Chat, ChatSummary } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
-  type ChatSummary,
   chatMessagesQueryKey,
   chatsBaseQueryKey,
   chatsQueryKey,
@@ -388,7 +388,7 @@ describe('useCreateChatMutation cache invalidation', () => {
       kind: 'scene' as const,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
-      messageCount: 0,
+      lastActivityAt: '2026-01-01T00:00:00.000Z',
     };
     fetchMock.mockResolvedValue(jsonResponse(201, { chat: newChat }));
 
@@ -427,14 +427,14 @@ describe('useCreateChatMutation cache invalidation', () => {
   });
 
   it('useCreateChatMutation optimistically prepends to cache', async () => {
-    const newChat: ChatSummary = {
+    const newChat = {
       id: 'chat-new',
       chapterId: CHAPTER_ID,
       title: null,
       kind: 'ask' as const,
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
-      messageCount: 0,
+      lastActivityAt: '2026-01-01T00:00:00.000Z',
     };
     // POST returns the new chat; the refetch after invalidation never resolves.
     fetchMock.mockResolvedValueOnce(jsonResponse(201, { chat: newChat })).mockReturnValue(
@@ -454,6 +454,7 @@ describe('useCreateChatMutation cache invalidation', () => {
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      lastActivityAt: '2026-01-01T00:00:00.000Z',
       messageCount: 2,
     };
     qc.setQueryData(askKey, [existingChat]);
@@ -502,14 +503,14 @@ describe('useRenameChatMutation', () => {
 
   it('updates the cached title from the server response, not the client input', async () => {
     const serverNormalisedTitle = 'Server-Normalized Title';
-    const updatedChat: ChatSummary = {
+    const updatedChat: Chat = {
       id: 'chat-1',
       chapterId: CHAPTER_ID,
       title: serverNormalisedTitle,
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
-      messageCount: 3,
+      lastActivityAt: '2026-01-01T00:00:00.000Z',
     };
     // PATCH returns the server-normalised chat; the invalidate refetch never resolves.
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { chat: updatedChat })).mockReturnValue(
@@ -529,6 +530,7 @@ describe('useRenameChatMutation', () => {
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      lastActivityAt: '2026-01-01T00:00:00.000Z',
       messageCount: 3,
     };
     qc.setQueryData(askKey, [existingChat]);
@@ -587,6 +589,7 @@ describe('useRemoveChatMutation', () => {
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      lastActivityAt: '2026-01-01T00:00:00.000Z',
       messageCount: 1,
     };
     const chatToDelete: ChatSummary = {
@@ -596,6 +599,7 @@ describe('useRemoveChatMutation', () => {
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
       updatedAt: '2026-01-01T00:00:00.000Z',
+      lastActivityAt: '2026-01-01T00:00:00.000Z',
       messageCount: 0,
     };
     qc.setQueryData(askKey, [chatToKeep, chatToDelete]);
@@ -613,6 +617,58 @@ describe('useRemoveChatMutation', () => {
     expect(cached).toBeDefined();
     expect(cached?.find((c) => c.id === 'chat-delete')).toBeUndefined();
     expect(cached?.find((c) => c.id === 'chat-keep')).toBeDefined();
+  });
+});
+
+// ── useChat schema drift ──────────────────────────────────────────────────────
+
+describe('useChat schema drift', () => {
+  const CHAPTER_ID = 'ch-drift-1';
+
+  function jsonResponse(status: number, body: unknown): Response {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  const validChat = {
+    id: 'cm0chat00000001',
+    chapterId: CHAPTER_ID,
+    title: 'First-draft brainstorm',
+    kind: 'ask' as const,
+    createdAt: '2026-05-15T00:00:00.000Z',
+    updatedAt: '2026-05-15T01:00:00.000Z',
+    lastActivityAt: '2026-05-15T02:00:00.000Z',
+  };
+
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('tok');
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
+
+  it('createChat surfaces error when server response carries stray key', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { chat: { ...validChat, extra: 1 } }));
+    const qc = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+      <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useCreateChatMutation(), { wrapper });
+
+    await expect(
+      result.current.mutateAsync({ chapterId: CHAPTER_ID, kind: 'ask' }),
+    ).rejects.toThrow();
   });
 });
 
