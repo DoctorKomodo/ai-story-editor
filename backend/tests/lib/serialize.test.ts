@@ -1,4 +1,5 @@
 import {
+  chatResponseSchema,
   messagesResponseSchema,
   outlineItemResponseSchema,
   storyResponseSchema,
@@ -196,7 +197,7 @@ describe('serializeOutlineItem()', () => {
   });
 });
 
-describe('serializeChat', () => {
+describe('serializeChat()', () => {
   const baseRow = {
     id: 'cm0chat00000001',
     chapterId: 'cm0chap00000001',
@@ -234,9 +235,18 @@ describe('serializeChat', () => {
       updatedAt: new Date(baseRow.updatedAt),
       lastActivityAt: new Date(baseRow.lastActivityAt),
     };
+    const before = {
+      ...row,
+      createdAt: new Date(row.createdAt.getTime()),
+      updatedAt: new Date(row.updatedAt.getTime()),
+      lastActivityAt: new Date(row.lastActivityAt.getTime()),
+    };
     serializeChat(row);
-    expect(row.createdAt).toBeInstanceOf(Date);
-    expect(row.updatedAt).toBeInstanceOf(Date);
-    expect(row.lastActivityAt).toBeInstanceOf(Date);
+    expect(row).toEqual(before);
+  });
+
+  it('produces a value that satisfies chatResponseSchema egress validation', () => {
+    const wire = serializeChat(baseRow);
+    expect(() => chatResponseSchema.parse({ chat: wire })).not.toThrow();
   });
 });
