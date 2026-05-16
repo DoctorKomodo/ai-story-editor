@@ -257,7 +257,7 @@ Backend: fetches story + characters + world notes via the repo layer (decrypted)
 
 Response headers: `x-venice-remaining-requests`, `x-venice-remaining-tokens` ([V9]).
 
-Errors: `409 { code: "venice_key_required" }`. `429 { code: "rate_limited", retryAfter }` when Venice returns 429. `502 { code: "venice_unavailable" }` on Venice 5xx.
+Errors: `409 { code: "venice_key_required" }`. `429 { code: "venice_rate_limited", retryAfterSeconds }` when Venice returns 429. `502 { code: "venice_unavailable" }` on Venice 5xx.
 
 ---
 
