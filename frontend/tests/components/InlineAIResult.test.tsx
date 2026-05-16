@@ -222,7 +222,7 @@ describe('InlineAIResult (F34)', () => {
     expect(screen.getByRole('button', { name: 'Insert after' })).toBeDisabled();
   });
 
-  it('renders InlineErrorBanner with fallback copy when status=error and no error payload', () => {
+  it('renders VeniceErrorBanner with fallback copy when status=error and no error payload', () => {
     useInlineAIResultStore.setState({
       inlineAIResult: { action: 'rewrite', text: 'old', status: 'error', output: '' },
     });
@@ -237,7 +237,7 @@ describe('InlineAIResult (F34)', () => {
     expect(screen.queryByRole('button', { name: 'Insert after' })).toBeNull();
   });
 
-  it('renders InlineErrorBanner with code+message when status=error and error payload provided', () => {
+  it('renders VeniceErrorBanner with code+message when status=error and error payload provided', () => {
     useInlineAIResultStore.setState({
       inlineAIResult: {
         action: 'rewrite',
@@ -259,5 +259,7 @@ describe('InlineAIResult (F34)', () => {
     expect(onRetry).toHaveBeenCalledTimes(1);
     // Discard still rendered in action row.
     expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument();
+    // VeniceErrorBanner renders "Open Settings" for venice_key_invalid.
+    expect(screen.getByRole('button', { name: /Open Settings/i })).toBeInTheDocument();
   });
 });
