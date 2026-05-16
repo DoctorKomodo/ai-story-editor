@@ -276,7 +276,7 @@ Every successful Venice call emits one `[venice.params]` log line (success-side;
 
 **Never** pass raw Venice error bodies, stack traces, or the user's API key to the frontend. The BYOK key must not appear in any log line, error object, or telemetry payload ([AU13]). The mapper scrubs `sk-`-prefixed token fragments from `details.veniceMessage` and the `veniceMessage` log field via `SK_KEY_RE`.
 
-The frontend's `VeniceErrorBanner` component reads these codes and renders the per-code affordances above. See `frontend/src/components/VeniceErrorBanner.tsx` (not yet added — forthcoming in the frontend implementation).
+The frontend's `VeniceErrorBanner` component reads these codes and renders the per-code affordances above. See `frontend/src/components/VeniceErrorBanner.tsx`.
 
 ---
 

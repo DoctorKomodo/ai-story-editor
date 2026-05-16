@@ -11,7 +11,6 @@ export interface VeniceErrorBannerError {
   retryAfterSeconds?: number | null;
   veniceMessage?: string;
   httpStatus?: number;
-  detail?: unknown;
 }
 
 export interface VeniceErrorBannerProps {
@@ -39,7 +38,13 @@ function useCountdown(seedSeconds: number | null | undefined): number | null {
     setSecondsLeft(seedSeconds);
     if (seedSeconds <= 0) return;
     const id = setInterval(() => {
-      setSecondsLeft((s) => (s !== null && s > 0 ? s - 1 : s));
+      setSecondsLeft((s) => {
+        if (s === null || s <= 1) {
+          clearInterval(id);
+          return s === null ? null : 0;
+        }
+        return s - 1;
+      });
     }, 1000);
     return () => clearInterval(id);
   }, [seedSeconds]);
@@ -76,7 +81,6 @@ export function VeniceErrorBanner({
           code: error.code,
           message: error.message,
           httpStatus: error.httpStatus,
-          detail: error.detail,
         }}
         onRetry={onRetry}
         onDismiss={onDismiss}
