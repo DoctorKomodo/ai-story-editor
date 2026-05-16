@@ -1,6 +1,6 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
-import { InlineErrorBanner } from '@/components/InlineErrorBanner';
+import { VeniceErrorBanner } from '@/components/VeniceErrorBanner';
 import { ThinkingDots } from '@/design/ThinkingDots';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
@@ -97,7 +97,7 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
 
       {status === 'error' && (
         <div className="mt-3">
-          <InlineErrorBanner
+          <VeniceErrorBanner
             error={inlineAIResult.error ?? { code: null, message: "Couldn't generate." }}
             onRetry={onRetry}
           />
