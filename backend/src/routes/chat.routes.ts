@@ -162,7 +162,6 @@ export function createChatCrudRouter() {
       }
       res.status(204).send();
     } catch (err) {
-      console.error('[chat.delete]', err);
       next(err);
     }
   });
@@ -192,7 +191,6 @@ export function createChatMessagesRouter() {
       const messages = rows.map(serializeMessage);
       return respond(messagesResponseSchema, res, { messages });
     } catch (err) {
-      console.error('[chat.messages.list]', err);
       next(err);
     }
   });
@@ -632,7 +630,6 @@ export function createChatMessagesRouter() {
         }
       } catch (err) {
         // Pre-stream error — map Venice errors to JSON, let global handler deal with others.
-        console.error('[chat.messages.send]', err);
         if (mapVeniceError(err, res, userId)) return;
         throw err;
       }

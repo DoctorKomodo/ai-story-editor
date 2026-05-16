@@ -56,7 +56,6 @@ export function createAiRouter() {
       const models = await veniceModelsService.fetchModels(req.user!.id);
       res.status(200).json({ models });
     } catch (err) {
-      console.error('[ai.models]', err);
       if (mapVeniceError(err, res, req.user!.id)) return;
       next(err);
     }
@@ -332,7 +331,6 @@ export function createAiRouter() {
         }
       } catch (err) {
         // [V11] Map Venice API errors before the SSE headers are flushed.
-        console.error('[ai.complete]', err);
         if (mapVeniceError(err, res, userId)) return;
         throw err;
       }
