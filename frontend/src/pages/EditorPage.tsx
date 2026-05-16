@@ -67,6 +67,7 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
+import { extractVeniceMessage } from '@/lib/veniceError';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
@@ -407,15 +408,7 @@ export function EditorPage(): JSX.Element {
               message: err.message,
               httpStatus: err.status,
               retryAfterSeconds: err.body?.error?.retryAfterSeconds ?? null,
-              veniceMessage: (() => {
-                const d = err.body?.error?.details;
-                return typeof d === 'object' &&
-                  d !== null &&
-                  'veniceMessage' in d &&
-                  typeof (d as Record<string, unknown>).veniceMessage === 'string'
-                  ? ((d as Record<string, unknown>).veniceMessage as string)
-                  : undefined;
-              })(),
+              veniceMessage: extractVeniceMessage(err.body),
             }
           : { code: null, message: 'AI request failed.' },
       });

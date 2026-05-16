@@ -4,6 +4,7 @@ import { InlineErrorBanner } from '@/components/InlineErrorBanner';
 import { VeniceErrorBanner } from '@/components/VeniceErrorBanner';
 import { useChatMessagesQuery } from '@/hooks/useChat';
 import type { ApiError } from '@/lib/api';
+import { extractVeniceMessage } from '@/lib/veniceError';
 import {
   type ChatDraftAttachment,
   type ChatDraftError,
@@ -188,12 +189,7 @@ export function TranscriptView({
           message: sendError.message,
           httpStatus: sendError.status,
           retryAfterSeconds: sendError.body?.error?.retryAfterSeconds ?? null,
-          veniceMessage: (() => {
-            const d = sendError.body?.error?.details;
-            if (typeof d !== 'object' || d === null || !('veniceMessage' in d)) return undefined;
-            const v = (d as Record<string, unknown>).veniceMessage;
-            return typeof v === 'string' ? v : undefined;
-          })(),
+          veniceMessage: extractVeniceMessage(sendError.body),
         }
       : null;
 

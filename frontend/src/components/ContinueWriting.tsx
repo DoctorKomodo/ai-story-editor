@@ -31,8 +31,10 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import { type JSX, useCallback, useMemo, useRef, useState } from 'react';
 import { UsageIndicator } from '@/components/UsageIndicator';
+import { VeniceErrorBanner } from '@/components/VeniceErrorBanner';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAltEnter } from '@/hooks/useKeyboardShortcuts';
+import { extractVeniceMessage } from '@/lib/veniceError';
 
 export interface ContinueWritingProps {
   editor: TiptapEditor | null;
@@ -178,9 +180,20 @@ export function ContinueWriting({
       )}
 
       {isError && (
-        <div role="alert" className="text-danger text-[13px]">
-          {error?.message ?? "Couldn't generate. Try again?"}
-        </div>
+        <VeniceErrorBanner
+          error={
+            error
+              ? {
+                  code: error.code ?? null,
+                  message: error.message,
+                  httpStatus: error.status,
+                  retryAfterSeconds: error.body?.error?.retryAfterSeconds ?? null,
+                  veniceMessage: extractVeniceMessage(error.body),
+                }
+              : { code: null, message: "Couldn't generate. Try again?" }
+          }
+          onRetry={handleRetry}
+        />
       )}
 
       <div className="flex items-center gap-2 mt-4 text-[12px]">
