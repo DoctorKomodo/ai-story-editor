@@ -53,6 +53,7 @@ export function VeniceErrorBanner({
   onDismiss,
   disabled,
 }: VeniceErrorBannerProps): JSX.Element | null {
+  // Hooks must run before the null early-return; the null branch produces a no-op seed.
   const isRateLimited = error?.code === 'venice_rate_limited';
   const seed = isRateLimited ? (error?.retryAfterSeconds ?? null) : null;
   const countdown = useCountdown(seed);
@@ -63,8 +64,10 @@ export function VeniceErrorBanner({
     error.code === 'venice_key_invalid' || error.code === 'venice_key_required';
   const showTopUpLink = error.code === 'venice_insufficient_balance';
   const showCountdown = isRateLimited && countdown !== null && countdown > 0;
-  const showVeniceMessage =
-    typeof error.veniceMessage === 'string' && error.veniceMessage.length > 0;
+  const veniceMessage =
+    typeof error.veniceMessage === 'string' && error.veniceMessage.length > 0
+      ? error.veniceMessage
+      : null;
 
   return (
     <div className="flex flex-col gap-1.5" data-testid="venice-error-banner">
@@ -79,9 +82,9 @@ export function VeniceErrorBanner({
         onDismiss={onDismiss}
         disabled={disabled}
       />
-      {showVeniceMessage ? (
+      {veniceMessage ? (
         <p className="text-[11.5px] italic text-ink-3 px-1">
-          Venice said: {truncateVeniceMessage(error.veniceMessage as string)}
+          Venice said: {truncateVeniceMessage(veniceMessage)}
         </p>
       ) : null}
       {showCountdown ? (
