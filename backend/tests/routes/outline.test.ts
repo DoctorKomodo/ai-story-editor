@@ -591,6 +591,9 @@ describe('Outline routes [B8]', () => {
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
+    expect(res.body.error.issues).toHaveLength(1);
+    expect(res.body.error.issues[0].path).toEqual(['items', 1, 'id']);
+    expect(res.body.error.issues[0].message).toContain('Duplicate outline item id');
   });
 
   it('reorder returns 400 on duplicate order in payload', async () => {
@@ -611,6 +614,9 @@ describe('Outline routes [B8]', () => {
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
+    expect(res.body.error.issues).toHaveLength(1);
+    expect(res.body.error.issues[0].path).toEqual(['items', 1, 'order']);
+    expect(res.body.error.issues[0].message).toContain('Duplicate order');
   });
 
   it('reorder returns 403 when an id belongs to a different story (same user)', async () => {

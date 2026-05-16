@@ -216,6 +216,8 @@ describe('POST /api/ai/complete [V5]', () => {
       .set('Authorization', `Bearer ${accessToken}`)
       .send({ action: 'continue' }); // missing chapterId / storyId / modelId
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+    expect(Array.isArray(res.body.error.issues)).toBe(true);
   });
 
   it('returns 400 when action is an invalid enum value', async () => {
@@ -231,6 +233,8 @@ describe('POST /api/ai/complete [V5]', () => {
         modelId: 'm',
       });
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+    expect(Array.isArray(res.body.error.issues)).toBe(true);
   });
 
   it('returns 409 venice_key_required when user has no BYOK key', async () => {

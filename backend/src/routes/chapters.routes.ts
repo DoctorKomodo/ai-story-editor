@@ -10,11 +10,12 @@ import {
   chaptersResponseSchema,
   chapterUpdateSchema,
 } from 'story-editor-shared';
-import { badRequestFromZod } from '../lib/bad-request';
+import { badRequest } from '../lib/bad-request';
 import { respond } from '../lib/respond';
 import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
+import { validateBody } from '../middleware/validate';
 import {
   ChapterNotOwnedError,
   createChapterRepo,
@@ -57,17 +58,12 @@ export function createChaptersRouter() {
     }
   });
 
-  router.post('/', ownStory, async (req: Request, res: Response, next: NextFunction) => {
-    const storyId = req.params.storyId as string;
+  router.post(
+    '/',
+    ownStory,
+    validateBody(chapterCreateSchema, async (body, req, res) => {
+      const storyId = req.params.storyId as string;
 
-    const parsed = chapterCreateSchema.safeParse(req.body);
-    if (!parsed.success) {
-      badRequestFromZod(res, parsed.error);
-      return;
-    }
-    const body = parsed.data;
-
-    try {
       // [D16] aggregate(_max)+insert is racy: two concurrent POSTs can compute
       // the same `nextOrderIndex`. @@unique([storyId, orderIndex]) guarantees
       // the DB rejects the loser with P2002; we re-aggregate and retry. One
@@ -105,61 +101,51 @@ export function createChaptersRouter() {
       }
 
       respond(chapterResponseSchema, res, { chapter: serializeChapter(created) }, 201);
-    } catch (err) {
-      next(err);
-    }
-  });
+    }),
+  );
 
   // [B4] PATCH /reorder — declared BEFORE /:chapterId so Express doesn't
   // match the literal "reorder" path segment against the :chapterId param.
-  router.patch('/reorder', ownStory, async (req: Request, res: Response, next: NextFunction) => {
-    const storyId = req.params.storyId as string;
+  router.patch(
+    '/reorder',
+    ownStory,
+    validateBody(chapterReorderSchema, async (body, req, res) => {
+      const storyId = req.params.storyId as string;
 
-    const parsed = chapterReorderSchema.safeParse(req.body);
-    if (!parsed.success) {
-      badRequestFromZod(res, parsed.error);
-      return;
-    }
-    const items = parsed.data.chapters;
+      // Uniqueness checks the Zod schema can't express cleanly — these are
+      // semantic validation (duplicate id / duplicate orderIndex) rather than
+      // schema-shape issues, but still return the contract's `validation_error`
+      // code so clients can handle all 400s uniformly. The human-readable
+      // message disambiguates the specific failure.
+      const seenIds = new Set<string>();
+      const seenOrders = new Set<number>();
+      for (const [i, item] of body.chapters.entries()) {
+        if (seenIds.has(item.id)) {
+          return badRequest(res, `Duplicate chapter id "${item.id}"`, ['chapters', i, 'id']);
+        }
+        if (seenOrders.has(item.orderIndex)) {
+          return badRequest(res, `Duplicate orderIndex ${item.orderIndex}`, [
+            'chapters',
+            i,
+            'orderIndex',
+          ]);
+        }
+        seenIds.add(item.id);
+        seenOrders.add(item.orderIndex);
+      }
 
-    // Uniqueness checks the Zod schema can't express cleanly — these are
-    // semantic validation (duplicate id / duplicate orderIndex) rather than
-    // schema-shape issues, but still return the contract's `validation_error`
-    // code so clients can handle all 400s uniformly. The human-readable
-    // message disambiguates the specific failure.
-    const seenIds = new Set<string>();
-    const seenOrders = new Set<number>();
-    for (const item of items) {
-      if (seenIds.has(item.id)) {
-        res.status(400).json({
-          error: { message: 'Duplicate chapter id in payload', code: 'validation_error' },
-        });
-        return;
+      try {
+        await createChapterRepo(req).reorder(storyId, body.chapters);
+        res.status(204).send();
+      } catch (err) {
+        if (err instanceof ChapterNotOwnedError) {
+          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
+          return;
+        }
+        throw err;
       }
-      seenIds.add(item.id);
-      if (seenOrders.has(item.orderIndex)) {
-        res.status(400).json({
-          error: {
-            message: 'Duplicate orderIndex in payload',
-            code: 'validation_error',
-          },
-        });
-        return;
-      }
-      seenOrders.add(item.orderIndex);
-    }
-
-    try {
-      await createChapterRepo(req).reorder(storyId, items);
-      res.status(204).send();
-    } catch (err) {
-      if (err instanceof ChapterNotOwnedError) {
-        res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
-        return;
-      }
-      next(err);
-    }
-  });
+    }),
+  );
 
   // Ownership middleware confirms the caller owns the chapter but not that
   // the chapter lives under :storyId — each per-chapter handler 404s a
@@ -188,43 +174,32 @@ export function createChaptersRouter() {
     '/:chapterId',
     ownStory,
     ownChapter,
-    async (req: Request, res: Response, next: NextFunction) => {
+    validateBody(chapterUpdateSchema, async (body, req, res) => {
       const storyId = req.params.storyId as string;
       const chapterId = req.params.chapterId as string;
 
-      const parsed = chapterUpdateSchema.safeParse(req.body);
-      if (!parsed.success) {
-        badRequestFromZod(res, parsed.error);
+      const existing = await createChapterRepo(req).findById(chapterId);
+      if (!existing || existing.storyId !== storyId) {
+        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
         return;
       }
-      const body = parsed.data;
 
-      try {
-        const existing = await createChapterRepo(req).findById(chapterId);
-        if (!existing || existing.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
-
-        const input: RepoChapterUpdateInput = {};
-        if (body.title !== undefined) input.title = body.title;
-        if (body.status !== undefined) input.status = body.status;
-        if (body.orderIndex !== undefined) input.orderIndex = body.orderIndex;
-        if (body.bodyJson !== undefined) {
-          input.bodyJson = body.bodyJson;
-          input.wordCount = computeWordCount(body.bodyJson);
-        }
-
-        const chapter = await createChapterRepo(req).update(chapterId, input);
-        if (!chapter) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
-        respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
-      } catch (err) {
-        next(err);
+      const input: RepoChapterUpdateInput = {};
+      if (body.title !== undefined) input.title = body.title;
+      if (body.status !== undefined) input.status = body.status;
+      if (body.orderIndex !== undefined) input.orderIndex = body.orderIndex;
+      if (body.bodyJson !== undefined) {
+        input.bodyJson = body.bodyJson;
+        input.wordCount = computeWordCount(body.bodyJson);
       }
-    },
+
+      const chapter = await createChapterRepo(req).update(chapterId, input);
+      if (!chapter) {
+        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
+        return;
+      }
+      respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
+    }),
   );
 
   router.delete(

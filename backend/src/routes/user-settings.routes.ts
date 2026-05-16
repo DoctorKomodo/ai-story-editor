@@ -20,10 +20,10 @@
 import type { Prisma } from '@prisma/client';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 import { z } from 'zod';
-import { badRequestFromZod } from '../lib/bad-request';
 import { deepMerge } from '../lib/deep-merge';
 import { prisma } from '../lib/prisma';
 import { requireAuth } from '../middleware/auth.middleware';
+import { validateBody } from '../middleware/validate';
 
 // ─── Schema ───────────────────────────────────────────────────────────────────
 
@@ -186,14 +186,9 @@ export function createUserSettingsRouter() {
     }
   });
 
-  router.patch('/', async (req: Request, res: Response, next: NextFunction) => {
-    const parsed = SettingsSchema.safeParse(req.body);
-    if (!parsed.success) {
-      badRequestFromZod(res, parsed.error);
-      return;
-    }
-
-    try {
+  router.patch(
+    '/',
+    validateBody(SettingsSchema, async (body, req, res) => {
       const user = await prisma.user.findUnique({
         where: { id: req.user!.id },
         select: { settingsJson: true },
@@ -208,7 +203,7 @@ export function createUserSettingsRouter() {
       // Merge the validated PATCH payload into whatever is stored, then persist
       // the merged-over-stored value (NOT merged-over-defaults) — we don't want
       // to write the default tree into every user's row on their first PATCH.
-      const nextStored = deepMerge(stored, parsed.data as Record<string, unknown>) as Record<
+      const nextStored = deepMerge(stored, body as Record<string, unknown>) as Record<
         string,
         unknown
       >;
@@ -220,7 +215,7 @@ export function createUserSettingsRouter() {
       // "Reset to defaults" work — sending `{ m1: {} }` clears m1's overrides.
       // Without this, deepMerge recurses into the empty entry and returns the
       // prior fields unchanged, making reset a server-side no-op.
-      const patchOverrides = parsed.data.chat?.overrides;
+      const patchOverrides = body.chat?.overrides;
       if (patchOverrides) {
         const chat = (nextStored.chat as Record<string, unknown> | undefined) ?? {};
         const overrides = (chat.overrides as Record<string, unknown> | undefined) ?? {};
@@ -238,10 +233,8 @@ export function createUserSettingsRouter() {
 
       // Response is defaults-merged so the client sees the fully-populated shape.
       res.status(200).json({ settings: deepMerge(DEFAULT_SETTINGS, nextStored) });
-    } catch (err) {
-      next(err);
-    }
-  });
+    }),
+  );
 
   return router;
 }

@@ -222,6 +222,10 @@ describe('Chapter reorder route [B4]', () => {
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
+    expect(Array.isArray(res.body.error.issues)).toBe(true);
+    expect(res.body.error.issues).toHaveLength(1);
+    expect(res.body.error.issues[0].path).toEqual(['chapters', 1, 'id']);
+    expect(res.body.error.issues[0].message).toContain('Duplicate chapter id');
   });
 
   it('returns 400 on duplicate orderIndex in payload', async () => {
@@ -242,6 +246,10 @@ describe('Chapter reorder route [B4]', () => {
       });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
+    expect(Array.isArray(res.body.error.issues)).toBe(true);
+    expect(res.body.error.issues).toHaveLength(1);
+    expect(res.body.error.issues[0].path).toEqual(['chapters', 1, 'orderIndex']);
+    expect(res.body.error.issues[0].message).toContain('Duplicate orderIndex');
   });
 
   it('returns 403 when an id belongs to a different story (same user)', async () => {

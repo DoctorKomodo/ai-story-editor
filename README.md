@@ -54,6 +54,8 @@ Re-running `make seed` is idempotent: it deletes the demo user (cascade wipes th
 | `make rebuild-frontend` | rebuild + restart after a frontend `package.json` change |
 | `make rebuild-backend` | rebuild + restart after a backend `package.json` change |
 | `make rebuild` | rebuild + restart both images |
+| `docker logs -f --tail 100 story-editor-backend-1` | docker backend logs |
+
 
 Need a clean dev environment from scratch? `make reset-db && make dev && make seed` will give you a fresh DB with a freshly-registered demo user.
 

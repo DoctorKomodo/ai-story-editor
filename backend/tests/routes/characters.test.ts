@@ -525,6 +525,32 @@ describe('Character routes [B5]', () => {
         });
       expect(res.status).toBe(400);
       expect(res.body.error.code).toBe('validation_error');
+      expect(res.body.error.issues).toHaveLength(1);
+      expect(res.body.error.issues[0].path).toEqual(['characters', 1, 'orderIndex']);
+      expect(res.body.error.issues[0].message).toContain('Duplicate orderIndex');
+    });
+
+    it('PATCH /reorder returns 400 on duplicate character id values', async () => {
+      const accessToken = await registerAndLogin('cr-dup-id');
+      const req = makeFakeReq(accessToken);
+      const story = await createStoryRepo(req).create({ title: 's' });
+      const storyId = story.id as string;
+      const a = await createCharacterRepo(req).create({ storyId, name: 'a', orderIndex: 0 });
+
+      const res = await request(app)
+        .patch(`/api/stories/${storyId}/characters/reorder`)
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({
+          characters: [
+            { id: a.id, orderIndex: 0 },
+            { id: a.id, orderIndex: 1 },
+          ],
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error.code).toBe('validation_error');
+      expect(res.body.error.issues).toHaveLength(1);
+      expect(res.body.error.issues[0].path).toEqual(['characters', 1, 'id']);
+      expect(res.body.error.issues[0].message).toContain('Duplicate character id');
     });
 
     it('PATCH /reorder returns 403 when one of the ids belongs to another user', async () => {

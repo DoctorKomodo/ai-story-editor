@@ -151,6 +151,9 @@ export function globalErrorHandler(
     return;
   }
   const isProd = process.env.NODE_ENV === 'production';
+  if (!isProd) {
+    console.error(err);
+  }
   const message = isProd
     ? 'Internal server error'
     : err instanceof Error

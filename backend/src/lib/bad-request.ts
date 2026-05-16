@@ -25,3 +25,13 @@ export function badRequestFromZod(res: Response, err: ZodError): Response {
     },
   });
 }
+
+export function badRequest(res: Response, message: string, path: (string | number)[]): Response {
+  return res.status(400).json({
+    error: {
+      message,
+      code: 'validation_error',
+      issues: [{ path, message }],
+    },
+  });
+}
