@@ -12,7 +12,7 @@ import { useInlineAIResultStore } from '@/store/inlineAIResult';
  * selection as a serif-italic blockquote with a left border, then either:
  *   - three bouncing `.think-dot`s while `status === 'thinking'`,
  *   - the streaming/done output as serif 16px text, or
- *   - an `<InlineErrorBanner>` on `status === 'error'` showing the actual
+ *   - a `<VeniceErrorBanner>` on `status === 'error'` showing the actual
  *     `code · message` (with debug-mode raw payload).
  *
  * Action rows are split by status:
