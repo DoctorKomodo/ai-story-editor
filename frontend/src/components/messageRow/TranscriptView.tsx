@@ -1,7 +1,9 @@
 import { type JSX, type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 import type { Message } from 'story-editor-shared';
 import { InlineErrorBanner } from '@/components/InlineErrorBanner';
+import { VeniceErrorBanner } from '@/components/VeniceErrorBanner';
 import { useChatMessagesQuery } from '@/hooks/useChat';
+import type { ApiError } from '@/lib/api';
 import {
   type ChatDraftAttachment,
   type ChatDraftError,
@@ -26,7 +28,7 @@ export type TranscriptRow =
 export interface TranscriptViewProps {
   chatId: string | null;
   emptyState: ReactNode;
-  sendError?: Error | null;
+  sendError?: ApiError | null;
   onRetrySend?: () => void;
   /** Disables the InlineErrorBanner's Retry button (banner-retry's `isDispatching` window + `mutation.isPending`). */
   disableRetrySend?: boolean;
@@ -179,7 +181,21 @@ export function TranscriptView({
     );
   }
 
-  const bannerError = sendError != null ? { code: null, message: sendError.message } : null;
+  const veniceBannerError =
+    sendError != null
+      ? {
+          code: sendError.code ?? null,
+          message: sendError.message,
+          httpStatus: sendError.status,
+          retryAfterSeconds: sendError.body?.error?.retryAfterSeconds ?? null,
+          veniceMessage: (() => {
+            const d = sendError.body?.error?.details;
+            if (typeof d !== 'object' || d === null || !('veniceMessage' in d)) return undefined;
+            const v = (d as Record<string, unknown>).veniceMessage;
+            return typeof v === 'string' ? v : undefined;
+          })(),
+        }
+      : null;
 
   return (
     <section
@@ -191,9 +207,9 @@ export function TranscriptView({
       <ol className="flex flex-col gap-3" role="log" aria-label="Chat messages">
         {children(rows)}
       </ol>
-      {bannerError ? (
-        <InlineErrorBanner
-          error={bannerError}
+      {veniceBannerError ? (
+        <VeniceErrorBanner
+          error={veniceBannerError}
           {...(onRetrySend ? { onRetry: onRetrySend } : {})}
           {...(disableRetrySend ? { disabled: true } : {})}
         />

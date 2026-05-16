@@ -177,7 +177,7 @@ export interface SendChatMessageArgs {
  */
 export function useSendChatMessageMutation(): UseMutationResult<
   void,
-  Error,
+  ApiError,
   SendChatMessageArgs
 > & {
   stop: () => void;
@@ -185,7 +185,7 @@ export function useSendChatMessageMutation(): UseMutationResult<
   const qc = useQueryClient();
   const abortRef = useRef<AbortController | null>(null);
 
-  const mutation = useMutation<void, Error, SendChatMessageArgs>({
+  const mutation = useMutation<void, ApiError, SendChatMessageArgs>({
     onMutate: ({ chatId, content, attachment }) => {
       useChatDraftStore.getState().start({
         chatId,
