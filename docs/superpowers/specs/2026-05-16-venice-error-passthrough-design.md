@@ -35,6 +35,8 @@ The remaining gap is operational and user-facing:
 
 ### `backend/src/lib/venice-errors.ts`
 
+**Structural refactor of `mapVeniceError` to mirror `mapVeniceErrorToSse`.** Today each branch in `mapVeniceError` (auth / rate-limit / 402 / 5xx / 4xx-forwarded / fallback) embeds `code` and `retryAfterSeconds` as literals inline inside the response JSON, then returns. To share a single `[venice.error]` log call with consistent shape across branches, hoist per-branch state to locals first — exactly the shape `mapVeniceErrorToSse` already uses (`let code: string; let message: string; let retryAfterSeconds: number | null | undefined; let httpStatus: number`). After hoisting, write the response and emit the structured log at the bottom of the function. Removes the asymmetry between the two mappers and makes the log call a single statement.
+
 **Signature change.** Both mappers gain a context param so the log payload can carry the route:
 
 ```ts
@@ -80,50 +82,131 @@ This pairs with the success-side `[venice.params]` log from story-editor-myi: ev
 
 Pass `{ userId, route: 'ai-models' | 'ai-complete' | 'chat' }` instead of the bare `userId` at each callsite. No other logic changes.
 
+### `backend/src/index.ts` — `venice_key_required` headline fix
+
+The `NoVeniceKeyError` branch at line 147-152 currently emits `{ message: 'venice_key_required', code: 'venice_key_required' }` — both fields carry the code string, so the frontend's `InlineErrorBanner` renders "venice_key_required · venice_key_required" as the headline. Change the `message` field to a user-friendly string (the `code` stays unchanged so frontend switches still work):
+
+```ts
+res.status(409).json({
+  error: {
+    message: 'No Venice API key is stored. Add yours in Settings to enable AI features.',
+    code: 'venice_key_required',
+  },
+});
+```
+
+Pairs with the VeniceErrorBanner "Open Settings" affordance — together they give the user a readable line plus a one-click path to fix it.
+
 ## Frontend changes
 
 ### `frontend/src/components/VeniceErrorBanner.tsx` (new)
 
-Wrapper around the existing `InlineErrorBanner`. Receives the same `error` + `onRetry` + `onDismiss` + `disabled` props as `InlineErrorBanner` but with a typed-narrower `error` shape that knows the Venice codes:
+Wrapper around the existing `InlineErrorBanner`. Takes a **flat shape** — not the raw `ApiError` — so the two consumers can each pre-flatten using their existing flatteners (more on the friction below):
 
 ```ts
+export interface VeniceErrorBannerError {
+  code: string | null;
+  message: string;
+  retryAfterSeconds?: number | null;
+  veniceMessage?: string;
+  httpStatus?: number;
+  detail?: unknown;
+}
+
 export interface VeniceErrorBannerProps {
-  error: ApiError | null;
+  error: VeniceErrorBannerError | null;
   onRetry?: () => void;
   onDismiss?: () => void;
   disabled?: boolean;
 }
 ```
 
-It reads `error.body?.error?.code` and `error.body?.error?.retryAfterSeconds` and `error.body?.error?.details?.veniceMessage`, builds the `InlineErrorBannerError` shape from the `ApiError`, and renders per-code affordances:
+This is `InlineErrorBannerError` plus two optional fields (`retryAfterSeconds`, `veniceMessage`). Building from a flat shape keeps `VeniceErrorBanner` decoupled from the `ApiError` class and matches the existing `InlineErrorBannerError` contract the codebase already uses. It reads `error.code`, `error.retryAfterSeconds`, and `error.veniceMessage` to render per-code affordances:
 
 | Code | Affordance |
 |---|---|
 | `venice_rate_limited` | Live countdown line below the headline: "Try again in 23s." Decrements each second via `setInterval(1000)`. When `retryAfterSeconds` is `null` or reaches 0, the countdown hides; Retry button remains usable throughout. |
-| `venice_key_invalid` | Secondary button "Open Settings" alongside Retry. Click opens the existing `SettingsModal` (frontend/src/components/Settings.tsx) on the `'venice'` tab (the BYOK panel; it's the modal's default tab). Modal state lives in `EditorPage` (`frontend/src/pages/EditorPage.tsx:640-642`); the implementer threads a callback down to `VeniceErrorBanner` via prop on the two consumers — pick prop-drilling or a Zustand slice based on what reads cleanest. |
+| `venice_key_invalid` | Secondary button "Open Settings" alongside Retry. Click opens the existing `SettingsModal` (frontend/src/components/Settings.tsx) on the `'venice'` tab. Implemented via a new Zustand slice (see "Settings-modal access pattern" below) — VeniceErrorBanner calls `useSettingsModalStore.getState().openWith('venice')` directly; no prop threading. |
 | `venice_key_required` | Same "Open Settings" affordance (this is the 409 emitted before any Venice call when no key is stored). |
 | `venice_insufficient_balance` | External link "Top up at venice.ai →" rendered alongside Retry. Opens `https://venice.ai/settings/api` in a new tab (`target="_blank" rel="noopener noreferrer"`). |
 | Other codes (`venice_unavailable`, `venice_error`, anything else) | No special affordance — generic banner rendering. |
 
-For **every** Venice code: if `details?.veniceMessage` is present, render it under the headline as an italic small line, prefixed "Venice said: ". Always visible (not gated on debug mode). Trade-off note: Venice's raw error messages could theoretically echo parts of the request body. The backend sanitises key fragments via `SK_KEY_RE` already. If Venice ever proves to echo narrative content, we add a length-cap or a production-gate.
+For **every** Venice code: if `error.veniceMessage` is present, render it under the headline as an italic small line, prefixed "Venice said: ". Always visible (not gated on debug mode). **Truncate at 280 characters** (`error.veniceMessage.slice(0, 280)` + ellipsis when truncated) — cheap insurance against Venice echoing long request fragments in error bodies (param-validation 400/422s do echo request shape today). Doesn't preclude a production-gate fallback later if Venice ever proves to echo narrative content; the backend already sanitises key fragments via `SK_KEY_RE`.
 
 Trade-offs considered:
 - Building this into `InlineErrorBanner` directly: rejected. `InlineErrorBanner` stays the generic primitive, reusable for non-Venice errors. `VeniceErrorBanner` is the Venice-aware composition.
 - Putting per-code logic in each consumer: rejected. Every AI surface would duplicate the switch. Centralise.
 
-### `frontend/src/components/InlineAIResult.tsx` + `frontend/src/components/messageRow/TranscriptView.tsx`
+### Consumer-side changes (not a one-line swap)
 
-Both consumers swap their `<InlineErrorBanner …>` usage for `<VeniceErrorBanner …>`. The prop shape changes: today they pass an `InlineErrorBannerError` (a flat `{ code, message, ... }`); the new `VeniceErrorBanner` accepts the full `ApiError` so it can read `.body.error.retryAfterSeconds` etc. Each consumer already holds an `ApiError` in state — the swap is straightforward.
+The two consumers do not currently hold a shape that has `retryAfterSeconds` / `veniceMessage` — both flatten `ApiError` to their own narrower shapes before storing/passing. Each needs its error shape widened.
+
+**`frontend/src/store/inlineAIResult.ts` (widen `InlineAIResultError`):** Today `InlineAIResultError` is `{ code, message, httpStatus?, detail? }`. Add two optional fields:
+
+```ts
+export interface InlineAIResultError {
+  code: string | null;
+  message: string;
+  httpStatus?: number;
+  detail?: unknown;
+  retryAfterSeconds?: number | null;
+  veniceMessage?: string;
+}
+```
+
+**`frontend/src/pages/EditorPage.tsx` (extend the flattener at lines 399-406):** The flattener that builds `InlineAIResultError` from `completion.error: ApiError` reads `err.code`, `err.message`, `err.status` today. Extend it to also read `err.body?.error?.retryAfterSeconds` and `err.body?.error?.details?.veniceMessage` and include them in the stored shape. Single function, six lines changed.
+
+**`frontend/src/components/InlineAIResult.tsx`:** The render path reads from the store (`useInlineAIResultStore`) and gets the widened `InlineAIResultError`. Swap its `<InlineErrorBanner error={…} />` for `<VeniceErrorBanner error={…} />`. The flat shape lines up.
+
+**`frontend/src/components/messageRow/TranscriptView.tsx`:** Two banner sites. **Only the send-error branch at line 195 swaps to `VeniceErrorBanner`** — the query-error branch at line 154-163 (transcript-load failure) is not a Venice error and stays `InlineErrorBanner`. The send-error path needs three updates:
+- Widen the `sendError` prop type from `Error | null` to `ApiError | null` at line 29.
+- Update the banner-error builder at line 182 to read `sendError?.body?.error?.retryAfterSeconds` / `…?.details?.veniceMessage` and produce the flat `VeniceErrorBannerError` shape.
+- Confirm the mutation-hook generics in `SceneTab.tsx:245` and `ChatTab.tsx:221` already produce `ApiError` (TanStack throws via api.ts's `ApiError` class — likely already typed correctly, but the prop-type widening exposes any drift).
 
 ### `frontend/src/components/InlineErrorBanner.tsx`
 
 Unchanged. Stays the generic primitive.
 
+### Settings-modal access pattern
+
+Currently `EditorPage.tsx:153-154` owns the modal state as local `useState`. Five setter callsites inside EditorPage (lines 460, 585-586, 589, 644-645) plus the mount at 640-646 are the only consumers. To let `VeniceErrorBanner` open the modal without prop-drilling through three layers, extract a small Zustand slice:
+
+```ts
+// frontend/src/store/settingsModal.ts (new)
+import { create } from 'zustand';
+import type { SettingsTab } from '@/components/Settings';
+
+interface SettingsModalState {
+  open: boolean;
+  initialTab: SettingsTab | undefined;
+  openWith: (tab?: SettingsTab) => void;
+  close: () => void;
+}
+
+export const useSettingsModalStore = create<SettingsModalState>((set) => ({
+  open: false,
+  initialTab: undefined,
+  openWith: (tab) => set({ open: true, initialTab: tab }),
+  close: () => set({ open: false, initialTab: undefined }),
+}));
+```
+
+`EditorPage.tsx` migrates: drop the two `useState` declarations, swap each setter callsite for the store action (`useSettingsModalStore.getState().openWith(undefined)` for the no-tab opens, `…openWith('models')` for the models-tab open), and the modal mount reads `open` / `initialTab` from the store hook + binds `onClose` to `close`. `VeniceErrorBanner` imports the store and calls `openWith('venice')` on the "Open Settings" click. No prop drilling.
+
 ## Docs
 
 ### `docs/venice-integration.md`
 
-Existing "Error mapping" section around line 254-258 has a per-code table that's missing `venice_insufficient_balance` and doesn't document `details.veniceMessage`. Replace it with a full "Error catalog" subsection covering all 6 codes (`venice_key_required` + the 5 from the mapper) with: HTTP status, response body shape (`VeniceErrorBody` shape with optional fields enumerated), when emitted, the `[venice.error]` log payload shape, and the frontend's user-facing rendering.
+The existing "Error Handling ([V11])" section at line 250-260 needs a **full replacement**, not a row addition. Stale items to remove or correct:
+
+- Header references `[V11]` task ID — drop the bracketed reference.
+- Line 254 still mentions `500 { code: "internal_error" }` on a server-wide path that no longer exists post-`[AU13]` — remove that row entirely.
+- Line 256 says 429 maps to `rate_limited` — actual mapper emits `venice_rate_limited` (distinct from our-own per-user `rate_limited` throttle).
+- Missing `venice_insufficient_balance` (added in `[V24]`).
+- Missing the `venice_error` catch-all that the mapper falls through to on 4xx-forwarded / unexpected status.
+- No mention of `details.veniceMessage` even though the mapper already includes it on 400/404/422 + fallback.
+
+Replace with a full "Error catalog" subsection covering all 6 codes (`venice_key_required` + the 5 from the mapper: `venice_key_invalid`, `venice_rate_limited`, `venice_insufficient_balance`, `venice_unavailable`, `venice_error`) with: HTTP status, response body shape (`VeniceErrorBody` shape with optional `retryAfterSeconds` + optional `details.veniceMessage` enumerated), when emitted, the `[venice.error]` log payload shape, and the frontend's user-facing rendering (link to `VeniceErrorBanner`'s per-code behaviour table).
 
 ### `docs/api-contract.md`
 
@@ -136,11 +219,11 @@ The one-liner at line 12 currently lists `venice_key_required` and `venice_key_i
 Extend (the file exists from V11/V24 work). New assertions per branch:
 
 - `details.veniceMessage` is present on the auth / rate-limit / insufficient-balance / unavailable branches when Venice supplied a body; absent when it didn't.
-- One `[venice.error]` log line is emitted per error path, parseable as JSON, with the expected `code` + `route` + `upstreamStatus` + `retryAfterSeconds` shape.
-- The legacy `[V11]` prefix is gone from the log output (regression guard).
-- The `ctx.route` param is plumbed through (use a stub route value `'test-route'` cast, or extend the union; the test fixtures decide).
+- One `[venice.error]` log line is emitted per error path, asserted via a `console.error` spy (`vi.spyOn(console, 'error')`), with the expected `code` + `route` + `upstreamStatus` + `retryAfterSeconds` shape in the second argument's parsed JSON.
+- The legacy `[V11]` prefix does not appear in **any** `console.error` spy call from the mapper paths (regression guard, asserted against spy calls — not file content; the comment headers at venice-errors.ts:1 and :116 still reference V11/V11+ as file bookkeeping and stay).
+- The `ctx.route` param is plumbed through. The function signature requires `route: 'ai-models' | 'ai-complete' | 'chat'`; tests pass concrete values.
 
-### `frontend/src/components/VeniceErrorBanner.test.tsx` (new)
+### `frontend/tests/components/VeniceErrorBanner.test.tsx` (new — tests live under `frontend/tests/`)
 
 One test per code-branch:
 
@@ -159,32 +242,38 @@ One story per code-branch covering the same shapes. Existing `InlineErrorBanner.
 
 ### Existing test files
 
-- `frontend/src/components/InlineErrorBanner.test.tsx`: no changes.
-- `frontend/src/components/InlineErrorBanner.stories.tsx`: no changes.
-- The two consumer components' tests (if any) get a fixture update to use the `ApiError` shape rather than the flat `InlineErrorBannerError`.
+- `frontend/tests/components/InlineErrorBanner.test.tsx`: no changes (banner primitive unchanged).
+- `frontend/src/components/InlineErrorBanner.stories.tsx`: no changes (stories co-located with source; banner primitive unchanged).
+- `frontend/tests/components/InlineAIResult.test.tsx` (if present) and any TranscriptView-related test fixtures: update to construct the widened `InlineAIResultError` shape (with `retryAfterSeconds` / `veniceMessage` fields) and to pass an `ApiError`-shaped `sendError` rather than a bare `Error`.
+- Tests covering the EditorPage flattener (lines 399-406) get a new assertion that `retryAfterSeconds` + `veniceMessage` flow through from a rate-limit-shaped `ApiError`.
 
 ## File map
 
 **Backend:**
 
-- `backend/src/lib/venice-errors.ts` — modify (signature change, always-include veniceMessage, log-tag rename + structured payload, 3 new log lines)
-- `backend/src/routes/ai.routes.ts` — modify (3 callsites pass new ctx)
-- `backend/src/routes/chat.routes.ts` — modify (2 callsites pass new ctx)
-- `backend/tests/lib/venice-errors.test.ts` — modify (extended assertions)
+- `backend/src/lib/venice-errors.ts` — modify (structural refactor of `mapVeniceError` to mirror SSE shape, signature change to take `ctx`, always-include `details.veniceMessage`, log-tag rename + structured payload, 6 new log call-sites)
+- `backend/src/routes/ai.routes.ts` — modify (3 callsites pass new `ctx`)
+- `backend/src/routes/chat.routes.ts` — modify (2 callsites pass new `ctx`)
+- `backend/src/index.ts` — modify (1-line message-field fix on the `NoVeniceKeyError` branch at line 149)
+- `backend/tests/lib/venice-errors.test.ts` — modify (extended assertions, console.error spy assertions, regression guard)
 
 **Frontend:**
 
 - `frontend/src/components/VeniceErrorBanner.tsx` — new
-- `frontend/src/components/VeniceErrorBanner.test.tsx` — new
-- `frontend/src/components/VeniceErrorBanner.stories.tsx` — new
-- `frontend/src/components/InlineAIResult.tsx` — modify (swap import + prop shape)
-- `frontend/src/components/messageRow/TranscriptView.tsx` — modify (swap import + prop shape)
+- `frontend/src/components/VeniceErrorBanner.stories.tsx` — new (stories live alongside source)
+- `frontend/tests/components/VeniceErrorBanner.test.tsx` — new (tests live under `frontend/tests/`)
+- `frontend/src/store/settingsModal.ts` — new (Zustand slice; see "Settings-modal access pattern")
+- `frontend/src/store/inlineAIResult.ts` — modify (widen `InlineAIResultError` with two optional fields)
+- `frontend/src/pages/EditorPage.tsx` — modify (extend flattener at lines 399-406; migrate 5 setter callsites + 1 modal mount to `useSettingsModalStore`; drop two `useState` declarations at lines 153-154)
+- `frontend/src/components/InlineAIResult.tsx` — modify (swap `<InlineErrorBanner>` → `<VeniceErrorBanner>`; the store shape already produced is now wider)
+- `frontend/src/components/messageRow/TranscriptView.tsx` — modify (widen `sendError` prop type at line 29 to `ApiError | null`; update banner-error builder at line 182; swap only the send-error banner at line 195 — leave the query-error banner at line 154 as `InlineErrorBanner`)
+- `frontend/src/components/SceneTab.tsx` + `frontend/src/components/ChatTab.tsx` — likely modify (confirm mutation-hook generics produce `ApiError`; small or no change expected)
 - `frontend/src/components/InlineErrorBanner.tsx` — unchanged
 
 **Docs:**
 
-- `docs/venice-integration.md` — modify (Error catalog subsection)
-- `docs/api-contract.md` — modify (one-line pointer update)
+- `docs/venice-integration.md` — modify (full replacement of the "Error Handling ([V11])" section at lines 250-260 with a comprehensive "Error catalog" subsection)
+- `docs/api-contract.md` — modify (line 12 one-line pointer update)
 
 ## Verify
 
