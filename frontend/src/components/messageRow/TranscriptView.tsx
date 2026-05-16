@@ -30,7 +30,7 @@ export interface TranscriptViewProps {
   emptyState: ReactNode;
   sendError?: ApiError | null;
   onRetrySend?: () => void;
-  /** Disables the InlineErrorBanner's Retry button (banner-retry's `isDispatching` window + `mutation.isPending`). */
+  /** Disables the send-error banner's Retry button (banner-retry's `isDispatching` window + `mutation.isPending`). */
   disableRetrySend?: boolean;
   /** Render-prop receives the merged row stream. */
   children: (rows: TranscriptRow[]) => ReactNode;
