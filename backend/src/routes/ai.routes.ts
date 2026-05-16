@@ -56,7 +56,7 @@ export function createAiRouter() {
       const models = await veniceModelsService.fetchModels(req.user!.id);
       res.status(200).json({ models });
     } catch (err) {
-      if (mapVeniceError(err, res, req.user!.id)) return;
+      if (mapVeniceError(err, res, { userId: req.user!.id, route: 'ai-models' })) return;
       next(err);
     }
   });
@@ -317,7 +317,10 @@ export function createAiRouter() {
           if (!clientClosed) {
             // [V11] Map Venice API errors to structured SSE frames. Falls back to
             // generic stream_error for unknown errors.
-            const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), userId);
+            const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), {
+              userId,
+              route: 'ai-complete',
+            });
             if (!handled) {
               res.write(
                 `data: ${JSON.stringify({
@@ -334,7 +337,7 @@ export function createAiRouter() {
         }
       } catch (err) {
         // [V11] Map Venice API errors before the SSE headers are flushed.
-        if (mapVeniceError(err, res, userId)) return;
+        if (mapVeniceError(err, res, { userId, route: 'ai-complete' })) return;
         throw err;
       }
     }),
