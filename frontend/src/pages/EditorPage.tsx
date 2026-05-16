@@ -416,6 +416,13 @@ export function EditorPage(): JSX.Element {
     lastRunArgsRef.current = null;
   }, [activeChapterId, story?.id, clearInlineAIResult]);
 
+  // Reset settings-modal store on unmount so a remount of EditorPage (e.g. story switch) doesn't re-open it.
+  useEffect(() => {
+    return () => {
+      useSettingsModalStore.getState().close();
+    };
+  }, []);
+
   if (storyQuery.isLoading) {
     return (
       <div
