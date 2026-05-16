@@ -454,6 +454,9 @@ export function createChatMessagesRouter() {
                 value: resolvedParams.max_completion_tokens,
                 source: resolvedParams.source.max_completion_tokens,
               },
+              action,
+              model_cap: modelMaxCompletionTokens,
+              enable_web_search: venice_parameters.enable_web_search,
             }),
           );
         }
