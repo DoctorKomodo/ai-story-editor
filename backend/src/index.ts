@@ -146,7 +146,10 @@ export function globalErrorHandler(
   // one in /settings#venice. Keep this above the catch-all 500 below.
   if (err instanceof NoVeniceKeyError) {
     res.status(409).json({
-      error: { message: 'venice_key_required', code: 'venice_key_required' },
+      error: {
+        message: 'No Venice API key is stored. Add yours in Settings to enable AI features.',
+        code: 'venice_key_required',
+      },
     });
     return;
   }
