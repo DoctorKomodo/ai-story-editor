@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { SettingsTab } from '@/components/Settings';
+import type { SettingsTab } from '@/types/settings';
 
 interface SettingsModalState {
   open: boolean;

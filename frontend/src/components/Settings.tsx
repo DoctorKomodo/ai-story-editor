@@ -32,6 +32,9 @@ import {
 } from '@/hooks/useVeniceKey';
 import { ApiError } from '@/lib/api';
 import { useErrorStore } from '@/store/errors';
+import type { SettingsTab } from '@/types/settings';
+
+export type { SettingsTab } from '@/types/settings';
 
 export interface SettingsModalProps {
   open: boolean;
@@ -39,8 +42,6 @@ export interface SettingsModalProps {
   /** When provided, the modal opens on this tab instead of the default ('venice'). */
   initialTab?: SettingsTab;
 }
-
-export type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance';
 
 const TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'venice', label: 'Venice.ai' },
