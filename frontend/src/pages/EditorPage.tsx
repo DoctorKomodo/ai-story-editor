@@ -402,7 +402,21 @@ export function EditorPage(): JSX.Element {
         status: 'error',
         output: '',
         error: err
-          ? { code: err.code ?? null, message: err.message, httpStatus: err.status }
+          ? {
+              code: err.code ?? null,
+              message: err.message,
+              httpStatus: err.status,
+              retryAfterSeconds: err.body?.error?.retryAfterSeconds ?? null,
+              veniceMessage: (() => {
+                const d = err.body?.error?.details;
+                return typeof d === 'object' &&
+                  d !== null &&
+                  'veniceMessage' in d &&
+                  typeof (d as Record<string, unknown>).veniceMessage === 'string'
+                  ? ((d as Record<string, unknown>).veniceMessage as string)
+                  : undefined;
+              })(),
+            }
           : { code: null, message: 'AI request failed.' },
       });
     }

@@ -8,6 +8,8 @@ export interface InlineAIResultError {
   message: string;
   httpStatus?: number;
   detail?: unknown;
+  retryAfterSeconds?: number | null;
+  veniceMessage?: string;
 }
 
 export interface InlineAIResultValue {
