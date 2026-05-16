@@ -122,11 +122,11 @@ function sanitiseVeniceMessage(raw: string): string {
 
 /**
  * Extract a human-readable message string from an APIError.
+ * Returns the text from `err.error.error.message` when present; undefined otherwise.
  *
- * The openai SDK sets `err.message` to a stringified combination of the status
- * code and the raw response body (e.g. `"418 {\"error\":{\"message\":\"I am a
- * teapot\"}}"`). The actual Venice error text is in `err.error.error.message`.
- * We prefer that inner field; fall back to `err.message` only when unavailable.
+ * The double-nesting (`err.error.error.message`) is the SDK shape: the openai SDK
+ * sets `err.error` to the raw parsed response body, which Venice wraps in its own
+ * `{ error: { message } }` envelope.
  */
 function extractVeniceMessage(err: APIError): string | undefined {
   const body = err.error as unknown;
