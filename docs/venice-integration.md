@@ -247,17 +247,36 @@ URL sanitisation is intentionally **not** done server-side — the frontend (tas
 
 ---
 
-## Error Handling ([V11])
+## Error catalog
 
-| Venice status | Mapped response | User-visible message |
-|---|---|---|
-| `401` | `500 { code: "internal_error" }` on the server-wide path *(no longer exists post-[AU13])* · `400 { code: "venice_key_invalid" }` on the `PUT /venice-key` validation path | "Your Venice key is invalid." |
-| `403` | `403 { code: "forbidden" }` | "Venice refused the request." |
-| `429` | `429 { code: "rate_limited", retryAfter }` | "Venice is rate-limiting you; try again in Ns." |
-| `5xx` | `502 { code: "venice_unavailable" }` | "Venice is temporarily unavailable." |
-| Network / timeout | `502 { code: "venice_unavailable" }` | Same as above. |
+All Venice-related error responses share the shape `{ error: { code, message, retryAfterSeconds?, details?: { veniceMessage? } } }`. `code` is stable and machine-readable; `message` is user-facing; `retryAfterSeconds` is present when known; `details.veniceMessage` is the sanitised raw text Venice returned, when Venice supplied one.
 
-**Never** pass raw Venice error bodies, stack traces, or the user's API key to the frontend. The BYOK key must not appear in any log line, error object, or telemetry payload ([AU13]).
+| HTTP | `code` | When emitted | `retryAfterSeconds` | `details.veniceMessage` | User-facing rendering |
+|---|---|---|---|---|---|
+| 409 | `venice_key_required` | User has no BYOK key stored; emitted by `NoVeniceKeyError` branch before any Venice call | absent | absent | "Open Settings" link to the BYOK panel + friendly headline |
+| 400 | `venice_key_invalid` | Venice returns 401 (stored key was rejected) | absent | passes through when present | "Open Settings" link + headline |
+| 429 | `venice_rate_limited` | Venice returns 429 | parsed from `Retry-After` / `x-ratelimit-reset-*`; `null` when unparseable | passes through when present | Live countdown ("Try again in 23s") + Retry button |
+| 402 | `venice_insufficient_balance` | Venice returns 402 INSUFFICIENT_BALANCE | always `null` | passes through when present | "Top up at venice.ai →" external link |
+| 502 | `venice_unavailable` | Venice returns 502/503/504, or transport failure | absent | passes through when present | Retry button only |
+| 400/404/422/502 | `venice_error` | Forwarded Venice 400/404/422; fallback for unexpected non-2xx | absent | passes through when present | Retry button only |
+
+Every successful Venice call emits one `[venice.params]` log line (success-side; from the X34 work). Every Venice error path emits one `[venice.error]` log line via `mapVeniceError` / `mapVeniceErrorToSse`. Shape:
+
+```json
+{
+  "route": "ai-models" | "ai-complete" | "chat",
+  "userId": "...",
+  "code": "venice_rate_limited",
+  "upstreamStatus": 429,
+  "retryAfterSeconds": 23,
+  "veniceMessage": "...",
+  "streaming": false
+}
+```
+
+**Never** pass raw Venice error bodies, stack traces, or the user's API key to the frontend. The BYOK key must not appear in any log line, error object, or telemetry payload ([AU13]). The mapper scrubs `sk-`-prefixed token fragments from `details.veniceMessage` via `SK_KEY_RE`.
+
+The frontend's `VeniceErrorBanner` component reads these codes and renders the per-code affordances above. See `frontend/src/components/VeniceErrorBanner.tsx`.
 
 ---
 
