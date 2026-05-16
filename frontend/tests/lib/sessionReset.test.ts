@@ -167,7 +167,7 @@ describe('store enumeration guard', () => {
     'selection',
   ];
   // UI-only stores intentionally excluded from per-user reset.
-  const UI_ONLY_STORES = ['session', 'sidebarTab', 'ui'];
+  const UI_ONLY_STORES = ['session', 'settingsModal', 'sidebarTab', 'ui'];
 
   it('PER_USER_STORES export length matches the per-user-stores allowlist', () => {
     expect(REGISTERED_STORES.length).toBe(PER_USER_STORES.length);
