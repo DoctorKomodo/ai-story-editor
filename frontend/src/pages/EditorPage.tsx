@@ -175,7 +175,6 @@ export function EditorPage(): JSX.Element {
   const chapterQuery = useChapterQuery(activeChapterId ?? null, story?.id);
   const updateChapter = useUpdateChapterMutation();
   const [draftBodyJson, setDraftBodyJson] = useState<JSONContent | null>(null);
-  const lastWordCountRef = useRef<number>(0);
 
   // [T8.1] Seed the local draft exactly once per active-chapter switch — not
   // on every chapterQuery.data reference change. The earlier shape (deps:
@@ -198,7 +197,6 @@ export function EditorPage(): JSX.Element {
     if (activeChapterId === null) {
       seededForChapterIdRef.current = null;
       setDraftBodyJson(null);
-      lastWordCountRef.current = 0;
       return;
     }
     if (seededForChapterIdRef.current === activeChapterId) return;
@@ -207,7 +205,6 @@ export function EditorPage(): JSX.Element {
     const serverBody = chapterQuery.data.bodyJson as JSONContent | null;
     const seed: JSONContent = serverBody ?? { type: 'doc', content: [{ type: 'paragraph' }] };
     setDraftBodyJson(seed);
-    lastWordCountRef.current = chapterQuery.data.wordCount ?? 0;
   }, [activeChapterId, chapterQuery.data]);
 
   const handleSave = useCallback(
@@ -216,8 +213,7 @@ export function EditorPage(): JSX.Element {
       // [T8.1] Don't send `wordCount` — the backend's `UpdateChapterBody`
       // schema is `.strict()` and rejects the extra key with 400, and the
       // chapter route already recomputes wordCount server-side from
-      // `bodyJson` (see `chapters.routes.ts:242`). The local
-      // `lastWordCountRef` still feeds the topbar word-count display.
+      // `bodyJson` (see `chapters.routes.ts:242`).
       await updateChapter.mutateAsync({
         storyId: story.id,
         chapterId: activeChapterId,
@@ -239,8 +235,7 @@ export function EditorPage(): JSX.Element {
   });
 
   const handlePaperUpdate = useCallback(
-    ({ bodyJson, wordCount }: { bodyJson: JSONContent; wordCount: number }): void => {
-      lastWordCountRef.current = wordCount;
+    ({ bodyJson }: { bodyJson: JSONContent; wordCount: number }): void => {
       setDraftBodyJson(bodyJson);
     },
     [],
@@ -470,7 +465,6 @@ export function EditorPage(): JSX.Element {
               savedAt: autosave.savedAt,
               retryAt: autosave.retryAt,
             }}
-            wordCount={activeChapter?.wordCount ?? null}
             onOpenSettings={() => {
               useSettingsModalStore.getState().openWith();
             }}

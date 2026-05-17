@@ -1,4 +1,4 @@
-// [F26] Top bar — brand · breadcrumbs · save indicator · word count · icon buttons · user menu.
+// [F26] Top bar — brand · breadcrumbs · save indicator · icon buttons · user menu.
 //
 // Faithful port of `mockups/frontend-prototype/design/app.jsx`'s `TopBar` and
 // the `.topbar / .brand / .crumbs / .meta / .icon-btn` rules in
@@ -29,7 +29,6 @@ export interface TopBarProps {
     savedAt: AutosaveIndicatorProps['savedAt'];
     retryAt: AutosaveIndicatorProps['retryAt'];
   };
-  wordCount?: number | null;
 
   // Icon-button callbacks
   onOpenSettings?: () => void;
@@ -114,7 +113,6 @@ export function TopBar({
   chapterNumber = null,
   chapterTitle = null,
   autosave,
-  wordCount = null,
   onOpenSettings,
   username,
   displayName = null,
@@ -191,10 +189,6 @@ export function TopBar({
             savedAt={autosave.savedAt}
             retryAt={autosave.retryAt}
           />
-        ) : null}
-
-        {wordCount != null ? (
-          <span className="font-mono text-[12px]">{wordCount.toLocaleString()} words</span>
         ) : null}
 
         <span className="text-ink-5" aria-hidden="true">
