@@ -3,15 +3,14 @@ import { type JSX, type ReactNode, useState } from 'react';
  * [F38] Chat panel shell — 360px wide right column.
  *
  * Owns the structural chrome of the AI chat side panel:
- *   - 40px header with `Chat / Scene / History` pill tabs + `Settings` icon
- *     button.
+ *   - 40px header with `Chat / Scene` pill tabs.
  *   - Body slot for the active tab — `chatBody` ([ChatTab]) on Chat,
- *     `sceneBody` ([SceneTab]) on Scene, or a placeholder on History.
+ *     `sceneBody` ([SceneTab]) on Scene.
  *   - ModelFooter at the very bottom: model picker button showing the active
  *     model and context-window chip (opens [F42]).
  *
- * The active tab (`chat` | `scene` | `history`) is local state — no
- * cross-component need for it yet; future history work may lift it.
+ * The active tab (`chat` | `scene`) is local state — no cross-component need
+ * for it yet.
  *
  * Width is set by the F25 grid (`.app-shell` column 3 = 360px). For
  * standalone testing we add `min-w-[360px]` so the panel renders at its
@@ -30,7 +29,7 @@ export interface ChatPanelProps {
   onOpenSettings?: () => void;
 }
 
-type TabId = 'chat' | 'scene' | 'history';
+type TabId = 'chat' | 'scene';
 
 function SlidersIcon(): JSX.Element {
   return (
@@ -104,17 +103,6 @@ export function ChatPanel({
           >
             Scene
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'history'}
-            className={tabClass(activeTab === 'history')}
-            onClick={() => {
-              setActiveTab('history');
-            }}
-          >
-            History
-          </button>
         </div>
         <div className="chat-actions flex gap-0.5">
           <button
@@ -136,9 +124,6 @@ export function ChatPanel({
       >
         {activeTab === 'chat' && chatBody}
         {activeTab === 'scene' && sceneBody}
-        {activeTab === 'history' && (
-          <div className="px-4 py-6 text-[12px] text-ink-4">History — coming in a future task</div>
-        )}
       </section>
 
       <ModelFooter onOpenModelPicker={onOpenModelPicker} />

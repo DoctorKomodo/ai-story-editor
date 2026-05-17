@@ -103,10 +103,9 @@ describe('ChatPanel (F38)', () => {
       />,
     );
 
-    // Header — all three tabs as role=tab.
+    // Header — both tabs as role=tab.
     expect(screen.getByRole('tab', { name: 'Chat' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: 'Scene' })).toBeInTheDocument();
-    expect(screen.getByRole('tab', { name: 'History' })).toBeInTheDocument();
 
     // Model footer — testid + the MODEL label.
     expect(screen.getByTestId('model-footer')).toBeInTheDocument();
@@ -117,27 +116,6 @@ describe('ChatPanel (F38)', () => {
 
     // Chat slot rendered on the default Chat tab.
     expect(screen.getByTestId('chat-slot')).toBeInTheDocument();
-  });
-
-  it('Chat tab is active by default; clicking History flips state', async () => {
-    mockModels();
-    renderWithProviders(
-      <ChatPanel chatBody={<div data-testid="chat-slot">chat</div>} sceneBody={<div />} />,
-    );
-
-    const chatTab = screen.getByRole('tab', { name: 'Chat' });
-    const sceneTab = screen.getByRole('tab', { name: 'Scene' });
-    const historyTab = screen.getByRole('tab', { name: 'History' });
-
-    expect(chatTab).toHaveAttribute('aria-selected', 'true');
-    expect(sceneTab).toHaveAttribute('aria-selected', 'false');
-    expect(historyTab).toHaveAttribute('aria-selected', 'false');
-
-    await userEvent.click(historyTab);
-
-    expect(chatTab).toHaveAttribute('aria-selected', 'false');
-    expect(sceneTab).toHaveAttribute('aria-selected', 'false');
-    expect(historyTab).toHaveAttribute('aria-selected', 'true');
   });
 
   it('Settings button calls onOpenSettings', async () => {
@@ -191,20 +169,6 @@ describe('ChatPanel (F38)', () => {
     expect(screen.getByTestId('ctx-chip')).toHaveTextContent('—');
   });
 
-  it('chatBody is visible on Chat tab and hidden on History tab', async () => {
-    mockModels();
-    renderWithProviders(
-      <ChatPanel chatBody={<div data-testid="chat-slot">chat</div>} sceneBody={<div />} />,
-    );
-
-    expect(screen.getByTestId('chat-slot')).toBeInTheDocument();
-
-    await userEvent.click(screen.getByRole('tab', { name: 'History' }));
-
-    expect(screen.queryByTestId('chat-slot')).not.toBeInTheDocument();
-    expect(screen.getByText(/history — coming in a future task/i)).toBeInTheDocument();
-  });
-
   it('Scene tab becomes aria-selected when clicked and shows sceneBody', async () => {
     mockModels();
     renderWithProviders(
@@ -232,14 +196,13 @@ describe('ChatPanel (F38)', () => {
     expect(screen.queryByTestId('chat-slot')).not.toBeInTheDocument();
   });
 
-  it('tab order is Chat → Scene → History', () => {
+  it('tab order is Chat → Scene', () => {
     mockModels();
     renderWithProviders(<ChatPanel chatBody={<div />} sceneBody={<div />} />);
 
     const tabs = screen.getAllByRole('tab');
-    expect(tabs).toHaveLength(3);
+    expect(tabs).toHaveLength(2);
     expect(tabs[0]).toHaveTextContent('Chat');
     expect(tabs[1]).toHaveTextContent('Scene');
-    expect(tabs[2]).toHaveTextContent('History');
   });
 });
