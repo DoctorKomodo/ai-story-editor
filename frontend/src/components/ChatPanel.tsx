@@ -25,44 +25,11 @@ export interface ChatPanelProps {
   sceneBody: ReactNode;
   /** Click handler for the model picker button — opens [F42]. */
   onOpenModelPicker?: () => void;
-  /** Click handler for the Settings icon button — opens [F43]. */
-  onOpenSettings?: () => void;
 }
 
 type TabId = 'chat' | 'scene';
 
-function SlidersIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="4" y1="21" x2="4" y2="14" />
-      <line x1="4" y1="10" x2="4" y2="3" />
-      <line x1="12" y1="21" x2="12" y2="12" />
-      <line x1="12" y1="8" x2="12" y2="3" />
-      <line x1="20" y1="21" x2="20" y2="16" />
-      <line x1="20" y1="12" x2="20" y2="3" />
-      <line x1="1" y1="14" x2="7" y2="14" />
-      <line x1="9" y1="8" x2="15" y2="8" />
-      <line x1="17" y1="16" x2="23" y2="16" />
-    </svg>
-  );
-}
-
-export function ChatPanel({
-  chatBody,
-  sceneBody,
-  onOpenModelPicker,
-  onOpenSettings,
-}: ChatPanelProps): JSX.Element {
+export function ChatPanel({ chatBody, sceneBody, onOpenModelPicker }: ChatPanelProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('chat');
 
   const tabClass = (isActive: boolean): string =>
@@ -102,17 +69,6 @@ export function ChatPanel({
             }}
           >
             Scene
-          </button>
-        </div>
-        <div className="chat-actions flex gap-0.5">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Settings"
-            title="Settings"
-            onClick={onOpenSettings}
-          >
-            <SlidersIcon />
           </button>
         </div>
       </header>

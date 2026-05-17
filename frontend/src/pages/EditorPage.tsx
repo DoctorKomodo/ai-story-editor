@@ -599,9 +599,6 @@ export function EditorPage(): JSX.Element {
             onOpenModelPicker={() => {
               useSettingsModalStore.getState().openWith('models');
             }}
-            onOpenSettings={() => {
-              useSettingsModalStore.getState().openWith();
-            }}
           />
         }
       />

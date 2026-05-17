@@ -118,17 +118,6 @@ describe('ChatPanel (F38)', () => {
     expect(screen.getByTestId('chat-slot')).toBeInTheDocument();
   });
 
-  it('Settings button calls onOpenSettings', async () => {
-    mockModels();
-    const onOpenSettings = vi.fn();
-    renderWithProviders(
-      <ChatPanel chatBody={<div />} sceneBody={<div />} onOpenSettings={onOpenSettings} />,
-    );
-
-    await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
-    expect(onOpenSettings).toHaveBeenCalledTimes(1);
-  });
-
   it('Model picker button calls onOpenModelPicker', async () => {
     mockModels();
     const onOpenModelPicker = vi.fn();
