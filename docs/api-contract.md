@@ -9,7 +9,7 @@ All endpoints are served from the Express backend at `/api`. Content type is `ap
 - **Auth** — unless marked "Public", every endpoint requires the auth middleware ([AU5]) and is scoped to `req.user.id`. Protected endpoints expect `Authorization: Bearer <JWT>`. The refresh-token cookie (`refreshToken`, `HttpOnly; SameSite=Lax; Secure` in prod) is only read by `/api/auth/refresh` and `/api/auth/logout`.
 - **Ownership** — every route that references a `:storyId`, `:chapterId`, `:characterId`, `:outlineItemId`, `:chatId`, or `:messageId` passes through the ownership middleware ([AU6]) and returns `403 { error: { message, code: "forbidden" } }` on mismatch (unknown id, or id owned by another user). Per-handler path-integrity checks additionally return `404 { error: { message, code: "not_found" } }` when a nested resource belongs to the caller but to a different `:storyId` than the URL specifies (e.g. `GET /api/stories/A/chapters/:chapterId` where the chapter lives under story B).
 - **Validation** — request bodies are Zod-validated ([AU / B series]); invalid payloads return `400 { error: { message, code: "validation_error", issues } }`.
-- **Errors** — global error handler returns `{ error: { message, code } }`. Never exposes stack traces in `NODE_ENV=production` ([B7]). Common codes: `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `venice_key_required`, `venice_key_invalid`, `internal_error`.
+- **Errors** — global error handler returns `{ error: { message, code } }`. Never exposes stack traces in `NODE_ENV=production` ([B7]). Common non-Venice codes: `unauthorized`, `forbidden`, `not_found`, `conflict`, `rate_limited` (our-own per-user throttle), `internal_error`. **Venice-specific codes are catalogued in `docs/venice-integration.md#error-catalog`.**
 - **Narrative fields** — responses for Story, Chapter, Character, OutlineItem, Chat, Message never include ciphertext siblings (`*Ciphertext`, `*Iv`, `*AuthTag`). The repo layer strips them ([E9]).
 - **Secrets** — `passwordHash` is never returned. The decrypted Venice API key is never returned; the "hasKey / lastSix / endpoint" shape is the only read surface ([AU12]). Balance is exposed via `GET /api/users/me/venice-account` ([X32]) only.
 
@@ -257,7 +257,7 @@ Backend: fetches story + characters + world notes via the repo layer (decrypted)
 
 Response headers: `x-venice-remaining-requests`, `x-venice-remaining-tokens` ([V9]).
 
-Errors: `409 { code: "venice_key_required" }`. `429 { code: "rate_limited", retryAfter }` when Venice returns 429. `502 { code: "venice_unavailable" }` on Venice 5xx.
+Errors: `409 { code: "venice_key_required" }`. `429 { code: "venice_rate_limited", retryAfterSeconds }` when Venice returns 429. `502 { code: "venice_unavailable" }` on Venice 5xx.
 
 ---
 

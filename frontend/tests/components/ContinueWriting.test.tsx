@@ -217,7 +217,7 @@ describe('ContinueWriting (F35)', () => {
     expect(resetMock).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the error message and Retry/Discard on status=error', () => {
+  it('renders VeniceErrorBanner and Retry/Discard on status=error', () => {
     const { editor } = makeEditorMock();
     setHookState({
       status: 'error',
@@ -225,11 +225,25 @@ describe('ContinueWriting (F35)', () => {
       error: new ApiError(502, 'Stream collapsed'),
     });
     render(<ContinueWriting editor={editor} {...baseProps} />);
-    expect(screen.getByRole('alert')).toHaveTextContent(/stream collapsed/i);
-    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
+    expect(screen.getByTestId('venice-error-banner')).toBeInTheDocument();
+    expect(screen.getByTestId('venice-error-banner')).toHaveTextContent(/stream collapsed/i);
+    // VeniceErrorBanner renders its own Retry and the summary bar has one too.
+    expect(screen.getAllByRole('button', { name: 'Retry' }).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument();
     // Keep is rendered but disabled (no output to commit).
     expect(screen.getByRole('button', { name: 'Keep' })).toBeDisabled();
+  });
+
+  it('renders VeniceErrorBanner with Open Settings button for venice_key_invalid error', () => {
+    const { editor } = makeEditorMock();
+    setHookState({
+      status: 'error',
+      text: '',
+      error: new ApiError(401, 'Venice key is invalid', 'venice_key_invalid'),
+    });
+    render(<ContinueWriting editor={editor} {...baseProps} />);
+    expect(screen.getByTestId('venice-error-banner')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open Settings' })).toBeInTheDocument();
   });
 
   it('does not fire run() on Alt+Enter while streaming', () => {

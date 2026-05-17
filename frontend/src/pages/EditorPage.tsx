@@ -48,7 +48,7 @@ import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
 import { SceneTab } from '@/components/SceneTab';
 import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
-import { SettingsModal, type SettingsTab } from '@/components/Settings';
+import { SettingsModal } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
 import { StoryPicker } from '@/components/StoryPicker';
 import { TopBar } from '@/components/TopBar';
@@ -67,10 +67,12 @@ import { useUserSettings } from '@/hooks/useUserSettings';
 import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
+import { extractVeniceMessage } from '@/lib/veniceError';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
+import { useSettingsModalStore } from '@/store/settingsModal';
 
 function extractSelection(editor: TiptapEditor): string {
   const { from, to } = editor.state.selection;
@@ -150,8 +152,8 @@ export function EditorPage(): JSX.Element {
   // [F55] Page-root modal state. The page renders each modal at the bottom
   // of its JSX; TopBar / Sidebar / ChatPanel callbacks flip these flags.
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsInitialTab, setSettingsInitialTab] = useState<SettingsTab | undefined>(undefined);
+  const settingsOpen = useSettingsModalStore((s) => s.open);
+  const settingsInitialTab = useSettingsModalStore((s) => s.initialTab);
   // [F61] Account & privacy modal state — same page-root convention.
   const [accountPrivacyOpen, setAccountPrivacyOpen] = useState(false);
 
@@ -401,7 +403,13 @@ export function EditorPage(): JSX.Element {
         status: 'error',
         output: '',
         error: err
-          ? { code: err.code ?? null, message: err.message, httpStatus: err.status }
+          ? {
+              code: err.code ?? null,
+              message: err.message,
+              httpStatus: err.status,
+              retryAfterSeconds: err.body?.error?.retryAfterSeconds ?? null,
+              veniceMessage: extractVeniceMessage(err.body),
+            }
           : { code: null, message: 'AI request failed.' },
       });
     }
@@ -414,6 +422,13 @@ export function EditorPage(): JSX.Element {
     clearInlineAIResult();
     lastRunArgsRef.current = null;
   }, [activeChapterId, story?.id, clearInlineAIResult]);
+
+  // Reset settings-modal store on unmount so a remount of EditorPage (e.g. story switch) doesn't re-open it.
+  useEffect(() => {
+    return () => {
+      useSettingsModalStore.getState().close();
+    };
+  }, []);
 
   if (storyQuery.isLoading) {
     return (
@@ -457,7 +472,7 @@ export function EditorPage(): JSX.Element {
             }}
             wordCount={activeChapter?.wordCount ?? null}
             onOpenSettings={() => {
-              setSettingsOpen(true);
+              useSettingsModalStore.getState().openWith();
             }}
             onOpenStoriesList={() => {
               setStoryPickerOpen(true);
@@ -582,11 +597,10 @@ export function EditorPage(): JSX.Element {
             chatBody={<ChatTab chapterId={activeChapterId} editor={editor} />}
             sceneBody={<SceneTab chapterId={activeChapterId} editor={editor} />}
             onOpenModelPicker={() => {
-              setSettingsInitialTab('models');
-              setSettingsOpen(true);
+              useSettingsModalStore.getState().openWith('models');
             }}
             onOpenSettings={() => {
-              setSettingsOpen(true);
+              useSettingsModalStore.getState().openWith();
             }}
           />
         }
@@ -641,8 +655,7 @@ export function EditorPage(): JSX.Element {
         open={settingsOpen}
         initialTab={settingsInitialTab}
         onClose={() => {
-          setSettingsOpen(false);
-          setSettingsInitialTab(undefined);
+          useSettingsModalStore.getState().close();
         }}
       />
       <AccountPrivacyModal

@@ -1,10 +1,10 @@
-// [V11] Unit tests for parseRetryAfter helper.
+// Unit tests for parseRetryAfter helper.
 // [V24] Unit tests for the 402 INSUFFICIENT_BALANCE branch.
 // Covers delta-seconds form, HTTP-date form, and edge cases.
 
 import type { Response } from 'express';
 import { APIError } from 'openai';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   AuthenticationError,
   mapVeniceError,
@@ -246,18 +246,24 @@ describe('mapVeniceError — 402 INSUFFICIENT_BALANCE', () => {
 
   it('JSON path → HTTP 402, venice_insufficient_balance, hint URL, retryAfterSeconds=null', () => {
     const { res, state } = makeResStub();
-    const handled = mapVeniceError(makeFakeApiError(), res, 'user-123');
+    const handled = mapVeniceError(makeFakeApiError(), res, {
+      userId: 'user-123',
+      route: 'ai-complete',
+    });
 
     expect(handled).toBe(true);
     expect(state.statusCode).toBe(402);
-    expect(state.body).toEqual({
+    const body = state.body as {
       error: {
-        code: 'venice_insufficient_balance',
-        message:
-          'Your Venice account is out of credits. Top up at https://venice.ai/settings/api to continue.',
-        retryAfterSeconds: null,
-      },
-    });
+        code: string;
+        message: string;
+        retryAfterSeconds: null;
+        details?: { veniceMessage?: string };
+      };
+    };
+    expect(body.error.code).toBe('venice_insufficient_balance');
+    expect(body.error.message).toContain('venice.ai/settings/api');
+    expect(body.error.retryAfterSeconds).toBeNull();
 
     // No key leakage in the response body.
     expect(JSON.stringify(state.body)).not.toContain(KEY_SENTINEL);
@@ -265,11 +271,10 @@ describe('mapVeniceError — 402 INSUFFICIENT_BALANCE', () => {
 
   it('SSE path → venice_insufficient_balance frame then [DONE]', () => {
     const frames: string[] = [];
-    const handled = mapVeniceErrorToSse(
-      makeFakeApiError(),
-      (data) => frames.push(data),
-      'user-123',
-    );
+    const handled = mapVeniceErrorToSse(makeFakeApiError(), (data) => frames.push(data), {
+      userId: 'user-123',
+      route: 'ai-complete',
+    });
 
     expect(handled).toBe(true);
     expect(frames).toHaveLength(2);
@@ -325,7 +330,7 @@ describe('mapVeniceError — status forwarding + details.veniceMessage', () => {
       400,
       'Requested max_tokens or max_completion_tokens of 51200, but the maximum allowed is 32768',
     );
-    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(mapVeniceError(err, res, { userId: 'user-1', route: 'ai-complete' })).toBe(true);
     expect(state.statusCode).toBe(400);
     const body = state.body as {
       error: { code: string; message: string; details?: { veniceMessage?: string } };
@@ -337,7 +342,7 @@ describe('mapVeniceError — status forwarding + details.veniceMessage', () => {
   it('forwards Venice 404 as HTTP 404 with details.veniceMessage', () => {
     const { res, state } = makeResStub();
     const err = fakeApiError(404, 'Model not found: bogus-model');
-    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(mapVeniceError(err, res, { userId: 'user-1', route: 'ai-complete' })).toBe(true);
     expect(state.statusCode).toBe(404);
     const body = state.body as { error: { details?: { veniceMessage?: string } } };
     expect(body.error.details?.veniceMessage).toContain('bogus-model');
@@ -346,7 +351,7 @@ describe('mapVeniceError — status forwarding + details.veniceMessage', () => {
   it('forwards Venice 422 as HTTP 422 with details.veniceMessage', () => {
     const { res, state } = makeResStub();
     const err = fakeApiError(422, 'Invalid value for parameter "temperature"');
-    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(mapVeniceError(err, res, { userId: 'user-1', route: 'ai-complete' })).toBe(true);
     expect(state.statusCode).toBe(422);
     const body = state.body as { error: { details?: { veniceMessage?: string } } };
     expect(body.error.details?.veniceMessage).toContain('temperature');
@@ -355,7 +360,7 @@ describe('mapVeniceError — status forwarding + details.veniceMessage', () => {
   it('keeps unmapped non-2xx (e.g. 418) at HTTP 502 but still adds details.veniceMessage', () => {
     const { res, state } = makeResStub();
     const err = fakeApiError(418, 'I am a teapot');
-    expect(mapVeniceError(err, res, 'user-1')).toBe(true);
+    expect(mapVeniceError(err, res, { userId: 'user-1', route: 'ai-complete' })).toBe(true);
     expect(state.statusCode).toBe(502);
     const body = state.body as { error: { details?: { veniceMessage?: string } } };
     expect(body.error.details?.veniceMessage).toBe('I am a teapot');
@@ -367,7 +372,7 @@ describe('mapVeniceError — status forwarding + details.veniceMessage', () => {
       400,
       'Bad request from key sk-veniceLEAKYABCDEF1234567890; please retry',
     );
-    mapVeniceError(err, res, 'user-1');
+    mapVeniceError(err, res, { userId: 'user-1', route: 'ai-complete' });
     const body = state.body as { error: { details?: { veniceMessage?: string } } };
     expect(body.error.details?.veniceMessage).not.toContain('sk-veniceLEAKY');
     expect(body.error.details?.veniceMessage).toContain('[redacted]');
@@ -379,7 +384,9 @@ describe('mapVeniceError — status forwarding + details.veniceMessage', () => {
       400,
       'Requested max_tokens of 51200, but the maximum allowed is 32768',
     );
-    expect(mapVeniceErrorToSse(err, (s) => frames.push(s), 'user-1')).toBe(true);
+    expect(
+      mapVeniceErrorToSse(err, (s) => frames.push(s), { userId: 'user-1', route: 'ai-complete' }),
+    ).toBe(true);
     expect(frames).toHaveLength(2);
     const payload = JSON.parse(frames[0].slice('data: '.length).trimEnd()) as {
       code: string;
@@ -415,7 +422,7 @@ describe('mapVeniceErrorToSse — uniform { error, code, message } shape', () =>
       'bad key',
       new Headers(),
     );
-    const handled = mapVeniceErrorToSse(err, sink.write);
+    const handled = mapVeniceErrorToSse(err, sink.write, { userId: 'u1', route: 'ai-complete' });
     expect(handled).toBe(true);
     const frame = parseFirstFrame(sink.writes) as Record<string, unknown>;
     expect(frame.code).toBe('venice_key_invalid');
@@ -433,12 +440,179 @@ describe('mapVeniceErrorToSse — uniform { error, code, message } shape', () =>
       'rl',
       new Headers({ 'retry-after': '30' }),
     );
-    const handled = mapVeniceErrorToSse(err, sink.write);
+    const handled = mapVeniceErrorToSse(err, sink.write, { userId: 'u1', route: 'chat' });
     expect(handled).toBe(true);
     const frame = parseFirstFrame(sink.writes) as Record<string, unknown>;
     expect(frame.code).toBe('venice_rate_limited');
     expect(typeof frame.message).toBe('string');
     expect(frame.retryAfterSeconds).toBe(30);
     expect(frame.error).toBe(frame.message);
+  });
+});
+
+describe('mapVeniceError — details.veniceMessage on every branch', () => {
+  it('AuthenticationError includes details.veniceMessage when Venice body has one', () => {
+    const headers = new Headers();
+    const err = new AuthenticationError(
+      401,
+      { error: { message: 'Bad key xyz', type: 'invalid_request_error' } },
+      '401 Unauthorized',
+      headers,
+    );
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    mapVeniceError(err, res, { userId: 'u1', route: 'ai-complete' });
+
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'venice_key_invalid',
+          details: { veniceMessage: 'Bad key xyz' },
+        }),
+      }),
+    );
+  });
+
+  it('RateLimitError includes details.veniceMessage when present', () => {
+    const headers = new Headers({ 'retry-after': '30' });
+    const err = new RateLimitError(
+      429,
+      { error: { message: 'Slow down', type: 'rate_limit' } },
+      '429',
+      headers,
+    );
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    mapVeniceError(err, res, { userId: 'u1', route: 'chat' });
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'venice_rate_limited',
+          retryAfterSeconds: 30,
+          details: { veniceMessage: 'Slow down' },
+        }),
+      }),
+    );
+  });
+
+  it('5xx unavailable branch includes details.veniceMessage when present', () => {
+    const err = new APIError(503, { error: { message: 'Upstream busy' } }, '503', new Headers());
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    mapVeniceError(err, res, { userId: 'u1', route: 'ai-complete' });
+
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.objectContaining({
+          code: 'venice_unavailable',
+          details: { veniceMessage: 'Upstream busy' },
+        }),
+      }),
+    );
+  });
+
+  it('omits details.veniceMessage when Venice body has no message', () => {
+    const err = new RateLimitError(429, undefined, '429', new Headers());
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    mapVeniceError(err, res, { userId: 'u1', route: 'chat' });
+
+    const call = (res.json as unknown as { mock: { calls: unknown[][] } }).mock.calls[0]?.[0];
+    expect(call).toBeDefined();
+    expect((call as { error: { details?: unknown } }).error.details).toBeUndefined();
+  });
+});
+
+describe('mapVeniceError — structured [venice.error] log', () => {
+  let errorSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errorSpy.mockRestore();
+  });
+
+  it('emits one [venice.error] line per call with structured payload', () => {
+    const err = new RateLimitError(
+      429,
+      { error: { message: 'Slow' } },
+      '429',
+      new Headers({ 'retry-after': '15' }),
+    );
+    const res = {
+      status: vi.fn().mockReturnThis(),
+      json: vi.fn().mockReturnThis(),
+    } as unknown as Response;
+
+    mapVeniceError(err, res, { userId: 'u1', route: 'ai-complete' });
+
+    const veniceLogCalls = errorSpy.mock.calls.filter((c) => c[0] === '[venice.error]');
+    expect(veniceLogCalls).toHaveLength(1);
+    const payload = JSON.parse(veniceLogCalls[0]?.[1] as string);
+    expect(payload).toMatchObject({
+      route: 'ai-complete',
+      userId: 'u1',
+      code: 'venice_rate_limited',
+      upstreamStatus: 429,
+      retryAfterSeconds: 15,
+      veniceMessage: 'Slow',
+      streaming: false,
+    });
+  });
+
+  it('SSE variant emits streaming: true', () => {
+    const err = new AuthenticationError(
+      401,
+      { error: { message: 'Bad key' } },
+      '401',
+      new Headers(),
+    );
+    const writes: string[] = [];
+
+    mapVeniceErrorToSse(err, (data) => writes.push(data), {
+      userId: 'u1',
+      route: 'chat',
+    });
+
+    const veniceLogCalls = errorSpy.mock.calls.filter((c) => c[0] === '[venice.error]');
+    expect(veniceLogCalls).toHaveLength(1);
+    expect(JSON.parse(veniceLogCalls[0]?.[1] as string)).toMatchObject({
+      streaming: true,
+      code: 'venice_key_invalid',
+      route: 'chat',
+    });
+  });
+
+  it('regression: the legacy [V11] tag does not appear in any mapper call', () => {
+    const err = new APIError(503, undefined, '503', new Headers());
+    mapVeniceError(
+      err,
+      {
+        status: vi.fn().mockReturnThis(),
+        json: vi.fn().mockReturnThis(),
+      } as unknown as Response,
+      { userId: 'u1', route: 'ai-complete' },
+    );
+
+    const legacyCalls = errorSpy.mock.calls.filter(
+      (c) => typeof c[0] === 'string' && (c[0] as string).startsWith('[V11]'),
+    );
+    expect(legacyCalls).toHaveLength(0);
   });
 });

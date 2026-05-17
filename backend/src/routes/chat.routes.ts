@@ -616,7 +616,10 @@ export function createChatMessagesRouter() {
           // Stream errored after headers flushed — write terminal SSE error frame.
           console.error('[chat.messages.send:stream]', streamErr);
           if (!clientClosed) {
-            const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), userId);
+            const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), {
+              userId,
+              route: 'chat',
+            });
             if (!handled) {
               res.write(
                 `data: ${JSON.stringify({
@@ -633,7 +636,7 @@ export function createChatMessagesRouter() {
         }
       } catch (err) {
         // Pre-stream error — map Venice errors to JSON, let global handler deal with others.
-        if (mapVeniceError(err, res, userId)) return;
+        if (mapVeniceError(err, res, { userId, route: 'chat' })) return;
         throw err;
       }
     }),

@@ -910,7 +910,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
     teardownTest();
   });
 
-  it('shows InlineErrorBanner via sendError when the send mutation throws', async () => {
+  it('shows VeniceErrorBanner via sendError when the send mutation throws', async () => {
     const now = new Date().toISOString();
     const qc = makeModelClient();
 
@@ -956,6 +956,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
       },
       { timeout: 3000 },
     );
+    expect(screen.getByTestId('venice-error-banner')).toBeInTheDocument();
     expect(screen.getByText(/Venice quota exceeded/i)).toBeInTheDocument();
 
     // The banner should have a Retry button.

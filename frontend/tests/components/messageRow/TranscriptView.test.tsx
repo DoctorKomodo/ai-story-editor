@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import type { Message } from 'story-editor-shared';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { TranscriptRow } from '@/components/messageRow/TranscriptView';
 import { TranscriptView } from '@/components/messageRow/TranscriptView';
 import { chatMessagesQueryKey } from '@/hooks/useChat';
+import { ApiError } from '@/lib/api';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 function makeQc(): QueryClient {
@@ -248,5 +249,56 @@ describe('TranscriptView', () => {
     return waitFor(() => {
       expect(screen.getByRole('button', { name: /retry/i })).toBeInTheDocument();
     });
+  });
+});
+
+describe('TranscriptView — send-error branch', () => {
+  beforeEach(() => {
+    useChatDraftStore.setState({ drafts: {} });
+  });
+
+  function renderWithOneMessage(sendError?: ApiError | null) {
+    const qc = makeQc();
+    qc.setQueryData(chatMessagesQueryKey('c-1'), [
+      makeMessage({ id: 'm-1', role: 'user', content: 'hi' }),
+    ]);
+    render(
+      <QueryClientProvider client={qc}>
+        <TranscriptView chatId="c-1" emptyState={<div>EMPTY</div>} sendError={sendError}>
+          {() => null}
+        </TranscriptView>
+      </QueryClientProvider>,
+    );
+  }
+
+  it('sendError == null → no VeniceErrorBanner rendered', () => {
+    renderWithOneMessage(null);
+    expect(screen.queryByTestId('venice-error-banner')).toBeNull();
+  });
+
+  it('sendError venice_rate_limited with retryAfterSeconds → renders banner with countdown', () => {
+    vi.useFakeTimers();
+    const error = new ApiError(429, 'Rate limited', 'venice_rate_limited', {
+      error: { message: 'Rate limited', code: 'venice_rate_limited', retryAfterSeconds: 7 },
+    });
+    renderWithOneMessage(error);
+    expect(screen.getByTestId('venice-error-banner')).toBeInTheDocument();
+    expect(screen.getByText(/Try again in 7s/)).toBeInTheDocument();
+    act(() => {
+      vi.useRealTimers();
+    });
+  });
+
+  it('sendError venice_key_invalid with veniceMessage → renders Open Settings + Venice said line', () => {
+    const error = new ApiError(401, 'Invalid Venice key', 'venice_key_invalid', {
+      error: {
+        message: 'Invalid Venice key',
+        code: 'venice_key_invalid',
+        details: { veniceMessage: 'Bad bearer token.' },
+      },
+    });
+    renderWithOneMessage(error);
+    expect(screen.getByRole('button', { name: /Open Settings/i })).toBeInTheDocument();
+    expect(screen.getByText(/Venice said: Bad bearer token\./)).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import type { Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
-import { InlineErrorBanner } from '@/components/InlineErrorBanner';
+import { VeniceErrorBanner } from '@/components/VeniceErrorBanner';
 import { ThinkingDots } from '@/design/ThinkingDots';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
@@ -12,7 +12,7 @@ import { useInlineAIResultStore } from '@/store/inlineAIResult';
  * selection as a serif-italic blockquote with a left border, then either:
  *   - three bouncing `.think-dot`s while `status === 'thinking'`,
  *   - the streaming/done output as serif 16px text, or
- *   - an `<InlineErrorBanner>` on `status === 'error'` showing the actual
+ *   - a `<VeniceErrorBanner>` on `status === 'error'` showing the actual
  *     `code · message` (with debug-mode raw payload).
  *
  * Action rows are split by status:
@@ -97,7 +97,7 @@ export function InlineAIResult({ editor, onRetry }: InlineAIResultProps): JSX.El
 
       {status === 'error' && (
         <div className="mt-3">
-          <InlineErrorBanner
+          <VeniceErrorBanner
             error={inlineAIResult.error ?? { code: null, message: "Couldn't generate." }}
             onRetry={onRetry}
           />

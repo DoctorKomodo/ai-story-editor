@@ -39,7 +39,10 @@ describe('globalErrorHandler [B7]', () => {
     const res = await request(makeApp(new NoVeniceKeyError())).get('/boom');
     expect(res.status).toBe(409);
     expect(res.body).toEqual({
-      error: { message: 'venice_key_required', code: 'venice_key_required' },
+      error: {
+        message: 'No Venice API key is stored. Add yours in Settings to enable AI features.',
+        code: 'venice_key_required',
+      },
     });
   });
 

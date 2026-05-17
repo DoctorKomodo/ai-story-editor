@@ -1,5 +1,3 @@
-// [V11] Venice error mapping helper.
-//
 // Maps openai SDK APIError subclasses to user-friendly HTTP responses.
 // Never echoes Venice's raw error body or stack traces to the client.
 // Never logs the plaintext Venice API key.
@@ -113,7 +111,7 @@ export function parseRetryAfter(headers: SdkHeaders | null | undefined): number 
   return Math.min(...candidates);
 }
 
-// [V11+] Scrub any sk-prefixed token (defensive — Venice doesn't intentionally
+// Scrub any sk-prefixed token (defensive — Venice doesn't intentionally
 // echo keys but error formatting upstream can include the bearer fragment).
 // 16+ char alphanumeric body matches all current Venice + OpenAI key shapes.
 const SK_KEY_RE = /sk-[A-Za-z0-9_-]{16,}/g;
@@ -124,11 +122,11 @@ function sanitiseVeniceMessage(raw: string): string {
 
 /**
  * Extract a human-readable message string from an APIError.
+ * Returns the text from `err.error.error.message` when present; undefined otherwise.
  *
- * The openai SDK sets `err.message` to a stringified combination of the status
- * code and the raw response body (e.g. `"418 {\"error\":{\"message\":\"I am a
- * teapot\"}}"`). The actual Venice error text is in `err.error.error.message`.
- * We prefer that inner field; fall back to `err.message` only when unavailable.
+ * The double-nesting (`err.error.error.message`) is the SDK shape: the openai SDK
+ * sets `err.error` to the raw parsed response body, which Venice wraps in its own
+ * `{ error: { message } }` envelope.
  */
 function extractVeniceMessage(err: APIError): string | undefined {
   const body = err.error as unknown;
@@ -143,8 +141,7 @@ function extractVeniceMessage(err: APIError): string | undefined {
   ) {
     return (body.error as { message: string }).message;
   }
-  // Fallback: use err.message (contains the full SDK-formatted string).
-  return typeof err.message === 'string' ? err.message : undefined;
+  return undefined;
 }
 
 export interface VeniceErrorBody {
@@ -156,104 +153,119 @@ export interface VeniceErrorBody {
   };
 }
 
+export interface VeniceErrorContext {
+  userId: string | undefined;
+  route: 'ai-models' | 'ai-complete' | 'chat';
+}
+
+interface MappedError {
+  httpStatus: number;
+  code: string;
+  message: string;
+  retryAfterSeconds: number | null;
+}
+
+function classify(err: APIError): MappedError {
+  if (err instanceof AuthenticationError) {
+    return {
+      httpStatus: 400,
+      code: 'venice_key_invalid',
+      message: 'Your Venice API key was rejected. Please update it in Settings.',
+      retryAfterSeconds: null,
+    };
+  }
+  if (err instanceof RateLimitError) {
+    return {
+      httpStatus: 429,
+      code: 'venice_rate_limited',
+      message: 'Venice is rate limiting this request. Try again shortly.',
+      retryAfterSeconds: parseRetryAfter(err.headers),
+    };
+  }
+  if (err.status === 402) {
+    return {
+      httpStatus: 402,
+      code: 'venice_insufficient_balance',
+      message:
+        'Your Venice account is out of credits. Top up at https://venice.ai/settings/api to continue.',
+      retryAfterSeconds: null,
+    };
+  }
+  if (err.status === 502 || err.status === 503 || err.status === 504) {
+    return {
+      httpStatus: 502,
+      code: 'venice_unavailable',
+      message: 'Venice is temporarily unavailable. Try again shortly.',
+      retryAfterSeconds: null,
+    };
+  }
+  if (err.status === 400 || err.status === 404 || err.status === 422) {
+    return {
+      httpStatus: err.status,
+      code: 'venice_error',
+      message: 'Venice rejected the request.',
+      retryAfterSeconds: null,
+    };
+  }
+  return {
+    httpStatus: 502,
+    code: 'venice_error',
+    message: 'Venice returned an unexpected error.',
+    retryAfterSeconds: null,
+  };
+}
+
+function logVeniceError(
+  ctx: VeniceErrorContext,
+  classified: MappedError,
+  upstreamStatus: number,
+  veniceMessage: string | undefined,
+  streaming: boolean,
+): void {
+  console.error(
+    '[venice.error]',
+    JSON.stringify({
+      route: ctx.route,
+      userId: ctx.userId ?? null,
+      code: classified.code,
+      upstreamStatus,
+      retryAfterSeconds: classified.retryAfterSeconds,
+      veniceMessage: veniceMessage ?? null,
+      streaming,
+    }),
+  );
+}
+
 /**
  * Try to map `err` to a user-friendly HTTP response.
  *
  * @param err   The caught error.
  * @param res   Express Response — written when this function returns true.
- * @param userId  Optional user id for server-side logging (never the key itself).
+ * @param ctx   Context for structured logging: userId and route name.
  * @returns true  when the error was handled (response written).
  *          false when `err` is not a Venice APIError — caller should next(err).
  */
-export function mapVeniceError(err: unknown, res: Response, userId?: string): boolean {
+export function mapVeniceError(err: unknown, res: Response, ctx: VeniceErrorContext): boolean {
   if (!(err instanceof APIError)) return false;
 
-  // 401 — Venice rejected the key. Log server-side only; never echo Venice's
-  // body which may include key fragments in error messages.
-  if (err instanceof AuthenticationError) {
-    console.error('[V11] Venice rejected key for user', userId ?? '(unknown)');
-    res.status(400).json({
-      error: {
-        code: 'venice_key_invalid',
-        message: 'Your Venice API key was rejected. Please update it in Settings.',
-      },
-    } satisfies VeniceErrorBody);
-    return true;
-  }
-
-  // 429 — rate limited
-  if (err instanceof RateLimitError) {
-    const retryAfterSeconds = parseRetryAfter(err.headers);
-    res.status(429).json({
-      error: {
-        code: 'venice_rate_limited',
-        message: 'Venice is rate limiting this request. Try again shortly.',
-        retryAfterSeconds,
-      },
-    } satisfies VeniceErrorBody);
-    return true;
-  }
-
-  // [V24] 402 — Venice account is out of credits (INSUFFICIENT_BALANCE).
-  // Emit a dedicated code so the frontend can render a "Top up credits" CTA.
-  // Never echo Venice's raw body (it may include key fragments).
-  if (err.status === 402) {
-    res.status(402).json({
-      error: {
-        code: 'venice_insufficient_balance',
-        message:
-          'Your Venice account is out of credits. Top up at https://venice.ai/settings/api to continue.',
-        retryAfterSeconds: null,
-      },
-    } satisfies VeniceErrorBody);
-    return true;
-  }
-
-  // 502 / 503 / 504 — service unavailable
-  if (err.status === 502 || err.status === 503 || err.status === 504) {
-    res.status(502).json({
-      error: {
-        code: 'venice_unavailable',
-        message: 'Venice is temporarily unavailable. Try again shortly.',
-      },
-    } satisfies VeniceErrorBody);
-    return true;
-  }
-
-  // Compute the sanitised raw message once; reused across both branches.
+  const classified = classify(err);
   const rawMessage = extractVeniceMessage(err);
   const veniceMessage = rawMessage ? sanitiseVeniceMessage(rawMessage) : undefined;
 
-  // 400 / 404 / 422 — request-shape errors that the client could in principle
-  // correct. Forward Venice's status verbatim and surface the raw message in
-  // details.veniceMessage so the dev overlay can render it.
-  if (err.status === 400 || err.status === 404 || err.status === 422) {
-    console.error('[V11] Venice forwarded status', err.status, 'for user', userId ?? '(unknown)');
-    res.status(err.status).json({
-      error: {
-        code: 'venice_error',
-        message: 'Venice rejected the request.',
-        ...(veniceMessage ? { details: { veniceMessage } } : {}),
-      },
-    } satisfies VeniceErrorBody);
-    return true;
-  }
+  const includeRetryAfter =
+    classified.code === 'venice_rate_limited' || classified.code === 'venice_insufficient_balance';
 
-  // Any other non-2xx — preserve the existing 502 fallback but include the
-  // sanitised raw message so the dev overlay isn't blind.
-  console.error(
-    '[V11] Venice returned unexpected status',
-    err.status,
-    'for user',
-    userId ?? '(unknown)',
-  );
-  res.status(502).json({
+  const body: VeniceErrorBody = {
     error: {
-      code: 'venice_error',
-      message: 'Venice returned an unexpected error.',
+      code: classified.code,
+      message: classified.message,
+      ...(includeRetryAfter ? { retryAfterSeconds: classified.retryAfterSeconds } : {}),
       ...(veniceMessage ? { details: { veniceMessage } } : {}),
     },
-  } satisfies VeniceErrorBody);
+  };
+
+  logVeniceError(ctx, classified, err.status, veniceMessage, false);
+  res.status(classified.httpStatus).json(body);
   return true;
 }
 
@@ -267,50 +279,26 @@ export function mapVeniceError(err: unknown, res: Response, userId?: string): bo
 export function mapVeniceErrorToSse(
   err: unknown,
   write: (data: string) => void,
-  userId?: string,
+  ctx: VeniceErrorContext,
 ): boolean {
   if (!(err instanceof APIError)) return false;
 
-  let code: string;
-  let message: string;
-  let retryAfterSeconds: number | null | undefined;
+  const classified = classify(err);
+  const rawMessage = extractVeniceMessage(err);
+  const veniceMessage = rawMessage ? sanitiseVeniceMessage(rawMessage) : undefined;
 
-  if (err instanceof AuthenticationError) {
-    console.error('[V11] Venice rejected key for user (SSE)', userId ?? '(unknown)');
-    code = 'venice_key_invalid';
-    message = 'Your Venice API key was rejected. Please update it in Settings.';
-  } else if (err instanceof RateLimitError) {
-    code = 'venice_rate_limited';
-    message = 'Venice is rate limiting this request. Try again shortly.';
-    retryAfterSeconds = parseRetryAfter(err.headers);
-  } else if (err.status === 402) {
-    // [V24] 402 — Venice account is out of credits (INSUFFICIENT_BALANCE).
-    // Include the top-up hint URL so the frontend can render a "Top up credits" CTA.
-    code = 'venice_insufficient_balance';
-    retryAfterSeconds = null;
-    message =
-      'Your Venice account is out of credits. Top up at https://venice.ai/settings/api to continue.';
-  } else if (err.status === 502 || err.status === 503 || err.status === 504) {
-    code = 'venice_unavailable';
-    message = 'Venice is temporarily unavailable. Try again shortly.';
-  } else {
-    console.error(
-      '[V11] Venice unexpected status (SSE)',
-      err.status,
-      'for user',
-      userId ?? '(unknown)',
-    );
-    code = 'venice_error';
-    message = 'Venice returned an unexpected error.';
-  }
+  const includeRetryAfter =
+    classified.code === 'venice_rate_limited' || classified.code === 'venice_insufficient_balance';
 
-  const rawSseMessage = extractVeniceMessage(err);
-  const veniceMessage =
-    code === 'venice_error' && rawSseMessage ? sanitiseVeniceMessage(rawSseMessage) : undefined;
-
-  const payload: Record<string, unknown> = { error: message, code, message };
-  if (retryAfterSeconds !== undefined) payload.retryAfterSeconds = retryAfterSeconds;
+  const payload: Record<string, unknown> = {
+    error: classified.message,
+    code: classified.code,
+    message: classified.message,
+  };
+  if (includeRetryAfter) payload.retryAfterSeconds = classified.retryAfterSeconds;
   if (veniceMessage) payload.details = { veniceMessage };
+
+  logVeniceError(ctx, classified, err.status, veniceMessage, true);
   write(`data: ${JSON.stringify(payload)}\n\n`);
   write('data: [DONE]\n\n');
   return true;
