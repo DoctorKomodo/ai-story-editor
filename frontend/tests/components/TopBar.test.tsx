@@ -70,9 +70,8 @@ describe('F26 · TopBar component', () => {
     expect(screen.queryByText(/words$/)).not.toBeInTheDocument();
   });
 
-  it('renders the History, Focus, and Settings icon buttons with aria-labels', () => {
+  it('renders the Focus and Settings icon buttons with aria-labels', () => {
     render(<TopBar {...baseProps} />);
-    expect(screen.getByRole('button', { name: 'History' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Focus' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
   });
@@ -124,13 +123,6 @@ describe('F26 · TopBar component', () => {
     render(<TopBar {...baseProps} onOpenSettings={onOpenSettings} />);
     await userEvent.click(screen.getByRole('button', { name: 'Settings' }));
     expect(onOpenSettings).toHaveBeenCalledTimes(1);
-  });
-
-  it('clicking History invokes onToggleHistory', async () => {
-    const onToggleHistory = vi.fn();
-    render(<TopBar {...baseProps} onToggleHistory={onToggleHistory} />);
-    await userEvent.click(screen.getByRole('button', { name: 'History' }));
-    expect(onToggleHistory).toHaveBeenCalledTimes(1);
   });
 
   it('clicking outside the open user menu closes it', async () => {

@@ -32,7 +32,6 @@ export interface TopBarProps {
   wordCount?: number | null;
 
   // Icon-button callbacks
-  onToggleHistory?: () => void;
   onOpenSettings?: () => void;
 
   // User menu
@@ -65,26 +64,6 @@ function BrandMark(): JSX.Element {
       <path d="M20.24 12.24a6 6 0 0 0-8.49-8.49L5 10.5V19h8.5z" />
       <line x1="16" y1="8" x2="2" y2="22" />
       <line x1="17.5" y1="15" x2="9" y2="15" />
-    </svg>
-  );
-}
-
-function HistoryIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <path d="M3 12a9 9 0 1 0 3-6.7L3 8" />
-      <polyline points="3 3 3 8 8 8" />
-      <polyline points="12 7 12 12 15 14" />
     </svg>
   );
 }
@@ -136,7 +115,6 @@ export function TopBar({
   chapterTitle = null,
   autosave,
   wordCount = null,
-  onToggleHistory,
   onOpenSettings,
   username,
   displayName = null,
@@ -223,18 +201,6 @@ export function TopBar({
           |
         </span>
 
-        <button
-          type="button"
-          className="icon-btn"
-          aria-label="History"
-          title="History"
-          onClick={() => {
-            // TODO: future history panel
-            onToggleHistory?.();
-          }}
-        >
-          <HistoryIcon />
-        </button>
         <button
           type="button"
           className={['icon-btn', isFocus ? 'active' : ''].join(' ').trim()}
