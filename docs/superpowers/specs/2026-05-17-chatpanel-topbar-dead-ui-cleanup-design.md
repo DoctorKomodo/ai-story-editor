@@ -47,7 +47,7 @@ In `frontend/src/components/ChatPanel.tsx`:
 
 In `frontend/src/pages/EditorPage.tsx`:
 
-- Drop the `onOpenSettings={...}` callback passed to `<ChatPanel>` at [lines 602-606](../../../frontend/src/pages/EditorPage.tsx#L602-L606). The other `onOpenSettings` wiring for TopBar at [line 474](../../../frontend/src/pages/EditorPage.tsx#L474) stays.
+- Drop the `onOpenSettings={...}` callback passed to `<ChatPanel>` at [lines 602-604](../../../frontend/src/pages/EditorPage.tsx#L602-L604). The other `onOpenSettings` wiring for TopBar at [line 474](../../../frontend/src/pages/EditorPage.tsx#L474) stays.
 
 In `frontend/tests/components/ChatPanel.test.tsx`:
 
@@ -70,6 +70,7 @@ In `frontend/src/components/TopBar.tsx`:
 In `frontend/tests/components/TopBar.test.tsx`:
 
 - Delete the test at lines 129-134 ("clicking History invokes onToggleHistory").
+- Narrow the enumeration test at [lines 73-78](../../../frontend/tests/components/TopBar.test.tsx#L73-L78) ("renders the History, Focus, and Settings icon buttons with aria-labels"): drop the `getByRole('button', { name: 'History' })` assertion and update the test title to mention only Focus + Settings.
 
 ### Piece D — TopBar: drop the word count + EditorPage orphan ref cascade
 
@@ -85,6 +86,7 @@ In `frontend/src/components/TopBar.tsx`:
 
 - Remove the word-count `<span>` block at [lines 218-220](../../../frontend/src/components/TopBar.tsx#L218-L220).
 - Drop `wordCount?: number | null;` from `TopBarProps` at [line 32](../../../frontend/src/components/TopBar.tsx#L32) and the default destructure (`wordCount = null,`) at [line 138](../../../frontend/src/components/TopBar.tsx#L138).
+- Update the `// [F26]` file-header line comment at [line 1](../../../frontend/src/components/TopBar.tsx#L1) — drop "word count" from the components list (the line currently reads `// [F26] Top bar — brand · breadcrumbs · save indicator · word count · icon buttons · user menu.`). It is a `//` line comment, not a `/** */` block, so easy to miss in a JSDoc-only sweep.
 
 In `frontend/src/pages/EditorPage.tsx`:
 
