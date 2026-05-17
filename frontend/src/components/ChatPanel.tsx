@@ -1,21 +1,21 @@
 import { type JSX, type ReactNode, useState } from 'react';
 /**
- * [F38] Chat panel shell — 360px wide right column.
+ * [F38] Chat panel shell — right-column side panel, mirrors the sidebar's
+ * `clamp(260px, 22vw, 390px)` width.
  *
  * Owns the structural chrome of the AI chat side panel:
- *   - 40px header with `Chat / Scene / History` pill tabs + `Settings` icon
- *     button.
+ *   - 40px header with `Chat / Scene` pill tabs.
  *   - Body slot for the active tab — `chatBody` ([ChatTab]) on Chat,
- *     `sceneBody` ([SceneTab]) on Scene, or a placeholder on History.
+ *     `sceneBody` ([SceneTab]) on Scene.
  *   - ModelFooter at the very bottom: model picker button showing the active
  *     model and context-window chip (opens [F42]).
  *
- * The active tab (`chat` | `scene` | `history`) is local state — no
- * cross-component need for it yet; future history work may lift it.
+ * The active tab (`chat` | `scene`) is local state — no cross-component need
+ * for it yet.
  *
- * Width is set by the F25 grid (`.app-shell` column 3 = 360px). For
- * standalone testing we add `min-w-[360px]` so the panel renders at its
- * intended width without the shell.
+ * Width is set by the F25 grid (`.app-shell` column 3). `min-w-[260px]` on
+ * the root matches the grid floor so standalone (Storybook) renders at the
+ * intended minimum width.
  */
 import { ModelFooter } from '@/components/ModelFooter';
 
@@ -26,44 +26,11 @@ export interface ChatPanelProps {
   sceneBody: ReactNode;
   /** Click handler for the model picker button — opens [F42]. */
   onOpenModelPicker?: () => void;
-  /** Click handler for the Settings icon button — opens [F43]. */
-  onOpenSettings?: () => void;
 }
 
-type TabId = 'chat' | 'scene' | 'history';
+type TabId = 'chat' | 'scene';
 
-function SlidersIcon(): JSX.Element {
-  return (
-    <svg
-      width="14"
-      height="14"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.5"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <line x1="4" y1="21" x2="4" y2="14" />
-      <line x1="4" y1="10" x2="4" y2="3" />
-      <line x1="12" y1="21" x2="12" y2="12" />
-      <line x1="12" y1="8" x2="12" y2="3" />
-      <line x1="20" y1="21" x2="20" y2="16" />
-      <line x1="20" y1="12" x2="20" y2="3" />
-      <line x1="1" y1="14" x2="7" y2="14" />
-      <line x1="9" y1="8" x2="15" y2="8" />
-      <line x1="17" y1="16" x2="23" y2="16" />
-    </svg>
-  );
-}
-
-export function ChatPanel({
-  chatBody,
-  sceneBody,
-  onOpenModelPicker,
-  onOpenSettings,
-}: ChatPanelProps): JSX.Element {
+export function ChatPanel({ chatBody, sceneBody, onOpenModelPicker }: ChatPanelProps): JSX.Element {
   const [activeTab, setActiveTab] = useState<TabId>('chat');
 
   const tabClass = (isActive: boolean): string =>
@@ -74,7 +41,7 @@ export function ChatPanel({
 
   return (
     <aside
-      className="chat flex flex-col h-full bg-bg border-l border-line min-h-0 overflow-hidden min-w-[360px]"
+      className="chat flex flex-col h-full bg-bg border-l border-line min-h-0 overflow-hidden min-w-[260px]"
       aria-label="AI chat panel"
     >
       <header
@@ -104,28 +71,6 @@ export function ChatPanel({
           >
             Scene
           </button>
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeTab === 'history'}
-            className={tabClass(activeTab === 'history')}
-            onClick={() => {
-              setActiveTab('history');
-            }}
-          >
-            History
-          </button>
-        </div>
-        <div className="chat-actions flex gap-0.5">
-          <button
-            type="button"
-            className="icon-btn"
-            aria-label="Settings"
-            title="Settings"
-            onClick={onOpenSettings}
-          >
-            <SlidersIcon />
-          </button>
         </div>
       </header>
 
@@ -136,9 +81,6 @@ export function ChatPanel({
       >
         {activeTab === 'chat' && chatBody}
         {activeTab === 'scene' && sceneBody}
-        {activeTab === 'history' && (
-          <div className="px-4 py-6 text-[12px] text-ink-4">History — coming in a future task</div>
-        )}
       </section>
 
       <ModelFooter onOpenModelPicker={onOpenModelPicker} />
