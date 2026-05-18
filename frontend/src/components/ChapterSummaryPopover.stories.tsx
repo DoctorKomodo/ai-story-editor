@@ -50,7 +50,13 @@ const SAMPLE_CHAPTERS: MockChapter[] = [
     wordCount: 3100,
     summaryState: 'current',
   },
-  { id: 'c3', orderIndex: 2, title: 'What Ilonoré Brought', wordCount: 2900, summaryState: 'stale' },
+  {
+    id: 'c3',
+    orderIndex: 2,
+    title: 'What Ilonoré Brought',
+    wordCount: 2900,
+    summaryState: 'stale',
+  },
   { id: 'c4', orderIndex: 3, title: 'The Weight of Ash', wordCount: 3500, summaryState: 'missing' },
   {
     id: 'c5',
@@ -100,24 +106,24 @@ function SummaryStateIcon({
       className="flex-shrink-0 inline-flex h-4 w-4 items-center justify-center rounded hover:bg-[var(--surface-hover)] text-ink-4 hover:text-ink-2 transition-colors"
     >
       {state === 'missing' && (
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <circle cx="5" cy="5" r="3.5" stroke="currentColor" strokeWidth="1" fill="none" />
         </svg>
       )}
       {state === 'current' && (
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <circle cx="5" cy="5" r="3" fill="currentColor" />
         </svg>
       )}
       {state === 'stale' && (
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
           <circle cx="5" cy="5" r="3" fill="currentColor" />
           <circle cx="8.5" cy="1.5" r="1.5" className="text-accent" fill="currentColor" />
         </svg>
       )}
       {state === 'generating' && <Spinner size={10} />}
       {state === 'corrupted' && (
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden className="text-danger">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true" className="text-danger">
           <path d="M5 1 L9 9 L1 9 Z" stroke="currentColor" strokeWidth="1" fill="none" />
           <path d="M5 4 L5 6.5" stroke="currentColor" strokeWidth="1" strokeLinecap="round" />
           <circle cx="5" cy="7.5" r="0.5" fill="currentColor" />
@@ -250,8 +256,7 @@ function ChapterSummaryPopoverMockup({
 
       {state === 'corrupted' && (
         <p className="mt-2 font-serif text-[13px] text-ink-3 leading-relaxed">
-          A summary is stored but couldn’t be decoded in this session. Regenerating will replace
-          it.
+          A summary is stored but couldn’t be decoded in this session. Regenerating will replace it.
         </p>
       )}
 
@@ -320,7 +325,7 @@ function ListWithPopover({
   const [activeId, setActiveId] = useState<string>('c1');
   const [openId, setOpenId] = useState<string | null>(initialOpenId);
 
-  const openChapter = openId ? SAMPLE_CHAPTERS.find((c) => c.id === openId) ?? null : null;
+  const openChapter = openId ? (SAMPLE_CHAPTERS.find((c) => c.id === openId) ?? null) : null;
 
   return (
     <div className="flex gap-6 items-start" style={{ minHeight: 380 }}>
