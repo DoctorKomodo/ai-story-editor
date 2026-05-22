@@ -23,6 +23,7 @@ export interface ModelInfo {
   supportsReasoning: boolean;
   supportsVision: boolean;
   supportsWebSearch: boolean;
+  supportsResponseSchema: boolean;
   description: string | null;
   pricing: ModelPricing | null;
   defaultTemperature: number | null;
@@ -49,6 +50,7 @@ interface VeniceRawCapabilities {
   supportsReasoning?: boolean;
   supportsVision?: boolean;
   supportsWebSearch?: boolean;
+  supportsResponseSchema?: boolean;
 }
 
 interface VeniceRawModelSpec {
@@ -113,6 +115,7 @@ export function mapModel(raw: VeniceRawModel): ModelInfo {
     supportsReasoning: Boolean(caps.supportsReasoning),
     supportsVision: Boolean(caps.supportsVision),
     supportsWebSearch: Boolean(caps.supportsWebSearch),
+    supportsResponseSchema: Boolean(caps.supportsResponseSchema),
     description,
     pricing,
     defaultTemperature,

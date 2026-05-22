@@ -22,6 +22,7 @@ type VeniceRawModel = {
       supportsReasoning?: boolean;
       supportsVision?: boolean;
       supportsWebSearch?: boolean;
+      supportsResponseSchema?: boolean;
     };
     description?: string;
     pricing?: {
@@ -122,6 +123,7 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: false,
           supportsVision: false,
           supportsWebSearch: false,
+          supportsResponseSchema: false,
           description: 'A general-purpose 70B model tuned for instruction-following.',
           pricing: { inputUsdPerMTok: 0.6, outputUsdPerMTok: 2.4 },
           defaultTemperature: null,
@@ -135,6 +137,7 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: true,
           supportsVision: false,
           supportsWebSearch: false,
+          supportsResponseSchema: false,
           description: null,
           pricing: null,
           defaultTemperature: null,
@@ -148,6 +151,7 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: false,
           supportsVision: true,
           supportsWebSearch: false,
+          supportsResponseSchema: false,
           description: null,
           pricing: null,
           defaultTemperature: null,
@@ -426,6 +430,25 @@ describe('venice.models.service [V2]', () => {
       const info = mapModel(raw);
       expect(info.defaultTemperature).toBeNull();
       expect(info.defaultTopP).toBeNull();
+    });
+
+    it('maps supportsResponseSchema from capabilities', () => {
+      const raw = {
+        id: 'm1',
+        type: 'text',
+        model_spec: {
+          capabilities: { supportsResponseSchema: true },
+          availableContextTokens: 32768,
+          maxCompletionTokens: 4096,
+        },
+      };
+      const mapped = mapModel(raw);
+      expect(mapped.supportsResponseSchema).toBe(true);
+    });
+
+    it('defaults supportsResponseSchema to false when omitted', () => {
+      const raw = { id: 'm2', type: 'text', model_spec: { capabilities: {} } };
+      expect(mapModel(raw).supportsResponseSchema).toBe(false);
     });
 
     it('returns null for missing default keys inside constraints', () => {
