@@ -305,7 +305,7 @@ export function createChaptersRouter() {
             },
           },
           // SDK 6.36 types response_format natively for non-streaming completions;
-          // venice_parameters and other extra fields still need the cast below.
+          // venice_parameters and extra fields still require the cast; covers the result cast too.
         } as unknown as Parameters<typeof client.chat.completions.create>[0]);
         raw = completion as unknown as typeof raw;
       } catch (err) {

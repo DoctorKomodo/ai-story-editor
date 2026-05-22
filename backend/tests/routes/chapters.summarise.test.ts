@@ -74,12 +74,13 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
     const fetchSpy = stubVeniceFetch();
     const { agent, chapterId, storyId } = await setup('summarise-empty', null);
     await storeKey(agent, fetchSpy);
-    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    const callsAfterSetup = fetchSpy.mock.calls.length;
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('empty_chapter');
+    expect(fetchSpy.mock.calls.length).toBe(callsAfterSetup);
   });
 
   it('400 model_unsupported_for_summarisation when supportsResponseSchema is false', async () => {
