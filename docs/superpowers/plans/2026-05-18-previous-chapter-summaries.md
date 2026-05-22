@@ -36,7 +36,7 @@
 - `shared/src/schemas/story.ts` — add `includePreviousChaptersInPrompt` to `storyCreateSchema`
 - `backend/prisma/schema.prisma` — match the migration
 - `backend/src/repos/chapter.repo.ts` — encryption wiring + `summaryJson` branch on `update()` + `includeSummary` overload on `findManyForStory`
-- `backend/src/lib/serialize.ts` — extend `serializeChapter` (+`summary`, `summaryUpdatedAt`) and `serializeChapterMeta` (+`hasSummary`, `summaryIsStale`). **Build-critical:** both are explicit picks gated by `respond(chapterResponseSchema/chaptersResponseSchema)`; once Task 1 makes those fields required they must be added here or every chapter response 500s (dev/test) and `serializeChapter`'s return type fails typecheck. See the Task 1 ↔ Task 4 coupling note.
+- `backend/src/lib/serialize.ts` — extend `serializeChapter` (+`summary`, `summaryUpdatedAt`) and `serializeChapterMeta` (+`hasSummary`, `summaryIsStale`). **Build-critical:** both are explicit picks gated by `respond(chapterResponseSchema/chaptersResponseSchema)`; once Task 3 makes those fields required they must be added here or every chapter response 500s (dev/test) and `serializeChapter`'s return type fails typecheck. See the Task 3 ↔ Task 4 coupling note.
 - `backend/src/services/venice.models.service.ts` — `supportsResponseSchema` in three places (`VeniceRawCapabilities`, `ModelInfo`, `mapModel`)
 - `backend/src/services/prompt.service.ts` — `previousChapters` input, `<previous_chapters>` block, drop-oldest truncation, summarisation prompt template
 - `backend/src/routes/chapters.routes.ts` — POST `/:id/summarise`, PUT `/:id/summary`
@@ -56,7 +56,152 @@
 
 ---
 
-## Task 1: Shared Zod Schemas
+## Task 1: Prisma Migration + Schema
+
+**Files:**
+- Modify: `backend/prisma/schema.prisma`
+- Create: `backend/prisma/migrations/<timestamp>_pcs_chapter_summary_story_toggle/migration.sql`
+
+- [ ] **Step 1: Update `backend/prisma/schema.prisma`**
+
+In `model Chapter { ... }`, after the existing body triple:
+
+```prisma
+  summaryJsonCiphertext String?
+  summaryJsonIv         String?
+  summaryJsonAuthTag    String?
+  summaryJsonUpdatedAt  DateTime?
+```
+
+In `model Story { ... }`, after the existing narrative triples:
+
+```prisma
+  includePreviousChaptersInPrompt Boolean @default(true)
+```
+
+- [ ] **Step 2: Generate the migration**
+
+```bash
+make dev   # stack must be up
+docker compose exec -T backend npx prisma migrate dev \
+  --name pcs_chapter_summary_story_toggle --create-only
+```
+
+This emits a new SQL file under `backend/prisma/migrations/<timestamp>_.../migration.sql`. Inspect it:
+
+```bash
+ls backend/prisma/migrations/ | tail -1
+```
+
+- [ ] **Step 3: Verify the migration SQL**
+
+Open the generated file. Expect:
+
+```sql
+ALTER TABLE "Chapter" ADD COLUMN "summaryJsonCiphertext" TEXT;
+ALTER TABLE "Chapter" ADD COLUMN "summaryJsonIv" TEXT;
+ALTER TABLE "Chapter" ADD COLUMN "summaryJsonAuthTag" TEXT;
+ALTER TABLE "Chapter" ADD COLUMN "summaryJsonUpdatedAt" TIMESTAMP(3);
+ALTER TABLE "Story" ADD COLUMN "includePreviousChaptersInPrompt" BOOLEAN NOT NULL DEFAULT true;
+```
+
+- [ ] **Step 4: Apply and regenerate client**
+
+```bash
+docker compose exec -T backend npx prisma migrate deploy
+docker compose exec -T backend npx prisma generate
+```
+
+- [ ] **Step 5: Typecheck**
+
+```bash
+npm --prefix backend run typecheck
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/prisma/
+git commit -m "[pcs] prisma: chapter summary columns + story includePreviousChaptersInPrompt"
+```
+
+---
+
+## Task 2: Venice Models — `supportsResponseSchema`
+
+**Files:**
+- Modify: `backend/src/services/venice.models.service.ts`
+- Modify: `backend/tests/services/venice.models.service.test.ts` (or wherever this is tested today)
+
+- [ ] **Step 1: Write failing test**
+
+In the existing models-service test file, add:
+
+```ts
+it('maps supportsResponseSchema from capabilities', () => {
+  const raw = {
+    id: 'm1',
+    type: 'text',
+    model_spec: {
+      capabilities: { supportsResponseSchema: true },
+      availableContextTokens: 32768,
+      maxCompletionTokens: 4096,
+    },
+  };
+  const mapped = mapModel(raw);
+  expect(mapped.supportsResponseSchema).toBe(true);
+});
+
+it('defaults supportsResponseSchema to false when omitted', () => {
+  const raw = { id: 'm2', type: 'text', model_spec: { capabilities: {} } };
+  expect(mapModel(raw).supportsResponseSchema).toBe(false);
+});
+```
+
+```bash
+make dev
+npm --prefix backend run test -- venice.models.service.test.ts
+```
+Expected: fail (property missing).
+
+- [ ] **Step 2: Add the field in three places in `backend/src/services/venice.models.service.ts`**
+
+```ts
+// 1. VeniceRawCapabilities
+interface VeniceRawCapabilities {
+  supportsReasoning?: boolean;
+  supportsVision?: boolean;
+  supportsWebSearch?: boolean;
+  supportsResponseSchema?: boolean;
+}
+
+// 2. ModelInfo
+export interface ModelInfo {
+  // ... existing fields ...
+  supportsResponseSchema: boolean;
+}
+
+// 3. mapModel — alongside existing supports* mappings
+supportsResponseSchema: Boolean(caps.supportsResponseSchema),
+```
+
+- [ ] **Step 3: Test pass + typecheck**
+
+```bash
+npm --prefix backend run test -- venice.models.service.test.ts
+npm --prefix backend run typecheck
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/src/services/venice.models.service.ts backend/tests/services/venice.models.service.test.ts
+git commit -m "[pcs] venice.models: surface supportsResponseSchema capability"
+```
+
+---
+
+## Task 3: Shared Zod Schemas
 
 **Files:**
 - Modify: `shared/src/schemas/chapter.ts`
@@ -65,7 +210,7 @@
 - Modify: `shared/tests/story.schema.test.ts`
 - Modify: `shared/src/index.ts` (only if the new symbols aren't picked up by an existing wildcard re-export — verify with `grep`)
 
-> **⚠️ Build-coupling with Task 4 (read before sequencing).** Making `hasSummary`/`summaryIsStale` required on `chapterMetaSchema` and `summary`/`summaryUpdatedAt` required on `chapterSchema` immediately breaks the backend: `serializeChapter`/`serializeChapterMeta` ([`serialize.ts:111-139`](backend/src/lib/serialize.ts#L111-L139)) are explicit picks that don't yet emit those fields, so (a) `serializeChapter`'s `Chapter` return type fails `npm --prefix backend run typecheck`, and (b) `respond(chapterResponseSchema, …)` `.parse()` 500s in dev/test. The serializer fix lives in Task 4 (it needs `RepoChapter.summary` etc., which Task 4 adds). So **Task 1 + Task 4 + the serialize.ts edit are one type-coupled unit**: sequence **Task 2 (prisma) and Task 3 (venice) BEFORE Task 1** (neither depends on the summary schema), then do Task 1 → Task 4 back-to-back. Backend `make typecheck` is transiently red between the Task 1 commit and the Task 4 commit — the next all-workspaces-green checkpoint is the end of Task 4, not Task 1. (Task 1's own verify is `npm --prefix shared run …`, which stays green.)
+> **⚠️ Build-coupling with Task 4.** This task is deliberately ordered after Prisma (Task 1) and Venice (Task 2) — neither depends on the summary schema — and immediately before the repo (Task 4), because **Task 3 + Task 4 + the serialize.ts edit are one type-coupled unit.** Making `hasSummary`/`summaryIsStale` required on `chapterMetaSchema` and `summary`/`summaryUpdatedAt` required on `chapterSchema` immediately breaks the backend: `serializeChapter`/`serializeChapterMeta` ([`serialize.ts:111-139`](backend/src/lib/serialize.ts#L111-L139)) are explicit picks that don't yet emit those fields, so (a) `serializeChapter`'s `Chapter` return type fails `npm --prefix backend run typecheck`, and (b) `respond(chapterResponseSchema, …)` `.parse()` 500s in dev/test. The serializer fix lives in Task 4 (it needs `RepoChapter.summary` etc., which Task 4 adds). So do **Task 3 → Task 4 back-to-back**: backend `make typecheck` is transiently red between the two commits — the next all-workspaces-green checkpoint is the end of Task 4, not Task 3. (Task 3's own verify is `npm --prefix shared run …`, which stays green.)
 
 - [ ] **Step 0: Verify index re-exports for the new symbols**
 
@@ -312,151 +457,6 @@ git commit -m "[pcs] shared: chapter summary schema + story toggle"
 
 ---
 
-## Task 2: Prisma Migration + Schema
-
-**Files:**
-- Modify: `backend/prisma/schema.prisma`
-- Create: `backend/prisma/migrations/<timestamp>_pcs_chapter_summary_story_toggle/migration.sql`
-
-- [ ] **Step 1: Update `backend/prisma/schema.prisma`**
-
-In `model Chapter { ... }`, after the existing body triple:
-
-```prisma
-  summaryJsonCiphertext String?
-  summaryJsonIv         String?
-  summaryJsonAuthTag    String?
-  summaryJsonUpdatedAt  DateTime?
-```
-
-In `model Story { ... }`, after the existing narrative triples:
-
-```prisma
-  includePreviousChaptersInPrompt Boolean @default(true)
-```
-
-- [ ] **Step 2: Generate the migration**
-
-```bash
-make dev   # stack must be up
-docker compose exec -T backend npx prisma migrate dev \
-  --name pcs_chapter_summary_story_toggle --create-only
-```
-
-This emits a new SQL file under `backend/prisma/migrations/<timestamp>_.../migration.sql`. Inspect it:
-
-```bash
-ls backend/prisma/migrations/ | tail -1
-```
-
-- [ ] **Step 3: Verify the migration SQL**
-
-Open the generated file. Expect:
-
-```sql
-ALTER TABLE "Chapter" ADD COLUMN "summaryJsonCiphertext" TEXT;
-ALTER TABLE "Chapter" ADD COLUMN "summaryJsonIv" TEXT;
-ALTER TABLE "Chapter" ADD COLUMN "summaryJsonAuthTag" TEXT;
-ALTER TABLE "Chapter" ADD COLUMN "summaryJsonUpdatedAt" TIMESTAMP(3);
-ALTER TABLE "Story" ADD COLUMN "includePreviousChaptersInPrompt" BOOLEAN NOT NULL DEFAULT true;
-```
-
-- [ ] **Step 4: Apply and regenerate client**
-
-```bash
-docker compose exec -T backend npx prisma migrate deploy
-docker compose exec -T backend npx prisma generate
-```
-
-- [ ] **Step 5: Typecheck**
-
-```bash
-npm --prefix backend run typecheck
-```
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add backend/prisma/
-git commit -m "[pcs] prisma: chapter summary columns + story includePreviousChaptersInPrompt"
-```
-
----
-
-## Task 3: Venice Models — `supportsResponseSchema`
-
-**Files:**
-- Modify: `backend/src/services/venice.models.service.ts`
-- Modify: `backend/tests/services/venice.models.service.test.ts` (or wherever this is tested today)
-
-- [ ] **Step 1: Write failing test**
-
-In the existing models-service test file, add:
-
-```ts
-it('maps supportsResponseSchema from capabilities', () => {
-  const raw = {
-    id: 'm1',
-    type: 'text',
-    model_spec: {
-      capabilities: { supportsResponseSchema: true },
-      availableContextTokens: 32768,
-      maxCompletionTokens: 4096,
-    },
-  };
-  const mapped = mapModel(raw);
-  expect(mapped.supportsResponseSchema).toBe(true);
-});
-
-it('defaults supportsResponseSchema to false when omitted', () => {
-  const raw = { id: 'm2', type: 'text', model_spec: { capabilities: {} } };
-  expect(mapModel(raw).supportsResponseSchema).toBe(false);
-});
-```
-
-```bash
-make dev
-npm --prefix backend run test -- venice.models.service.test.ts
-```
-Expected: fail (property missing).
-
-- [ ] **Step 2: Add the field in three places in `backend/src/services/venice.models.service.ts`**
-
-```ts
-// 1. VeniceRawCapabilities
-interface VeniceRawCapabilities {
-  supportsReasoning?: boolean;
-  supportsVision?: boolean;
-  supportsWebSearch?: boolean;
-  supportsResponseSchema?: boolean;
-}
-
-// 2. ModelInfo
-export interface ModelInfo {
-  // ... existing fields ...
-  supportsResponseSchema: boolean;
-}
-
-// 3. mapModel — alongside existing supports* mappings
-supportsResponseSchema: Boolean(caps.supportsResponseSchema),
-```
-
-- [ ] **Step 3: Test pass + typecheck**
-
-```bash
-npm --prefix backend run test -- venice.models.service.test.ts
-npm --prefix backend run typecheck
-```
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add backend/src/services/venice.models.service.ts backend/tests/services/venice.models.service.test.ts
-git commit -m "[pcs] venice.models: surface supportsResponseSchema capability"
-```
-
----
-
 ## Task 4: Chapter Repo — Summary Round-trip
 
 **Files:**
@@ -599,7 +599,7 @@ export interface RepoChapterUpdateInput {
 }
 ```
 
-**Modify `shape()`** to surface `summary` + `summaryUpdatedAt`. Add to the encrypted-key list (already done via `CHAPTER_ENCRYPTED_FIELD_KEYS = ['title', 'body', 'summaryJson']` in Task 1 — the `projectDecrypted` call automatically handles the new key):
+**Modify `shape()`** to surface `summary` + `summaryUpdatedAt`. Add to the encrypted-key list (already done via `CHAPTER_ENCRYPTED_FIELD_KEYS = ['title', 'body', 'summaryJson']` in Task 3 — the `projectDecrypted` call automatically handles the new key):
 
 ```ts
 // In shape(), after projectDecrypted(...) — alongside the existing
@@ -718,7 +718,7 @@ No new exports — the public surface stays at the existing `update` + `findMany
 
 - [ ] **Step 2b: Update the chapter serializers (`backend/src/lib/serialize.ts`)**
 
-`serializeChapter`/`serializeChapterMeta` are explicit picks (deliberately — they force the compiler to surface any new repo field). Now that `RepoChapter`/`RepoChapterMeta` carry the summary fields (Step 2) and the shared `Chapter`/`ChapterMeta` types require them (Task 1), add the picks. Without this, `serializeChapter` fails to typecheck against `Chapter` and `respond()` 500s in dev/test:
+`serializeChapter`/`serializeChapterMeta` are explicit picks (deliberately — they force the compiler to surface any new repo field). Now that `RepoChapter`/`RepoChapterMeta` carry the summary fields (Step 2) and the shared `Chapter`/`ChapterMeta` types require them (Task 3), add the picks. Without this, `serializeChapter` fails to typecheck against `Chapter` and `respond()` 500s in dev/test:
 
 ```ts
 // serializeChapter — append to the returned object:
@@ -730,13 +730,13 @@ No new exports — the public surface stays at the existing `update` + `findMany
   summaryIsStale: row.summaryIsStale,
 ```
 
-(`summaryUpdatedAt` serialises to the `z.string().datetime().nullable()` wire shape from Task 1; `summary` is the `ChapterSummary | null` the schema already accepts.)
+(`summaryUpdatedAt` serialises to the `z.string().datetime().nullable()` wire shape from Task 3; `summary` is the `ChapterSummary | null` the schema already accepts.)
 
 - [ ] **Step 3: Run tests — expect pass**
 
 ```bash
 npm --prefix backend run test -- chapter.repo.summary
-npm --prefix backend run typecheck   # first all-workspaces-green checkpoint since Task 1
+npm --prefix backend run typecheck   # first all-workspaces-green checkpoint since Task 3
 ```
 
 Also run the existing chapter-route tests to confirm the `respond()` egress gate passes with the new required fields:
@@ -1528,7 +1528,7 @@ grep -n "patch\|PATCH\|data:" backend/src/routes/stories.routes.ts | head -20
 ```
 
 Report which pattern the handler uses:
-- (a) `data: req.body` or `data: { ...req.body }` — spreads validated body straight to Prisma. Adding `includePreviousChaptersInPrompt: z.boolean().optional()` to `storyCreateSchema` (Task 1) is sufficient; no route-code change.
+- (a) `data: req.body` or `data: { ...req.body }` — spreads validated body straight to Prisma. Adding `includePreviousChaptersInPrompt: z.boolean().optional()` to `storyCreateSchema` (Task 3) is sufficient; no route-code change.
 - (b) Explicit field whitelist (e.g. `data: { title: body.title, genre: body.genre, ... }`). Needs a one-line addition: `includePreviousChaptersInPrompt: body.includePreviousChaptersInPrompt`.
 
 Also check the **story serializer** (`backend/src/lib/serialize.ts:serializeStory`):
