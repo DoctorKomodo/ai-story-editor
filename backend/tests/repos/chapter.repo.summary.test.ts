@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { writeEncrypted } from '../../src/repos/_narrative';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { prisma } from '../setup';
 import { makeUserContext } from './_req';
@@ -84,5 +85,41 @@ describe('chapter.repo summary', () => {
       summary: { events: 'x', stateAtEnd: 'y', openThreads: 'z' },
     });
     expect((rows[0] as unknown as { bodyJson?: unknown }).bodyJson).toBeUndefined();
+  });
+
+  it('corrupted ciphertext: hasSummary=true but summary=null (findById reports corrupted state)', async () => {
+    const repo = createChapterRepo(ctx.req);
+    // Write a valid summary first so summaryJsonCiphertext is non-null.
+    await repo.update(chapterId, {
+      summaryJson: { events: 'x', stateAtEnd: 'y', openThreads: 'z' },
+    });
+    // Overwrite the stored ciphertext with a validly-encrypted blob that
+    // decrypts to non-JSON plaintext. writeEncrypted produces a real AES-GCM
+    // triple (decryptable, no auth error), but JSON.parse will fail, so
+    // summary must come back null. hasSummary must still be true because
+    // summaryJsonCiphertext is non-null — it reflects ciphertext presence,
+    // not parse outcome. This is the frontend's "corrupted" state signal.
+    const corruptTriple = writeEncrypted(ctx.req, 'summaryJson', 'not-valid-json');
+    await prisma.chapter.update({
+      where: { id: chapterId },
+      data: {
+        summaryJsonCiphertext: corruptTriple.summaryJsonCiphertext,
+        summaryJsonIv: corruptTriple.summaryJsonIv,
+        summaryJsonAuthTag: corruptTriple.summaryJsonAuthTag,
+      },
+    });
+    const fetched = await repo.findById(chapterId);
+    expect(fetched?.hasSummary).toBe(true);
+    expect(fetched?.summary).toBeNull();
+  });
+
+  it('summaryIsStale is false immediately after update({ summaryJson }) (same-timestamp write)', async () => {
+    const repo = createChapterRepo(ctx.req);
+    const updated = await repo.update(chapterId, {
+      summaryJson: { events: 'a', stateAtEnd: 'b', openThreads: 'c' },
+    });
+    expect(updated?.summaryIsStale).toBe(false);
+    const fetched = await repo.findById(chapterId);
+    expect(fetched?.summaryIsStale).toBe(false);
   });
 });

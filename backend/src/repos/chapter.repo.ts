@@ -218,11 +218,17 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       const plaintext = input.bodyJson === null ? null : JSON.stringify(input.bodyJson);
       Object.assign(data, writeEncrypted(req, 'body', plaintext));
     }
-    const writingSummary = input.summaryJson !== undefined;
-    if (writingSummary) {
+    if (input.summaryJson !== undefined) {
       const plaintext = input.summaryJson === null ? null : JSON.stringify(input.summaryJson);
       Object.assign(data, writeEncrypted(req, 'summaryJson', plaintext));
-      data.summaryJsonUpdatedAt = input.summaryJson === null ? null : new Date();
+      if (input.summaryJson === null) {
+        data.summaryJsonUpdatedAt = null;
+        // clearing: leave updatedAt to Prisma's @updatedAt (hasSummary becomes false, staleness irrelevant)
+      } else {
+        const now = new Date();
+        data.summaryJsonUpdatedAt = now;
+        data.updatedAt = now; // same instant so a fresh summary isn't immediately stale (this write bumps @updatedAt otherwise)
+      }
     }
     if (input.status !== undefined) data.status = input.status;
     if (input.orderIndex !== undefined) data.orderIndex = input.orderIndex;
@@ -237,16 +243,6 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       where: { id, story: { userId } },
     });
     if (!row) return null;
-
-    // Align summaryJsonUpdatedAt to the DB-assigned updatedAt so that
-    // summaryIsStale is false immediately after a summary write. Prisma's
-    // @updatedAt is set server-side at query time; our JS new Date() above
-    // predates it, making summaryJsonUpdatedAt < updatedAt. A raw UPDATE
-    // avoids re-triggering @updatedAt (which would push updatedAt ahead again).
-    if (writingSummary && input.summaryJson !== null && row.summaryJsonUpdatedAt !== null) {
-      await client.$executeRaw`UPDATE "Chapter" SET "summaryJsonUpdatedAt" = "updatedAt" WHERE id = ${id}`;
-      row.summaryJsonUpdatedAt = row.updatedAt;
-    }
 
     return shape(row, req);
   }
@@ -431,12 +427,21 @@ function shape(row: unknown, req: Request): RepoChapter {
   }
   delete projected.summaryJson;
   projected.summary = summary;
-  const summaryJsonUpdatedAt = (row as { summaryJsonUpdatedAt: Date | null }).summaryJsonUpdatedAt;
-  projected.summaryUpdatedAt = summaryJsonUpdatedAt;
-  projected.hasSummary = summary !== null;
-  const rowUpdatedAt = (row as { updatedAt: Date }).updatedAt;
+  // Derive hasSummary/summaryIsStale from the raw ciphertext column + timestamps,
+  // identical to shapeMeta(). A corrupt-but-present blob must still report
+  // hasSummary=true so the frontend can surface the corrupted state
+  // (hasSummary === true && summary === null).
+  const rawRow = row as {
+    summaryJsonCiphertext: string | null;
+    summaryJsonUpdatedAt: Date | null;
+    updatedAt: Date;
+  };
+  projected.summaryUpdatedAt = rawRow.summaryJsonUpdatedAt;
+  projected.hasSummary = rawRow.summaryJsonCiphertext != null;
   projected.summaryIsStale =
-    projected.hasSummary && summaryJsonUpdatedAt != null && summaryJsonUpdatedAt < rowUpdatedAt;
+    projected.hasSummary &&
+    rawRow.summaryJsonUpdatedAt != null &&
+    rawRow.summaryJsonUpdatedAt < rawRow.updatedAt;
 
   return projected as RepoChapter;
 }
