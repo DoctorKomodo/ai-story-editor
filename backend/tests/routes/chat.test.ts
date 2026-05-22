@@ -10,7 +10,18 @@ import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
-import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
+import {
+  jsonResponse,
+  MODEL_ID,
+  MODEL_LIST_BODY,
+  makeFakeReq,
+  queueSseResponse,
+  registerAndLogin,
+  resetAll,
+  sseStreamResponse,
+  storeKey,
+  stubVeniceFetch,
+} from './_chat-test-helpers';
 
 // Returns a supertest agent (with auth header set), a chapterId, and the raw
 // accessToken (for constructing repo instances in tests that need them).
@@ -170,87 +181,7 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
   });
 });
 
-// ─── Fixtures shared by SC5/SC6/SC8 suites ───────────────────────────────────
-
-const MODEL_ID = 'venice-test-model';
-
-const MODEL_LIST_BODY = {
-  object: 'list',
-  data: [
-    {
-      id: MODEL_ID,
-      object: 'model',
-      type: 'text',
-      model_spec: {
-        name: 'Venice Test Model',
-        availableContextTokens: 65536,
-        maxCompletionTokens: 4096,
-        capabilities: { supportsReasoning: false, supportsVision: false },
-      },
-    },
-  ],
-};
-
-function jsonResponse(status: number, body: unknown): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    statusText: status === 200 ? 'OK' : 'err',
-    headers: { 'content-type': 'application/json' },
-  });
-}
-
-function sseStreamResponse(chunks: Array<Record<string, unknown>>): Response {
-  const enc = new TextEncoder();
-  const stream = new ReadableStream<Uint8Array>({
-    start(controller) {
-      for (const c of chunks) {
-        controller.enqueue(enc.encode(`data: ${JSON.stringify(c)}\n\n`));
-      }
-      controller.enqueue(enc.encode('data: [DONE]\n\n'));
-      controller.close();
-    },
-  });
-  return new Response(stream, {
-    status: 200,
-    headers: { 'content-type': 'text/event-stream' },
-  });
-}
-
-// Installs a fresh fetch spy on globalThis. Must be paired with
-// vi.unstubAllGlobals() in afterEach.
-function stubVeniceFetch(): ReturnType<typeof vi.fn> {
-  const fetchSpy = vi.fn();
-  vi.stubGlobal('fetch', fetchSpy);
-  return fetchSpy;
-}
-
-// Stores a BYOK Venice key for the authenticated user (validate call → 200).
-async function storeKey(
-  agent: ReturnType<typeof request.agent>,
-  fetchSpy: ReturnType<typeof vi.fn>,
-): Promise<void> {
-  fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const keyRes = await agent
-    .put('/api/users/me/venice-key')
-    .send({ apiKey: 'sk-venice-sc5-test-key-ABCD' });
-  expect(keyRes.status).toBe(200);
-}
-
 // ─── SC6 suite ────────────────────────────────────────────────────────────────
-
-// Helper: queue a fresh SSE response on the fetch spy (shared by SC6 and SC8 suites).
-function queueSseResponse(fetchSpy: ReturnType<typeof vi.fn>, content: string): void {
-  fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-  fetchSpy.mockResolvedValueOnce(
-    sseStreamResponse([
-      {
-        id: 'chatcmpl-retry',
-        object: 'chat.completion.chunk',
-        choices: [{ index: 0, delta: { content }, finish_reason: null }],
-      },
-    ]),
-  );
-}
 
 // Fire a POST /messages call and drain the SSE stream (so the assistant message is persisted).
 async function sendMessage(
