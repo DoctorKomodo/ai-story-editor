@@ -7,12 +7,19 @@ import {
   chapterCreateSchema,
   chapterReorderSchema,
   chapterResponseSchema,
+  chapterSummaryJsonSchema,
+  chapterSummaryResponseSchema,
+  chapterSummarySchema,
   chaptersResponseSchema,
   chapterUpdateSchema,
 } from 'story-editor-shared';
+import { z } from 'zod';
 import { badRequest } from '../lib/bad-request';
+import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
 import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
+import { getVeniceClient } from '../lib/venice';
+import { mapVeniceError } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
@@ -21,7 +28,10 @@ import {
   createChapterRepo,
   type RepoChapterUpdateInput,
 } from '../repos/chapter.repo';
+import { resolvePrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
+import { resolveUserPrompts } from '../services/user-settings-resolvers';
+import { veniceModelsService } from '../services/venice.models.service';
 
 // [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
 // After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
@@ -225,6 +235,108 @@ export function createChaptersRouter() {
         next(err);
       }
     },
+  );
+
+  const SummariseBody = z.object({ modelId: z.string().min(1) });
+
+  router.post(
+    '/:chapterId/summarise',
+    ownStory,
+    ownChapter,
+    validateBody(SummariseBody, async (body, req, res) => {
+      const userId = req.user!.id;
+      const chapterId = req.params.chapterId as string;
+      const storyId = req.params.storyId as string;
+
+      const chapter = await createChapterRepo(req).findById(chapterId);
+      if (!chapter || chapter.storyId !== storyId) {
+        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
+        return;
+      }
+
+      const plaintext = tipTapJsonToText(chapter.bodyJson ?? null).trim();
+      if (plaintext.length === 0 || chapter.wordCount === 0) {
+        res
+          .status(400)
+          .json({ error: { message: 'Chapter has no body to summarise', code: 'empty_chapter' } });
+        return;
+      }
+
+      try {
+        await veniceModelsService.fetchModels(userId);
+      } catch (err) {
+        if (mapVeniceError(err, res, { userId, route: 'chapter-summarise' })) return;
+        throw err;
+      }
+
+      const modelInfo = veniceModelsService.findModel(body.modelId);
+      if (!modelInfo || modelInfo.supportsResponseSchema === false) {
+        res.status(400).json({
+          error: {
+            message:
+              "This model doesn't support structured output — switch to a schema-capable model.",
+            code: 'model_unsupported_for_summarisation',
+          },
+        });
+        return;
+      }
+
+      const userRow = await prisma.user.findUnique({
+        where: { id: userId },
+        select: { settingsJson: true },
+      });
+      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
+
+      const client = await getVeniceClient(userId);
+      let raw: { choices?: Array<{ message?: { content?: string } }> };
+      try {
+        const completion = await client.chat.completions.create({
+          model: body.modelId,
+          messages: [
+            { role: 'system', content: resolvePrompt(userPrompts, 'summariseChapter') },
+            { role: 'user', content: plaintext },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: {
+              name: 'ChapterSummary',
+              schema: chapterSummaryJsonSchema(),
+              strict: true,
+            },
+          },
+          // SDK 6.36 types response_format natively for non-streaming completions;
+          // venice_parameters and other extra fields still need the cast below.
+        } as unknown as Parameters<typeof client.chat.completions.create>[0]);
+        raw = completion as unknown as typeof raw;
+      } catch (err) {
+        if (mapVeniceError(err, res, { userId, route: 'chapter-summarise' })) return;
+        throw err;
+      }
+
+      const content = raw.choices?.[0]?.message?.content ?? '';
+      let parsed: ReturnType<typeof chapterSummarySchema.parse>;
+      try {
+        parsed = chapterSummarySchema.parse(JSON.parse(content));
+      } catch {
+        res.status(502).json({
+          error: {
+            message: 'Venice returned a malformed summary.',
+            code: 'summary_parse_failed',
+          },
+        });
+        return;
+      }
+
+      const updated = await createChapterRepo(req).update(chapterId, { summaryJson: parsed });
+      if (!updated) {
+        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
+        return;
+      }
+      respond(chapterSummaryResponseSchema, res, {
+        summary: updated.summary!,
+        summaryUpdatedAt: updated.summaryUpdatedAt?.toISOString() ?? null,
+      });
+    }),
   );
 
   return router;
