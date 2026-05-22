@@ -6,11 +6,13 @@ export type {
   ChapterMetaEncryptedFieldKey,
   ChapterReorderInput,
   ChapterStatus,
+  ChapterSummary,
   ChapterUpdateInput,
 } from './schemas/chapter';
 export {
   CHAPTER_ENCRYPTED_FIELD_KEYS,
   CHAPTER_META_ENCRYPTED_FIELD_KEYS,
+  CHAPTER_SUMMARY_FIELD_MAX,
   CHAPTER_TITLE_MAX,
   CHAPTER_TITLE_MIN,
   chapterCreateSchema,
@@ -19,6 +21,9 @@ export {
   chapterResponseSchema,
   chapterSchema,
   chapterStatusSchema,
+  chapterSummaryJsonSchema,
+  chapterSummaryResponseSchema,
+  chapterSummarySchema,
   chaptersResponseSchema,
   chapterUpdateSchema,
 } from './schemas/chapter';

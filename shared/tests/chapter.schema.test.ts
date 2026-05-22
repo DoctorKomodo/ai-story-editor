@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHAPTER_ENCRYPTED_FIELD_KEYS,
   CHAPTER_META_ENCRYPTED_FIELD_KEYS,
+  CHAPTER_SUMMARY_FIELD_MAX,
   CHAPTER_TITLE_MAX,
   CHAPTER_TITLE_MIN,
   chapterCreateSchema,
@@ -10,6 +11,8 @@ import {
   chapterResponseSchema,
   chapterSchema,
   chapterStatusSchema,
+  chapterSummaryJsonSchema,
+  chapterSummarySchema,
   chaptersResponseSchema,
   chapterUpdateSchema,
 } from '../src/schemas/chapter';
@@ -23,6 +26,8 @@ const VALID_META = {
   status: 'draft' as const,
   createdAt: '2026-05-15T00:00:00.000Z',
   updatedAt: '2026-05-15T00:00:00.000Z',
+  hasSummary: false,
+  summaryIsStale: false,
 };
 
 describe('chapterStatusSchema', () => {
@@ -62,21 +67,42 @@ describe('chapterMetaSchema', () => {
 
 describe('chapterSchema', () => {
   it('accepts meta + bodyJson (full shape)', () => {
-    const full = { ...VALID_META, bodyJson: { type: 'doc', content: [] } };
+    const full = {
+      ...VALID_META,
+      bodyJson: { type: 'doc', content: [] },
+      summary: null,
+      summaryUpdatedAt: null,
+    };
     expect(chapterSchema.parse(full)).toEqual(full);
   });
 
   it('accepts bodyJson: null (empty chapter)', () => {
-    const full = { ...VALID_META, bodyJson: null };
+    const full = { ...VALID_META, bodyJson: null, summary: null, summaryUpdatedAt: null };
     expect(chapterSchema.parse(full)).toEqual(full);
   });
 
-  it('preserves strictness through .extend() — rejects keys beyond meta + bodyJson', () => {
-    expect(() => chapterSchema.parse({ ...VALID_META, bodyJson: null, userId: 'u1' })).toThrow();
+  it('preserves strictness through .extend() — rejects keys beyond meta + bodyJson + summary fields', () => {
+    expect(() =>
+      chapterSchema.parse({
+        ...VALID_META,
+        bodyJson: null,
+        summary: null,
+        summaryUpdatedAt: null,
+        userId: 'u1',
+      }),
+    ).toThrow();
   });
 
   it('rejects Story-side denormalisation drift (e.g. chapterCount)', () => {
-    expect(() => chapterSchema.parse({ ...VALID_META, bodyJson: null, chapterCount: 1 })).toThrow();
+    expect(() =>
+      chapterSchema.parse({
+        ...VALID_META,
+        bodyJson: null,
+        summary: null,
+        summaryUpdatedAt: null,
+        chapterCount: 1,
+      }),
+    ).toThrow();
   });
 });
 
@@ -152,13 +178,16 @@ describe('chapterReorderSchema', () => {
 
 describe('chapterResponseSchema / chaptersResponseSchema', () => {
   it('chapterResponseSchema wraps a full chapter', () => {
-    const full = { ...VALID_META, bodyJson: null };
+    const full = { ...VALID_META, bodyJson: null, summary: null, summaryUpdatedAt: null };
     expect(chapterResponseSchema.parse({ chapter: full })).toEqual({ chapter: full });
   });
 
   it('chapterResponseSchema rejects extra envelope keys', () => {
     expect(() =>
-      chapterResponseSchema.parse({ chapter: { ...VALID_META, bodyJson: null }, ok: true }),
+      chapterResponseSchema.parse({
+        chapter: { ...VALID_META, bodyJson: null, summary: null, summaryUpdatedAt: null },
+        ok: true,
+      }),
     ).toThrow();
   });
 
@@ -183,7 +212,95 @@ describe('chapterResponseSchema / chaptersResponseSchema', () => {
 
 describe('encrypted-field tuples', () => {
   it('exports both tuples with the expected members', () => {
-    expect(CHAPTER_ENCRYPTED_FIELD_KEYS).toEqual(['title', 'body']);
+    expect(CHAPTER_ENCRYPTED_FIELD_KEYS).toEqual(['title', 'body', 'summaryJson']);
     expect(CHAPTER_META_ENCRYPTED_FIELD_KEYS).toEqual(['title']);
   });
+});
+
+const VALID_SUMMARY = { events: 'A then B.', stateAtEnd: 'They are in C.', openThreads: 'Why D?' };
+
+describe('chapterSummarySchema', () => {
+  it('accepts a valid summary', () => {
+    expect(chapterSummarySchema.parse(VALID_SUMMARY)).toEqual(VALID_SUMMARY);
+  });
+  it('is strict — rejects unknown keys', () => {
+    expect(() => chapterSummarySchema.parse({ ...VALID_SUMMARY, foo: 'bar' })).toThrow();
+  });
+  it('enforces per-field max length', () => {
+    const tooLong = 'x'.repeat(CHAPTER_SUMMARY_FIELD_MAX + 1);
+    expect(() => chapterSummarySchema.parse({ ...VALID_SUMMARY, events: tooLong })).toThrow();
+  });
+  it('chapterSummaryJsonSchema produces the minimal OpenAI-safe wire shape', () => {
+    const json = chapterSummaryJsonSchema();
+    expect(json.type).toBe('object');
+    expect(json.additionalProperties).toBe(false);
+    expect(json.required).toEqual(['events', 'stateAtEnd', 'openThreads']);
+    const props = json.properties as Record<string, { description?: string; maxLength?: number }>;
+    expect(typeof props.events?.description).toBe('string');
+    expect(typeof props.stateAtEnd?.description).toBe('string');
+    expect(typeof props.openThreads?.description).toBe('string');
+    expect('$schema' in json).toBe(false);
+    expect(props.events?.maxLength).toBeUndefined();
+    expect(props.stateAtEnd?.maxLength).toBeUndefined();
+    expect(props.openThreads?.maxLength).toBeUndefined();
+  });
+});
+
+describe('chapterMetaSchema (summary flags)', () => {
+  it('accepts hasSummary + summaryIsStale', () => {
+    expect(() =>
+      chapterMetaSchema.parse({
+        id: 'c1',
+        storyId: 's1',
+        title: 't',
+        wordCount: 0,
+        orderIndex: 0,
+        status: 'draft',
+        createdAt: '2026-05-18T00:00:00.000Z',
+        updatedAt: '2026-05-18T00:00:00.000Z',
+        hasSummary: true,
+        summaryIsStale: false,
+      }),
+    ).not.toThrow();
+  });
+  it('requires both summary flags', () => {
+    expect(() =>
+      chapterMetaSchema.parse({
+        id: 'c1',
+        storyId: 's1',
+        title: 't',
+        wordCount: 0,
+        orderIndex: 0,
+        status: 'draft',
+        createdAt: '2026-05-18T00:00:00.000Z',
+        updatedAt: '2026-05-18T00:00:00.000Z',
+      }),
+    ).toThrow();
+  });
+});
+
+describe('chapterSchema (summary + summaryUpdatedAt)', () => {
+  it('accepts summary + summaryUpdatedAt nullable', () => {
+    expect(() =>
+      chapterSchema.parse({
+        id: 'c1',
+        storyId: 's1',
+        title: 't',
+        wordCount: 0,
+        orderIndex: 0,
+        status: 'draft',
+        createdAt: '2026-05-18T00:00:00.000Z',
+        updatedAt: '2026-05-18T00:00:00.000Z',
+        hasSummary: false,
+        summaryIsStale: false,
+        bodyJson: null,
+        summary: null,
+        summaryUpdatedAt: null,
+      }),
+    ).not.toThrow();
+  });
+});
+
+it('CHAPTER_ENCRYPTED_FIELD_KEYS includes summaryJson', () => {
+  expect(CHAPTER_ENCRYPTED_FIELD_KEYS).toContain('summaryJson');
 });

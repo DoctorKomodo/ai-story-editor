@@ -19,6 +19,7 @@ const validStory = {
   genre: 'literary',
   worldNotes: 'Set in a quiet town.',
   targetWords: 50000,
+  includePreviousChaptersInPrompt: false,
   createdAt: '2026-05-14T00:00:00.000Z',
   updatedAt: '2026-05-14T01:00:00.000Z',
 };
@@ -146,5 +147,30 @@ describe('field-length cap constants', () => {
     expect(STORY_GENRE_MAX).toBe(200);
     expect(STORY_SYNOPSIS_MAX).toBe(10_000);
     expect(STORY_WORLD_NOTES_MAX).toBe(50_000);
+  });
+});
+
+describe('includePreviousChaptersInPrompt toggle', () => {
+  it('storyCreateSchema accepts includePreviousChaptersInPrompt as optional', () => {
+    expect(() => storyCreateSchema.parse({ title: 'X' })).not.toThrow();
+    expect(() =>
+      storyCreateSchema.parse({ title: 'X', includePreviousChaptersInPrompt: true }),
+    ).not.toThrow();
+    expect(() =>
+      storyCreateSchema.parse({ title: 'X', includePreviousChaptersInPrompt: false }),
+    ).not.toThrow();
+  });
+
+  it('storyUpdateSchema accepts includePreviousChaptersInPrompt as optional', () => {
+    expect(() => storyUpdateSchema.parse({})).not.toThrow();
+    expect(() => storyUpdateSchema.parse({ includePreviousChaptersInPrompt: true })).not.toThrow();
+  });
+
+  it('storySchema requires includePreviousChaptersInPrompt on responses', () => {
+    const { includePreviousChaptersInPrompt: _, ...withoutFlag } = validStory;
+    expect(() => storySchema.parse(withoutFlag)).toThrow();
+    expect(() =>
+      storySchema.parse({ ...validStory, includePreviousChaptersInPrompt: true }),
+    ).not.toThrow();
   });
 });
