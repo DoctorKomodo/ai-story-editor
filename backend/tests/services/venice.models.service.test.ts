@@ -93,6 +93,17 @@ const WEB_SEARCH: VeniceRawModel = {
   },
 };
 
+const RESPONSE_SCHEMA: VeniceRawModel = {
+  id: 'llama-response-schema',
+  object: 'model',
+  type: 'text',
+  model_spec: {
+    name: 'Llama Response Schema',
+    availableContextTokens: 65536,
+    capabilities: { supportsReasoning: false, supportsVision: false, supportsResponseSchema: true },
+  },
+};
+
 const IMAGE: VeniceRawModel = {
   id: 'flux-schnell',
   object: 'model',
@@ -169,6 +180,15 @@ describe('venice.models.service [V2]', () => {
       expect(only.supportsWebSearch).toBe(true);
     });
 
+    it('maps supportsResponseSchema: true when Venice advertises it', async () => {
+      const { client } = makeListStub([RESPONSE_SCHEMA]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.id).toBe('llama-response-schema');
+      expect(only.supportsResponseSchema).toBe(true);
+    });
+
     it('falls back sensibly when Venice omits model_spec fields', async () => {
       const bare: VeniceRawModel = {
         id: 'bare-text',
@@ -185,6 +205,7 @@ describe('venice.models.service [V2]', () => {
       expect(only.supportsReasoning).toBe(false);
       expect(only.supportsVision).toBe(false);
       expect(only.supportsWebSearch).toBe(false);
+      expect(only.supportsResponseSchema).toBe(false);
       expect(only.description).toBeNull();
       expect(only.pricing).toBeNull();
     });
