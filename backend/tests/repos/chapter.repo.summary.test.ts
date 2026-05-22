@@ -111,6 +111,11 @@ describe('chapter.repo summary', () => {
     const fetched = await repo.findById(chapterId);
     expect(fetched?.hasSummary).toBe(true);
     expect(fetched?.summary).toBeNull();
+    // The includeSummary path has identical catch/warn logic — verify it
+    // surfaces the corrupted state identically.
+    const rows = await repo.findManyForStory(storyId, { includeSummary: true });
+    expect(rows[0]?.hasSummary).toBe(true);
+    expect(rows[0]?.summary).toBeNull();
   });
 
   it('summaryIsStale is false immediately after update({ summaryJson }) (same-timestamp write)', async () => {

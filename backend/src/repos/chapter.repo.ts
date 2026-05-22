@@ -223,7 +223,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       Object.assign(data, writeEncrypted(req, 'summaryJson', plaintext));
       if (input.summaryJson === null) {
         data.summaryJsonUpdatedAt = null;
-        // clearing: leave updatedAt to Prisma's @updatedAt (hasSummary becomes false, staleness irrelevant)
+        // hasSummary=false after clear, so staleness is irrelevant regardless of updatedAt
       } else {
         const now = new Date();
         data.summaryJsonUpdatedAt = now;
