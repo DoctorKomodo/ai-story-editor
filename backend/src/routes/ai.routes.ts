@@ -109,6 +109,20 @@ export function createAiRouter() {
         // ── 6. Load characters ────────────────────────────────────────────────
         const rawCharacters = await createCharacterRepo(req).findManyForStory(body.storyId);
 
+        // ── 6b. Load previous-chapter summaries (toggle-gated) ───────────────
+        // Only chapters whose orderIndex precedes the current chapter and that
+        // carry a non-null summary are included; sorted oldest-first so the
+        // prompt builder receives them in narrative order.
+        const previousChapters = story.includePreviousChaptersInPrompt
+          ? (await createChapterRepo(req).findManyForStory(body.storyId, { includeSummary: true }))
+              .filter(
+                (c): c is typeof c & { summary: NonNullable<(typeof c)['summary']> } =>
+                  c.orderIndex < chapter.orderIndex && c.summary !== null,
+              )
+              .sort((a, b) => a.orderIndex - b.orderIndex)
+              .map((c) => ({ orderIndex: c.orderIndex, title: c.title, summary: c.summary }))
+          : undefined;
+
         // ── 7. Map characters to CharacterPromptInput ────────────────────────
         const characters = rawCharacters.map(toCharacterPromptInput);
 
@@ -128,6 +142,7 @@ export function createAiRouter() {
           chapterContent,
           characters,
           worldNotes,
+          previousChapters,
           modelContextLength,
           modelMaxCompletionTokens,
           // Pass POSITIVE_INFINITY so the prompt builder uses the model's own cap

@@ -292,6 +292,20 @@ export function createChatMessagesRouter() {
         const rawCharacters = await createCharacterRepo(req).findManyForStory(storyId);
         const characters = rawCharacters.map(toCharacterPromptInput);
 
+        // ── 5b. Load previous-chapter summaries (toggle-gated) ───────────────
+        // Chat is always scoped to a single chapter (chapter loaded at step 4).
+        // Chapters whose orderIndex precedes the current chapter and that carry
+        // a non-null summary are included; sorted oldest-first.
+        const previousChapters = story.includePreviousChaptersInPrompt
+          ? (await createChapterRepo(req).findManyForStory(storyId, { includeSummary: true }))
+              .filter(
+                (c): c is typeof c & { summary: NonNullable<(typeof c)['summary']> } =>
+                  c.orderIndex < chapter.orderIndex && c.summary !== null,
+              )
+              .sort((a, b) => a.orderIndex - b.orderIndex)
+              .map((c) => ({ orderIndex: c.orderIndex, title: c.title, summary: c.summary }))
+          : undefined;
+
         // ── 6. Build prompt from chapter + story context ──────────────────────
         const chapterContent = tipTapJsonToText(chapter.bodyJson ?? null);
         const worldNotes = typeof story.worldNotes === 'string' ? story.worldNotes : null;
@@ -320,6 +334,7 @@ export function createChatMessagesRouter() {
           chapterContent,
           characters,
           worldNotes,
+          previousChapters,
           modelContextLength,
           modelMaxCompletionTokens,
           // Pass POSITIVE_INFINITY so the prompt builder uses the model's own cap

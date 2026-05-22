@@ -166,6 +166,65 @@ async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; ch
   return { storyId, chapterId: chapter.id as string };
 }
 
+/**
+ * Set up two chapters: orderIndex 0 (with a summary) and orderIndex 1 (the
+ * target). The AI /complete call targets chapter 1, so chapter 0 is a
+ * "previous chapter" with a summary. Returns both chapter ids and the story id.
+ *
+ * Pass `toggleOff: true` to set includePreviousChaptersInPrompt=false on the
+ * story (done via Prisma directly — it is a non-encrypted boolean column not
+ * yet wired through the repo's update path).
+ */
+async function setupTwoChapters(
+  req: Request,
+  opts?: { toggleOff?: boolean },
+): Promise<{ storyId: string; chapterIdFirst: string; chapterIdSecond: string }> {
+  const story = await createStoryRepo(req).create({
+    title: 'Two-Chapter Story',
+    worldNotes: null,
+  });
+  const storyId = story.id as string;
+
+  if (opts?.toggleOff) {
+    await prisma.story.update({
+      where: { id: storyId },
+      data: { includePreviousChaptersInPrompt: false },
+    });
+  }
+
+  const ch0 = await createChapterRepo(req).create({
+    storyId,
+    title: 'The Beginning',
+    orderIndex: 0,
+    wordCount: 0,
+  });
+  const ch1 = await createChapterRepo(req).create({
+    storyId,
+    title: 'The Middle',
+    orderIndex: 1,
+    wordCount: 3,
+    bodyJson: {
+      type: 'doc',
+      content: [
+        {
+          type: 'paragraph',
+          content: [{ type: 'text', text: `Chapter text. ${CHAPTER_SENTINEL}` }],
+        },
+      ],
+    },
+  });
+
+  await createChapterRepo(req).update(ch0.id as string, {
+    summaryJson: {
+      events: 'The hero set out on a long journey north.',
+      stateAtEnd: 'At the northern gate, alone.',
+      openThreads: 'Who sent the letter?',
+    },
+  });
+
+  return { storyId, chapterIdFirst: ch0.id as string, chapterIdSecond: ch1.id as string };
+}
+
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('POST /api/ai/complete [V5]', () => {
@@ -658,5 +717,81 @@ describe('POST /api/ai/complete [V5]', () => {
 
     // The SSE wire response must not contain the sentinel chapter text.
     expect(res.body as string).not.toContain(CHAPTER_SENTINEL);
+  });
+
+  it('[pcs] system message contains <previous_chapters> when includePreviousChaptersInPrompt=true and a prior chapter has a summary', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { storyId, chapterIdSecond } = await setupTwoChapters(req);
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
+
+    await request(app)
+      .post('/api/ai/complete')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({
+        action: 'continue',
+        selectedText: '',
+        chapterId: chapterIdSecond,
+        storyId,
+        modelId: BASE_MODEL_ID,
+      });
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).includes('/chat/completions'));
+    const sentBody = JSON.parse(
+      String((call?.[1] as RequestInit | undefined)?.body ?? '{}'),
+    ) as Record<string, unknown>;
+    const systemMessage = (sentBody.messages as Array<{ role: string; content: string }>)?.[0]
+      ?.content;
+    expect(systemMessage).toContain('<previous_chapters>');
+    // prompt builder renders orderIndex+1 as the human-facing chapter number
+    expect(systemMessage).toContain('<chapter index="1"');
+  });
+
+  it('[pcs] system message omits <previous_chapters> when includePreviousChaptersInPrompt=false', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { storyId, chapterIdSecond } = await setupTwoChapters(req, { toggleOff: true });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
+
+    await request(app)
+      .post('/api/ai/complete')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({
+        action: 'continue',
+        selectedText: '',
+        chapterId: chapterIdSecond,
+        storyId,
+        modelId: BASE_MODEL_ID,
+      });
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).includes('/chat/completions'));
+    const sentBody = JSON.parse(
+      String((call?.[1] as RequestInit | undefined)?.body ?? '{}'),
+    ) as Record<string, unknown>;
+    const systemMessage = (sentBody.messages as Array<{ role: string; content: string }>)?.[0]
+      ?.content;
+    expect(systemMessage).not.toContain('<previous_chapters>');
   });
 });

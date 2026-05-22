@@ -10,6 +10,7 @@ import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
+import { prisma } from '../setup';
 import {
   jsonResponse,
   MODEL_ID,
@@ -708,5 +709,166 @@ describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
       'Jenny approaches Linda on the veranda and they talk about cheese.',
     );
     expect(lastMsg.content).not.toContain('User question');
+  });
+});
+
+// ─── [pcs] previous-chapter summaries injection — chat route ─────────────────
+
+/**
+ * Create a story with two chapters. Chapter 0 gets a summary written via the
+ * repo. Returns a chat on chapter 1 (the target), so chapter 0 is a "previous
+ * chapter" with a summary.
+ *
+ * Pass `toggleOff: true` to set includePreviousChaptersInPrompt=false on the
+ * story (set directly via Prisma — non-encrypted boolean column not yet wired
+ * through the repo update path).
+ */
+async function setupTwoChaptersWithChat(
+  username: string,
+  opts?: { toggleOff?: boolean },
+): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  accessToken: string;
+  chatId: string;
+  fetchSpy: ReturnType<typeof vi.fn>;
+}> {
+  const accessToken = await registerAndLogin(username);
+  const req = makeFakeReq(accessToken);
+
+  const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
+  const storyId = story.id as string;
+
+  if (opts?.toggleOff) {
+    await prisma.story.update({
+      where: { id: storyId },
+      data: { includePreviousChaptersInPrompt: false },
+    });
+  }
+
+  const ch0 = await createChapterRepo(req).create({
+    storyId,
+    title: 'Opening',
+    orderIndex: 0,
+    wordCount: 0,
+  });
+  const ch1 = await createChapterRepo(req).create({
+    storyId,
+    title: 'Rising Action',
+    orderIndex: 1,
+    wordCount: 3,
+    bodyJson: {
+      type: 'doc',
+      content: [{ type: 'paragraph', content: [{ type: 'text', text: 'The plot thickens.' }] }],
+    },
+  });
+
+  await createChapterRepo(req).update(ch0.id as string, {
+    summaryJson: {
+      events: 'The hero met the mentor.',
+      stateAtEnd: "Mentor's hut, dusk.",
+      openThreads: 'Why did the mentor disappear?',
+    },
+  });
+
+  const agent = request.agent(app);
+  agent.set('Authorization', `Bearer ${accessToken}`);
+
+  const fetchSpy = stubVeniceFetch();
+  await storeKey(agent, fetchSpy);
+
+  const chatRes = await agent
+    .post(`/api/chapters/${ch1.id as string}/chats`)
+    .send({ title: 'pcs-test', kind: 'ask' })
+    .expect(201);
+  const chatId = chatRes.body.chat.id as string;
+
+  return { agent, accessToken, chatId, fetchSpy };
+}
+
+describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('system message contains <previous_chapters> when toggle=true and prior chapter has a summary', async () => {
+    const { agent, chatId, fetchSpy } = await setupTwoChaptersWithChat('pcs-chat-u1');
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-pcs1',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'OK' }, finish_reason: null }],
+        },
+      ]),
+    );
+
+    await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ content: 'What happened before?', modelId: MODEL_ID });
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).includes('/chat/completions'));
+    const sentBody = JSON.parse(
+      String((call?.[1] as RequestInit | undefined)?.body ?? '{}'),
+    ) as Record<string, unknown>;
+    const systemMessage = (sentBody.messages as Array<{ role: string; content: string }>)?.[0]
+      ?.content;
+    expect(systemMessage).toContain('<previous_chapters>');
+    // prompt builder renders orderIndex+1 as the human-facing chapter number
+    expect(systemMessage).toContain('<chapter index="1"');
+  });
+
+  it('system message omits <previous_chapters> when includePreviousChaptersInPrompt=false', async () => {
+    const { agent, chatId, fetchSpy } = await setupTwoChaptersWithChat('pcs-chat-u2', {
+      toggleOff: true,
+    });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-pcs2',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'OK' }, finish_reason: null }],
+        },
+      ]),
+    );
+
+    await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ content: 'What happened before?', modelId: MODEL_ID });
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).includes('/chat/completions'));
+    const sentBody = JSON.parse(
+      String((call?.[1] as RequestInit | undefined)?.body ?? '{}'),
+    ) as Record<string, unknown>;
+    const systemMessage = (sentBody.messages as Array<{ role: string; content: string }>)?.[0]
+      ?.content;
+    expect(systemMessage).not.toContain('<previous_chapters>');
   });
 });
