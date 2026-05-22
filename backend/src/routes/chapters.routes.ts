@@ -237,6 +237,26 @@ export function createChaptersRouter() {
     },
   );
 
+  router.put(
+    '/:chapterId/summary',
+    ownStory,
+    ownChapter,
+    validateBody(chapterSummarySchema, async (body, req, res) => {
+      const chapterId = req.params.chapterId as string;
+      const storyId = req.params.storyId as string;
+
+      const updated = await createChapterRepo(req).update(chapterId, { summaryJson: body });
+      if (!updated || updated.storyId !== storyId) {
+        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
+        return;
+      }
+      respond(chapterSummaryResponseSchema, res, {
+        summary: updated.summary!,
+        summaryUpdatedAt: updated.summaryUpdatedAt?.toISOString() ?? null,
+      });
+    }),
+  );
+
   const SummariseBody = z.object({ modelId: z.string().min(1) });
 
   router.post(
