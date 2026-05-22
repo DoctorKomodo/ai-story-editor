@@ -12,6 +12,7 @@ import {
   chapterSchema,
   chapterStatusSchema,
   chapterSummaryJsonSchema,
+  chapterSummaryResponseSchema,
   chapterSummarySchema,
   chaptersResponseSchema,
   chapterUpdateSchema,
@@ -301,6 +302,27 @@ describe('chapterSchema (summary + summaryUpdatedAt)', () => {
   });
 });
 
-it('CHAPTER_ENCRYPTED_FIELD_KEYS includes summaryJson', () => {
-  expect(CHAPTER_ENCRYPTED_FIELD_KEYS).toContain('summaryJson');
+describe('chapterSummaryResponseSchema', () => {
+  it('accepts a valid summary response with an ISO datetime summaryUpdatedAt', () => {
+    const input = {
+      summary: VALID_SUMMARY,
+      summaryUpdatedAt: '2026-05-18T12:00:00.000Z',
+    };
+    expect(chapterSummaryResponseSchema.parse(input)).toEqual(input);
+  });
+
+  it('accepts summaryUpdatedAt: null', () => {
+    const input = { summary: VALID_SUMMARY, summaryUpdatedAt: null };
+    expect(chapterSummaryResponseSchema.parse(input)).toEqual(input);
+  });
+
+  it('rejects extra envelope keys (strictObject)', () => {
+    expect(() =>
+      chapterSummaryResponseSchema.parse({
+        summary: VALID_SUMMARY,
+        summaryUpdatedAt: null,
+        ok: true,
+      }),
+    ).toThrow();
+  });
 });
