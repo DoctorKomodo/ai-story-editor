@@ -56,7 +56,13 @@ describe('prompt.service previousChapters', () => {
   });
 
   it('drops oldest first when summaries push chapter below budget', () => {
-    const tiny = { ...base, modelContextLength: 600 };
+    // modelContextLength: 2000, modelMaxCompletionTokens: 500
+    // → responseTokens = 500, promptBudgetTokens = 2000 - 500 - 512 = 988
+    // Each summary has ~1200 chars per field × 3 fields ≈ 3600 chars ≈ 900 tokens.
+    // The five entries together far exceed 988 tokens, so the truncation loop
+    // runs; but one entry (the newest, index "5") fits within budget.
+    // The if-branch (block present) is the REQUIRED path for these params.
+    const budget = { ...base, modelContextLength: 2000, modelMaxCompletionTokens: 500 };
     const five = [0, 1, 2, 3, 4].map((i) => ({
       orderIndex: i,
       title: `t${i}`,
@@ -66,14 +72,16 @@ describe('prompt.service previousChapters', () => {
         openThreads: 'z'.repeat(400),
       },
     }));
-    const out = buildPrompt({ ...tiny, previousChapters: five });
+    const out = buildPrompt({ ...budget, previousChapters: five });
     const sys = out.messages[0]!.content;
-    if (sys.includes('<previous_chapters')) {
-      expect(sys).toMatch(/<previous_chapters truncated_count="[1-9]\d*">/);
-      expect(sys).toContain('<chapter index="5"'); // highest-index survives
-      expect(sys).not.toContain('<chapter index="1"'); // oldest dropped
-    } else {
-      expect(sys).not.toContain('truncated_count');
+    // The if-branch must execute — these params guarantee at least one entry survives.
+    if (!sys.includes('<previous_chapters')) {
+      throw new Error(
+        'Expected <previous_chapters> block to be present — budget params must allow at least one entry to survive',
+      );
     }
+    expect(sys).toMatch(/<previous_chapters truncated_count="[1-9]\d*">/);
+    expect(sys).toContain('<chapter index="5"'); // highest-index (newest) survives
+    expect(sys).not.toContain('<chapter index="1"'); // oldest dropped
   });
 });

@@ -82,6 +82,7 @@ const SettingsSchema = z
         rewrite: z.string().max(10_000).nullable().optional(),
         expand: z.string().max(10_000).nullable().optional(),
         summarise: z.string().max(10_000).nullable().optional(),
+        summariseChapter: z.string().max(10_000).nullable().optional(),
         describe: z.string().max(10_000).nullable().optional(),
         scene: z.string().max(10_000).nullable().optional(),
         ask: z.string().max(10_000).nullable().optional(),
@@ -125,6 +126,7 @@ export interface UserSettings {
     rewrite?: string | null;
     expand?: string | null;
     summarise?: string | null;
+    summariseChapter?: string | null;
     describe?: string | null;
     scene?: string | null;
     ask?: string | null;
@@ -155,6 +157,7 @@ const DEFAULT_SETTINGS = {
     rewrite: null as string | null,
     expand: null as string | null,
     summarise: null as string | null,
+    summariseChapter: null as string | null,
     describe: null as string | null,
     scene: null as string | null,
     ask: null as string | null,
