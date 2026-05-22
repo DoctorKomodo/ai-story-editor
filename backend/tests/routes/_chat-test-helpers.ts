@@ -1,4 +1,4 @@
-// Shared helpers for chat route integration tests (SC4, SC5, V21, PCS).
+// Shared Venice-fetch + auth helpers for chat route integration tests.
 
 import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
