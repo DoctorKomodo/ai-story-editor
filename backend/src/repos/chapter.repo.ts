@@ -4,6 +4,8 @@ import {
   CHAPTER_ENCRYPTED_FIELD_KEYS,
   CHAPTER_META_ENCRYPTED_FIELD_KEYS,
   type ChapterStatus,
+  type ChapterSummary,
+  chapterSummarySchema,
 } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
@@ -30,6 +32,7 @@ export interface RepoChapterCreateInput {
 export interface RepoChapterUpdateInput {
   title?: string;
   bodyJson?: unknown;
+  summaryJson?: ChapterSummary | null;
   status?: string;
   orderIndex?: number;
   wordCount?: number;
@@ -46,6 +49,10 @@ export type RepoChapter = {
   storyId: string;
   title: string;
   bodyJson: unknown;
+  summary: ChapterSummary | null;
+  summaryUpdatedAt: Date | null;
+  hasSummary: boolean;
+  summaryIsStale: boolean;
   wordCount: number;
   orderIndex: number;
   status: ChapterStatus;
@@ -54,10 +61,12 @@ export type RepoChapter = {
 };
 
 /**
- * Metadata-only repo shape — same as RepoChapter minus `bodyJson`. Returned
- * by `shapeMeta()`.
+ * Metadata-only repo shape — same as RepoChapter minus `bodyJson`,
+ * `summary`, and `summaryUpdatedAt`. `hasSummary` and `summaryIsStale` are
+ * inherited from RepoChapter (they are derived without decrypting the blob).
+ * Returned by `shapeMeta()`.
  */
-export type RepoChapterMeta = Omit<RepoChapter, 'bodyJson'>;
+export type RepoChapterMeta = Omit<RepoChapter, 'bodyJson' | 'summary' | 'summaryUpdatedAt'>;
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -123,7 +132,19 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     return shape(row, req);
   }
 
-  async function findManyForStory(storyId: string) {
+  async function findManyForStory(storyId: string): Promise<RepoChapterMeta[]>;
+  async function findManyForStory(
+    storyId: string,
+    opts: { includeSummary: true },
+  ): Promise<
+    Array<RepoChapterMeta & { summary: ChapterSummary | null; summaryUpdatedAt: Date | null }>
+  >;
+  async function findManyForStory(
+    storyId: string,
+    opts?: { includeSummary?: boolean },
+  ): Promise<
+    Array<RepoChapterMeta & { summary?: ChapterSummary | null; summaryUpdatedAt?: Date | null }>
+  > {
     const userId = resolveUserId(req);
     await ensureStoryOwned(client, storyId, userId);
     // Metadata-only: skip the body ciphertext triple at the DB layer. This
@@ -147,8 +168,40 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         titleCiphertext: true,
         titleIv: true,
         titleAuthTag: true,
+        // summaryJsonCiphertext + summaryJsonUpdatedAt are needed for the
+        // hasSummary / summaryIsStale derived flags on every list response.
+        // Iv + AuthTag are only selected when the caller opts in to decryption.
+        summaryJsonCiphertext: true,
+        summaryJsonUpdatedAt: true,
+        ...(opts?.includeSummary ? { summaryJsonIv: true, summaryJsonAuthTag: true } : {}),
       },
     });
+
+    if (opts?.includeSummary) {
+      return rows.map((r) => {
+        const meta = shapeMeta(r, req);
+        const summaryRaw = projectDecrypted<{ summaryJson?: string }>(
+          req,
+          r as Record<string, unknown>,
+          ['summaryJson'] as const,
+        );
+        let summary: ChapterSummary | null = null;
+        if (typeof summaryRaw.summaryJson === 'string' && summaryRaw.summaryJson.length > 0) {
+          try {
+            summary = chapterSummarySchema.parse(JSON.parse(summaryRaw.summaryJson));
+          } catch {
+            // A ZodError/SyntaxError on a decryptable-but-invalid blob can embed the
+            // decrypted field values, and decrypted narrative content must never reach
+            // logs — log only a static code + the chapter id.
+            console.warn(`[chapter.repo] summary_parse_failed chapter=${meta.id}`);
+            summary = null;
+          }
+        }
+        const summaryUpdatedAt = (r as { summaryJsonUpdatedAt: Date | null }).summaryJsonUpdatedAt;
+        return { ...meta, summary, summaryUpdatedAt };
+      });
+    }
+
     return rows.map((r) => shapeMeta(r, req));
   }
 
@@ -165,6 +218,12 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       const plaintext = input.bodyJson === null ? null : JSON.stringify(input.bodyJson);
       Object.assign(data, writeEncrypted(req, 'body', plaintext));
     }
+    const writingSummary = input.summaryJson !== undefined;
+    if (writingSummary) {
+      const plaintext = input.summaryJson === null ? null : JSON.stringify(input.summaryJson);
+      Object.assign(data, writeEncrypted(req, 'summaryJson', plaintext));
+      data.summaryJsonUpdatedAt = input.summaryJson === null ? null : new Date();
+    }
     if (input.status !== undefined) data.status = input.status;
     if (input.orderIndex !== undefined) data.orderIndex = input.orderIndex;
     if (input.wordCount !== undefined) data.wordCount = input.wordCount;
@@ -178,6 +237,17 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       where: { id, story: { userId } },
     });
     if (!row) return null;
+
+    // Align summaryJsonUpdatedAt to the DB-assigned updatedAt so that
+    // summaryIsStale is false immediately after a summary write. Prisma's
+    // @updatedAt is set server-side at query time; our JS new Date() above
+    // predates it, making summaryJsonUpdatedAt < updatedAt. A raw UPDATE
+    // avoids re-triggering @updatedAt (which would push updatedAt ahead again).
+    if (writingSummary && input.summaryJson !== null && row.summaryJsonUpdatedAt !== null) {
+      await client.$executeRaw`UPDATE "Chapter" SET "summaryJsonUpdatedAt" = "updatedAt" WHERE id = ${id}`;
+      row.summaryJsonUpdatedAt = row.updatedAt;
+    }
+
     return shape(row, req);
   }
 
@@ -305,13 +375,24 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
 // Metadata-only projection used by `findManyForStory`. Decrypts the title
 // triple only — body ciphertext columns are not selected at the DB layer, so
 // `bodyJson` is intentionally absent from the projected output. Callers that
-// need the body must use `findById`.
+// need the body must use `findById`. `summaryJsonCiphertext` and
+// `summaryJsonUpdatedAt` are always selected so we can derive the staleness
+// flags here without decrypting the summary blob.
 function shapeMeta(row: unknown, req: Request): RepoChapterMeta {
-  return projectDecrypted<RepoChapterMeta>(
+  const projected = projectDecrypted<RepoChapterMeta>(
     req,
     row as Record<string, unknown>,
     CHAPTER_META_ENCRYPTED_FIELD_KEYS,
   );
+  const r = row as {
+    summaryJsonCiphertext: string | null;
+    summaryJsonUpdatedAt: Date | null;
+    updatedAt: Date;
+  };
+  const hasSummary = r.summaryJsonCiphertext != null;
+  const summaryIsStale =
+    hasSummary && r.summaryJsonUpdatedAt != null && r.summaryJsonUpdatedAt < r.updatedAt;
+  return { ...projected, hasSummary, summaryIsStale } as RepoChapterMeta;
 }
 
 function shape(row: unknown, req: Request): RepoChapter {
@@ -335,5 +416,27 @@ function shape(row: unknown, req: Request): RepoChapter {
   }
   delete projected.body;
   projected.bodyJson = bodyJson;
+
+  let summary: ChapterSummary | null = null;
+  if (typeof projected.summaryJson === 'string' && projected.summaryJson.length > 0) {
+    try {
+      summary = chapterSummarySchema.parse(JSON.parse(projected.summaryJson as string));
+    } catch {
+      // A ZodError/SyntaxError on a decryptable-but-invalid blob can embed the
+      // decrypted field values, and decrypted narrative content must never reach
+      // logs — log only a static code + the chapter id.
+      console.warn(`[chapter.repo] summary_parse_failed chapter=${projected.id as string}`);
+      summary = null;
+    }
+  }
+  delete projected.summaryJson;
+  projected.summary = summary;
+  const summaryJsonUpdatedAt = (row as { summaryJsonUpdatedAt: Date | null }).summaryJsonUpdatedAt;
+  projected.summaryUpdatedAt = summaryJsonUpdatedAt;
+  projected.hasSummary = summary !== null;
+  const rowUpdatedAt = (row as { updatedAt: Date }).updatedAt;
+  projected.summaryIsStale =
+    projected.hasSummary && summaryJsonUpdatedAt != null && summaryJsonUpdatedAt < rowUpdatedAt;
+
   return projected as RepoChapter;
 }
