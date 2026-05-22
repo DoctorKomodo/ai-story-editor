@@ -109,17 +109,13 @@ export function createAiRouter() {
         // ── 6. Load characters ────────────────────────────────────────────────
         const rawCharacters = await createCharacterRepo(req).findManyForStory(body.storyId);
 
-        // ── 6b. Load previous-chapter summaries (toggle-gated) ───────────────
-        // Only chapters whose orderIndex precedes the current chapter and that
-        // carry a non-null summary are included; sorted oldest-first so the
-        // prompt builder receives them in narrative order.
+        // ── 6b. Previous-chapter summaries (toggle-gated) ────────────────────
         const previousChapters = story.includePreviousChaptersInPrompt
           ? (await createChapterRepo(req).findManyForStory(body.storyId, { includeSummary: true }))
               .filter(
                 (c): c is typeof c & { summary: NonNullable<(typeof c)['summary']> } =>
                   c.orderIndex < chapter.orderIndex && c.summary !== null,
               )
-              .sort((a, b) => a.orderIndex - b.orderIndex)
               .map((c) => ({ orderIndex: c.orderIndex, title: c.title, summary: c.summary }))
           : undefined;
 

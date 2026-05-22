@@ -714,15 +714,6 @@ describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
 
 // ─── [pcs] previous-chapter summaries injection — chat route ─────────────────
 
-/**
- * Create a story with two chapters. Chapter 0 gets a summary written via the
- * repo. Returns a chat on chapter 1 (the target), so chapter 0 is a "previous
- * chapter" with a summary.
- *
- * Pass `toggleOff: true` to set includePreviousChaptersInPrompt=false on the
- * story (set directly via Prisma — non-encrypted boolean column not yet wired
- * through the repo update path).
- */
 async function setupTwoChaptersWithChat(
   username: string,
   opts?: { toggleOff?: boolean },
@@ -739,6 +730,7 @@ async function setupTwoChaptersWithChat(
   const storyId = story.id as string;
 
   if (opts?.toggleOff) {
+    // Non-encrypted boolean — not yet wired through the repo's update path.
     await prisma.story.update({
       where: { id: storyId },
       data: { includePreviousChaptersInPrompt: false },

@@ -166,15 +166,6 @@ async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; ch
   return { storyId, chapterId: chapter.id as string };
 }
 
-/**
- * Set up two chapters: orderIndex 0 (with a summary) and orderIndex 1 (the
- * target). The AI /complete call targets chapter 1, so chapter 0 is a
- * "previous chapter" with a summary. Returns both chapter ids and the story id.
- *
- * Pass `toggleOff: true` to set includePreviousChaptersInPrompt=false on the
- * story (done via Prisma directly — it is a non-encrypted boolean column not
- * yet wired through the repo's update path).
- */
 async function setupTwoChapters(
   req: Request,
   opts?: { toggleOff?: boolean },
@@ -186,6 +177,7 @@ async function setupTwoChapters(
   const storyId = story.id as string;
 
   if (opts?.toggleOff) {
+    // Non-encrypted boolean — not yet wired through the repo's update path.
     await prisma.story.update({
       where: { id: storyId },
       data: { includePreviousChaptersInPrompt: false },
