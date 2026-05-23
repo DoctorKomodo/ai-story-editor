@@ -7,6 +7,15 @@ describe('deriveSummaryState', () => {
       'missing',
     );
   });
+  it('returns missing regardless of summary value when hasSummary is false', () => {
+    expect(
+      deriveSummaryState({
+        hasSummary: false,
+        summaryIsStale: false,
+        summary: { events: 'a', stateAtEnd: 'b', openThreads: 'c' },
+      }),
+    ).toBe('missing');
+  });
   it('returns corrupted when hasSummary && summary === null (decrypt failure path)', () => {
     expect(deriveSummaryState({ hasSummary: true, summaryIsStale: false, summary: null })).toBe(
       'corrupted',
