@@ -104,6 +104,7 @@ describe('StoryModal (F6)', () => {
         genre: 'Sci-Fi',
         synopsis: null,
         worldNotes: null,
+        includePreviousChaptersInPrompt: true,
       }),
     );
 
