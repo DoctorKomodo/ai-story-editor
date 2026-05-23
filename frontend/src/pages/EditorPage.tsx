@@ -507,6 +507,7 @@ export function EditorPage(): JSX.Element {
                 onChapterDeleted={(deletedId) => {
                   if (deletedId === activeChapterId) setActiveChapterId(null);
                 }}
+                onOpenSummary={() => {}}
               />
             }
             castBody={

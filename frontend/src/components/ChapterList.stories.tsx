@@ -112,6 +112,7 @@ const meta = {
     storyId: STORY_ID,
     activeChapterId: null,
     onSelectChapter: () => {},
+    onOpenSummary: () => {},
   },
 } satisfies Meta<typeof ChapterList>;
 

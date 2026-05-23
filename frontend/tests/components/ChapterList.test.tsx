@@ -49,11 +49,17 @@ function renderList(
   onSelect: (id: string) => void,
   activeChapterId: string | null = null,
   client?: QueryClient,
+  onOpenSummary?: (chapterId: string, anchorEl: HTMLElement) => void,
 ): { client: QueryClient } {
   const qc = client ?? createQueryClient();
   render(
     <QueryClientProvider client={qc}>
-      <ChapterList storyId="story-1" activeChapterId={activeChapterId} onSelectChapter={onSelect} />
+      <ChapterList
+        storyId="story-1"
+        activeChapterId={activeChapterId}
+        onSelectChapter={onSelect}
+        onOpenSummary={onOpenSummary ?? vi.fn()}
+      />
     </QueryClientProvider>,
   );
   return { client: qc };
@@ -304,5 +310,100 @@ describe('ChapterList (F10)', () => {
     expect(row.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
     // New layout uses data-active attribute + bg token instead of border-ink
     expect(row).toHaveAttribute('data-active', 'true');
+  });
+
+  it('renders SummaryStateIcon on every row, with state derived from list-meta flags', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/chapters')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chapters: [
+              chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false }),
+              chap({ id: 'c2', orderIndex: 1, hasSummary: true, summaryIsStale: false }),
+              chap({ id: 'c3', orderIndex: 2, hasSummary: true, summaryIsStale: true }),
+            ],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    renderList(vi.fn());
+
+    await screen.findByTestId('chapter-row-c1');
+    expect(
+      within(screen.getByTestId('chapter-row-c1')).getByRole('button', {
+        name: 'No summary yet — click to generate',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('chapter-row-c2')).getByRole('button', {
+        name: 'Summary present — click to view',
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId('chapter-row-c3')).getByRole('button', {
+        name: 'Summary possibly stale — click to view',
+      }),
+    ).toBeInTheDocument();
+  });
+
+  it('clicking the icon fires onOpenSummary(chapterId, anchorEl) and does NOT bubble to onSelectChapter', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/chapters')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chapters: [chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false })],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    const onSelect = vi.fn();
+    const onOpenSummary = vi.fn();
+    renderList(onSelect, null, undefined, onOpenSummary);
+
+    await screen.findByTestId('chapter-row-c1');
+    const icon = within(screen.getByTestId('chapter-row-c1')).getByRole('button', {
+      name: 'No summary yet — click to generate',
+    });
+    await userEvent.setup().click(icon);
+
+    expect(onOpenSummary).toHaveBeenCalledOnce();
+    const [calledId, calledEl] = onOpenSummary.mock.calls[0] as [string, HTMLElement];
+    expect(calledId).toBe('c1');
+    expect(calledEl).toBeInstanceOf(HTMLElement);
+    expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it('hides SummaryStateIcon while InlineConfirm is open on a row', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/chapters')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chapters: [chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false })],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    renderList(vi.fn(), 'c1');
+
+    await screen.findByTestId('chapter-row-c1');
+    expect(
+      within(screen.getByTestId('chapter-row-c1')).getByRole('button', {
+        name: 'No summary yet — click to generate',
+      }),
+    ).toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('chapter-row-c1-delete'));
+
+    expect(
+      within(screen.getByTestId('chapter-row-c1')).queryByRole('button', {
+        name: 'No summary yet — click to generate',
+      }),
+    ).toBeNull();
   });
 });

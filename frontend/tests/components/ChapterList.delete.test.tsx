@@ -41,6 +41,7 @@ function renderList(opts: {
         activeChapterId={opts.activeChapterId}
         onSelectChapter={() => {}}
         onChapterDeleted={opts.onChapterDeleted}
+        onOpenSummary={() => {}}
       />
     </QueryClientProvider>,
   );
