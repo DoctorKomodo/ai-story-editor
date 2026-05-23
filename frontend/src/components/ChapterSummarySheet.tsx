@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { type ChangeEvent, type FormEvent, useCallback, useId, useState } from 'react';
+import { type ChangeEvent, type FormEvent, useCallback, useEffect, useId, useState } from 'react';
 import type { ChapterSummary } from 'story-editor-shared';
 import {
   Button,
@@ -66,6 +66,9 @@ function ChapterSummarySheetInner({
 
   const mutation = useUpdateChapterSummaryMutation(chapterId, storyId);
   const [fields, setFields] = useState<ChapterSummary>(initialSummary);
+  useEffect(() => {
+    setFields(initialSummary ?? EMPTY);
+  }, [initialSummary]);
   const [formError, setFormError] = useState<string | null>(null);
 
   const handleChange =

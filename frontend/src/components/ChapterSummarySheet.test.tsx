@@ -96,7 +96,28 @@ describe('ChapterSummarySheet', () => {
     expect(screen.getByLabelText(/open threads/i)).toHaveValue('ot');
   });
 
-  it('closes on Escape', async () => {
+  it('shows error message and keeps modal open on submit failure', async () => {
+    const onClose = vi.fn();
+    const fetchSpy = vi.spyOn(global, 'fetch').mockRejectedValueOnce(new Error('Network error'));
+    render(
+      wrap(
+        <ChapterSummarySheet
+          chapterId="c1"
+          storyId="s1"
+          open
+          onClose={onClose}
+          initialSummary={{ events: '', stateAtEnd: '', openThreads: '' }}
+        />,
+      ),
+    );
+    fireEvent.click(screen.getByRole('button', { name: /save/i }));
+    await screen.findByRole('alert', {}, { timeout: 3000 });
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: /save/i })).not.toBeDisabled();
+    fetchSpy.mockRestore();
+  });
+
+  it('closes on Escape', () => {
     const onClose = vi.fn();
     render(
       wrap(
