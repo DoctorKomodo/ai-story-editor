@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import * as React from 'react';
 import type { Chapter, ChapterMeta } from 'story-editor-shared';
+import { userEvent, within } from 'storybook/test';
 import { chapterQueryKey } from '@/hooks/useChapters';
 import { ChapterSummaryPopover } from './ChapterSummaryPopover';
 
@@ -188,6 +189,7 @@ export const Corrupted: Story = {
 };
 
 // fetch is mocked so the summarise POST never resolves — isPending stays true.
+// The play function clicks Generate to actually enter the pending state.
 export const Generating: Story = {
   args: {
     chapter: { ...baseMeta, hasSummary: false, summaryIsStale: false },
@@ -203,4 +205,7 @@ export const Generating: Story = {
       { mockFetch: true },
     ),
   ],
+  play: async ({ canvasElement }) => {
+    await userEvent.click(within(canvasElement).getByRole('button', { name: /Generate summary/i }));
+  },
 };

@@ -170,6 +170,7 @@ function ChapterRow({
         />
       ) : (
         <>
+          {/* list-meta derivation never returns 'generating' (mutation state) or 'corrupted' (requires detail) */}
           <SummaryStateIcon
             state={deriveListSummaryState({
               hasSummary: chapter.hasSummary,

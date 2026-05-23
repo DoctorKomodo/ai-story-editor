@@ -46,6 +46,7 @@ export function ChapterSummaryPopover({
   const chapterId = chapter?.id ?? null;
 
   const detail = useChapterQuery(chapterId, storyId);
+  // Hook must run unconditionally (rules-of-hooks); the null-chapter early-return below prevents .mutate() ever firing with the empty key.
   const summariseMutation = useSummariseChapterMutation(chapterId ?? '', storyId);
 
   // Recompute position whenever the anchor changes (non-null).
