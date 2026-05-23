@@ -88,6 +88,9 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     }
     if (input.genre !== undefined) data.genre = input.genre;
     if (input.targetWords !== undefined) data.targetWords = input.targetWords;
+    if (input.includePreviousChaptersInPrompt !== undefined) {
+      data.includePreviousChaptersInPrompt = input.includePreviousChaptersInPrompt;
+    }
 
     const updated = await client.story.updateMany({
       where: { id, userId },

@@ -177,11 +177,7 @@ async function setupTwoChapters(
   const storyId = story.id as string;
 
   if (opts?.toggleOff) {
-    // Non-encrypted boolean — not yet wired through the repo's update path.
-    await prisma.story.update({
-      where: { id: storyId },
-      data: { includePreviousChaptersInPrompt: false },
-    });
+    await createStoryRepo(req).update(storyId, { includePreviousChaptersInPrompt: false });
   }
 
   const ch0 = await createChapterRepo(req).create({

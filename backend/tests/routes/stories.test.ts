@@ -233,6 +233,27 @@ describe('Stories routes [B1]', () => {
     expect(empty.totalWordCount).toBe(0);
   });
 
+  // ── PATCH /:id ───────────────────────────────────────────────────────────
+
+  it('PATCH /api/stories/:id accepts includePreviousChaptersInPrompt and persists it', async () => {
+    const accessToken = await registerAndLogin('stories-pcs-toggle');
+    const req = makeFakeReq(accessToken);
+    const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
+
+    const agent = request.agent(app);
+    agent.set('Authorization', `Bearer ${accessToken}`);
+
+    const res = await agent
+      .patch(`/api/stories/${story.id as string}`)
+      .send({ includePreviousChaptersInPrompt: false });
+    expect(res.status).toBe(200);
+    expect(res.body.story.includePreviousChaptersInPrompt).toBe(false);
+
+    const getRes = await agent.get(`/api/stories/${story.id as string}`);
+    expect(getRes.status).toBe(200);
+    expect(getRes.body.story.includePreviousChaptersInPrompt).toBe(false);
+  });
+
   // ── GET: ordering ────────────────────────────────────────────────────────
 
   it('GET /api/stories orders by updatedAt desc', async () => {

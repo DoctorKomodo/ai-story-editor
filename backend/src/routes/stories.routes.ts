@@ -116,6 +116,9 @@ export function createStoriesRouter() {
       if (body.genre !== undefined) input.genre = body.genre;
       if (body.worldNotes !== undefined) input.worldNotes = body.worldNotes;
       if (body.targetWords !== undefined) input.targetWords = body.targetWords;
+      if (body.includePreviousChaptersInPrompt !== undefined) {
+        input.includePreviousChaptersInPrompt = body.includePreviousChaptersInPrompt;
+      }
 
       const story = await createStoryRepo(req).update(id, input);
       // Race: ownership middleware confirmed ownership, then the row disappeared
