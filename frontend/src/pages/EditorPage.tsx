@@ -151,9 +151,6 @@ export function EditorPage(): JSX.Element {
     setCharacterModal({ mode: 'create' });
   }, []);
 
-  // [pcs] Summary popover + sheet — page-root state, same convention as CharacterSheet.
-  // popoverState holds the anchor element so the popover can position itself;
-  // sheetChapterId drives the modal editor sheet.
   const [summaryPopoverState, setSummaryPopoverState] = useState<{
     chapterId: string;
     anchorEl: HTMLElement;

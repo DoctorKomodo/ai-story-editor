@@ -2,7 +2,11 @@ import type { JSX } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChapterMeta } from 'story-editor-shared';
 import { FieldRow, Spinner } from '@/design/primitives';
-import { deriveSummaryState, deriveListSummaryState, useSummariseChapterMutation } from '@/hooks/useChapterSummary';
+import {
+  deriveListSummaryState,
+  deriveSummaryState,
+  useSummariseChapterMutation,
+} from '@/hooks/useChapterSummary';
 import { useChapterQuery } from '@/hooks/useChapters';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { computePopoverPosition, type Position } from '@/lib/popover-position';
@@ -79,6 +83,9 @@ export function ChapterSummaryPopover({
   }, [chapter, anchorEl, onClose]);
 
   if (!chapter || !anchorEl) return null;
+
+  // Generate/Regenerate require a model; disable when modelId is empty.
+  const canSummarise = modelId.length > 0;
 
   // Derive the display state. Use fetched detail when available; fall back to
   // list-meta flags while the detail query is still in flight.
@@ -168,6 +175,8 @@ export function ChapterSummaryPopover({
             <button
               type="button"
               onClick={() => summariseMutation.mutate(modelId)}
+              disabled={!canSummarise || summariseMutation.isPending}
+              title={canSummarise ? undefined : 'Pick a model in chat settings first'}
               className="text-[12px] px-2 py-1 rounded-[var(--radius)] hover:bg-[var(--surface-hover)]"
             >
               Regenerate
@@ -178,6 +187,8 @@ export function ChapterSummaryPopover({
           <button
             type="button"
             onClick={() => summariseMutation.mutate(modelId)}
+            disabled={!canSummarise || summariseMutation.isPending}
+            title={canSummarise ? undefined : 'Pick a model in chat settings first'}
             className="text-[12px] px-2 py-1 rounded-[var(--radius)] hover:bg-[var(--surface-hover)]"
           >
             Generate summary

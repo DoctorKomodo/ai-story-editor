@@ -143,6 +143,22 @@ describe('ChapterSummaryPopover', () => {
     expect(screen.getByRole('button', { name: /regenerate/i })).toBeInTheDocument();
   });
 
+  it('disables Generate/Regenerate when modelId is empty', () => {
+    renderHarness(
+      {
+        hasSummary: true,
+        summaryIsStale: false,
+        summary: { events: 'a', stateAtEnd: 'b', openThreads: 'c' },
+      },
+      { modelId: '' },
+    );
+    expect(screen.getByRole('button', { name: /regenerate/i })).toBeDisabled();
+
+    // Also check the Generate button in the missing state.
+    renderHarness({ hasSummary: false, summaryIsStale: false, summary: null }, { modelId: '' });
+    expect(screen.getByRole('button', { name: /generate summary/i })).toBeDisabled();
+  });
+
   it('shows Cancel button while generating and Cancel calls onClose', async () => {
     const onClose = vi.fn();
     // Never-resolving fetch so the mutation stays pending.
