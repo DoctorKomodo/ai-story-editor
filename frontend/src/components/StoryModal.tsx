@@ -270,7 +270,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
                 type="checkbox"
                 checked={includePreviousChaptersInPrompt}
                 onChange={(e) => setIncludePreviousChaptersInPrompt(e.target.checked)}
-                className="accent-[var(--accent)] w-4 h-4"
+                className="accent-accent w-4 h-4"
               />
               <span className="font-sans text-sm text-ink-2">
                 Include previous-chapter summaries in AI context

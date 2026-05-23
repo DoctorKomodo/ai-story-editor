@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { SummaryStateIcon } from './SummaryStateIcon';
+import { SummaryStateIcon } from '@/components/SummaryStateIcon';
 
 describe('SummaryStateIcon', () => {
   it('renders aria-label per state — missing', () => {

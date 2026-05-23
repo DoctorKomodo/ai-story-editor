@@ -1,7 +1,8 @@
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { StoryModalInitial } from '@/components/StoryModal';
 import { StoryModal } from '@/components/StoryModal';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
@@ -264,5 +265,118 @@ describe('StoryModal (F6)', () => {
 
     const cancel = screen.getByTestId('story-modal-cancel');
     expect(cancel.className).not.toMatch(/\b(neutral|red|blue|gray|slate)-\d/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// includePreviousChaptersInPrompt toggle — merged from colocated test file
+// ---------------------------------------------------------------------------
+
+const BASE_STORY: StoryModalInitial = {
+  id: 's1',
+  title: 'The Cartographer',
+  genre: 'Literary fantasy',
+  synopsis: 'A novel about borders.',
+  worldNotes: null,
+  includePreviousChaptersInPrompt: true,
+};
+
+function storyResponse(overrides: Record<string, unknown> = {}): Response {
+  return new Response(
+    JSON.stringify({
+      story: {
+        id: 's1',
+        title: 'The Cartographer',
+        genre: 'Literary fantasy',
+        synopsis: 'A novel about borders.',
+        worldNotes: null,
+        targetWords: null,
+        includePreviousChaptersInPrompt: true,
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: '2026-01-01T00:00:00.000Z',
+        ...overrides,
+      },
+    }),
+    { status: 200, headers: { 'Content-Type': 'application/json' } },
+  );
+}
+
+describe('StoryModal — includePreviousChaptersInPrompt toggle', () => {
+  let fetchMock2: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    fetchMock2 = vi.fn();
+    vi.stubGlobal('fetch', fetchMock2);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('shows the toggle checked when story has the flag true', () => {
+    renderModal(
+      <StoryModal
+        mode="edit"
+        open={true}
+        onClose={() => {}}
+        initial={{ ...BASE_STORY, includePreviousChaptersInPrompt: true }}
+      />,
+    );
+    const checkbox = screen.getByRole('checkbox', {
+      name: /include previous-chapter summaries/i,
+    });
+    expect(checkbox).toBeInTheDocument();
+    expect(checkbox).toBeChecked();
+  });
+
+  it('shows the toggle unchecked when story has the flag false', () => {
+    renderModal(
+      <StoryModal
+        mode="edit"
+        open={true}
+        onClose={() => {}}
+        initial={{ ...BASE_STORY, includePreviousChaptersInPrompt: false }}
+      />,
+    );
+    expect(
+      screen.getByRole('checkbox', { name: /include previous-chapter summaries/i }),
+    ).not.toBeChecked();
+  });
+
+  it('shows the toggle checked by default in create mode', () => {
+    renderModal(<StoryModal mode="create" open={true} onClose={() => {}} />);
+    expect(
+      screen.getByRole('checkbox', { name: /include previous-chapter summaries/i }),
+    ).toBeChecked();
+  });
+
+  it('PATCH includes includePreviousChaptersInPrompt when toggled', async () => {
+    fetchMock2.mockResolvedValue(storyResponse({ includePreviousChaptersInPrompt: false }));
+
+    renderModal(
+      <StoryModal
+        mode="edit"
+        open={true}
+        onClose={() => {}}
+        initial={{ ...BASE_STORY, includePreviousChaptersInPrompt: true }}
+      />,
+    );
+
+    const checkbox = screen.getByRole('checkbox', {
+      name: /include previous-chapter summaries/i,
+    });
+    expect(checkbox).toBeChecked();
+    fireEvent.click(checkbox);
+    expect(checkbox).not.toBeChecked();
+
+    fireEvent.click(screen.getByTestId('story-modal-submit'));
+
+    await waitFor(() => {
+      expect(fetchMock2).toHaveBeenCalled();
+    });
+
+    const [, init] = fetchMock2.mock.calls[0];
+    const body = JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
+    expect(body).toMatchObject({ includePreviousChaptersInPrompt: false });
   });
 });

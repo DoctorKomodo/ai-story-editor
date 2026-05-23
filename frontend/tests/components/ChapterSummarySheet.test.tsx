@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
-import { ChapterSummarySheet } from './ChapterSummarySheet';
+import { ChapterSummarySheet } from '@/components/ChapterSummarySheet';
 
 const wrap = (ui: React.ReactElement) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });

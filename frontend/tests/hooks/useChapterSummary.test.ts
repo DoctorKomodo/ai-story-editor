@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveListSummaryState, deriveSummaryState } from './useChapterSummary';
+import { deriveListSummaryState, deriveSummaryState } from '@/hooks/useChapterSummary';
 
 describe('deriveSummaryState', () => {
   it('returns missing when hasSummary is false', () => {

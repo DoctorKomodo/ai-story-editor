@@ -2,9 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
+import { ChapterSummaryPopover } from '@/components/ChapterSummaryPopover';
 import { chapterQueryKey } from '@/hooks/useChapters';
 import { __resetShortcutsForTests } from '@/hooks/useKeyboardShortcuts';
-import { ChapterSummaryPopover } from './ChapterSummaryPopover';
 
 const META = {
   id: 'c1',
