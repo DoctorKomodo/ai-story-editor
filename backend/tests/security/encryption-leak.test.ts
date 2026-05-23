@@ -96,7 +96,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       wordCount: 3,
     });
 
-    await chapterRepo.update(chapter.id as string, {
+    await chapterRepo.update(chapter.id, {
       summaryJson: {
         events: `summary-events ${SENTINEL}`,
         stateAtEnd: `summary-state ${SENTINEL}`,
