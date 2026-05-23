@@ -173,7 +173,7 @@ function ChapterRow({
             })}
             ariaPressed={false}
             onClick={(e) => {
-              onOpenSummary(chapter.id, e.currentTarget as HTMLElement);
+              onOpenSummary(chapter.id, e.currentTarget);
             }}
           />
           <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
