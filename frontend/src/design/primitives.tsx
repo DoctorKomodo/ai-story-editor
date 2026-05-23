@@ -685,7 +685,6 @@ export function InlineConfirm({
 
 /* ============================================================================
  * FieldRow — labelled definition-list row with em-dash fallback for blank values
- * Used by CharacterPopover (F37) and ChapterSummaryPopover (PCS).
  * ========================================================================== */
 
 export interface FieldRowProps {
