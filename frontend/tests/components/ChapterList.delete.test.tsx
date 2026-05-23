@@ -24,6 +24,8 @@ function chap(o: { id: string; orderIndex: number; title?: string; wordCount?: n
     status: 'draft' as const,
     createdAt: '2026-04-01T00:00:00Z',
     updatedAt: '2026-04-01T00:00:00Z',
+    hasSummary: false,
+    summaryIsStale: false,
   };
 }
 

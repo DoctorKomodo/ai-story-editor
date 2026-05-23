@@ -25,6 +25,8 @@ interface ChapterFixture {
   status: 'draft';
   createdAt: string;
   updatedAt: string;
+  hasSummary: boolean;
+  summaryIsStale: boolean;
 }
 
 function chap(
@@ -37,6 +39,8 @@ function chap(
     status: 'draft',
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
+    hasSummary: false,
+    summaryIsStale: false,
     ...overrides,
   };
 }
@@ -257,6 +261,8 @@ describe('ChapterList (F10)', () => {
           chapter: {
             ...chap({ id: 'new', orderIndex: 0, title: 'Untitled chapter' }),
             bodyJson: null,
+            summary: null,
+            summaryUpdatedAt: null,
           },
         }),
       )

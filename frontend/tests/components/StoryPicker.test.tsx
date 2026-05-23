@@ -31,6 +31,7 @@ function makeStory(id: string, overrides: Partial<Record<string, unknown>> = {})
     targetWords: 80_000,
     chapterCount: 1,
     totalWordCount: 1234,
+    includePreviousChaptersInPrompt: true,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
     ...overrides,
