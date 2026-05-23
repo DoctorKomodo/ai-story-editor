@@ -2,7 +2,7 @@ import type { JSX } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChapterMeta } from 'story-editor-shared';
 import { FieldRow, Spinner } from '@/design/primitives';
-import { deriveSummaryState, useSummariseChapterMutation } from '@/hooks/useChapterSummary';
+import { deriveSummaryState, deriveListSummaryState, useSummariseChapterMutation } from '@/hooks/useChapterSummary';
 import { useChapterQuery } from '@/hooks/useChapters';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
 import { computePopoverPosition, type Position } from '@/lib/popover-position';
@@ -88,7 +88,9 @@ export function ChapterSummaryPopover({
 
   const summaryState = summariseMutation.isPending
     ? 'generating'
-    : deriveSummaryState({ hasSummary, summaryIsStale, summary });
+    : detail.data !== undefined
+      ? deriveSummaryState({ hasSummary, summaryIsStale, summary })
+      : deriveListSummaryState({ hasSummary, summaryIsStale });
 
   // Token estimate: rough word→token ratio (3/4 words = 1 token).
   const tokenEstimate = Math.ceil(chapter.wordCount * 0.75);
@@ -126,11 +128,11 @@ export function ChapterSummaryPopover({
         </div>
       </header>
 
-      {(summaryState === 'current' || summaryState === 'stale') && summary && (
+      {(summaryState === 'current' || summaryState === 'stale') && (
         <dl>
-          <FieldRow label="Events" value={summary.events} />
-          <FieldRow label="State at end" value={summary.stateAtEnd} />
-          <FieldRow label="Open threads" value={summary.openThreads} />
+          <FieldRow label="Events" value={summary?.events ?? '—'} />
+          <FieldRow label="State at end" value={summary?.stateAtEnd ?? '—'} />
+          <FieldRow label="Open threads" value={summary?.openThreads ?? '—'} />
         </dl>
       )}
 

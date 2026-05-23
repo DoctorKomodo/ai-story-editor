@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { chapterQueryKey } from '@/hooks/useChapters';
 import { __resetShortcutsForTests } from '@/hooks/useKeyboardShortcuts';
@@ -17,6 +17,13 @@ const META = {
   updatedAt: '2026-05-18T00:00:00.000Z',
 };
 
+const anchorEls: HTMLElement[] = [];
+
+afterEach(() => {
+  for (const a of anchorEls) a.remove();
+  anchorEls.length = 0;
+});
+
 function renderHarness(
   detail: { hasSummary: boolean; summaryIsStale: boolean; summary: unknown },
   props: Partial<React.ComponentProps<typeof ChapterSummaryPopover>> = {},
@@ -31,6 +38,7 @@ function renderHarness(
   });
   const anchor = document.createElement('button');
   document.body.appendChild(anchor);
+  anchorEls.push(anchor);
   return render(
     <QueryClientProvider client={qc}>
       <ChapterSummaryPopover
@@ -121,6 +129,37 @@ describe('ChapterSummaryPopover', () => {
     );
     // The keyboard-shortcut registry listens on document, not window.
     fireEvent.keyDown(document, { key: 'Escape' });
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('renders "possibly stale" pill and Edit+Regenerate in stale state', () => {
+    renderHarness({
+      hasSummary: true,
+      summaryIsStale: true,
+      summary: { events: 'a', stateAtEnd: 'b', openThreads: 'c' },
+    });
+    expect(screen.getByText(/possibly stale/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /regenerate/i })).toBeInTheDocument();
+  });
+
+  it('shows Cancel button while generating and Cancel calls onClose', async () => {
+    const onClose = vi.fn();
+    // Never-resolving fetch so the mutation stays pending.
+    vi.spyOn(global, 'fetch').mockReturnValue(new Promise(() => {}));
+    renderHarness(
+      {
+        hasSummary: true,
+        summaryIsStale: false,
+        summary: { events: 'a', stateAtEnd: 'b', openThreads: 'c' },
+      },
+      { onClose },
+    );
+    fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /cancel/i })).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onClose).toHaveBeenCalled();
   });
 });
