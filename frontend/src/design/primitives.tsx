@@ -683,5 +683,25 @@ export function InlineConfirm({
   );
 }
 
+/* ============================================================================
+ * FieldRow — labelled definition-list row with em-dash fallback for blank values
+ * Used by CharacterPopover (F37) and ChapterSummaryPopover (PCS).
+ * ========================================================================== */
+
+export interface FieldRowProps {
+  label: string;
+  value: string | null;
+}
+
+export function FieldRow({ label, value }: FieldRowProps): JSX.Element {
+  const display = value && value.trim().length > 0 ? value : '—';
+  return (
+    <div>
+      <dt className="text-[10px] uppercase tracking-[.08em] text-ink-4 font-mono mt-2">{label}</dt>
+      <dd className="font-serif text-[13px] text-ink mt-0.5 whitespace-pre-wrap">{display}</dd>
+    </div>
+  );
+}
+
 /* Re-export useId so consumers don't need a second React import. */
 export { useId, useRef };
