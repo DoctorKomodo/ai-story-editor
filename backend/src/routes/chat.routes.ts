@@ -260,7 +260,7 @@ export function createChatMessagesRouter() {
 
         // ── 2. Prime models cache (throws NoVeniceKeyError if no BYOK) ────────
         await veniceModelsService.fetchModels(userId);
-        const modelContextLength = veniceModelsService.getModelContextLength(body.modelId);
+        const modelContextLength = veniceModelsService.getModelContextLength(body.modelId, userId);
 
         // ── 3. Load user settings ─────────────────────────────────────────────
         const userRow = await prisma.user.findUnique({
@@ -272,6 +272,7 @@ export function createChatMessagesRouter() {
         const userPrompts = resolveUserPrompts(rawSettings);
         const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
           body.modelId,
+          userId,
         );
 
         // ── 4. Load chapter + story via repos ─────────────────────────────────
@@ -401,7 +402,7 @@ export function createChatMessagesRouter() {
         const venice_parameters: Record<string, unknown> = { ...baseVeniceParams };
 
         // [V6] Reasoning model: strip chain-of-thought tokens
-        const modelInfo = veniceModelsService.findModel(body.modelId);
+        const modelInfo = veniceModelsService.findModel(body.modelId, userId);
         if (modelInfo?.supportsReasoning === true) {
           venice_parameters.strip_thinking_response = true;
         }

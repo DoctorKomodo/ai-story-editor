@@ -171,6 +171,8 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         // summaryJsonCiphertext + summaryJsonUpdatedAt are needed for the
         // hasSummary / summaryIsStale derived flags on every list response.
         // Iv + AuthTag are only selected when the caller opts in to decryption.
+        // Iv/AuthTag selection AND the projectDecrypted call below must move together —
+        // decoupling produces CiphertextMissingError on the next read, not a silent leak.
         summaryJsonCiphertext: true,
         summaryJsonUpdatedAt: true,
         ...(opts?.includeSummary ? { summaryJsonIv: true, summaryJsonAuthTag: true } : {}),

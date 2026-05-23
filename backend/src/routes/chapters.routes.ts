@@ -288,7 +288,7 @@ export function createChaptersRouter() {
         throw err;
       }
 
-      const modelInfo = veniceModelsService.findModel(body.modelId);
+      const modelInfo = veniceModelsService.findModel(body.modelId, userId);
       if (!modelInfo || modelInfo.supportsResponseSchema === false) {
         res.status(400).json({
           error: {

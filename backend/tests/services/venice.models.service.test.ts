@@ -312,8 +312,8 @@ describe('venice.models.service [V2]', () => {
 
       await svc.fetchModels('user-1');
 
-      expect(svc.getModelContextLength('llama-3.3-70b')).toBe(65536);
-      expect(svc.getModelContextLength('qwen-qwq-32b')).toBe(32768);
+      expect(svc.getModelContextLength('llama-3.3-70b', 'user-1')).toBe(65536);
+      expect(svc.getModelContextLength('qwen-qwq-32b', 'user-1')).toBe(32768);
     });
 
     it('throws UnknownModelError for a model id that is not in the cache', async () => {
@@ -321,7 +321,7 @@ describe('venice.models.service [V2]', () => {
         getClient: async () => makeListStub([]).client,
       });
 
-      expect(() => svc.getModelContextLength('never-fetched')).toThrow(UnknownModelError);
+      expect(() => svc.getModelContextLength('never-fetched', 'user-1')).toThrow(UnknownModelError);
     });
   });
 
@@ -413,8 +413,8 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([m]);
       const svc = createVeniceModelsService({ getClient: async () => client });
       await svc.fetchModels('user-1');
-      expect(svc.getModelMaxCompletionTokens('has-cap-2')).toBe(16384);
-      expect(() => svc.getModelMaxCompletionTokens('nope')).toThrow(UnknownModelError);
+      expect(svc.getModelMaxCompletionTokens('has-cap-2', 'user-1')).toBe(16384);
+      expect(() => svc.getModelMaxCompletionTokens('nope', 'user-1')).toThrow(UnknownModelError);
     });
   });
 

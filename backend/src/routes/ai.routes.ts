@@ -78,7 +78,7 @@ export function createAiRouter() {
         // runs "first"). Also throws UnknownModelError when modelId isn't in
         // Venice's list → propagates as 500 (V11 will refine later).
         await veniceModelsService.fetchModels(userId);
-        const modelContextLength = veniceModelsService.getModelContextLength(body.modelId);
+        const modelContextLength = veniceModelsService.getModelContextLength(body.modelId, userId);
 
         // ── 3. Load user settings (not a narrative entity — direct prisma ok) ──
         const userRow = await prisma.user.findUnique({
@@ -90,6 +90,7 @@ export function createAiRouter() {
         const userPrompts = resolveUserPrompts(rawSettings);
         const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
           body.modelId,
+          userId,
         );
 
         // ── 4. Load story via repo (ownership-scoped) ────────────────────────
@@ -153,7 +154,7 @@ export function createAiRouter() {
         const venice_parameters: Record<string, unknown> = { ...baseVeniceParams };
 
         // [V6] Reasoning model: strip chain-of-thought tokens
-        const modelInfo = veniceModelsService.findModel(body.modelId);
+        const modelInfo = veniceModelsService.findModel(body.modelId, userId);
         if (modelInfo?.supportsReasoning === true) {
           venice_parameters.strip_thinking_response = true;
         }
