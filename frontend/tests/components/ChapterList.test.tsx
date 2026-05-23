@@ -50,6 +50,7 @@ function renderList(
   activeChapterId: string | null = null,
   client?: QueryClient,
   onOpenSummary?: (chapterId: string, anchorEl: HTMLElement) => void,
+  openPopoverChapterId?: string | null,
 ): { client: QueryClient } {
   const qc = client ?? createQueryClient();
   render(
@@ -59,6 +60,7 @@ function renderList(
         activeChapterId={activeChapterId}
         onSelectChapter={onSelect}
         onOpenSummary={onOpenSummary ?? vi.fn()}
+        openPopoverChapterId={openPopoverChapterId}
       />
     </QueryClientProvider>,
   );
@@ -405,5 +407,33 @@ describe('ChapterList (F10)', () => {
         name: 'No summary yet — click to generate',
       }),
     ).toBeNull();
+  });
+
+  it('openPopoverChapterId sets aria-pressed="true" on the matching row only', async () => {
+    fetchMock.mockImplementation((url: string) => {
+      if (url.endsWith('/stories/story-1/chapters')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chapters: [
+              chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false }),
+              chap({ id: 'c2', orderIndex: 1, hasSummary: false, summaryIsStale: false }),
+            ],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    renderList(vi.fn(), null, undefined, undefined, 'c1');
+
+    await screen.findByTestId('chapter-row-c1');
+    const c1Icon = within(screen.getByTestId('chapter-row-c1')).getByRole('button', {
+      name: 'No summary yet — click to generate',
+    });
+    const c2Icon = within(screen.getByTestId('chapter-row-c2')).getByRole('button', {
+      name: 'No summary yet — click to generate',
+    });
+    expect(c1Icon).toHaveAttribute('aria-pressed', 'true');
+    expect(c2Icon).toHaveAttribute('aria-pressed', 'false');
   });
 });

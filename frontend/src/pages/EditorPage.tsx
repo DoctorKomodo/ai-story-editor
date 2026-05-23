@@ -33,6 +33,8 @@ import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
 import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
 import { ChapterList } from '@/components/ChapterList';
+import { ChapterSummaryPopover } from '@/components/ChapterSummaryPopover';
+import { ChapterSummarySheet } from '@/components/ChapterSummarySheet';
 import {
   CharacterPopoverHost,
   type CharacterPopoverHostHandle,
@@ -148,6 +150,19 @@ export function EditorPage(): JSX.Element {
   const handleCreateCharacter = useCallback(() => {
     setCharacterModal({ mode: 'create' });
   }, []);
+
+  // [pcs] Summary popover + sheet — page-root state, same convention as CharacterSheet.
+  // popoverState holds the anchor element so the popover can position itself;
+  // sheetChapterId drives the modal editor sheet.
+  const [summaryPopoverState, setSummaryPopoverState] = useState<{
+    chapterId: string;
+    anchorEl: HTMLElement;
+  } | null>(null);
+  const [summarySheetChapterId, setSummarySheetChapterId] = useState<string | null>(null);
+
+  // Fetch chapter detail for the sheet so it receives a real initialSummary from the
+  // per-chapter cache (the chapters-list cache is metadata-only and carries no summary field).
+  const detailForSheet = useChapterQuery(summarySheetChapterId, story?.id);
 
   // [F55] Page-root modal state. The page renders each modal at the bottom
   // of its JSX; TopBar / Sidebar / ChatPanel callbacks flip these flags.
@@ -507,7 +522,10 @@ export function EditorPage(): JSX.Element {
                 onChapterDeleted={(deletedId) => {
                   if (deletedId === activeChapterId) setActiveChapterId(null);
                 }}
-                onOpenSummary={() => {}}
+                onOpenSummary={(chapterId, anchorEl) => {
+                  setSummaryPopoverState({ chapterId, anchorEl });
+                }}
+                openPopoverChapterId={summaryPopoverState?.chapterId ?? null}
               />
             }
             castBody={
@@ -637,6 +655,39 @@ export function EditorPage(): JSX.Element {
         hostRef={characterPopoverRef}
         onEdit={handleEditCharacter}
       />
+
+      {/* [pcs] Chapter summary popover — opened from ChapterList SummaryStateIcon clicks.
+          Page-root mount prevents clipping by the sidebar scroll container. */}
+      {summaryPopoverState !== null ? (
+        <ChapterSummaryPopover
+          chapter={chaptersQuery.data?.find((c) => c.id === summaryPopoverState.chapterId) ?? null}
+          storyId={story.id}
+          anchorEl={summaryPopoverState.anchorEl}
+          onClose={() => {
+            setSummaryPopoverState(null);
+          }}
+          onEdit={(chapterId) => {
+            setSummaryPopoverState(null);
+            setSummarySheetChapterId(chapterId);
+          }}
+          modelId={selectedModelId ?? ''}
+        />
+      ) : null}
+
+      {/* [pcs] Chapter summary sheet — opened from popover Edit button.
+          detailForSheet supplies initialSummary from the per-chapter cache (list cache
+          is metadata-only and carries no summary field). */}
+      {summarySheetChapterId !== null ? (
+        <ChapterSummarySheet
+          chapterId={summarySheetChapterId}
+          storyId={story.id}
+          open
+          onClose={() => {
+            setSummarySheetChapterId(null);
+          }}
+          initialSummary={detailForSheet.data?.summary ?? undefined}
+        />
+      ) : null}
 
       {/* [F53] Selection bubble — listens for prose selections inside the
           .paper-prose region and absolute-positions itself over the

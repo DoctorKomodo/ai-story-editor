@@ -50,6 +50,8 @@ export interface ChapterListProps {
    */
   onChapterDeleted?: (chapterId: string) => void;
   onOpenSummary: (chapterId: string, anchorEl: HTMLElement) => void;
+  /** Id of the chapter whose summary popover is currently open. Controls aria-pressed on its icon. */
+  openPopoverChapterId?: string | null;
 }
 
 function chapterDisplayTitle(c: ChapterMeta): string {
@@ -65,6 +67,7 @@ interface ChapterRowProps {
   onRequestDelete: (chapterId: string) => Promise<void>;
   isDeleting: boolean;
   onOpenSummary: (chapterId: string, anchorEl: HTMLElement) => void;
+  popoverOpen: boolean;
 }
 
 /**
@@ -80,6 +83,7 @@ function ChapterRow({
   onRequestDelete,
   isDeleting,
   onOpenSummary,
+  popoverOpen,
 }: ChapterRowProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } =
     useSortable({ id: chapter.id });
@@ -171,7 +175,7 @@ function ChapterRow({
               hasSummary: chapter.hasSummary,
               summaryIsStale: chapter.summaryIsStale,
             })}
-            ariaPressed={false}
+            ariaPressed={popoverOpen}
             onClick={(e) => {
               onOpenSummary(chapter.id, e.currentTarget);
             }}
@@ -201,6 +205,7 @@ export function ChapterList({
   onSelectChapter,
   onChapterDeleted,
   onOpenSummary,
+  openPopoverChapterId,
 }: ChapterListProps): JSX.Element {
   const { data: chapters, isLoading, isError, error } = useChaptersQuery(storyId);
   const createChapter = useCreateChapterMutation(storyId);
@@ -328,6 +333,7 @@ export function ChapterList({
                   onRequestDelete={handleRequestDelete}
                   isDeleting={pendingDeleteId === c.id}
                   onOpenSummary={onOpenSummary}
+                  popoverOpen={openPopoverChapterId === c.id}
                 />
               ))}
             </ul>
