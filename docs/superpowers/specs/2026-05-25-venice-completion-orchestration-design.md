@@ -83,7 +83,7 @@ Persona reaches summarise. JSON-output rule (in `summariseChapter`) still govern
 
 **User override preservation.** `resolvePrompt(userPrompts, key)` returns `userPrompts?.[key] ?? DEFAULT_PROMPTS[key]`. A user override replaces the entire default verbatim — there's no merge path, no template inheritance. If a user overrides `continue`, they lose `PROSE_OUTPUT_RULES` unless they copy them in. Same semantic as today (overriding currently loses "matching the established voice. Aim for 80–150 words." too) — the restructure just bundles one more clause into the same replaceable unit.
 
-**Frontend impact:** zero code change. The Settings tab reads `DEFAULT_PROMPTS` via `GET /api/ai/default-prompts`; the new shapes appear as the displayed defaults automatically.
+**Frontend impact:** zero code change. The Settings tab reads `DEFAULT_PROMPTS` via `GET /api/ai/default-prompts`; the new shapes appear as the displayed defaults automatically. Existing frontend tests at `frontend/tests/components/Settings.prompts.test.tsx` and `frontend/tests/hooks/useDefaultPrompts.test.tsx` mock the endpoint response with locally-declared `DEFAULTS` / `mockDefaults` constants (not real backend-fixture imports), so the restructure does NOT break them — they verify "component renders whatever the API returned" semantics, not specific string content.
 
 **Tests touched:** `backend/tests/services/prompt.service.test.ts` snapshots of assembled system messages need fixture updates (mechanical — same logic, different default strings). The new summarise route test (Section 3) asserts the captured request body includes the persona substring in `messages[0].content`.
 
@@ -124,11 +124,21 @@ export function buildVeniceParams(input: BuildVeniceParamsInput): Record<string,
 // include_search_results_in_stream (chat stream hint), and
 // include_venice_system_prompt (for summarise, which doesn't go through buildPrompt).
 //
-// Precedence: spread `base` first; any explicit input arg (`includeVeniceSystemPrompt`,
-// the conditional booleans) writes after the spread and wins. For ai/chat, `base`
-// already contains include_venice_system_prompt (set by buildPrompt) and they don't
-// pass the explicit arg, so the base value sticks. For summarise, base is `{}` and
-// the explicit arg writes it. Same input → same output across both call patterns.
+// Precedence: spread `base` first; any explicit input arg writes after the spread.
+// The explicit-writes-wins check MUST use `!== undefined`, not a truthy check:
+//
+//   if (input.includeVeniceSystemPrompt !== undefined) {
+//     out.include_venice_system_prompt = input.includeVeniceSystemPrompt;
+//   }
+//
+// A truthy check would silently drop the field when the user has toggled the
+// setting OFF (resolver returns `false`, and `false` is falsy). The toggle
+// must reach Venice as `false`, not get omitted. Same rule for the other
+// boolean inputs.
+//
+// For ai/chat: base contains include_venice_system_prompt (set by buildPrompt)
+// and they don't pass the explicit arg, so the base value sticks. For summarise:
+// base is `{}` and the explicit arg writes it (true OR false, per user toggle).
 
 
 // ── 3. resolve text-gen params with a sane modelInfo-null fallback ────────
@@ -176,7 +186,7 @@ export function promptCacheKey(...parts: string[]): string;
 
 **Test surface:** new `backend/tests/services/venice-call.service.test.ts`:
 - `hydrateUserSettings` — null `settingsJson`, malformed settings, full-shape settings.
-- `buildVeniceParams` — every combination of the four flags (16 cases trim to ~6 meaningful ones); ai/chat preserve `include_venice_system_prompt` from `base`; summarise sets it explicitly.
+- `buildVeniceParams` — every combination of the four flags (16 cases trim to ~6 meaningful ones); ai/chat preserve `include_venice_system_prompt` from `base`; summarise sets it explicitly. **Required test case:** explicit `includeVeniceSystemPrompt: false` overrides `base: { include_venice_system_prompt: true }` — guards against a truthy-check regression that would silently drop the user's OFF toggle.
 - `resolveTextGenWithFallback` — `modelInfo` null vs present (delegates to existing `resolveTextGenParams` for present case).
 - `logVeniceParams` — captures `console.log` in test, asserts JSON shape; suppressed in `NODE_ENV=production`.
 - `promptCacheKey` — determinism, length (32 hex chars), same-prefix-different-suffix uniqueness.
@@ -323,7 +333,7 @@ Explicit list of new behaviours that land in Section 3's summarise rewrite. Clos
 | `include_venice_system_prompt` | `buildVeniceParams` (explicit) | User toggle in Settings reaches summarise. |
 | `strip_thinking_response` (reasoning models) | `buildVeniceParams` (auto from `supportsReasoning`) | Critical for json_schema strict mode — reasoning tokens leaking into output could break the parse. |
 | Persona system prompt | `resolvePrompt(userPrompts, 'system')` prefixed to `summariseChapter` | Section 1 restructure makes this consistent. |
-| `prompt_cache_key` | `promptCacheKey(chapterId, body.modelId)` | Practical hit rate is low (chapter body changes between re-summarises invalidate the cached prefix); cost is one sha256, present for symmetry + future cache-window expansion. |
+| `prompt_cache_key` | `promptCacheKey(chapterId, body.modelId)` | **Chosen scope: chapter+model**, not story+model. Summarise is per-chapter; cache hit only fires on the same chapter+model. Story+model would unify per-story but cross-chapter prompts share no prefix (each chapter's body differs), so it would mean zero hit rate with confusing grouping. Practical hit rate either way is low (chapter body changes between re-summarises invalidate the cached prefix); cost is one sha256, present for symmetry + future cache-window expansion. |
 | `[venice.params]` log | `logVeniceParams` | Dev-only structured log; route now visible alongside ai-complete and chat. |
 | Persona in test assertions | new test | `backend/tests/routes/chapters.summarise.test.ts` asserts the captured request body's `messages[0].content` includes the persona substring. |
 | Full dev log on Venice error | `logVeniceErrorDev` | Section 5 — includes upstream body + headers + stack, scrubbed. |
@@ -392,12 +402,29 @@ function scrubKeys(value: unknown): unknown {
 }
 ```
 
+**Snapshot hoisting (ai/chat).** The streaming routes have two catch sites — pre-stream (around `client.chat.completions.create({...}).withResponse()`) and mid-stream (inside the `for await` chunk loop). The mid-stream catch needs the same `VeniceRequestSnapshot` the pre-stream catch uses, so construct the snapshot once into a `const snapshot: VeniceRequestSnapshot = {...}` BEFORE the `.create()` call. Both catches reference it. Without this, mid-stream catches would either lack request context or have to rebuild the snapshot from variables that may have gone out of scope inside the loop body.
+
 **Call sites per route:**
 
-- ai.routes.ts + chat.routes.ts pre-stream `create()` catch: `logVeniceErrorDev` before `mapVeniceError`.
-- ai.routes.ts + chat.routes.ts mid-stream catch: `logVeniceErrorDev` before `mapVeniceErrorToSse`.
-- chapters.routes.ts summarise `create()` catch: `logVeniceErrorDev` before `mapVeniceError`.
-- **New** — chapters.routes.ts summarise parse-failure catch (`JSON.parse` or Zod `.parse` throws): `logVeniceErrorDev` with `rawContent: content` populated so the rejected string is visible. Currently logs nothing.
+- ai.routes.ts + chat.routes.ts pre-stream `create()` catch: `logVeniceErrorDev({ err, ctx, request: snapshot })` before `mapVeniceError`.
+- ai.routes.ts + chat.routes.ts mid-stream catch: `logVeniceErrorDev({ err, ctx, request: snapshot })` before `mapVeniceErrorToSse`. **Replaces** the existing bare `console.error('[ai.complete:stream]', streamErr)` at [ai.routes.ts:328](backend/src/routes/ai.routes.ts#L328) and `console.error('[chat.messages.send:stream]', streamErr)` at [chat.routes.ts:629](backend/src/routes/chat.routes.ts#L629) — one richer line per error, not two. (The `[V15] Failed to persist assistant message` log at chat.routes.ts:623 is unrelated to Venice errors — leave alone.)
+- chapters.routes.ts summarise `create()` catch: `logVeniceErrorDev({ err, ctx, request: snapshot })` before `mapVeniceError`.
+- **New** — chapters.routes.ts summarise parse-failure catch (`JSON.parse` or Zod `.parse` throws): `logVeniceErrorDev({ err, ctx, request: snapshot, rawContent: content })` so the rejected string is visible. Currently logs nothing.
+
+**Size caps.** Dev logs are stdout-only but uncapped dumps can balloon — a Venice context-overflow error body sometimes echoes the full prompt back, and the prompt may carry several chapters of narrative. Apply caps inside `logVeniceErrorDev` before serialisation:
+
+| Field | Cap | If truncated, append |
+|---|---|---|
+| `systemMessagePreview` | 200 chars | `…[+N more]` |
+| `userMessagePreview` | 200 chars | `…[+N more]` |
+| `upstreamBody` | 8 KB of stringified JSON | `…[truncated, original N bytes]` |
+| `venice_parameters` | 2 KB of stringified JSON | `…[truncated, original N bytes]` |
+| `stack` | 4 KB | `…[truncated, original N bytes]` |
+| `rawContent` | 8 KB | `…[truncated, original N bytes]` |
+
+The cap is enforced as `JSON.stringify(value).slice(0, MAX)` for object fields (lossy but enough for diagnosis) and a plain string `.slice(0, MAX)` for `stack` / previews / `rawContent`. Tests assert that a 50 KB upstream body produces a capped log entry, not a 50 KB stdout line.
+
+**Dev-log content + security-reviewer note.** `systemMessagePreview` and `userMessagePreview` will contain fragments of decrypted narrative content (chapter body, world notes, character bios, prior chat messages). This is **intentional and allowed** per CLAUDE.md General rules ("decrypted narrative content [...] MAY appear in dev logs and the dev-mode `<DevErrorOverlay>` 'Show raw' view — this is intentional, prompt/Venice-call debugging requires it"). The `SK_KEY_RE` scrubber covers Venice keys only — narrative content is not scrubbed, by design. `security-reviewer` will fan on the `venice-errors.ts` diff at close-gate; the design comment in the file should reference the CLAUDE.md rule + the dev-only gate so the reviewer doesn't flag the intentional content exposure as a regression. The absolute rules (no plaintext Venice keys / passwords / recovery codes / DEKs / `APP_ENCRYPTION_KEY` in any environment) hold: none of those are in the Venice exchange to begin with, and the scrubber catches the one that defensively could be (keys).
 
 **Prod behavior unchanged.** `logVeniceErrorDev` early-returns in prod. The curated `[venice.error]` one-liner from `mapVeniceError` remains the prod log. Two lines per error in dev (`[venice.error]` curated + `[venice.error.dev]` raw); one line per error in prod.
 
@@ -411,6 +438,7 @@ function scrubKeys(value: unknown): unknown {
 - Includes `rawContent` only when supplied.
 - Handles non-`APIError` throws (`TypeError`, `SyntaxError`) — logs class + name + message + stack without upstream-* fields.
 - Selected upstream headers present; unselected ones (cookies, etc.) absent.
+- **Size cap enforcement:** a 50 KB `upstreamBody` produces a capped log entry (8 KB + truncation marker), not a 50 KB stdout line. Same for `rawContent`, `venice_parameters`, and `stack`.
 
 ## Section 6 — Sequencing & bd plan
 
@@ -453,7 +481,10 @@ Net result: `bd ready` surfaces steps 1 + 2 first (no deps), then 3 + 4 (depend 
 
 For each `bd ready` child, run `/bd-execute <id>`. The spec is the shared reference; each child's plan link points to the relevant section. Implementer + spec-reviewer + code-quality-reviewer per task; `/bd-close-reviewed` gates on the per-task verify line + path-matched surface reviewers.
 
-Step 5 specifically — `/bd-close-reviewed` will fan to `security-reviewer` (the close-gate script matches the `routes/chapters.routes.ts` path because it touches a Venice-call route with user keys). Appropriate; the existing summarise route was already cleared so the diff is small.
+**Close-gate model: per-commit on the shared branch, not per-PR.** Each task's `/bd-close-reviewed` run validates the verify line against the CURRENT state of the shared `feature/venice-completion-orchestration` branch — which, by then, includes every prior task's commits. This works because each task is additive (helpers added in step 1 don't conflict with step 2's prompt restructure; the route refactors in steps 3-4 don't depend on step 5's behavior change). The PR is a single review surface; the bd close-gates are per-commit verifications. Two consequences worth knowing:
+
+- `/bd-close-reviewed --phase=affected` (which fans path-matched reviewers from the branch-vs-main diff) will accumulate matched paths as the branch grows. By step 5, more reviewer fan-out triggers per close. That's appropriate — each new commit's effect is reviewed in context with the cumulative branch state. The reviewer scope prompt should always reference HEAD~1..HEAD or the commit SHA so the reviewer focuses on the new diff, not the whole branch.
+- `security-reviewer` will fan on step 1 (touches `venice-errors.ts` — auth/key adjacent surface) and step 5 (touches `routes/chapters.routes.ts` — Venice-call route with user keys). `repo-boundary-reviewer` should not fan on any step (no narrative-entity boundary touched).
 
 ## Section 7 — Risks
 
