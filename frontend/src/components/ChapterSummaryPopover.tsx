@@ -1,6 +1,7 @@
 import type { JSX } from 'react';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ChapterMeta } from 'story-editor-shared';
+import { VeniceErrorBanner } from '@/components/VeniceErrorBanner';
 import { FieldRow, Spinner } from '@/design/primitives';
 import {
   deriveListSummaryState,
@@ -9,7 +10,9 @@ import {
 } from '@/hooks/useChapterSummary';
 import { useChapterQuery } from '@/hooks/useChapters';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
+import { ApiError } from '@/lib/api';
 import { computePopoverPosition, type Position } from '@/lib/popover-position';
+import { extractVeniceMessage } from '@/lib/veniceError';
 
 /*
  * Smart popover: the chapter-list cache is metadata-only (no decrypted summary
@@ -49,6 +52,16 @@ export function ChapterSummaryPopover({
   // Hook must run unconditionally (rules-of-hooks); the null-chapter early-return below prevents .mutate() ever firing with the empty key.
   const summariseMutation = useSummariseChapterMutation(chapterId ?? '', storyId);
 
+  // Clear any prior error when the user closes the popover, so reopening the
+  // same chapter doesn't immediately re-show a stale failure. `mutation.reset`
+  // is stable across renders (TanStack Query); useCallback keeps handleClose
+  // stable so the mousedown-listener effect doesn't churn each render.
+  const resetMutation = summariseMutation.reset;
+  const handleClose = useCallback((): void => {
+    resetMutation();
+    onClose();
+  }, [resetMutation, onClose]);
+
   // Recompute position whenever the anchor changes (non-null).
   useLayoutEffect(() => {
     if (!anchorEl) {
@@ -61,7 +74,7 @@ export function ChapterSummaryPopover({
   // Escape dismissal via priority registry — priority 50 (below modals, above selection bubble).
   useEscape(
     () => {
-      onClose();
+      handleClose();
       return true;
     },
     { priority: 50, enabled: chapter !== null && anchorEl !== null },
@@ -75,13 +88,13 @@ export function ChapterSummaryPopover({
       if (!target) return;
       if (popoverRef.current?.contains(target)) return;
       if (anchorEl.contains(target)) return;
-      onClose();
+      handleClose();
     };
     document.addEventListener('mousedown', onMouseDown);
     return () => {
       document.removeEventListener('mousedown', onMouseDown);
     };
-  }, [chapter, anchorEl, onClose]);
+  }, [chapter, anchorEl, handleClose]);
 
   if (!chapter || !anchorEl) return null;
 
@@ -163,6 +176,28 @@ export function ChapterSummaryPopover({
         </div>
       )}
 
+      {summariseMutation.isError && !summariseMutation.isPending && (
+        <div className="mt-3">
+          <VeniceErrorBanner
+            error={
+              summariseMutation.error instanceof ApiError
+                ? {
+                    code: summariseMutation.error.code ?? null,
+                    message: summariseMutation.error.message,
+                    httpStatus: summariseMutation.error.status,
+                    retryAfterSeconds:
+                      summariseMutation.error.body?.error?.retryAfterSeconds ?? null,
+                    veniceMessage: extractVeniceMessage(summariseMutation.error.body),
+                  }
+                : { code: null, message: "Couldn't generate summary. Try again?" }
+            }
+            onRetry={canSummarise ? () => summariseMutation.mutate(modelId) : undefined}
+            onDismiss={resetMutation}
+            disabled={!canSummarise}
+          />
+        </div>
+      )}
+
       <div className="mt-3 flex items-center gap-2">
         {(summaryState === 'current' || summaryState === 'stale') && (
           <>
@@ -198,7 +233,7 @@ export function ChapterSummaryPopover({
         {summaryState === 'generating' && (
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             className="text-[12px] px-2 py-1 rounded-[var(--radius)] hover:bg-[var(--surface-hover)]"
           >
             Cancel

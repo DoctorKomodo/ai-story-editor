@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import '@testing-library/jest-dom/vitest';
 import { ChapterSummaryPopover } from '@/components/ChapterSummaryPopover';
@@ -177,5 +177,75 @@ describe('ChapterSummaryPopover', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: /cancel/i }));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('surfaces Venice errors with the error banner (code + message + Venice detail)', async () => {
+    // Backend returns the venice-errors.ts envelope on a rate-limited 429.
+    vi.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          error: {
+            code: 'venice_rate_limited',
+            message: 'Venice is rate limiting this request. Try again shortly.',
+            retryAfterSeconds: 30,
+            details: { veniceMessage: 'Rate limit exceeded for model llama-3.1-70b.' },
+          },
+        }),
+        { status: 429, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+    renderHarness({
+      hasSummary: true,
+      summaryIsStale: false,
+      summary: { events: 'a', stateAtEnd: 'b', openThreads: 'c' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
+    const banner = await screen.findByTestId('venice-error-banner');
+    expect(banner).toHaveTextContent(/venice_rate_limited/i);
+    expect(banner).toHaveTextContent(/rate limiting/i);
+    // The Venice "details.veniceMessage" must reach the inline caption.
+    expect(banner).toHaveTextContent(/rate limit exceeded for model/i);
+  });
+
+  it('banner Retry re-fires the summarise mutation', async () => {
+    const fetchSpy = vi
+      .spyOn(global, 'fetch')
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            error: { code: 'venice_unavailable', message: 'Venice is temporarily unavailable.' },
+          }),
+          { status: 502, headers: { 'Content-Type': 'application/json' } },
+        ),
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            summary: { events: 'a', stateAtEnd: 'b', openThreads: 'c' },
+            summaryUpdatedAt: '2026-05-18T00:00:00.000Z',
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        ),
+      );
+    renderHarness({
+      hasSummary: false,
+      summaryIsStale: false,
+      summary: null,
+    });
+    fireEvent.click(screen.getByRole('button', { name: /generate summary/i }));
+    await screen.findByTestId('venice-error-banner');
+    // The banner's own Retry button (not the page-level Generate one).
+    // `vi.spyOn(global, 'fetch')` returns a shared spy whose `mock.calls`
+    // accumulates across tests in this file (no global mockReset), so we
+    // capture a baseline and assert on the delta rather than the absolute count.
+    const baseline = fetchSpy.mock.calls.length;
+    const banner = screen.getByTestId('venice-error-banner');
+    fireEvent.click(within(banner).getByRole('button', { name: /retry/i }));
+    await waitFor(() => {
+      expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(baseline + 1);
+    });
+    const retriedCall = fetchSpy.mock.calls[baseline];
+    expect(retriedCall?.[0]).toEqual(expect.stringContaining('/stories/s1/chapters/c1/summarise'));
+    expect(retriedCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
   });
 });
