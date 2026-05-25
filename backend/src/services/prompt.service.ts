@@ -2,7 +2,7 @@
 // Pure, no IO, no async. `stream` and `model` are injected by the route
 // layer so this module stays unit-testable without HTTP or Venice deps.
 
-import type { CharacterPromptInput } from 'story-editor-shared';
+import type { ChapterSummary, CharacterPromptInput } from 'story-editor-shared';
 
 export class PromptValidationError extends Error {
   constructor(message: string) {
@@ -30,6 +30,7 @@ export type UserPromptKey =
   | 'rewrite'
   | 'expand'
   | 'summarise'
+  | 'summariseChapter'
   | 'describe'
   | 'scene'
   | 'ask';
@@ -62,6 +63,8 @@ export interface BuildPromptInput {
   userPrompts?: UserPrompts;
   /** Required when action === 'scene' or 'ask'; optional otherwise */
   freeformInstruction?: string;
+  /** Decrypted summaries for chapters preceding the current one, ordered by orderIndex ascending. */
+  previousChapters?: Array<{ orderIndex: number; title: string; summary: ChapterSummary }>;
 }
 
 export interface BuiltPrompt {
@@ -96,6 +99,10 @@ export const DEFAULT_PROMPTS = {
   scene:
     'write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
   ask: "answer the user's question about the story. Use the chapter and character context to inform your answer.",
+  summariseChapter:
+    'You produce structured per-chapter summaries for a long-form fiction project. ' +
+    'Read the chapter and emit a JSON object matching the provided schema exactly. ' +
+    'Be terse and concrete; the consumer is another LLM that will use your output as context when writing the next chapter.',
 } as const satisfies Record<UserPromptKey, string>;
 
 // Reserved tokens between the response budget and the prompt budget. Covers
@@ -155,9 +162,33 @@ function renderCharacterTag(c: CharacterPromptInput): string {
   return `<character${attrs}>\n${children}\n</character>`;
 }
 
+// ─── Previous-chapters block renderer ────────────────────────────────────────
+
+function renderPreviousChaptersBlock(
+  entries: Array<{ orderIndex: number; title: string; summary: ChapterSummary }>,
+  truncatedCount: number,
+): string {
+  if (entries.length === 0) return '';
+  const opener =
+    truncatedCount > 0
+      ? `<previous_chapters truncated_count="${truncatedCount}">`
+      : '<previous_chapters>';
+  const inner = entries
+    .map(
+      (e) =>
+        `<chapter index="${e.orderIndex + 1}" title="${escapeXmlAttr(e.title)}">\n` +
+        `  <events>${escapeXmlText(e.summary.events)}</events>\n` +
+        `  <state_at_end>${escapeXmlText(e.summary.stateAtEnd)}</state_at_end>\n` +
+        `  <open_threads>${escapeXmlText(e.summary.openThreads)}</open_threads>\n` +
+        `</chapter>`,
+    )
+    .join('\n');
+  return `${opener}\n${inner}\n</previous_chapters>`;
+}
+
 // ─── Resolution helper ────────────────────────────────────────────────────────
 
-function resolvePrompt(userPrompts: UserPrompts | undefined, key: UserPromptKey): string {
+export function resolvePrompt(userPrompts: UserPrompts | undefined, key: UserPromptKey): string {
   const v = userPrompts?.[key];
   if (typeof v === 'string' && v.trim().length > 0) return v;
   return DEFAULT_PROMPTS[key];
@@ -248,7 +279,17 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     estimateTokens(taskBlock) +
     estimateTokens(userPayload);
 
-  const chapterBudgetTokens = promptBudgetTokens - fixedTokens;
+  const entries = (input.previousChapters ?? []).slice();
+  let truncatedCount = 0;
+  let previousChaptersBlock = renderPreviousChaptersBlock(entries, truncatedCount);
+  let chapterBudgetTokens =
+    promptBudgetTokens - fixedTokens - estimateTokens(previousChaptersBlock);
+  while (chapterBudgetTokens <= 0 && entries.length > 0) {
+    entries.shift();
+    truncatedCount++;
+    previousChaptersBlock = renderPreviousChaptersBlock(entries, truncatedCount);
+    chapterBudgetTokens = promptBudgetTokens - fixedTokens - estimateTokens(previousChaptersBlock);
+  }
 
   let chapterText = input.chapterContent;
   if (chapterBudgetTokens <= 0) {
@@ -270,6 +311,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     systemContent,
     worldNotesBlock,
     charactersBlock,
+    previousChaptersBlock,
     chapterBlock,
     taskBlock,
   ].filter((p) => p.length > 0);

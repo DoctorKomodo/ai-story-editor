@@ -22,6 +22,7 @@ type VeniceRawModel = {
       supportsReasoning?: boolean;
       supportsVision?: boolean;
       supportsWebSearch?: boolean;
+      supportsResponseSchema?: boolean;
     };
     description?: string;
     pricing?: {
@@ -92,6 +93,17 @@ const WEB_SEARCH: VeniceRawModel = {
   },
 };
 
+const RESPONSE_SCHEMA: VeniceRawModel = {
+  id: 'llama-response-schema',
+  object: 'model',
+  type: 'text',
+  model_spec: {
+    name: 'Llama Response Schema',
+    availableContextTokens: 65536,
+    capabilities: { supportsReasoning: false, supportsVision: false, supportsResponseSchema: true },
+  },
+};
+
 const IMAGE: VeniceRawModel = {
   id: 'flux-schnell',
   object: 'model',
@@ -122,6 +134,7 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: false,
           supportsVision: false,
           supportsWebSearch: false,
+          supportsResponseSchema: false,
           description: 'A general-purpose 70B model tuned for instruction-following.',
           pricing: { inputUsdPerMTok: 0.6, outputUsdPerMTok: 2.4 },
           defaultTemperature: null,
@@ -135,6 +148,7 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: true,
           supportsVision: false,
           supportsWebSearch: false,
+          supportsResponseSchema: false,
           description: null,
           pricing: null,
           defaultTemperature: null,
@@ -148,6 +162,7 @@ describe('venice.models.service [V2]', () => {
           supportsReasoning: false,
           supportsVision: true,
           supportsWebSearch: false,
+          supportsResponseSchema: false,
           description: null,
           pricing: null,
           defaultTemperature: null,
@@ -163,6 +178,15 @@ describe('venice.models.service [V2]', () => {
       const [only] = await svc.fetchModels('user-1');
       expect(only.id).toBe('llama-web-search');
       expect(only.supportsWebSearch).toBe(true);
+    });
+
+    it('maps supportsResponseSchema: true when Venice advertises it', async () => {
+      const { client } = makeListStub([RESPONSE_SCHEMA]);
+      const svc = createVeniceModelsService({ getClient: async () => client });
+
+      const [only] = await svc.fetchModels('user-1');
+      expect(only.id).toBe('llama-response-schema');
+      expect(only.supportsResponseSchema).toBe(true);
     });
 
     it('falls back sensibly when Venice omits model_spec fields', async () => {
@@ -181,6 +205,7 @@ describe('venice.models.service [V2]', () => {
       expect(only.supportsReasoning).toBe(false);
       expect(only.supportsVision).toBe(false);
       expect(only.supportsWebSearch).toBe(false);
+      expect(only.supportsResponseSchema).toBe(false);
       expect(only.description).toBeNull();
       expect(only.pricing).toBeNull();
     });
@@ -287,8 +312,8 @@ describe('venice.models.service [V2]', () => {
 
       await svc.fetchModels('user-1');
 
-      expect(svc.getModelContextLength('llama-3.3-70b')).toBe(65536);
-      expect(svc.getModelContextLength('qwen-qwq-32b')).toBe(32768);
+      expect(svc.getModelContextLength('llama-3.3-70b', 'user-1')).toBe(65536);
+      expect(svc.getModelContextLength('qwen-qwq-32b', 'user-1')).toBe(32768);
     });
 
     it('throws UnknownModelError for a model id that is not in the cache', async () => {
@@ -296,7 +321,7 @@ describe('venice.models.service [V2]', () => {
         getClient: async () => makeListStub([]).client,
       });
 
-      expect(() => svc.getModelContextLength('never-fetched')).toThrow(UnknownModelError);
+      expect(() => svc.getModelContextLength('never-fetched', 'user-1')).toThrow(UnknownModelError);
     });
   });
 
@@ -388,8 +413,8 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([m]);
       const svc = createVeniceModelsService({ getClient: async () => client });
       await svc.fetchModels('user-1');
-      expect(svc.getModelMaxCompletionTokens('has-cap-2')).toBe(16384);
-      expect(() => svc.getModelMaxCompletionTokens('nope')).toThrow(UnknownModelError);
+      expect(svc.getModelMaxCompletionTokens('has-cap-2', 'user-1')).toBe(16384);
+      expect(() => svc.getModelMaxCompletionTokens('nope', 'user-1')).toThrow(UnknownModelError);
     });
   });
 
@@ -426,6 +451,25 @@ describe('venice.models.service [V2]', () => {
       const info = mapModel(raw);
       expect(info.defaultTemperature).toBeNull();
       expect(info.defaultTopP).toBeNull();
+    });
+
+    it('maps supportsResponseSchema from capabilities', () => {
+      const raw = {
+        id: 'm1',
+        type: 'text',
+        model_spec: {
+          capabilities: { supportsResponseSchema: true },
+          availableContextTokens: 32768,
+          maxCompletionTokens: 4096,
+        },
+      };
+      const mapped = mapModel(raw);
+      expect(mapped.supportsResponseSchema).toBe(true);
+    });
+
+    it('defaults supportsResponseSchema to false when omitted', () => {
+      const raw = { id: 'm2', type: 'text', model_spec: { capabilities: {} } };
+      expect(mapModel(raw).supportsResponseSchema).toBe(false);
     });
 
     it('returns null for missing default keys inside constraints', () => {

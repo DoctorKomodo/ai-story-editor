@@ -34,6 +34,7 @@ const DEFAULTS = {
   rewrite: 'Task: rewrite (default).',
   expand: 'Task: expand (default).',
   summarise: 'Task: summarise (default).',
+  summariseChapter: 'Task: summariseChapter (default).',
   describe: 'Task: describe (default).',
   scene: 'Task: scene (default).',
 };
@@ -57,6 +58,7 @@ interface SettingsState {
     rewrite: string | null;
     expand: string | null;
     summarise: string | null;
+    summariseChapter: string | null;
     describe: string | null;
     scene: string | null;
   };
@@ -82,6 +84,7 @@ function makeSettings(prompts: Partial<SettingsState['prompts']> = {}): Settings
       rewrite: null,
       expand: null,
       summarise: null,
+      summariseChapter: null,
       describe: null,
       scene: null,
       ...prompts,

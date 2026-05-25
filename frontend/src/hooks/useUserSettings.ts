@@ -61,6 +61,7 @@ export interface UserPromptsSettings {
   rewrite: string | null;
   expand: string | null;
   summarise: string | null;
+  summariseChapter: string | null;
   describe: string | null;
   scene: string | null;
   ask: string | null;
@@ -152,6 +153,7 @@ export const DEFAULT_SETTINGS: UserSettings = {
     rewrite: null,
     expand: null,
     summarise: null,
+    summariseChapter: null,
     describe: null,
     scene: null,
     ask: null,

@@ -51,6 +51,15 @@ describe('resolveUserPrompts', () => {
       continue: null,
     });
   });
+  it('carries a summariseChapter override through', () => {
+    const override = 'Custom chapter-summary prompt.';
+    const result = resolveUserPrompts({ prompts: { summariseChapter: override } });
+    expect(result.summariseChapter).toBe(override);
+  });
+  it('carries a null summariseChapter (reset to default) through', () => {
+    const result = resolveUserPrompts({ prompts: { summariseChapter: null } });
+    expect(result.summariseChapter).toBeNull();
+  });
 });
 
 // ─── resolveTextGenParams ─────────────────────────────────────────────────────

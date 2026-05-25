@@ -2,15 +2,59 @@ import { z } from 'zod';
 
 export const CHAPTER_TITLE_MIN = 1;
 export const CHAPTER_TITLE_MAX = 500;
+export const CHAPTER_SUMMARY_FIELD_MAX = 8000;
 
 export const chapterStatusSchema = z.enum(['draft', 'revision', 'final']);
+
+export const chapterSummarySchema = z.strictObject({
+  events: z
+    .string()
+    .max(CHAPTER_SUMMARY_FIELD_MAX)
+    .describe('Plot events: 1–3 sentences. What happened in this chapter.'),
+  stateAtEnd: z
+    .string()
+    .max(CHAPTER_SUMMARY_FIELD_MAX)
+    .describe('Location, possessions, who is with whom at chapter close.'),
+  openThreads: z
+    .string()
+    .max(CHAPTER_SUMMARY_FIELD_MAX)
+    .describe('Unresolved questions, planted seeds, dangling tension.'),
+});
+
+export type ChapterSummary = z.infer<typeof chapterSummarySchema>;
+
+export const chapterSummaryResponseSchema = z.strictObject({
+  summary: chapterSummarySchema,
+  summaryUpdatedAt: z.string().datetime().nullable(),
+});
+
+/**
+ * JSON Schema for the Venice `response_format: { type: 'json_schema' }` wire
+ * payload. Decoupled from the runtime schema on purpose: the `.max()` caps are
+ * for `.parse()` validation, but `z.toJSONSchema` emits them as `maxLength`,
+ * and whether Venice/OpenAI's structured-output subset accepts `maxLength`
+ * (or a `$schema` root key) is undocumented. Strip both so the wire schema
+ * stays within the safe minimal subset.
+ */
+export function chapterSummaryJsonSchema(): Record<string, unknown> {
+  const json = z.toJSONSchema(chapterSummarySchema) as Record<string, unknown>;
+  delete json.$schema;
+  const props = json.properties as Record<string, Record<string, unknown>> | undefined;
+  if (props) {
+    for (const key of Object.keys(props)) {
+      delete props[key].maxLength;
+      delete props[key].minLength;
+    }
+  }
+  return json;
+}
 
 /**
  * Chapter metadata — the LIST endpoint payload shape. Excludes the TipTap
  * body so the chapter-sidebar payload stays small. `chapterSchema` (below)
  * extends this with `bodyJson` for detail responses.
  */
-export const chapterMetaSchema = z.strictObject({
+const chapterMetaBase = z.strictObject({
   id: z.string().min(1),
   storyId: z.string().min(1),
   title: z.string(),
@@ -21,6 +65,11 @@ export const chapterMetaSchema = z.strictObject({
   updatedAt: z.string().datetime(),
 });
 
+export const chapterMetaSchema = chapterMetaBase.extend({
+  hasSummary: z.boolean(),
+  summaryIsStale: z.boolean(),
+});
+
 /**
  * Full chapter — meta + TipTap body. POST / PATCH / GET-by-id payload shape.
  * `bodyJson` is `z.unknown()` because TipTap's internal tree structure is
@@ -28,6 +77,8 @@ export const chapterMetaSchema = z.strictObject({
  */
 export const chapterSchema = chapterMetaSchema.extend({
   bodyJson: z.unknown(),
+  summary: chapterSummarySchema.nullable(),
+  summaryUpdatedAt: z.string().datetime().nullable(),
 });
 
 export const chapterCreateSchema = z.strictObject({
@@ -65,8 +116,8 @@ export const chaptersResponseSchema = z.strictObject({
   chapters: z.array(chapterMetaSchema),
 });
 
-// Co-located encrypted-field tuples. Two — full has body + title; meta has only title.
-export const CHAPTER_ENCRYPTED_FIELD_KEYS = ['title', 'body'] as const;
+// Co-located encrypted-field tuples. Two — full has body + title + summaryJson; meta has only title.
+export const CHAPTER_ENCRYPTED_FIELD_KEYS = ['title', 'body', 'summaryJson'] as const;
 export const CHAPTER_META_ENCRYPTED_FIELD_KEYS = ['title'] as const;
 
 // z.infer type exports

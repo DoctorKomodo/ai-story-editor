@@ -14,6 +14,7 @@ export interface DefaultPrompts {
   rewrite: string;
   expand: string;
   summarise: string;
+  summariseChapter: string;
   describe: string;
   scene: string;
   ask: string;

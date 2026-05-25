@@ -47,6 +47,12 @@ const ROWS: ReadonlyArray<RowMeta> = [
     multiline: false,
   },
   {
+    key: 'summariseChapter',
+    label: 'Chapter summary (structured)',
+    hint: 'Used to generate structured previous-chapter summaries (events, state, open threads).',
+    multiline: false,
+  },
+  {
     key: 'describe',
     label: 'Describe',
     hint: 'Used when describing the subject of a selection.',

@@ -23,6 +23,7 @@ export interface ModelInfo {
   supportsReasoning: boolean;
   supportsVision: boolean;
   supportsWebSearch: boolean;
+  supportsResponseSchema: boolean;
   description: string | null;
   pricing: ModelPricing | null;
   defaultTemperature: number | null;
@@ -49,6 +50,7 @@ interface VeniceRawCapabilities {
   supportsReasoning?: boolean;
   supportsVision?: boolean;
   supportsWebSearch?: boolean;
+  supportsResponseSchema?: boolean;
 }
 
 interface VeniceRawModelSpec {
@@ -113,6 +115,7 @@ export function mapModel(raw: VeniceRawModel): ModelInfo {
     supportsReasoning: Boolean(caps.supportsReasoning),
     supportsVision: Boolean(caps.supportsVision),
     supportsWebSearch: Boolean(caps.supportsWebSearch),
+    supportsResponseSchema: Boolean(caps.supportsResponseSchema),
     description,
     pricing,
     defaultTemperature,
@@ -135,8 +138,7 @@ export function createVeniceModelsService(deps: VeniceModelsServiceDeps = {}) {
   const now = deps.now ?? Date.now;
 
   // Per-user cache: different users may use different endpoints, and each
-  // endpoint may expose a different model list. Context-length lookups fan
-  // out across every user's cache (see getModelContextLength below).
+  // endpoint may expose a different model list.
   const byUser = new Map<string, CacheEntry>();
 
   async function fetchModels(userId: string): Promise<ModelInfo[]> {
@@ -158,35 +160,29 @@ export function createVeniceModelsService(deps: VeniceModelsServiceDeps = {}) {
     return models;
   }
 
-  function getModelContextLength(modelId: string): number {
-    for (const entry of byUser.values()) {
-      for (const m of entry.models) {
-        if (m.id === modelId) return m.contextLength;
-      }
-    }
+  function getModelContextLength(modelId: string, userId: string): number {
+    const models = byUser.get(userId)?.models;
+    const m = models?.find((m) => m.id === modelId);
+    if (m) return m.contextLength;
     throw new UnknownModelError(modelId);
   }
 
-  function getModelMaxCompletionTokens(modelId: string): number {
-    for (const entry of byUser.values()) {
-      for (const m of entry.models) {
-        if (m.id === modelId) return m.maxCompletionTokens;
-      }
-    }
+  function getModelMaxCompletionTokens(modelId: string, userId: string): number {
+    const models = byUser.get(userId)?.models;
+    const m = models?.find((m) => m.id === modelId);
+    if (m) return m.maxCompletionTokens;
     throw new UnknownModelError(modelId);
   }
 
-  // [V6] Find a model by id from the in-memory cache. Returns null when the
-  // model isn't present. fetchModels() must have been called first (which
-  // /api/ai/complete always does) so the cache is populated; a null return
-  // means "not in Venice's list for this user", not "cache is empty".
-  function findModel(modelId: string): ModelInfo | null {
-    for (const entry of byUser.values()) {
-      for (const m of entry.models) {
-        if (m.id === modelId) return m;
-      }
-    }
-    return null;
+  // [V6] Find a model by id from the in-memory cache, scoped to the requesting
+  // user. Returns null when the model isn't present in that user's cache.
+  // fetchModels() must have been called first (which /api/ai/complete always
+  // does) so the cache is populated; a null return means "not in Venice's list
+  // for this user", not "cache is empty". userId scoping prevents user B's
+  // request from satisfying a capability gate against a model entry only user A
+  // populated (e.g. the supportsResponseSchema check in the summarise route).
+  function findModel(modelId: string, userId: string): ModelInfo | null {
+    return byUser.get(userId)?.models.find((m) => m.id === modelId) ?? null;
   }
 
   function resetCache(): void {

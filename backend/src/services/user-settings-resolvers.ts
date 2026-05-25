@@ -18,6 +18,7 @@ export interface PromptsSettings {
   rewrite?: string | null;
   expand?: string | null;
   summarise?: string | null;
+  summariseChapter?: string | null;
   describe?: string | null;
   scene?: string | null;
   ask?: string | null;

@@ -200,6 +200,19 @@ Hard gates (do not start until the prerequisite is complete):
 
 ---
 
+## External Capability Lookup
+
+Before stating — in code, in design/spec docs, or in conversation — that an external library or SaaS API has, lacks, or behaves a certain way regarding a specific feature, **look it up first**. Do not infer from our wrappers, our type definitions, our prior usage, or memory.
+
+**Lookup order (same for libraries and SaaS APIs):**
+
+1. **Context7 MCP** — `resolve-library-id` then `query-docs`. It indexes vendor API docs (Venice, OpenAI, Anthropic, GitHub) as well as npm packages — try it first regardless of source type.
+2. **WebFetch** on the vendor's official docs URL — fallback when Context7 has no entry or its index is thin.
+
+Our internal client wrappers tell you what WE surface, not what the upstream actually exposes. Workarounds, fallbacks, and "we can't because X doesn't support it" claims are the most common form of this failure — verify the negative claim before designing around it.
+
+---
+
 ## Testing Rules
 
 - Backend tests use a separate test database defined in `.env.test` — never run tests against the development database
