@@ -16,6 +16,27 @@ import {
   stubVeniceFetch,
 } from './_chat-test-helpers';
 
+const MODEL_LIST_BODY_REASONING = {
+  object: 'list',
+  data: [
+    {
+      id: MODEL_ID,
+      object: 'model',
+      type: 'text',
+      model_spec: {
+        name: 'Venice Reasoning Model',
+        availableContextTokens: 65536,
+        maxCompletionTokens: 4096,
+        capabilities: {
+          supportsReasoning: true,
+          supportsVision: false,
+          supportsResponseSchema: true,
+        },
+      },
+    },
+  ],
+};
+
 async function setup(
   username: string,
   body: string | null = 'A sentence of prose.',
@@ -132,5 +153,149 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(502);
     expect(res.body.error.code).toBe('summary_parse_failed');
+  });
+});
+
+describe('[venice-orch step 5] summarise honors model settings + sends persona', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+    vi.unstubAllGlobals();
+  });
+
+  afterEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+    vi.unstubAllGlobals();
+  });
+
+  it('sends temperature, top_p, max_completion_tokens, venice_parameters, prompt_cache_key, and persona', async () => {
+    const fetchSpy = stubVeniceFetch();
+    const { agent, chapterId, storyId } = await setup('sum-orch-1');
+    await storeKey(agent, fetchSpy);
+
+    await agent
+      .patch('/api/users/me/settings')
+      .send({ chat: { overrides: { [MODEL_ID]: { temperature: 0.42 } } } });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse(200, {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ events: 'A.', stateAtEnd: 'B.', openThreads: 'C?' }),
+            },
+          },
+        ],
+      }),
+    );
+
+    const res = await agent
+      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .send({ modelId: MODEL_ID });
+    expect(res.status).toBe(200);
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const sentBody = JSON.parse(String((completionCall![1] as RequestInit).body ?? '{}')) as Record<
+      string,
+      unknown
+    >;
+
+    expect(sentBody.temperature).toBe(0.42);
+    expect(sentBody.top_p).toBeDefined();
+    expect(sentBody.max_completion_tokens).toBeDefined();
+    expect(sentBody.prompt_cache_key).toMatch(/^[0-9a-f]{32}$/);
+    expect(
+      (sentBody.venice_parameters as Record<string, unknown>).include_venice_system_prompt,
+    ).toBe(true);
+    expect((sentBody.messages as Array<{ role: string; content: string }>)[0].role).toBe('system');
+    expect((sentBody.messages as Array<{ role: string; content: string }>)[0].content).toContain(
+      'creative-writing assistant',
+    );
+    expect((sentBody.messages as Array<{ role: string; content: string }>)[0].content).toContain(
+      'JSON object matching the provided schema',
+    );
+  });
+
+  it('on reasoning model, sends strip_thinking_response: true', async () => {
+    const fetchSpy = stubVeniceFetch();
+    const { agent, chapterId, storyId } = await setup('sum-orch-2');
+    await storeKey(agent, fetchSpy);
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY_REASONING));
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse(200, {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ events: 'A.', stateAtEnd: 'B.', openThreads: 'C?' }),
+            },
+          },
+        ],
+      }),
+    );
+
+    const res = await agent
+      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .send({ modelId: MODEL_ID });
+    expect(res.status).toBe(200);
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const sentBody = JSON.parse(String((completionCall![1] as RequestInit).body ?? '{}')) as Record<
+      string,
+      unknown
+    >;
+
+    expect((sentBody.venice_parameters as Record<string, unknown>).strip_thinking_response).toBe(
+      true,
+    );
+  });
+
+  it('honors include_venice_system_prompt=false (user toggled OFF in settings)', async () => {
+    const fetchSpy = stubVeniceFetch();
+    const { agent, chapterId, storyId } = await setup('sum-orch-3');
+    await storeKey(agent, fetchSpy);
+
+    await agent.patch('/api/users/me/settings').send({ ai: { includeVeniceSystemPrompt: false } });
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse(200, {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ events: 'A.', stateAtEnd: 'B.', openThreads: 'C?' }),
+            },
+          },
+        ],
+      }),
+    );
+
+    const res = await agent
+      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .send({ modelId: MODEL_ID });
+    expect(res.status).toBe(200);
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const sentBody = JSON.parse(String((completionCall![1] as RequestInit).body ?? '{}')) as Record<
+      string,
+      unknown
+    >;
+
+    expect(
+      (sentBody.venice_parameters as Record<string, unknown>).include_venice_system_prompt,
+    ).toBe(false);
   });
 });

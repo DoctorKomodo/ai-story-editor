@@ -15,11 +15,14 @@ import {
 } from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequest } from '../lib/bad-request';
-import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
 import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
 import { getVeniceClient } from '../lib/venice';
-import { mapVeniceError } from '../lib/venice-errors';
+import {
+  logVeniceErrorDev,
+  mapVeniceError,
+  type VeniceRequestSnapshot,
+} from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
@@ -30,8 +33,14 @@ import {
 } from '../repos/chapter.repo';
 import { resolvePrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
-import { resolveUserPrompts } from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
+import {
+  buildVeniceParams,
+  hydrateUserSettings,
+  logVeniceParams,
+  promptCacheKey,
+  resolveTextGenWithFallback,
+} from '../services/venice-call.service';
 
 // [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
 // After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
@@ -300,11 +309,46 @@ export function createChaptersRouter() {
         return;
       }
 
-      const userRow = await prisma.user.findUnique({
-        where: { id: userId },
-        select: { settingsJson: true },
+      const { settings, includeVeniceSystemPrompt, userPrompts } =
+        await hydrateUserSettings(userId);
+
+      const systemMessage = `${resolvePrompt(userPrompts, 'system')}\n\n${resolvePrompt(userPrompts, 'summariseChapter')}`;
+
+      const venice_parameters = buildVeniceParams({
+        base: {},
+        supportsReasoning: modelInfo.supportsReasoning === true,
+        includeVeniceSystemPrompt,
       });
-      const userPrompts = resolveUserPrompts(userRow?.settingsJson ?? null);
+
+      const resolved = resolveTextGenWithFallback(
+        settings,
+        modelInfo,
+        modelInfo.maxCompletionTokens,
+      );
+
+      logVeniceParams({
+        route: 'chapter-summarise',
+        userId,
+        modelId: body.modelId,
+        resolved,
+        action: 'summariseChapter',
+        modelCap: modelInfo.maxCompletionTokens,
+      });
+
+      const cacheKey = promptCacheKey(chapterId, body.modelId);
+
+      const snapshot: VeniceRequestSnapshot = {
+        model: body.modelId,
+        messageCount: 2,
+        systemMessagePreview: systemMessage,
+        userMessagePreview: plaintext,
+        venice_parameters,
+        response_format: { type: 'json_schema', name: 'ChapterSummary' },
+        promptCacheKey: cacheKey,
+        temperature: resolved.temperature,
+        top_p: resolved.top_p,
+        max_completion_tokens: resolved.max_completion_tokens,
+      };
 
       const client = await getVeniceClient(userId);
       let raw: { choices?: Array<{ message?: { content?: string } }> };
@@ -312,7 +356,7 @@ export function createChaptersRouter() {
         const completion = await client.chat.completions.create({
           model: body.modelId,
           messages: [
-            { role: 'system', content: resolvePrompt(userPrompts, 'summariseChapter') },
+            { role: 'system', content: systemMessage },
             { role: 'user', content: plaintext },
           ],
           response_format: {
@@ -323,11 +367,15 @@ export function createChaptersRouter() {
               strict: true,
             },
           },
-          // SDK 6.36 types response_format natively for non-streaming completions;
-          // venice_parameters and extra fields still require the cast; covers the result cast too.
+          temperature: resolved.temperature,
+          top_p: resolved.top_p,
+          max_completion_tokens: resolved.max_completion_tokens,
+          prompt_cache_key: cacheKey,
+          venice_parameters,
         } as unknown as Parameters<typeof client.chat.completions.create>[0]);
         raw = completion as unknown as typeof raw;
       } catch (err) {
+        logVeniceErrorDev({ err, ctx: { userId, route: 'chapter-summarise' }, request: snapshot });
         if (mapVeniceError(err, res, { userId, route: 'chapter-summarise' })) return;
         throw err;
       }
@@ -336,7 +384,13 @@ export function createChaptersRouter() {
       let parsed: ReturnType<typeof chapterSummarySchema.parse>;
       try {
         parsed = chapterSummarySchema.parse(JSON.parse(content));
-      } catch {
+      } catch (parseErr) {
+        logVeniceErrorDev({
+          err: parseErr,
+          ctx: { userId, route: 'chapter-summarise' },
+          request: snapshot,
+          rawContent: content,
+        });
         res.status(502).json({
           error: {
             message: 'Venice returned a malformed summary.',
