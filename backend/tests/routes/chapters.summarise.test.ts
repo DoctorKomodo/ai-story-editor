@@ -156,7 +156,7 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
   });
 });
 
-describe('[venice-orch step 5] summarise honors model settings + sends persona', () => {
+describe('summarise honors model settings + sends persona', () => {
   beforeEach(async () => {
     _resetSessionStore();
     await resetAll();
