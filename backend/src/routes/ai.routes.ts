@@ -151,11 +151,7 @@ export function createAiRouter() {
         });
 
         // ── 10b. Resolve text-gen parameters (X28) ────────────────────────────
-        const resolved = resolveTextGenWithFallback(
-          settings,
-          modelInfo ?? undefined,
-          max_completion_tokens,
-        );
+        const resolved = resolveTextGenWithFallback(settings, modelInfo, max_completion_tokens);
 
         logVeniceParams({
           route: 'ai-complete',

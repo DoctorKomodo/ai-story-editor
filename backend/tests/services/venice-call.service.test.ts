@@ -145,6 +145,14 @@ describe('resolveTextGenWithFallback', () => {
     expect(out.source.max_completion_tokens).toBe('global-default');
   });
 
+  it('modelInfo null → returns global-default fallback (same as undefined)', () => {
+    const out = resolveTextGenWithFallback(emptySettings, null, 5678);
+    expect(out.temperature).toBeUndefined();
+    expect(out.top_p).toBeUndefined();
+    expect(out.max_completion_tokens).toBe(5678);
+    expect(out.source.temperature).toBe('global-default');
+  });
+
   it('modelInfo present → delegates to resolveTextGenParams', () => {
     const modelInfo: ModelInfo = {
       id: 'llama-3.1-70b',

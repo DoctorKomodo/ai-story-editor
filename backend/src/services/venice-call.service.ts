@@ -103,10 +103,10 @@ export function buildVeniceParams(input: BuildVeniceParamsInput): Record<string,
  */
 export function resolveTextGenWithFallback(
   settings: UserSettings,
-  modelInfo: ModelInfo | undefined,
+  modelInfo: ModelInfo | null | undefined,
   fallbackMaxCompletionTokens: number,
 ): ResolvedTextGenParams {
-  if (modelInfo === undefined) {
+  if (modelInfo == null) {
     return {
       temperature: undefined as unknown as number,
       top_p: undefined as unknown as number,
