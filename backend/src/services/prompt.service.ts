@@ -86,9 +86,11 @@ export const DEFAULT_SYSTEM_PROMPT =
   'Help the author continue, refine, and develop their story with vivid prose ' +
   'that matches their established voice and tone.';
 
-// Reusable suffix prefixed onto every prose-producing per-action default.
-// Each action's full default is `${PROSE_OUTPUT_RULES} ${action-specific body}`.
-// Structured-output actions (summariseChapter) do NOT include this.
+// Prefixed onto every prose action's task template (the body inside the
+// <task> block). Each prose action's full default is
+// `${PROSE_OUTPUT_RULES} ${action-specific body}`. Structured-output
+// actions (those returning JSON via response_format) must NOT include
+// this — "no quotation marks" would conflict with valid JSON output.
 export const PROSE_OUTPUT_RULES =
   'Return only the requested content — no preamble, no meta-commentary, ' +
   'no quotation marks around the output, no XML tags, and no section labels.';

@@ -1077,9 +1077,7 @@ describe('[venice-orch step 2] system-prompt restructure', () => {
   ] as const;
   for (const key of PROSE_ACTION_KEYS) {
     it(`DEFAULT_PROMPTS.${key} starts with PROSE_OUTPUT_RULES`, () => {
-      expect(DEFAULT_PROMPTS[key]).toMatch(/no quotation marks/i);
-      // Specifically: the rules constant string is a substring of the full prompt.
-      expect(DEFAULT_PROMPTS[key]).toContain(PROSE_OUTPUT_RULES);
+      expect(DEFAULT_PROMPTS[key].startsWith(PROSE_OUTPUT_RULES)).toBe(true);
     });
   }
 
