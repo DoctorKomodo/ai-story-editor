@@ -313,8 +313,8 @@ function truncateString(s: string, max: number): string {
 }
 
 function truncateJson(value: unknown, max: number): unknown {
-  const dump = JSON.stringify(value) ?? '';
-  if (dump.length <= max) return value;
+  const dump = JSON.stringify(value);
+  if (dump === undefined || dump.length <= max) return value;
   return `${dump.slice(0, max)}…[truncated, original ${dump.length} bytes]`;
 }
 

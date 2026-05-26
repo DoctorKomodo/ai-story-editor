@@ -110,9 +110,9 @@ describe('buildVeniceParams', () => {
     expect(out.include_search_results_in_stream).toBe(true);
   });
 
-  // CRITICAL: precedence regression guard. If an implementer writes
-  //   if (input.includeVeniceSystemPrompt) out.include_venice_system_prompt = ...
-  // (truthy check) instead of `!== undefined`, this test fails.
+  // Regression guard: a truthy check on includeVeniceSystemPrompt would
+  // silently drop false, letting Venice default to true and ignore the
+  // user's toggle.
   it('explicit includeVeniceSystemPrompt:false overrides base value of true', () => {
     const out = buildVeniceParams({
       base: { include_venice_system_prompt: true },

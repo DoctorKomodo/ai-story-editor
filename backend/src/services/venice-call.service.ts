@@ -10,10 +10,8 @@ import {
 } from './user-settings-resolvers';
 import type { ModelInfo } from './venice.models.service';
 
-// sha256(parts.join(':')).slice(0, 32) — unifies ai-complete's promptCacheKey
-// (storyId, modelId), chat's chatPromptCacheKey (chatId, modelId), and
-// summarise's new (chapterId, modelId). Hash so the cache-key is opaque to
-// Venice telemetry while still deterministic per (parts).
+// Hash so the cache-key is opaque to Venice telemetry while still
+// deterministic per (parts).
 export function promptCacheKey(...parts: string[]): string {
   return createHash('sha256').update(parts.join(':')).digest('hex').slice(0, 32);
 }
@@ -27,8 +25,7 @@ export interface HydratedUserSettings {
 
 /**
  * Loads user.settingsJson once, coerces to a full UserSettings shape, and
- * pre-runs the two existing resolvers. Replaces the ~12 inline lines of
- * defensive partial-settings hydration each of ai/chat carries today.
+ * pre-runs the two existing resolvers.
  *
  * Defensive coerce: settingsJson is `unknown` from Prisma; pass through as
  * Partial<UserSettings>, then fill chat with safe defaults (null model,
@@ -75,10 +72,6 @@ export interface BuildVeniceParamsInput {
  * checks). A user toggling `include_venice_system_prompt` OFF returns `false`
  * from the resolver — a truthy check would silently drop the field and Venice
  * would receive the default (true), violating the user's choice.
- *
- * For ai/chat: `base` (from buildPrompt) already contains include_venice_system_prompt
- * and they don't pass the explicit arg, so base wins. For summarise: base is `{}`
- * and the explicit arg writes whatever value the user toggled (true or false).
  */
 export function buildVeniceParams(input: BuildVeniceParamsInput): Record<string, unknown> {
   const out: Record<string, unknown> = { ...input.base };
@@ -105,10 +98,8 @@ export function buildVeniceParams(input: BuildVeniceParamsInput): Record<string,
 
 /**
  * Thin wrapper over resolveTextGenParams that handles the modelInfo-null
- * case. ai/chat see null any time Venice's catalog cache refreshes between
- * fetchModels() and findModel() — the fallback is load-bearing for them.
- * Summarise has a 400-gate above so modelInfo is non-null there; the fallback
- * is defensive symmetry only for that call site.
+ * case. The fallback handles the race where Venice's catalog cache refreshes
+ * between fetchModels() and findModel().
  */
 export function resolveTextGenWithFallback(
   settings: UserSettings,
@@ -137,7 +128,7 @@ export interface LogVeniceParamsInput {
   resolved: ResolvedTextGenParams;
   action?: string;
   modelCap: number | undefined;
-  enableWebSearch?: unknown;
+  enableWebSearch?: string;
 }
 
 /**

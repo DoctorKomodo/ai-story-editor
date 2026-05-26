@@ -50,7 +50,6 @@ describe('logVeniceErrorDev', () => {
     expect(payload.errorName).toBe('TypeError');
     expect(payload.errorMessage).toBe('oops');
     expect(typeof payload.stack).toBe('string');
-    // No upstream fields for non-APIError.
     expect(payload).not.toHaveProperty('upstreamStatus');
     expect(payload).not.toHaveProperty('upstreamBody');
   });
