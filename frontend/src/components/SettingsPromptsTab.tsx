@@ -1,10 +1,4 @@
 // frontend/src/components/SettingsPromptsTab.tsx
-//
-// [X29] Settings → Prompts tab. Seven rows (system + 6 action templates),
-// each displaying its built-in default read-only by default. Ticking
-// "Override default" enables an editable field seeded with the current
-// default text and PATCHes settings.prompts.{key}. Unticking PATCHes
-// null and reverts to the read-only default.
 
 import type { ChangeEvent, JSX } from 'react';
 import { useId, useState } from 'react';
