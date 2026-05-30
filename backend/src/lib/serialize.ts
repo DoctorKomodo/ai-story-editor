@@ -82,6 +82,7 @@ export function serializeStory(row: RepoStory): Story {
     genre: row.genre,
     worldNotes: row.worldNotes,
     targetWords: row.targetWords,
+    includePreviousChaptersInPrompt: row.includePreviousChaptersInPrompt,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -119,6 +120,10 @@ export function serializeChapter(row: RepoChapter): Chapter {
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    hasSummary: row.hasSummary,
+    summaryIsStale: row.summaryIsStale,
+    summary: row.summary,
+    summaryUpdatedAt: row.summaryUpdatedAt ? row.summaryUpdatedAt.toISOString() : null,
   };
 }
 
@@ -135,5 +140,7 @@ export function serializeChapterMeta(row: RepoChapterMeta): ChapterMeta {
     status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    hasSummary: row.hasSummary,
+    summaryIsStale: row.summaryIsStale,
   };
 }

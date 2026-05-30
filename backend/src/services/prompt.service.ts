@@ -2,7 +2,7 @@
 // Pure, no IO, no async. `stream` and `model` are injected by the route
 // layer so this module stays unit-testable without HTTP or Venice deps.
 
-import type { CharacterPromptInput } from 'story-editor-shared';
+import type { ChapterSummary, CharacterPromptInput } from 'story-editor-shared';
 
 export class PromptValidationError extends Error {
   constructor(message: string) {
@@ -30,6 +30,7 @@ export type UserPromptKey =
   | 'rewrite'
   | 'expand'
   | 'summarise'
+  | 'summariseChapter'
   | 'describe'
   | 'scene'
   | 'ask';
@@ -62,6 +63,8 @@ export interface BuildPromptInput {
   userPrompts?: UserPrompts;
   /** Required when action === 'scene' or 'ask'; optional otherwise */
   freeformInstruction?: string;
+  /** Decrypted summaries for chapters preceding the current one, ordered by orderIndex ascending. */
+  previousChapters?: Array<{ orderIndex: number; title: string; summary: ChapterSummary }>;
 }
 
 export interface BuiltPrompt {
@@ -74,10 +77,23 @@ export interface BuiltPrompt {
 
 // ─── Exported constants ───────────────────────────────────────────────────────
 
+// Persona only — universal across every Venice call (prose + structured).
+// Output-shape rules moved to PROSE_OUTPUT_RULES below so structured-output
+// callers (e.g. chapter summarise → json_schema) can adopt the persona
+// without inheriting "no quotation marks" (which would break JSON output).
 export const DEFAULT_SYSTEM_PROMPT =
   'You are an expert creative-writing assistant. ' +
-  'Help the author continue, refine, and develop their story with vivid prose that matches their established voice and tone. ' +
-  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output, no XML tags, and no section labels.';
+  'Help the author continue, refine, and develop their story with vivid prose ' +
+  'that matches their established voice and tone.';
+
+// Prefixed onto every prose action's task template (the body inside the
+// <task> block). Each prose action's full default is
+// `${PROSE_OUTPUT_RULES} ${action-specific body}`. Structured-output
+// actions (those returning JSON via response_format) must NOT include
+// this — "no quotation marks" would conflict with valid JSON output.
+export const PROSE_OUTPUT_RULES =
+  'Return only the requested content — no preamble, no meta-commentary, ' +
+  'no quotation marks around the output, no XML tags, and no section labels.';
 
 // [X29] Single source of truth for default templates — exposed via
 // GET /api/ai/default-prompts so the frontend renders the same strings
@@ -85,17 +101,30 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const DEFAULT_PROMPTS = {
   system: DEFAULT_SYSTEM_PROMPT,
   continue:
+    `${PROSE_OUTPUT_RULES} ` +
     'continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
   rewrite:
+    `${PROSE_OUTPUT_RULES} ` +
     'rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
   expand:
+    `${PROSE_OUTPUT_RULES} ` +
     'expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
-  summarise: 'summarise the selection to its essential points. Use 1–3 sentences.',
+  summarise:
+    `${PROSE_OUTPUT_RULES} ` +
+    'summarise the selection to its essential points. Use 1–3 sentences.',
   describe:
+    `${PROSE_OUTPUT_RULES} ` +
     "describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
   scene:
+    `${PROSE_OUTPUT_RULES} ` +
     'write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
-  ask: "answer the user's question about the story. Use the chapter and character context to inform your answer.",
+  ask:
+    `${PROSE_OUTPUT_RULES} ` +
+    "answer the user's question about the story. Use the chapter and character context to inform your answer.",
+  summariseChapter:
+    'You produce structured per-chapter summaries for a long-form fiction project. ' +
+    'Read the chapter and emit a JSON object matching the provided schema exactly. ' +
+    'Be terse and concrete; the consumer is another LLM that will use your output as context when writing the next chapter.',
 } as const satisfies Record<UserPromptKey, string>;
 
 // Reserved tokens between the response budget and the prompt budget. Covers
@@ -155,9 +184,33 @@ function renderCharacterTag(c: CharacterPromptInput): string {
   return `<character${attrs}>\n${children}\n</character>`;
 }
 
+// ─── Previous-chapters block renderer ────────────────────────────────────────
+
+function renderPreviousChaptersBlock(
+  entries: Array<{ orderIndex: number; title: string; summary: ChapterSummary }>,
+  truncatedCount: number,
+): string {
+  if (entries.length === 0) return '';
+  const opener =
+    truncatedCount > 0
+      ? `<previous_chapters truncated_count="${truncatedCount}">`
+      : '<previous_chapters>';
+  const inner = entries
+    .map(
+      (e) =>
+        `<chapter index="${e.orderIndex + 1}" title="${escapeXmlAttr(e.title)}">\n` +
+        `  <events>${escapeXmlText(e.summary.events)}</events>\n` +
+        `  <state_at_end>${escapeXmlText(e.summary.stateAtEnd)}</state_at_end>\n` +
+        `  <open_threads>${escapeXmlText(e.summary.openThreads)}</open_threads>\n` +
+        `</chapter>`,
+    )
+    .join('\n');
+  return `${opener}\n${inner}\n</previous_chapters>`;
+}
+
 // ─── Resolution helper ────────────────────────────────────────────────────────
 
-function resolvePrompt(userPrompts: UserPrompts | undefined, key: UserPromptKey): string {
+export function resolvePrompt(userPrompts: UserPrompts | undefined, key: UserPromptKey): string {
   const v = userPrompts?.[key];
   if (typeof v === 'string' && v.trim().length > 0) return v;
   return DEFAULT_PROMPTS[key];
@@ -248,7 +301,17 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     estimateTokens(taskBlock) +
     estimateTokens(userPayload);
 
-  const chapterBudgetTokens = promptBudgetTokens - fixedTokens;
+  const entries = (input.previousChapters ?? []).slice();
+  let truncatedCount = 0;
+  let previousChaptersBlock = renderPreviousChaptersBlock(entries, truncatedCount);
+  let chapterBudgetTokens =
+    promptBudgetTokens - fixedTokens - estimateTokens(previousChaptersBlock);
+  while (chapterBudgetTokens <= 0 && entries.length > 0) {
+    entries.shift();
+    truncatedCount++;
+    previousChaptersBlock = renderPreviousChaptersBlock(entries, truncatedCount);
+    chapterBudgetTokens = promptBudgetTokens - fixedTokens - estimateTokens(previousChaptersBlock);
+  }
 
   let chapterText = input.chapterContent;
   if (chapterBudgetTokens <= 0) {
@@ -270,6 +333,7 @@ export function buildPrompt(input: BuildPromptInput): BuiltPrompt {
     systemContent,
     worldNotesBlock,
     charactersBlock,
+    previousChaptersBlock,
     chapterBlock,
     taskBlock,
   ].filter((p) => p.length > 0);

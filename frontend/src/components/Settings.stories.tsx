@@ -36,6 +36,7 @@ const SAMPLE_SETTINGS: UserSettings = {
     rewrite: null,
     expand: null,
     summarise: null,
+    summariseChapter: null,
     describe: null,
     scene: null,
     ask: null,

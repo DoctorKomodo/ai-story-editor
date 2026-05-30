@@ -68,6 +68,7 @@ function makeStory(
     targetWords: null,
     chapterCount: 3,
     totalWordCount: 4500,
+    includePreviousChaptersInPrompt: true,
     createdAt: '2026-04-24T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
     ...overrides,

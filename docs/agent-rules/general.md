@@ -79,14 +79,25 @@
   glue. Exception: intentional downgrades to dodge a known regression
   — same commit-message justification.
 
-## Library-version awareness
+## External capability lookup
 
-- For fast-moving libraries (TypeScript / Zod / Vitest in shared
-  + lane-specifics in `backend.md` / `frontend.md`), **prefer the
-  Context7 MCP `query-docs` tool over muscle-memory recall** for
-  syntax and migration questions — training data lags. Use it
-  whenever you'd otherwise type out an API call from memory for a
-  library that has shipped a major version in the last ~12 months.
+- Before stating — in code, in design/spec docs, or in
+  conversation — that an external library or SaaS API has, lacks,
+  or behaves a certain way regarding a specific feature, **look
+  it up first**. Do not infer from our wrappers, our type
+  definitions, our prior usage, or memory.
+- **Lookup order (same for libraries and SaaS APIs):**
+  1. **Context7 MCP** — `resolve-library-id` then `query-docs`.
+     Indexes vendor API docs (Venice, OpenAI, Anthropic, GitHub)
+     as well as npm packages — try it first regardless of source
+     type.
+  2. **WebFetch** on the vendor's official docs URL — fallback
+     when Context7 has no entry or its index is thin.
+- Our internal client wrappers tell you what WE surface, not what
+  the upstream actually exposes. Workarounds, fallbacks, and
+  "we can't because X doesn't support it" claims are the most
+  common form of this failure — verify the negative claim before
+  designing around it.
 
 ## Secrets
 

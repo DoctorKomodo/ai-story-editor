@@ -1,10 +1,13 @@
-import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 import { toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma';
 import { getVeniceClient } from '../lib/venice';
-import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
+import {
+  logVeniceErrorDev,
+  mapVeniceError,
+  mapVeniceErrorToSse,
+  type VeniceRequestSnapshot,
+} from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validate';
 import { createChapterRepo } from '../repos/chapter.repo';
@@ -12,13 +15,14 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createStoryRepo } from '../repos/story.repo';
 import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
-import {
-  resolveIncludeVeniceSystemPrompt,
-  resolveTextGenParams,
-  resolveUserPrompts,
-} from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
-import type { UserSettings } from './user-settings.routes';
+import {
+  buildVeniceParams,
+  hydrateUserSettings,
+  logVeniceParams,
+  promptCacheKey,
+  resolveTextGenWithFallback,
+} from '../services/venice-call.service';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -32,14 +36,6 @@ const CompleteBody = z.object({
   modelId: z.string().min(1),
   enableWebSearch: z.boolean().optional(),
 });
-
-// ─── Prompt-cache key helper ──────────────────────────────────────────────────
-
-// [V8] Deterministic per (storyId, modelId). Hash is sha256 hex, truncated to
-// 32 chars so it stays readable in Venice's telemetry without leaking content.
-function promptCacheKey(storyId: string, modelId: string): string {
-  return createHash('sha256').update(`${storyId}:${modelId}`).digest('hex').slice(0, 32);
-}
 
 export function createAiRouter() {
   const router = Router();
@@ -69,6 +65,7 @@ export function createAiRouter() {
     '/complete',
     validateBody(CompleteBody, async (body, req, res) => {
       const userId = req.user!.id;
+      let snapshot: VeniceRequestSnapshot | undefined;
 
       try {
         // ── 2. Prime models cache + get context length ───────────────────────
@@ -78,18 +75,14 @@ export function createAiRouter() {
         // runs "first"). Also throws UnknownModelError when modelId isn't in
         // Venice's list → propagates as 500 (V11 will refine later).
         await veniceModelsService.fetchModels(userId);
-        const modelContextLength = veniceModelsService.getModelContextLength(body.modelId);
+        const modelContextLength = veniceModelsService.getModelContextLength(body.modelId, userId);
 
         // ── 3. Load user settings (not a narrative entity — direct prisma ok) ──
-        const userRow = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { settingsJson: true },
-        });
-        const rawSettings = userRow?.settingsJson ?? null;
-        const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(rawSettings);
-        const userPrompts = resolveUserPrompts(rawSettings);
+        const { settings, includeVeniceSystemPrompt, userPrompts } =
+          await hydrateUserSettings(userId);
         const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
           body.modelId,
+          userId,
         );
 
         // ── 4. Load story via repo (ownership-scoped) ────────────────────────
@@ -108,6 +101,16 @@ export function createAiRouter() {
 
         // ── 6. Load characters ────────────────────────────────────────────────
         const rawCharacters = await createCharacterRepo(req).findManyForStory(body.storyId);
+
+        // ── 6b. Previous-chapter summaries (toggle-gated) ────────────────────
+        const previousChapters = story.includePreviousChaptersInPrompt
+          ? (await createChapterRepo(req).findManyForStory(body.storyId, { includeSummary: true }))
+              .filter(
+                (c): c is typeof c & { summary: NonNullable<(typeof c)['summary']> } =>
+                  c.orderIndex < chapter.orderIndex && c.summary !== null,
+              )
+              .map((c) => ({ orderIndex: c.orderIndex, title: c.title, summary: c.summary }))
+          : undefined;
 
         // ── 7. Map characters to CharacterPromptInput ────────────────────────
         const characters = rawCharacters.map(toCharacterPromptInput);
@@ -128,6 +131,7 @@ export function createAiRouter() {
           chapterContent,
           characters,
           worldNotes,
+          previousChapters,
           modelContextLength,
           modelMaxCompletionTokens,
           // Pass POSITIVE_INFINITY so the prompt builder uses the model's own cap
@@ -139,76 +143,25 @@ export function createAiRouter() {
         });
 
         // ── 10. Enrich venice_parameters ─────────────────────────────────────
-        const venice_parameters: Record<string, unknown> = { ...baseVeniceParams };
-
-        // [V6] Reasoning model: strip chain-of-thought tokens
-        const modelInfo = veniceModelsService.findModel(body.modelId);
-        if (modelInfo?.supportsReasoning === true) {
-          venice_parameters.strip_thinking_response = true;
-        }
-
-        // [V7] Web search
-        if (body.enableWebSearch === true) {
-          venice_parameters.enable_web_search = 'auto';
-          venice_parameters.enable_web_citations = true;
-        }
+        const modelInfo = veniceModelsService.findModel(body.modelId, userId);
+        const venice_parameters = buildVeniceParams({
+          base: baseVeniceParams,
+          supportsReasoning: modelInfo?.supportsReasoning === true,
+          enableWebSearch: body.enableWebSearch === true,
+        });
 
         // ── 10b. Resolve text-gen parameters (X28) ────────────────────────────
-        // Walks the chain: user per-model override → Venice model default →
-        // global default. `modelInfo` may be null if Venice hasn't listed the
-        // model yet (after cache reset); fall back to omitting temperature/top_p
-        // and using buildPrompt's max_completion_tokens so the call still completes.
-        // `rawSettings` is typed `unknown` from Prisma; coerce safely — the
-        // resolver already guards every field with typeof checks.
-        const partialSettings = (rawSettings as Partial<UserSettings>) ?? {};
-        const userSettingsForResolve: UserSettings = {
-          ...partialSettings,
-          chat: {
-            model: null,
-            overrides: {},
-            ...partialSettings.chat,
-          },
-        };
-        const resolvedParams: {
-          temperature: number | undefined;
-          top_p: number | undefined;
-          max_completion_tokens: number;
-          source: { temperature: string; top_p: string; max_completion_tokens: string };
-        } = modelInfo
-          ? resolveTextGenParams(userSettingsForResolve, modelInfo)
-          : {
-              temperature: undefined,
-              top_p: undefined,
-              max_completion_tokens,
-              source: {
-                temperature: 'global-default',
-                top_p: 'global-default',
-                max_completion_tokens: 'global-default',
-              },
-            };
+        const resolved = resolveTextGenWithFallback(settings, modelInfo, max_completion_tokens);
 
-        if (process.env.NODE_ENV !== 'production') {
-          console.log(
-            '[venice.params]',
-            JSON.stringify({
-              route: 'ai-complete',
-              userId,
-              modelId: body.modelId,
-              temperature: {
-                value: resolvedParams.temperature,
-                source: resolvedParams.source.temperature,
-              },
-              top_p: { value: resolvedParams.top_p, source: resolvedParams.source.top_p },
-              max_completion_tokens: {
-                value: resolvedParams.max_completion_tokens,
-                source: resolvedParams.source.max_completion_tokens,
-              },
-              action: body.action,
-              model_cap: modelMaxCompletionTokens,
-              enable_web_search: venice_parameters.enable_web_search,
-            }),
-          );
-        }
+        logVeniceParams({
+          route: 'ai-complete',
+          userId,
+          modelId: body.modelId,
+          resolved,
+          action: body.action,
+          modelCap: modelMaxCompletionTokens,
+          enableWebSearch: venice_parameters.enable_web_search as string | undefined,
+        });
 
         // ── 11. Get the Venice client ─────────────────────────────────────────
         const client = await getVeniceClient(userId);
@@ -224,15 +177,33 @@ export function createAiRouter() {
         // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
         // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
         // Deterministic per (storyId, modelId).
+        const cacheKey = promptCacheKey(body.storyId, body.modelId);
+
+        snapshot = {
+          model: body.modelId,
+          messageCount: messages.length,
+          systemMessagePreview:
+            typeof messages[0]?.content === 'string' ? messages[0].content : undefined,
+          userMessagePreview:
+            typeof messages.at(-1)?.content === 'string'
+              ? (messages.at(-1)!.content as string)
+              : undefined,
+          venice_parameters,
+          promptCacheKey: cacheKey,
+          temperature: resolved.temperature,
+          top_p: resolved.top_p,
+          max_completion_tokens: resolved.max_completion_tokens,
+        };
+
         const streamWithResp = (await client.chat.completions
           .create({
             model: body.modelId,
             messages,
             stream: true as const,
-            temperature: resolvedParams.temperature,
-            top_p: resolvedParams.top_p,
-            max_completion_tokens: resolvedParams.max_completion_tokens,
-            prompt_cache_key: promptCacheKey(body.storyId, body.modelId),
+            temperature: resolved.temperature,
+            top_p: resolved.top_p,
+            max_completion_tokens: resolved.max_completion_tokens,
+            prompt_cache_key: cacheKey,
             venice_parameters,
           } as unknown as Parameters<typeof client.chat.completions.create>[0])
           .withResponse()) as unknown as {
@@ -313,7 +284,11 @@ export function createAiRouter() {
           // Stream errored after headers were flushed — write a terminal error
           // frame so the client knows something went wrong, then close cleanly.
           // Do NOT call next(err): headers are already committed.
-          console.error('[ai.complete:stream]', streamErr);
+          logVeniceErrorDev({
+            err: streamErr,
+            ctx: { userId, route: 'ai-complete' },
+            request: snapshot,
+          });
           if (!clientClosed) {
             // [V11] Map Venice API errors to structured SSE frames. Falls back to
             // generic stream_error for unknown errors.
@@ -337,6 +312,7 @@ export function createAiRouter() {
         }
       } catch (err) {
         // [V11] Map Venice API errors before the SSE headers are flushed.
+        logVeniceErrorDev({ err, ctx: { userId, route: 'ai-complete' }, request: snapshot });
         if (mapVeniceError(err, res, { userId, route: 'ai-complete' })) return;
         throw err;
       }

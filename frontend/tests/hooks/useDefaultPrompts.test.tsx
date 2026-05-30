@@ -17,6 +17,7 @@ const mockDefaults = {
   rewrite: 'Default rewrite.',
   expand: 'Default expand.',
   summarise: 'Default summarise.',
+  summariseChapter: 'Default summariseChapter.',
   describe: 'Default describe.',
   scene: 'Default scene.',
 };

@@ -20,6 +20,8 @@ const DEFAULTS: DefaultPrompts = {
   expand:
     'expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
   summarise: 'summarise the selection to its essential points. Use 1–3 sentences.',
+  summariseChapter:
+    'Analyse the chapter and produce a structured JSON summary with keys: events (key plot events), stateAtEnd (character/world state at chapter end), openThreads (unresolved questions or threads).',
   describe:
     "describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
   scene:
@@ -81,6 +83,7 @@ export const EverythingOverridden: Story = {
         rewrite: 'Custom rewrite.',
         expand: 'Custom expand.',
         summarise: 'Custom summarise.',
+        summariseChapter: 'Custom chapter summary prompt.',
         describe: 'Custom describe.',
         scene: 'Custom scene.',
         ask: 'Custom ask.',

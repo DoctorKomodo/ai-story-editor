@@ -124,6 +124,7 @@ describe('serializeStory()', () => {
     genre: 'literary',
     worldNotes: 'World notes.',
     targetWords: 50000,
+    includePreviousChaptersInPrompt: true,
     createdAt: new Date('2026-05-14T00:00:00.000Z'),
     updatedAt: new Date('2026-05-14T01:00:00.000Z'),
   } as unknown as RepoStory;
@@ -263,6 +264,10 @@ const REPO_CHAPTER: RepoChapter = {
   wordCount: 12,
   orderIndex: 0,
   status: 'draft',
+  hasSummary: false,
+  summaryIsStale: false,
+  summary: null,
+  summaryUpdatedAt: null,
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
 };
@@ -274,6 +279,8 @@ const REPO_CHAPTER_META: RepoChapterMeta = {
   wordCount: 12,
   orderIndex: 0,
   status: 'draft',
+  hasSummary: false,
+  summaryIsStale: false,
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
 };
@@ -288,6 +295,10 @@ describe('serializeChapter', () => {
       wordCount: 12,
       orderIndex: 0,
       status: 'draft',
+      hasSummary: false,
+      summaryIsStale: false,
+      summary: null,
+      summaryUpdatedAt: null,
       createdAt: ISO,
       updatedAt: ISO,
     });
@@ -325,6 +336,8 @@ describe('serializeChapterMeta', () => {
       wordCount: 12,
       orderIndex: 0,
       status: 'draft',
+      hasSummary: false,
+      summaryIsStale: false,
       createdAt: ISO,
       updatedAt: ISO,
     });

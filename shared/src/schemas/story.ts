@@ -20,6 +20,7 @@ export const storySchema = z.strictObject({
   genre: z.string().nullable(),
   worldNotes: z.string().nullable(),
   targetWords: z.number().int().positive().nullable(),
+  includePreviousChaptersInPrompt: z.boolean(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -40,6 +41,7 @@ export const storyCreateSchema = z.strictObject({
   genre: z.string().max(STORY_GENRE_MAX).nullable().optional(),
   worldNotes: z.string().max(STORY_WORLD_NOTES_MAX).nullable().optional(),
   targetWords: z.number().int().positive().nullable().optional(),
+  includePreviousChaptersInPrompt: z.boolean().optional(),
 });
 
 // PATCH /api/stories/:id request body — every field optional, still strict.

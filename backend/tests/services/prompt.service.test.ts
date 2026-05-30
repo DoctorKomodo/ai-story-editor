@@ -6,6 +6,7 @@ import {
   DEFAULT_PROMPTS,
   DEFAULT_SYSTEM_PROMPT,
   estimateTokens,
+  PROSE_OUTPUT_RULES,
   PromptValidationError,
 } from '../../src/services/prompt.service';
 
@@ -1043,5 +1044,45 @@ describe('character XML rendering — full sheet', () => {
     // Exactly one real opener and one real closer in the block:
     expect(sys.match(/<character /g)?.length).toBe(1);
     expect(sys.match(/<\/character>/g)?.length).toBe(1);
+  });
+});
+
+// ─── [venice-orch step 2] system-prompt restructure ──────────────────────────
+
+describe('[venice-orch step 2] system-prompt restructure', () => {
+  it('DEFAULT_SYSTEM_PROMPT is persona-only — no output-shape rules', () => {
+    expect(DEFAULT_SYSTEM_PROMPT).not.toMatch(/no quotation marks/i);
+    expect(DEFAULT_SYSTEM_PROMPT).not.toMatch(/no preamble/i);
+    expect(DEFAULT_SYSTEM_PROMPT).not.toMatch(/no XML tags/i);
+    expect(DEFAULT_SYSTEM_PROMPT).not.toMatch(/no section labels/i);
+    // Persona content survives:
+    expect(DEFAULT_SYSTEM_PROMPT).toMatch(/creative-writing assistant/i);
+  });
+
+  it('PROSE_OUTPUT_RULES carries the output-shape rules', () => {
+    expect(PROSE_OUTPUT_RULES).toMatch(/no quotation marks/i);
+    expect(PROSE_OUTPUT_RULES).toMatch(/no preamble/i);
+    expect(PROSE_OUTPUT_RULES).toMatch(/no XML tags/i);
+    expect(PROSE_OUTPUT_RULES).toMatch(/no section labels/i);
+  });
+
+  const PROSE_ACTION_KEYS = [
+    'continue',
+    'rewrite',
+    'expand',
+    'summarise',
+    'describe',
+    'scene',
+    'ask',
+  ] as const;
+  for (const key of PROSE_ACTION_KEYS) {
+    it(`DEFAULT_PROMPTS.${key} starts with PROSE_OUTPUT_RULES`, () => {
+      expect(DEFAULT_PROMPTS[key].startsWith(PROSE_OUTPUT_RULES)).toBe(true);
+    });
+  }
+
+  it('DEFAULT_PROMPTS.summariseChapter does NOT include PROSE_OUTPUT_RULES (structured output)', () => {
+    expect(DEFAULT_PROMPTS.summariseChapter).not.toContain('no quotation marks');
+    expect(DEFAULT_PROMPTS.summariseChapter).toMatch(/JSON object matching the provided schema/i);
   });
 });

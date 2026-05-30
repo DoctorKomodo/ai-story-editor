@@ -29,6 +29,7 @@ export interface StoryModalInitial {
   genre?: string | null;
   synopsis?: string | null;
   worldNotes?: string | null;
+  includePreviousChaptersInPrompt?: boolean;
 }
 
 export interface StoryModalProps {
@@ -51,7 +52,13 @@ function mapError(err: unknown): string {
 
 function diffForPatch(
   initial: StoryModalInitial,
-  current: { title: string; genre: string; synopsis: string; worldNotes: string },
+  current: {
+    title: string;
+    genre: string;
+    synopsis: string;
+    worldNotes: string;
+    includePreviousChaptersInPrompt: boolean;
+  },
 ): StoryUpdateInput {
   const payload: StoryUpdateInput = {};
 
@@ -72,6 +79,11 @@ function diffForPatch(
   const nextWorldNotes = nullable(current.worldNotes);
   if (nextWorldNotes !== initialWorldNotes) payload.worldNotes = nextWorldNotes;
 
+  const initialInclude = initial.includePreviousChaptersInPrompt ?? true;
+  if (current.includePreviousChaptersInPrompt !== initialInclude) {
+    payload.includePreviousChaptersInPrompt = current.includePreviousChaptersInPrompt;
+  }
+
   return payload;
 }
 
@@ -80,6 +92,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
   const genreId = useId();
   const synopsisId = useId();
   const worldNotesId = useId();
+  const includePreviousChaptersId = useId();
   const headingId = useId();
   const titleErrorId = useId();
 
@@ -87,6 +100,9 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
   const [genre, setGenre] = useState(initial?.genre ?? '');
   const [synopsis, setSynopsis] = useState(initial?.synopsis ?? '');
   const [worldNotes, setWorldNotes] = useState(initial?.worldNotes ?? '');
+  const [includePreviousChaptersInPrompt, setIncludePreviousChaptersInPrompt] = useState(
+    initial?.includePreviousChaptersInPrompt ?? true,
+  );
   const [titleTouched, setTitleTouched] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const titleInputRef = useRef<HTMLInputElement | null>(null);
@@ -102,6 +118,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
     setGenre(initial?.genre ?? '');
     setSynopsis(initial?.synopsis ?? '');
     setWorldNotes(initial?.worldNotes ?? '');
+    setIncludePreviousChaptersInPrompt(initial?.includePreviousChaptersInPrompt ?? true);
     setTitleTouched(false);
     setFormError(null);
   }, [open, initial]);
@@ -137,6 +154,7 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
           genre: nullable(genre),
           synopsis: nullable(synopsis),
           worldNotes: nullable(worldNotes),
+          includePreviousChaptersInPrompt,
         };
         await createMutation.mutateAsync(payload);
       } else {
@@ -144,7 +162,13 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
           setFormError('Cannot save: missing story id.');
           return;
         }
-        const diff = diffForPatch(initial, { title, genre, synopsis, worldNotes });
+        const diff = diffForPatch(initial, {
+          title,
+          genre,
+          synopsis,
+          worldNotes,
+          includePreviousChaptersInPrompt,
+        });
         if (Object.keys(diff).length === 0) {
           onClose();
           return;
@@ -236,6 +260,22 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
                 }}
               />
             </Field>
+
+            <label
+              htmlFor={includePreviousChaptersId}
+              className="flex items-center gap-2 cursor-pointer"
+            >
+              <input
+                id={includePreviousChaptersId}
+                type="checkbox"
+                checked={includePreviousChaptersInPrompt}
+                onChange={(e) => setIncludePreviousChaptersInPrompt(e.target.checked)}
+                className="accent-accent w-4 h-4"
+              />
+              <span className="font-sans text-sm text-ink-2">
+                Include previous-chapter summaries in AI context
+              </span>
+            </label>
           </div>
 
           {formError ? (

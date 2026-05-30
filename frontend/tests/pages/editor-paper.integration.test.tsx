@@ -30,6 +30,7 @@ function makeStory(): Record<string, unknown> {
     synopsis: null,
     worldNotes: null,
     targetWords: 50_000,
+    includePreviousChaptersInPrompt: true,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
   };
@@ -43,6 +44,8 @@ function makeChapter(overrides: Record<string, unknown> = {}): Record<string, un
     orderIndex: 0,
     wordCount: 0,
     status: 'draft',
+    hasSummary: false,
+    summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
     ...overrides,
@@ -213,6 +216,8 @@ describe('EditorPage paper integration (F52)', () => {
                   { type: 'paragraph', content: [{ type: 'text', text: 'First chapter body.' }] },
                 ],
               },
+              summary: null,
+              summaryUpdatedAt: null,
             },
           }),
         );
@@ -220,7 +225,11 @@ describe('EditorPage paper integration (F52)', () => {
       if (url.endsWith('/stories/abc123/chapters/ch2')) {
         // Empty body — this is the case that previously left the editor
         // showing ch1's text.
-        return Promise.resolve(jsonResponse(200, { chapter: { ...ch2, bodyJson: null } }));
+        return Promise.resolve(
+          jsonResponse(200, {
+            chapter: { ...ch2, bodyJson: null, summary: null, summaryUpdatedAt: null },
+          }),
+        );
       }
       if (url.endsWith('/stories/abc123/characters'))
         return Promise.resolve(jsonResponse(200, { characters: [] }));

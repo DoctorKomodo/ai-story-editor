@@ -26,6 +26,7 @@ import {
   InlineConfirm,
   useInlineConfirm,
 } from '@/design/primitives';
+import { deriveListSummaryState } from '@/hooks/useChapterSummary';
 import {
   chaptersQueryKey,
   computeReorderedChapters,
@@ -36,6 +37,7 @@ import {
 } from '@/hooks/useChapters';
 import { ApiError } from '@/lib/api';
 import { formatWordCountCompact } from '@/lib/formatWordCount';
+import { SummaryStateIcon } from './SummaryStateIcon';
 
 export interface ChapterListProps {
   storyId: string;
@@ -47,6 +49,9 @@ export interface ChapterListProps {
    * editor would render against a dead id). Optional.
    */
   onChapterDeleted?: (chapterId: string) => void;
+  onOpenSummary: (chapterId: string, anchorEl: HTMLElement) => void;
+  /** Id of the chapter whose summary popover is currently open. Controls aria-pressed on its icon. */
+  openPopoverChapterId?: string | null;
 }
 
 function chapterDisplayTitle(c: ChapterMeta): string {
@@ -61,6 +66,8 @@ interface ChapterRowProps {
   onSelect: (id: string) => void;
   onRequestDelete: (chapterId: string) => Promise<void>;
   isDeleting: boolean;
+  onOpenSummary: (chapterId: string, anchorEl: HTMLElement) => void;
+  popoverOpen: boolean;
 }
 
 /**
@@ -75,6 +82,8 @@ function ChapterRow({
   onSelect,
   onRequestDelete,
   isDeleting,
+  onOpenSummary,
+  popoverOpen,
 }: ChapterRowProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } =
     useSortable({ id: chapter.id });
@@ -161,6 +170,17 @@ function ChapterRow({
         />
       ) : (
         <>
+          {/* list-meta derivation never returns 'generating' (mutation state) or 'corrupted' (requires detail) */}
+          <SummaryStateIcon
+            state={deriveListSummaryState({
+              hasSummary: chapter.hasSummary,
+              summaryIsStale: chapter.summaryIsStale,
+            })}
+            ariaPressed={popoverOpen}
+            onClick={(e) => {
+              onOpenSummary(chapter.id, e.currentTarget);
+            }}
+          />
           <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
             {formatWordCountCompact(chapter.wordCount)}
           </span>
@@ -185,6 +205,8 @@ export function ChapterList({
   activeChapterId,
   onSelectChapter,
   onChapterDeleted,
+  onOpenSummary,
+  openPopoverChapterId,
 }: ChapterListProps): JSX.Element {
   const { data: chapters, isLoading, isError, error } = useChaptersQuery(storyId);
   const createChapter = useCreateChapterMutation(storyId);
@@ -311,6 +333,8 @@ export function ChapterList({
                   onSelect={onSelectChapter}
                   onRequestDelete={handleRequestDelete}
                   isDeleting={pendingDeleteId === c.id}
+                  onOpenSummary={onOpenSummary}
+                  popoverOpen={openPopoverChapterId === c.id}
                 />
               ))}
             </ul>

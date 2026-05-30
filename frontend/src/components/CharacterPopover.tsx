@@ -1,7 +1,9 @@
 import type { JSX } from 'react';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { Character } from 'story-editor-shared';
+import { FieldRow } from '@/design/primitives';
 import { useEscape } from '@/hooks/useKeyboardShortcuts';
+import { computePopoverPosition, type Position } from '@/lib/popover-position';
 
 /**
  * F37 — Character popover.
@@ -34,8 +36,6 @@ import { useEscape } from '@/hooks/useKeyboardShortcuts';
  */
 
 const POPOVER_WIDTH_PX = 280;
-const POPOVER_GAP_PX = 6;
-const VIEWPORT_PAD_PX = 8;
 
 export interface CharacterPopoverProps {
   /** `null` → not rendered. */
@@ -49,42 +49,6 @@ export interface CharacterPopoverProps {
   onConsistencyCheck?: (id: string) => void;
   /** Show the **Consistency check** button. Hidden by default until X8 ships. */
   consistencyEnabled?: boolean;
-}
-
-interface Position {
-  top: number;
-  left: number;
-}
-
-function computePosition(anchor: HTMLElement): Position {
-  const rect = anchor.getBoundingClientRect();
-  const top = rect.bottom + window.scrollY + POPOVER_GAP_PX;
-  let left = rect.left + window.scrollX;
-  const viewportWidth =
-    typeof window !== 'undefined' && typeof window.innerWidth === 'number' ? window.innerWidth : 0;
-  if (viewportWidth > 0) {
-    const maxLeft = viewportWidth - POPOVER_WIDTH_PX - VIEWPORT_PAD_PX + window.scrollX;
-    if (left > maxLeft) left = Math.max(VIEWPORT_PAD_PX + window.scrollX, maxLeft);
-  }
-  if (left < window.scrollX + VIEWPORT_PAD_PX) {
-    left = window.scrollX + VIEWPORT_PAD_PX;
-  }
-  return { top, left };
-}
-
-interface FieldRowProps {
-  label: string;
-  value: string | null;
-}
-
-function FieldRow({ label, value }: FieldRowProps): JSX.Element {
-  const display = value && value.trim().length > 0 ? value : '—';
-  return (
-    <div>
-      <dt className="text-[10px] uppercase tracking-[.08em] text-ink-4 font-mono mt-2">{label}</dt>
-      <dd className="font-serif text-[13px] text-ink mt-0.5 whitespace-pre-wrap">{display}</dd>
-    </div>
-  );
 }
 
 export function CharacterPopover({
@@ -106,7 +70,7 @@ export function CharacterPopover({
       setPos(null);
       return;
     }
-    setPos(computePosition(anchorEl));
+    setPos(computePopoverPosition(anchorEl, { width: POPOVER_WIDTH_PX }));
   }, [anchorEl]);
 
   // [F57] Escape dismissal — priority 50 (under modals, over the
