@@ -17,7 +17,6 @@ interface RowMeta {
   key: PromptKey;
   label: string;
   hint: string;
-  multiline: boolean;
 }
 
 const ROWS: ReadonlyArray<RowMeta> = [
@@ -25,50 +24,42 @@ const ROWS: ReadonlyArray<RowMeta> = [
     key: 'system',
     label: 'System prompt',
     hint: 'Replaces the default system message sent on every AI call.',
-    multiline: true,
   },
   {
     key: 'continue',
     label: 'Continue',
     hint: 'Used when continuing the story (⌥+Enter, AI panel).',
-    multiline: false,
   },
   {
     key: 'rewrite',
     label: 'Rewrite / Rephrase',
     hint: 'Used by both the selection bubble and the AI panel.',
-    multiline: false,
   },
-  { key: 'expand', label: 'Expand', hint: 'Used when expanding a selection.', multiline: false },
+  { key: 'expand', label: 'Expand', hint: 'Used when expanding a selection.' },
   {
     key: 'summarise',
     label: 'Summarise',
     hint: 'Used when summarising a selection.',
-    multiline: false,
   },
   {
     key: 'summariseChapter',
     label: 'Chapter summary (structured)',
     hint: 'Used to generate structured previous-chapter summaries (events, state, open threads).',
-    multiline: false,
   },
   {
     key: 'describe',
     label: 'Describe',
     hint: 'Used when describing the subject of a selection.',
-    multiline: false,
   },
   {
     key: 'scene',
     label: 'Scene',
     hint: 'Used by the Scene tab — turns a scene direction into a paragraph of prose.',
-    multiline: false,
   },
   {
     key: 'ask',
     label: 'Ask',
     hint: 'Used by the Chat (Ask) tab when answering questions about the story.',
-    multiline: false,
   },
 ];
 
@@ -127,7 +118,7 @@ function PromptRow({ meta, defaultText, override, onPatch }: PromptRowProps): JS
     }
   };
 
-  const handleChange = (e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>): void => {
+  const handleChange = (e: ChangeEvent<HTMLTextAreaElement>): void => {
     setDraft(e.target.value);
   };
 
@@ -150,39 +141,19 @@ function PromptRow({ meta, defaultText, override, onPatch }: PromptRowProps): JS
       </header>
 
       {checked ? (
-        meta.multiline ? (
-          <textarea
-            id={fieldId}
-            data-testid={`prompts-editor-${meta.key}`}
-            value={draft}
-            onChange={handleChange}
-            onBlur={handleBlur}
-            spellCheck={false}
-            className="font-serif w-full min-h-[120px] p-3 border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
-          />
-        ) : (
-          <input
-            id={fieldId}
-            data-testid={`prompts-editor-${meta.key}`}
-            type="text"
-            value={draft}
-            onChange={handleChange}
-            onBlur={handleBlur}
-            spellCheck={false}
-            className="font-serif w-full p-2 border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
-          />
-        )
-      ) : meta.multiline ? (
-        <div
-          data-testid={`prompts-default-${meta.key}`}
-          className="font-serif w-full min-h-[120px] p-3 border border-line rounded-[var(--radius)] bg-bg-2 text-ink-4 whitespace-pre-wrap"
-        >
-          {defaultText}
-        </div>
+        <textarea
+          id={fieldId}
+          data-testid={`prompts-editor-${meta.key}`}
+          value={draft}
+          onChange={handleChange}
+          onBlur={handleBlur}
+          spellCheck={false}
+          className="font-serif w-full min-h-[120px] p-3 border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
+        />
       ) : (
         <div
           data-testid={`prompts-default-${meta.key}`}
-          className="font-serif w-full p-2 border border-line rounded-[var(--radius)] bg-bg-2 text-ink-4"
+          className="font-serif w-full min-h-[120px] p-3 border border-line rounded-[var(--radius)] bg-bg-2 text-ink-4 whitespace-pre-wrap"
         >
           {defaultText}
         </div>
