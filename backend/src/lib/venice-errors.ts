@@ -269,6 +269,161 @@ export function mapVeniceError(err: unknown, res: Response, ctx: VeniceErrorCont
   return true;
 }
 
+// ─── Dev-only full-exchange dump ──────────────────────────────────────────
+//
+// CLAUDE.md General rules: in non-production, decrypted narrative content
+// (chapter bodies, prompts assembled for Venice, character bios, chat messages)
+// MAY appear in dev logs — this is intentional, prompt/Venice-call debugging
+// requires it. The SK_KEY_RE scrubber below catches Venice keys; narrative
+// content is NOT scrubbed, by design.
+//
+// Absolute rules (all environments): no plaintext Venice keys (scrubbed),
+// no passwords / recovery codes / DEKs / APP_ENCRYPTION_KEY (none of these
+// are in the Venice exchange to begin with).
+
+const MAX_UPSTREAM_BODY = 8 * 1024;
+const MAX_VENICE_PARAMS = 2 * 1024;
+const MAX_STACK = 4 * 1024;
+const MAX_RAW_CONTENT = 8 * 1024;
+const MAX_PREVIEW = 200;
+
+const FORWARDED_HEADERS = [
+  'x-request-id',
+  'x-ratelimit-remaining-requests',
+  'x-ratelimit-remaining-tokens',
+  'x-ratelimit-limit-requests',
+  'x-ratelimit-limit-tokens',
+  'x-ratelimit-reset-requests',
+  'x-ratelimit-reset-tokens',
+  'retry-after',
+] as const;
+
+function scrubKeys(value: unknown): unknown {
+  if (typeof value === 'string') return value.replace(SK_KEY_RE, '[redacted]');
+  if (Array.isArray(value)) return value.map(scrubKeys);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, scrubKeys(v)]));
+  }
+  return value;
+}
+
+function truncateString(s: string, max: number): string {
+  if (s.length <= max) return s;
+  return `${s.slice(0, max)}…[truncated, original ${s.length} bytes]`;
+}
+
+function truncateJson(value: unknown, max: number): unknown {
+  const dump = JSON.stringify(value);
+  if (dump === undefined || dump.length <= max) return value;
+  return `${dump.slice(0, max)}…[truncated, original ${dump.length} bytes]`;
+}
+
+function selectHeaders(headers: SdkHeaders | null | undefined): Record<string, string> {
+  if (!headers) return {};
+  const out: Record<string, string> = {};
+  for (const name of FORWARDED_HEADERS) {
+    const value = readHeader(headers, name);
+    if (typeof value === 'string') out[name] = value;
+  }
+  return out;
+}
+
+export interface VeniceRequestSnapshot {
+  model: string;
+  messageCount: number;
+  systemMessagePreview?: string;
+  userMessagePreview?: string;
+  venice_parameters?: Record<string, unknown>;
+  response_format?: unknown;
+  promptCacheKey?: string;
+  temperature?: number;
+  top_p?: number;
+  max_completion_tokens?: number;
+}
+
+export interface LogVeniceErrorDevInput {
+  err: unknown;
+  ctx: VeniceErrorContext;
+  request?: VeniceRequestSnapshot;
+  rawContent?: string;
+}
+
+/**
+ * Dev-only full-exchange diagnostic dump. Runs alongside mapVeniceError;
+ * mapVeniceError keeps producing the curated [venice.error] one-liner for
+ * prod. This helper is a no-op in production.
+ */
+export function logVeniceErrorDev(input: LogVeniceErrorDevInput): void {
+  if (process.env.NODE_ENV === 'production') return;
+
+  const { err, ctx, request, rawContent } = input;
+  const isApiError = err instanceof APIError;
+
+  const payload: Record<string, unknown> = {
+    route: ctx.route,
+    userId: ctx.userId ?? null,
+    errorClass: err instanceof Error ? err.constructor.name : typeof err,
+    errorName: err instanceof Error ? err.name : null,
+    errorMessage:
+      err instanceof Error
+        ? (scrubKeys(err.message) as string)
+        : (scrubKeys(String(err)) as string),
+    stack:
+      err instanceof Error && err.stack
+        ? truncateString(scrubKeys(err.stack) as string, MAX_STACK)
+        : null,
+  };
+
+  if (isApiError) {
+    payload.upstreamStatus = err.status;
+    payload.upstreamHeaders = scrubKeys(
+      selectHeaders(err.headers as SdkHeaders | null | undefined),
+    );
+    payload.upstreamBody = truncateJson(scrubKeys(err.error), MAX_UPSTREAM_BODY);
+  }
+
+  if (request) {
+    const scrubbed: Record<string, unknown> = {
+      model: request.model,
+      messageCount: request.messageCount,
+    };
+    if (request.systemMessagePreview !== undefined) {
+      scrubbed.systemMessagePreview = truncateString(
+        scrubKeys(request.systemMessagePreview) as string,
+        MAX_PREVIEW,
+      );
+    }
+    if (request.userMessagePreview !== undefined) {
+      scrubbed.userMessagePreview = truncateString(
+        scrubKeys(request.userMessagePreview) as string,
+        MAX_PREVIEW,
+      );
+    }
+    if (request.venice_parameters !== undefined) {
+      scrubbed.venice_parameters = truncateJson(
+        scrubKeys(request.venice_parameters),
+        MAX_VENICE_PARAMS,
+      );
+    }
+    if (request.response_format !== undefined) {
+      scrubbed.response_format = scrubKeys(request.response_format);
+    }
+    if (request.promptCacheKey !== undefined) scrubbed.promptCacheKey = request.promptCacheKey;
+    if (request.temperature !== undefined) scrubbed.temperature = request.temperature;
+    if (request.top_p !== undefined) scrubbed.top_p = request.top_p;
+    if (request.max_completion_tokens !== undefined) {
+      scrubbed.max_completion_tokens = request.max_completion_tokens;
+    }
+    payload.request = scrubbed;
+  }
+
+  if (rawContent !== undefined) {
+    payload.rawContent = truncateString(scrubKeys(rawContent) as string, MAX_RAW_CONTENT);
+  }
+
+  console.error('[venice.error.dev]', payload);
+}
+
 /**
  * Write a Venice error as an SSE terminal frame.
  * Used in the streaming path after headers have been flushed.

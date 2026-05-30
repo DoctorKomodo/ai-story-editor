@@ -77,10 +77,23 @@ export interface BuiltPrompt {
 
 // ─── Exported constants ───────────────────────────────────────────────────────
 
+// Persona only — universal across every Venice call (prose + structured).
+// Output-shape rules moved to PROSE_OUTPUT_RULES below so structured-output
+// callers (e.g. chapter summarise → json_schema) can adopt the persona
+// without inheriting "no quotation marks" (which would break JSON output).
 export const DEFAULT_SYSTEM_PROMPT =
   'You are an expert creative-writing assistant. ' +
-  'Help the author continue, refine, and develop their story with vivid prose that matches their established voice and tone. ' +
-  'Return only the requested content — no preamble, no meta-commentary, no quotation marks around the output, no XML tags, and no section labels.';
+  'Help the author continue, refine, and develop their story with vivid prose ' +
+  'that matches their established voice and tone.';
+
+// Prefixed onto every prose action's task template (the body inside the
+// <task> block). Each prose action's full default is
+// `${PROSE_OUTPUT_RULES} ${action-specific body}`. Structured-output
+// actions (those returning JSON via response_format) must NOT include
+// this — "no quotation marks" would conflict with valid JSON output.
+export const PROSE_OUTPUT_RULES =
+  'Return only the requested content — no preamble, no meta-commentary, ' +
+  'no quotation marks around the output, no XML tags, and no section labels.';
 
 // [X29] Single source of truth for default templates — exposed via
 // GET /api/ai/default-prompts so the frontend renders the same strings
@@ -88,17 +101,26 @@ export const DEFAULT_SYSTEM_PROMPT =
 export const DEFAULT_PROMPTS = {
   system: DEFAULT_SYSTEM_PROMPT,
   continue:
+    `${PROSE_OUTPUT_RULES} ` +
     'continue the story from where the selection ends, matching the established voice. Aim for roughly 80–150 words.',
   rewrite:
+    `${PROSE_OUTPUT_RULES} ` +
     'rewrite the selection with different phrasing while preserving meaning and voice. Return a single alternative version.',
   expand:
+    `${PROSE_OUTPUT_RULES} ` +
     'expand the selection with more detail, description, and depth. Keep the same POV, tense, and voice.',
-  summarise: 'summarise the selection to its essential points. Use 1–3 sentences.',
+  summarise:
+    `${PROSE_OUTPUT_RULES} ` +
+    'summarise the selection to its essential points. Use 1–3 sentences.',
   describe:
+    `${PROSE_OUTPUT_RULES} ` +
     "describe the subject of the selection with vivid sensory, physical, and emotional detail. Maintain the story's POV and tense.",
   scene:
+    `${PROSE_OUTPUT_RULES} ` +
     'write a passage of prose that depicts the scene the user describes. Render the action and dialogue directly — do not summarise. Match the established voice, POV, and tense from the chapter so far. Aim for roughly 100–200 words unless the user specifies otherwise.',
-  ask: "answer the user's question about the story. Use the chapter and character context to inform your answer.",
+  ask:
+    `${PROSE_OUTPUT_RULES} ` +
+    "answer the user's question about the story. Use the chapter and character context to inform your answer.",
   summariseChapter:
     'You produce structured per-chapter summaries for a long-form fiction project. ' +
     'Read the chapter and emit a JSON object matching the provided schema exactly. ' +

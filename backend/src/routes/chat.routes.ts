@@ -8,7 +8,6 @@
 // Both use mergeParams: true so Express passes :chapterId / :chatId from the
 // parent mount point down into the handler.
 
-import { createHash } from 'node:crypto';
 import { type NextFunction, type Request, type Response, Router } from 'express';
 import {
   type Citation,
@@ -23,12 +22,16 @@ import {
   toCharacterPromptInput,
 } from 'story-editor-shared';
 import { z } from 'zod';
-import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
 import { serializeChat, serializeMessage } from '../lib/serialize';
 import { getVeniceClient } from '../lib/venice';
 import { projectVeniceCitations } from '../lib/venice-citations';
-import { mapVeniceError, mapVeniceErrorToSse } from '../lib/venice-errors';
+import {
+  logVeniceErrorDev,
+  mapVeniceError,
+  mapVeniceErrorToSse,
+  type VeniceRequestSnapshot,
+} from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { validateBody, validateQuery } from '../middleware/validate';
 import { createChapterRepo } from '../repos/chapter.repo';
@@ -38,24 +41,18 @@ import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
 import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
-import {
-  resolveIncludeVeniceSystemPrompt,
-  resolveTextGenParams,
-  resolveUserPrompts,
-} from '../services/user-settings-resolvers';
 import { veniceModelsService } from '../services/venice.models.service';
-import type { UserSettings } from './user-settings.routes';
+import {
+  buildVeniceParams,
+  hydrateUserSettings,
+  logVeniceParams,
+  promptCacheKey,
+  resolveTextGenWithFallback,
+} from '../services/venice-call.service';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
 const ListChatsQuery = z.strictObject({ kind: chatKindSchema.optional() });
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-// [V8] Deterministic prompt-cache key per (chatId, modelId) for the chat surface.
-function chatPromptCacheKey(chatId: string, modelId: string): string {
-  return createHash('sha256').update(`${chatId}:${modelId}`).digest('hex').slice(0, 32);
-}
 
 // ─── Router 1: chapter-scoped chat CRUD ──────────────────────────────────────
 
@@ -203,6 +200,7 @@ export function createChatMessagesRouter() {
     validateBody(sendMessageBodySchema, async (body, req, res) => {
       const chatId = req.params.chatId as string;
       const userId = req.user!.id;
+      let snapshot: VeniceRequestSnapshot | undefined;
 
       try {
         // ── 1. Load chat (ownership via chapter→story→user) ──────────────────
@@ -263,13 +261,8 @@ export function createChatMessagesRouter() {
         const modelContextLength = veniceModelsService.getModelContextLength(body.modelId, userId);
 
         // ── 3. Load user settings ─────────────────────────────────────────────
-        const userRow = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { settingsJson: true },
-        });
-        const rawSettings = userRow?.settingsJson ?? null;
-        const includeVeniceSystemPrompt = resolveIncludeVeniceSystemPrompt(rawSettings);
-        const userPrompts = resolveUserPrompts(rawSettings);
+        const { settings, includeVeniceSystemPrompt, userPrompts } =
+          await hydrateUserSettings(userId);
         const modelMaxCompletionTokens = veniceModelsService.getModelMaxCompletionTokens(
           body.modelId,
           userId,
@@ -336,7 +329,7 @@ export function createChatMessagesRouter() {
           modelMaxCompletionTokens,
           // Pass POSITIVE_INFINITY so the prompt builder uses the model's own cap
           // for context-budget calculations. The resolved per-user max_completion_tokens
-          // (from resolveTextGenParams below) is what actually goes to Venice.
+          // is what actually goes to Venice.
           userMaxCompletionTokens: Number.POSITIVE_INFINITY,
           includeVeniceSystemPrompt,
           userPrompts,
@@ -399,97 +392,61 @@ export function createChatMessagesRouter() {
         // ── 9b. Get Venice client + enrich params ─────────────────────────────
         const client = await getVeniceClient(userId);
 
-        const venice_parameters: Record<string, unknown> = { ...baseVeniceParams };
-
-        // [V6] Reasoning model: strip chain-of-thought tokens
         const modelInfo = veniceModelsService.findModel(body.modelId, userId);
-        if (modelInfo?.supportsReasoning === true) {
-          venice_parameters.strip_thinking_response = true;
-        }
-
-        // [V26] Opt-in Venice web search for this chat turn. Sets the three
-        // Venice params that together cause (1) search to run, (2) citations
-        // to survive rather than get inlined as plain text, and (3) results
-        // to arrive in-band as a non-standard first chunk on the SSE stream.
-        // When `enableWebSearch` is false/omitted, none of these are set.
-        if (body.enableWebSearch === true) {
-          venice_parameters.enable_web_search = 'auto';
-          venice_parameters.enable_web_citations = true;
-          venice_parameters.include_search_results_in_stream = true;
-        }
+        const venice_parameters = buildVeniceParams({
+          base: baseVeniceParams,
+          supportsReasoning: modelInfo?.supportsReasoning === true,
+          enableWebSearch: body.enableWebSearch === true,
+          enableChatStreamHints: body.enableWebSearch === true,
+        });
 
         // ── 9b. Resolve text-gen parameters (X28) ────────────────────────────
-        // Walks the chain: user per-model override → Venice model default →
-        // global default. `modelInfo` may be null if Venice hasn't listed the
-        // model yet (after cache reset); fall back to omitting temperature/top_p
-        // and using buildPrompt's max_completion_tokens so the call still completes.
-        const partialSettings = (rawSettings as Partial<UserSettings>) ?? {};
-        const userSettingsForResolve: UserSettings = {
-          ...partialSettings,
-          chat: {
-            model: null,
-            overrides: {},
-            ...partialSettings.chat,
-          },
-        };
-        const resolvedParams: {
-          temperature: number | undefined;
-          top_p: number | undefined;
-          max_completion_tokens: number;
-          source: { temperature: string; top_p: string; max_completion_tokens: string };
-        } = modelInfo
-          ? resolveTextGenParams(userSettingsForResolve, modelInfo)
-          : {
-              temperature: undefined,
-              top_p: undefined,
-              max_completion_tokens,
-              source: {
-                temperature: 'global-default',
-                top_p: 'global-default',
-                max_completion_tokens: 'global-default',
-              },
-            };
+        const resolved = resolveTextGenWithFallback(settings, modelInfo, max_completion_tokens);
 
-        if (process.env.NODE_ENV !== 'production') {
-          console.log(
-            '[venice.params]',
-            JSON.stringify({
-              route: 'chat',
-              userId,
-              modelId: body.modelId,
-              temperature: {
-                value: resolvedParams.temperature,
-                source: resolvedParams.source.temperature,
-              },
-              top_p: { value: resolvedParams.top_p, source: resolvedParams.source.top_p },
-              max_completion_tokens: {
-                value: resolvedParams.max_completion_tokens,
-                source: resolvedParams.source.max_completion_tokens,
-              },
-              action,
-              model_cap: modelMaxCompletionTokens,
-              enable_web_search: venice_parameters.enable_web_search,
-            }),
-          );
-        }
+        logVeniceParams({
+          route: 'chat',
+          userId,
+          modelId: body.modelId,
+          resolved,
+          action,
+          modelCap: modelMaxCompletionTokens,
+          enableWebSearch: venice_parameters.enable_web_search as string | undefined,
+        });
 
         // ── 10. Call Venice with streaming ────────────────────────────────────
         // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
         // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
         // Scoped to (chatId, modelId) for the chat surface.
         const startedAt = Date.now();
+        const cacheKey = promptCacheKey(chatId, body.modelId);
+
+        snapshot = {
+          model: body.modelId,
+          messageCount: messages.length,
+          systemMessagePreview:
+            typeof messages[0]?.content === 'string' ? messages[0].content : undefined,
+          userMessagePreview:
+            typeof messages.at(-1)?.content === 'string'
+              ? (messages.at(-1)!.content as string)
+              : undefined,
+          venice_parameters,
+          promptCacheKey: cacheKey,
+          temperature: resolved.temperature,
+          top_p: resolved.top_p,
+          max_completion_tokens: resolved.max_completion_tokens,
+        };
 
         const streamWithResp = (await client.chat.completions
           .create({
             model: body.modelId,
             messages,
             stream: true as const,
-            temperature: resolvedParams.temperature,
-            top_p: resolvedParams.top_p,
-            max_completion_tokens: resolvedParams.max_completion_tokens,
+            temperature: resolved.temperature,
+            top_p: resolved.top_p,
+            max_completion_tokens: resolved.max_completion_tokens,
             // Request usage in the final chunk so we can persist token counts.
             stream_options: { include_usage: true },
-            prompt_cache_key: chatPromptCacheKey(chatId, body.modelId),
+            prompt_cache_key: cacheKey,
             venice_parameters,
           } as unknown as Parameters<typeof client.chat.completions.create>[0])
           .withResponse()) as unknown as {
@@ -626,7 +583,7 @@ export function createChatMessagesRouter() {
           }
         } catch (streamErr) {
           // Stream errored after headers flushed — write terminal SSE error frame.
-          console.error('[chat.messages.send:stream]', streamErr);
+          logVeniceErrorDev({ err: streamErr, ctx: { userId, route: 'chat' }, request: snapshot });
           if (!clientClosed) {
             const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), {
               userId,
@@ -648,6 +605,7 @@ export function createChatMessagesRouter() {
         }
       } catch (err) {
         // Pre-stream error — map Venice errors to JSON, let global handler deal with others.
+        logVeniceErrorDev({ err, ctx: { userId, route: 'chat' }, request: snapshot });
         if (mapVeniceError(err, res, { userId, route: 'chat' })) return;
         throw err;
       }
