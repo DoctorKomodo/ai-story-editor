@@ -39,7 +39,7 @@ Venice-specific behaviour passed under `body.venice_parameters`:
 |---|---|---|---|
 | `include_venice_system_prompt` | `userSettings.ai.includeVeniceSystemPrompt ?? true` | Every call | [V4] — user-configurable via Settings → Venice. |
 | `strip_thinking_response` | `true` | Selected model has `supportsReasoning: true` | [V6] — avoid leaking chain-of-thought tokens into the final text. |
-| `enable_web_search` | `"auto"` | Caller opts in via `enableWebSearch: true` (both `/api/ai/complete` and chat POST per [V26]) | [V7] — research hook for world-building. |
+| `enable_web_search` | `"auto"` | Caller opts in via `enableWebSearch: true` — **chat POST only** ([V26]); never on `/api/ai/complete` ([X11]) | [V7] — research hook for world-building. |
 | `enable_web_citations` | `true` | Same as above | [V7] — keep citations for fact claims. |
 | `include_search_results_in_stream` | `true` | Chat POST only, when `enableWebSearch: true` | [V26] — projected and delivered as a one-shot `event: citations` SSE frame. |
 | `prompt_cache_key` | `sha256(storyId + modelId)` | Always, on every `/api/ai/complete` call | [V8] — route same-story requests to the same backend for cache-hit uplift. |
@@ -201,6 +201,8 @@ The editor's usage indicator ([F16]) reads those headers after each AI call.
 
 When the chat POST sets `enableWebSearch: true`, the backend enables three Venice params together — `enable_web_search: 'auto'`, `enable_web_citations: true`, and `include_search_results_in_stream: true`. The third flag causes Venice to emit a non-standard **first chunk** carrying a `venice_search_results` array before the usual OpenAI-shaped content chunks start arriving.
 
+**Web search is chat-only ([X11]).** The inline `/api/ai/complete` surface (selection-bubble rewrite / expand / describe / continue) does **not** accept `enableWebSearch` and never sets the web-search params. Decision rationale: citation delivery (the `event: citations` frame and the persisted `citationsJson`) is wired only into the chat panel ([V26]); on the inline surface there is no UI to render sources, so enabling web search there would charge the user's Venice key for grounding whose citations are silently dropped. Of the three options considered — (a) off for inline, (b) keep on as a silent grounding nudge, (c) extend the citations UI to the inline card — we chose **(a)**: the field was removed from the `/api/ai/complete` request schema. Re-introducing inline web search requires first building a sources UI for the inline result card (option c).
+
 Delivery-mode choice: we picked `include_search_results_in_stream` over `return_search_results_as_documents` because the latter surfaces results as an OpenAI-compatible tool call (`venice_web_search_documents`), which would require tool-declaration plumbing on every AI route. In-stream delivery is a strict drop-in: the existing SSE passthrough loop intercepts the first chunk, projects it, emits one `event: citations` SSE frame, and forwards zero raw `venice_search_results` bytes to the client.
 
 **Projection** (`backend/src/lib/venice-citations.ts`):
@@ -323,7 +325,7 @@ This is the [V22] read-only compliance audit of the Story Editor Venice integrat
 - Note: Venice has since added `disable_thinking` and `reasoning.effort` / `reasoning_effort` parameters for finer-grained control — we don't use them, which is fine for now but a future enrichment opportunity.
 
 **6. Web search / citations response shape — GAP (read-only, not parsed)**
-- Our side: we set `enable_web_search: 'auto'` + `enable_web_citations: true` on request (`backend/src/routes/ai.routes.ts:198–201`), but we never parse citations out of the response chunks — chunks are passed through verbatim as SSE frames. `chat.routes.ts` persists `accumulatedContent` (delta text only) to the message log; any `citations` array on `choices[0].message` or in a search-result chunk is dropped.
+- Our side: we set `enable_web_search: 'auto'` + `enable_web_citations: true` on request for the **chat POST only** (`backend/src/routes/chat.routes.ts`); the inline `/api/ai/complete` route never sets them ([X11]). On the chat path we parse citations out of the first chunk (`backend/src/lib/venice-citations.ts`) and persist `citationsJson`; content chunks are passed through verbatim as SSE frames.
 - Venice: documents `include_search_results_in_stream` (experimental — emits search results as the first chunk) and `return_search_results_as_documents` (surfaces results as an OpenAI-compatible tool call named `venice_web_search_documents`). We don't set either, so Venice's behavior defaults to inlining citations in the model's text output.
 - Verdict: not broken — but the frontend can't render a citations sidebar until the backend chooses one of the two modes and parses it. Flag as a gap rather than drift.
 
