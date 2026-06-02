@@ -34,7 +34,11 @@ const CompleteBody = z.object({
   chapterId: z.string().min(1),
   storyId: z.string().min(1),
   modelId: z.string().min(1),
-  enableWebSearch: z.boolean().optional(),
+  // [X11] Web search is intentionally NOT accepted on the inline /complete
+  // surface: citations are rendered only in the chat panel (V26), so enabling
+  // web search here would incur Venice cost with no user-visible benefit
+  // (citations dropped silently). Web search stays opt-in on chat only. See
+  // docs/venice-integration.md § Web Search.
 });
 
 export function createAiRouter() {
@@ -59,7 +63,7 @@ export function createAiRouter() {
 
   // [V5] POST /api/ai/complete — streams AI completions back as SSE.
   // [V6] reasoning flag — strip_thinking_response for supportsReasoning models.
-  // [V7] web-search flag — enable_web_search + enable_web_citations.
+  // [V7] web-search flag — chat-only; intentionally not wired on /complete ([X11]).
   // [V8] prompt-cache key — sha256(storyId:modelId) truncated to 32 hex chars.
   router.post(
     '/complete',
@@ -147,7 +151,6 @@ export function createAiRouter() {
         const venice_parameters = buildVeniceParams({
           base: baseVeniceParams,
           supportsReasoning: modelInfo?.supportsReasoning === true,
-          enableWebSearch: body.enableWebSearch === true,
         });
 
         // ── 10b. Resolve text-gen parameters (X28) ────────────────────────────
@@ -160,7 +163,6 @@ export function createAiRouter() {
           resolved,
           action: body.action,
           modelCap: modelMaxCompletionTokens,
-          enableWebSearch: venice_parameters.enable_web_search as string | undefined,
         });
 
         // ── 11. Get the Venice client ─────────────────────────────────────────

@@ -1,5 +1,8 @@
-// [V7] Web search — enable_web_search + enable_web_citations.
-// Confirms flags are set when enableWebSearch: true and absent otherwise.
+// [X11] Web search is chat-only. The inline /api/ai/complete surface must NEVER
+// set enable_web_search / enable_web_citations — citations are rendered only in
+// the chat panel (V26), so web search here would cost Venice credits with no
+// user-visible benefit. The route schema doesn't accept enableWebSearch, so a
+// client that sends it has the field stripped and web search stays off.
 
 import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
@@ -154,7 +157,7 @@ async function callCompleteAndGetVeniceParams(
   return requestBody.venice_parameters as Record<string, unknown>;
 }
 
-describe('POST /api/ai/complete — web search [V7]', () => {
+describe('POST /api/ai/complete — web search off (chat-only) [X11]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
@@ -188,7 +191,7 @@ describe('POST /api/ai/complete — web search [V7]', () => {
     await prisma.user.deleteMany();
   });
 
-  it('sets enable_web_search and enable_web_citations when enableWebSearch: true', async () => {
+  it('ignores a client-sent enableWebSearch: true — flags never set on /complete', async () => {
     const accessToken = await registerAndLogin();
     await storeKey(accessToken, fetchSpy);
     const req = makeFakeReq(accessToken);
@@ -201,8 +204,8 @@ describe('POST /api/ai/complete — web search [V7]', () => {
       true,
       fetchSpy,
     );
-    expect(vp.enable_web_search).toBe('auto');
-    expect(vp.enable_web_citations).toBe(true);
+    expect(vp.enable_web_search).toBeUndefined();
+    expect(vp.enable_web_citations).toBeUndefined();
   });
 
   it('does not set web search flags when enableWebSearch is omitted', async () => {

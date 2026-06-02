@@ -250,10 +250,12 @@ change only on backend deploy — frontend caches with `staleTime: Infinity`.
 }
 ```
 
-### `POST /api/ai/complete` — SSE stream ([V5], [V7])
-Body: `{ "action": "continue" | "rewrite" | "describe" | "expand" | "summarise" | "ask" | "freeform", "selectedText?", "chapterContent?", "storyId", "modelId", "enableWebSearch?" }`.
+### `POST /api/ai/complete` — SSE stream ([V5])
+Body: `{ "action": "continue" | "rewrite" | "describe" | "expand" | "summarise" | "ask" | "freeform", "selectedText?", "chapterContent?", "storyId", "modelId" }`.
 
-Backend: fetches story + characters + world notes via the repo layer (decrypted), calls prompt builder ([V3]) with `modelContextLength` from cache, calls Venice with `stream: true`, pipes SSE back verbatim. Sets `venice_parameters.include_venice_system_prompt` from the authenticated user's `settingsJson.ai.includeVeniceSystemPrompt` (default `true` when absent — user-configurable via Settings → Venice per [F43] / [B11]); conditionally sets `strip_thinking_response`, `enable_web_search`, `enable_web_citations`, and `prompt_cache_key` per [V6]–[V8].
+Web search is **not** accepted on this surface ([X11]): the request schema does not include `enableWebSearch`, so a client that sends it has the field stripped and web search stays off. Citations are rendered only in the chat panel ([V26]), so enabling web search here would incur Venice cost with no user-visible benefit. Web search remains opt-in on the chat POST only.
+
+Backend: fetches story + characters + world notes via the repo layer (decrypted), calls prompt builder ([V3]) with `modelContextLength` from cache, calls Venice with `stream: true`, pipes SSE back verbatim. Sets `venice_parameters.include_venice_system_prompt` from the authenticated user's `settingsJson.ai.includeVeniceSystemPrompt` (default `true` when absent — user-configurable via Settings → Venice per [F43] / [B11]); conditionally sets `strip_thinking_response` and `prompt_cache_key` per [V6] / [V8]. Never sets `enable_web_search` / `enable_web_citations`.
 
 Response headers: `x-venice-remaining-requests`, `x-venice-remaining-tokens` ([V9]).
 

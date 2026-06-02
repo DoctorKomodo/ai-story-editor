@@ -43,7 +43,6 @@ export interface RunArgs {
   chapterId: string;
   storyId: string;
   modelId: string;
-  enableWebSearch?: boolean;
 }
 
 export interface UseAICompletion extends AICompletionState {
@@ -138,9 +137,6 @@ export function useAICompletion(): UseAICompletion {
         storyId: args.storyId,
         modelId: args.modelId,
       };
-      if (args.enableWebSearch !== undefined) {
-        body.enableWebSearch = args.enableWebSearch;
-      }
 
       try {
         await runStreamingAI({
