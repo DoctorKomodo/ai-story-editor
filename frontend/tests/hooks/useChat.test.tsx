@@ -14,6 +14,8 @@ import {
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
 import { ApiError, apiStream, resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetClientState } from '@/lib/sessionReset';
+import { abortAllStreams } from '@/lib/streamRegistry';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 vi.mock('@/lib/api', async () => {
@@ -54,6 +56,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  abortAllStreams();
   useChatDraftStore.setState({ drafts: {} });
 });
 
@@ -285,6 +288,61 @@ describe('useSendChatMessageMutation', () => {
     await act(async () => {
       await p;
     });
+  });
+
+  it('aborts the stream and drops the draft when resetClientState runs mid-stream', async () => {
+    let abortedSignal: AbortSignal | null = null;
+    let enqueue!: (s: string) => void;
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        enqueue = (s) => controller.enqueue(encoder.encode(s));
+      },
+    });
+    vi.mocked(apiStream).mockImplementation(async (_path, init) => {
+      abortedSignal = (init as { signal?: AbortSignal } | undefined)?.signal ?? null;
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+
+    const { wrapper, qc } = withClient();
+    const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
+
+    act(() => {
+      void result.current.mutateAsync({
+        chatId: 'c1',
+        chapterId: 'ch1',
+        content: 'q',
+        modelId: 'm1',
+      });
+    });
+
+    enqueue('data: {"choices":[{"delta":{"content":"A"}}]}\n\n');
+    await waitFor(() => {
+      expect(useChatDraftStore.getState().drafts['c1']?.assistantText).toBe('A');
+    });
+
+    const appendSpy = vi.spyOn(useChatDraftStore.getState(), 'appendDelta');
+
+    await act(async () => {
+      await resetClientState(qc);
+    });
+
+    expect(abortedSignal).not.toBeNull();
+    expect(abortedSignal?.aborted).toBe(true);
+    expect(useChatDraftStore.getState().drafts['c1']).toBeUndefined();
+
+    try {
+      enqueue('data: {"choices":[{"delta":{"content":"B"}}]}\n\n');
+    } catch {
+      // expected: stream cancelled by the abort
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+
+    expect(appendSpy).not.toHaveBeenCalled();
+    expect(useChatDraftStore.getState().drafts['c1']).toBeUndefined();
   });
 });
 

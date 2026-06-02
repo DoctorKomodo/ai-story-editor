@@ -17,6 +17,7 @@ import {
 } from 'story-editor-shared';
 import { ApiError, api, deleteChat } from '@/lib/api';
 import { runStreamingAI } from '@/lib/streamingAI';
+import { registerStream } from '@/lib/streamRegistry';
 import { useChatDraftStore } from '@/store/chatDraft';
 
 /**
@@ -196,6 +197,7 @@ export function useSendChatMessageMutation(): UseMutationResult<
     mutationFn: async ({ chatId, content, modelId, retry, attachment, enableWebSearch }) => {
       const controller = new AbortController();
       abortRef.current = controller;
+      const deregister = registerStream(controller);
 
       const body: Record<string, unknown> = { modelId };
       if (content !== undefined) body.content = content;
@@ -229,6 +231,7 @@ export function useSendChatMessageMutation(): UseMutationResult<
         useChatDraftStore.getState().markError(chatId, { code, message });
         throw err;
       } finally {
+        deregister();
         if (abortRef.current === controller) abortRef.current = null;
       }
     },
