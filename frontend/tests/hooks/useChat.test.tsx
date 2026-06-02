@@ -299,7 +299,7 @@ describe('useSendChatMessageMutation', () => {
         enqueue = (s) => controller.enqueue(encoder.encode(s));
       },
     });
-    vi.mocked(apiStream).mockImplementation(async (_path, init) => {
+    vi.mocked(apiStream).mockImplementationOnce(async (_path, init) => {
       abortedSignal = (init as { signal?: AbortSignal } | undefined)?.signal ?? null;
       return new Response(body, {
         status: 200,
