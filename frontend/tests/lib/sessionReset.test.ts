@@ -9,11 +9,13 @@ import {
   resetClientStateUsingRegistered,
   swapSession,
 } from '@/lib/sessionReset';
+import { abortAllStreams, registerStream } from '@/lib/streamRegistry';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useChatDraftStore } from '@/store/chatDraft';
 import { handleUnauthorizedAccess, useSessionStore } from '@/store/session';
 
 afterEach(() => {
+  abortAllStreams();
   _unsafeResetSessionResetRegistryForTests();
   useSessionStore.getState().clearSession();
 });
@@ -52,6 +54,15 @@ describe('resetClientState', () => {
     } finally {
       for (const s of spies) s.mockRestore();
     }
+  });
+
+  it('aborts in-flight streams registered via the stream registry', async () => {
+    const controller = new AbortController();
+    registerStream(controller);
+
+    await resetClientState(new QueryClient());
+
+    expect(controller.signal.aborted).toBe(true);
   });
 
   it('end-to-end smoke: dirty state → clean state', async () => {

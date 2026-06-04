@@ -6,10 +6,14 @@
  * a `ReadableStream` of encoded SSE lines — the same shape that the real
  * `parseAiSseStream` parser consumes.
  */
+
+import { QueryClient } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAICompletion } from '@/hooks/useAICompletion';
 import { ApiError, apiStream } from '@/lib/api';
+import { resetClientState } from '@/lib/sessionReset';
+import { abortAllStreams } from '@/lib/streamRegistry';
 import { useErrorStore } from '@/store/errors';
 
 vi.mock('@/lib/api', async () => {
@@ -58,6 +62,7 @@ describe('useAICompletion', () => {
   });
 
   afterEach(() => {
+    abortAllStreams();
     vi.clearAllMocks();
     act(() => {
       useErrorStore.getState().clear();
@@ -192,5 +197,35 @@ describe('useAICompletion', () => {
     // never settled into 'thinking' once content arrived.
     expect(result.current.status).toBe('done');
     expect(result.current.text).toBe('Hello world');
+  });
+
+  it('aborts the in-flight completion when resetClientState runs', async () => {
+    let abortedSignal: AbortSignal | null = null;
+    const body = new ReadableStream<Uint8Array>({
+      start(_controller) {
+        // Never enqueue — hold the stream open until the reset aborts it.
+      },
+    });
+    vi.mocked(apiStream).mockImplementationOnce(async (_path, init) => {
+      abortedSignal = (init as { signal?: AbortSignal } | undefined)?.signal ?? null;
+      return new Response(body, {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      });
+    });
+
+    const { result } = renderHook(() => useAICompletion());
+
+    act(() => {
+      void result.current.run(BASE_ARGS);
+    });
+
+    await vi.waitFor(() => expect(abortedSignal).not.toBeNull());
+
+    await act(async () => {
+      await resetClientState(new QueryClient());
+    });
+
+    expect(abortedSignal?.aborted).toBe(true);
   });
 });

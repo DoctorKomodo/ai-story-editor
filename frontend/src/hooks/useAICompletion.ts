@@ -21,6 +21,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '@/lib/api';
 import { runStreamingAI } from '@/lib/streamingAI';
+import { registerStream } from '@/lib/streamRegistry';
 import { useErrorStore } from '@/store/errors';
 
 export type AICompletionStatus = 'idle' | 'thinking' | 'streaming' | 'done' | 'error';
@@ -111,6 +112,7 @@ export function useAICompletion(): UseAICompletion {
       controllerRef.current?.abort();
       const controller = new AbortController();
       controllerRef.current = controller;
+      const deregister = registerStream(controller);
 
       safeSetState((prev) => ({
         status: 'thinking',
@@ -189,6 +191,7 @@ export function useAICompletion(): UseAICompletion {
         }));
         publish(apiErr);
       } finally {
+        deregister();
         if (controllerRef.current === controller) {
           controllerRef.current = null;
         }

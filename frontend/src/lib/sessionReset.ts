@@ -1,4 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
+import { abortAllStreams } from '@/lib/streamRegistry';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useCharRefSuggestionStore } from '@/store/charRefSuggestion';
@@ -59,6 +60,11 @@ export const PER_USER_STORES: readonly ResettableStore[] = [
  * has no `clearStorage()` calls today.
  */
 export async function resetClientState(queryClient: QueryClient): Promise<void> {
+  // Abort in-flight SSE streams BEFORE tearing down the stores they write into
+  // (chatDraft / inlineAIResult are reset below). Aborting first stops any
+  // further chunk from repopulating a freshly-reset store under the next
+  // session.
+  abortAllStreams();
   await queryClient.cancelQueries();
   queryClient.clear();
   for (const store of PER_USER_STORES) {
