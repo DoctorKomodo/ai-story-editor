@@ -5,6 +5,7 @@ import {
   STORY_SYNOPSIS_MAX,
   STORY_TITLE_MAX,
   STORY_WORLD_NOTES_MAX,
+  type Story,
   type StoryCreateInput,
   type StoryUpdateInput,
 } from 'story-editor-shared';
@@ -37,6 +38,8 @@ export interface StoryModalProps {
   open: boolean;
   onClose: () => void;
   initial?: StoryModalInitial;
+  /** Create mode only: fired with the new story after a successful create. */
+  onCreated?: (story: Story) => void;
 }
 
 function nullable(v: string): string | null {
@@ -87,7 +90,13 @@ function diffForPatch(
   return payload;
 }
 
-export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): JSX.Element | null {
+export function StoryModal({
+  mode,
+  open,
+  onClose,
+  initial,
+  onCreated,
+}: StoryModalProps): JSX.Element | null {
   const titleId = useId();
   const genreId = useId();
   const synopsisId = useId();
@@ -156,25 +165,27 @@ export function StoryModal({ mode, open, onClose, initial }: StoryModalProps): J
           worldNotes: nullable(worldNotes),
           includePreviousChaptersInPrompt,
         };
-        await createMutation.mutateAsync(payload);
-      } else {
-        if (!initial?.id) {
-          setFormError('Cannot save: missing story id.');
-          return;
-        }
-        const diff = diffForPatch(initial, {
-          title,
-          genre,
-          synopsis,
-          worldNotes,
-          includePreviousChaptersInPrompt,
-        });
-        if (Object.keys(diff).length === 0) {
-          onClose();
-          return;
-        }
-        await updateMutation.mutateAsync({ id: initial.id, input: diff });
+        const created = await createMutation.mutateAsync(payload);
+        onClose();
+        onCreated?.(created);
+        return;
       }
+      if (!initial?.id) {
+        setFormError('Cannot save: missing story id.');
+        return;
+      }
+      const diff = diffForPatch(initial, {
+        title,
+        genre,
+        synopsis,
+        worldNotes,
+        includePreviousChaptersInPrompt,
+      });
+      if (Object.keys(diff).length === 0) {
+        onClose();
+        return;
+      }
+      await updateMutation.mutateAsync({ id: initial.id, input: diff });
       onClose();
     } catch (err) {
       setFormError(mapError(err));
