@@ -246,7 +246,7 @@ describe('StoryModal (F6)', () => {
     });
   });
 
-  it('create: fires onCreated with the created story', async () => {
+  it('create: calls onClose then onCreated with the new story', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
         story: {
@@ -272,6 +272,9 @@ describe('StoryModal (F6)', () => {
     await waitFor(() => {
       expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'new-1' }));
     });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(onCreated.mock.invocationCallOrder[0]);
   });
 
   it('does not render when open=false', () => {
