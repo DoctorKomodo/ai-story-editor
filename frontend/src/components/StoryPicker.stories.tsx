@@ -84,6 +84,12 @@ function Demo({ stories, embedded = false, activeStoryId = null }: DemoProps) {
         onSelectStory={() => {
           // demo no-op
         }}
+        onCreateStory={() => {
+          // demo no-op
+        }}
+        onImportDocx={() => {
+          // demo no-op
+        }}
         embedded={embedded}
       />
     </QueryClientProvider>
