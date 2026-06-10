@@ -1,7 +1,7 @@
 // [F30] Story Picker modal — 480px card with story rows (34×44 serif-italic
 // initial tile + title + mono metadata). Active row gets the "open" pill and
-// `border: 1px solid var(--ink)`. Footer shows "N stories in vault" + Import
-// .docx button + primary New story button.
+// `border: 1px solid var(--ink)`. Footer shows the vault count plus the New
+// story / Import .docx buttons when their handlers are wired.
 //
 // Faithful port of `mockups/frontend-prototype/design/modals.jsx` (the
 // `StoryPicker` + `StoryRow` block).
@@ -23,7 +23,7 @@ export interface StoryPickerProps {
   onSelectStory: (id: string) => void;
   /** Primary "New story" — parent typically opens the F6 StoryModal. */
   onCreateStory?: () => void;
-  /** TODO(future): no backend import endpoint yet. Render the button anyway. */
+  /** TODO(future): no backend import endpoint yet; the button stays hidden until an onImportDocx handler is wired. */
   onImportDocx?: () => void;
   /**
    * [F58] When true, render only the inner card (no backdrop, no Close
@@ -148,12 +148,16 @@ export function StoryPicker({
           </span>
         }
       >
-        <Button variant="ghost" onClick={onImportDocx} data-testid="story-picker-import">
-          Import .docx
-        </Button>
-        <Button variant="primary" onClick={onCreateStory} data-testid="story-picker-new">
-          New story
-        </Button>
+        {onImportDocx ? (
+          <Button variant="ghost" onClick={onImportDocx} data-testid="story-picker-import">
+            Import .docx
+          </Button>
+        ) : null}
+        {onCreateStory ? (
+          <Button variant="primary" onClick={onCreateStory} data-testid="story-picker-new">
+            New story
+          </Button>
+        ) : null}
       </ModalFooter>
     </Modal>
   );

@@ -54,6 +54,9 @@ function mockImpl(
         jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
       );
     }
+    if (url.endsWith('/stories')) {
+      return Promise.resolve(jsonResponse(200, { stories: [] }));
+    }
     if (url.endsWith('/stories/abc123')) {
       return storyHandler(url);
     }
@@ -252,6 +255,23 @@ describe('EditorPage (F51 — AppShell shell)', () => {
       );
       expect(call).toBeDefined();
     });
+  });
+
+  it('clicking "New story" in the editor picker opens the create StoryModal', async () => {
+    fetchMock.mockImplementation(
+      mockImpl(() => Promise.resolve(jsonResponse(200, { story: makeStory() }))),
+    );
+    const user = userEvent.setup();
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('sidebar-story-picker'));
+    await user.click(await screen.findByTestId('story-picker-new'));
+
+    expect(screen.getByRole('heading', { name: /new story/i })).toBeInTheDocument();
   });
 
   it('renders a neutral error state when the story fetch 403s', async () => {

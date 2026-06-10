@@ -19,7 +19,7 @@
 // Modal-mount convention (locked in F51 for the rest of the F-series):
 //   page-level useState per modal; callback prop down via TopBar / Sidebar /
 //   ChatPanel; <Modal /> rendered at the bottom of the component, NOT inside
-//   AppShell. F55 mounts <SettingsModal>, <StoryPicker> here; F61 mounts
+//   AppShell. F55 mounts <SettingsModal>, <StoryBrowser> here; F61 mounts
 //   <AccountPrivacyModal>. (X33 retired the standalone <ModelPicker> — model
 //   selection lives inside <SettingsModal initialTab="models">.)
 
@@ -52,7 +52,7 @@ import { SceneTab } from '@/components/SceneTab';
 import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
 import { SettingsModal } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
-import { StoryPicker } from '@/components/StoryPicker';
+import { StoryBrowser } from '@/components/StoryBrowser';
 import { TopBar } from '@/components/TopBar';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
@@ -171,14 +171,6 @@ export function EditorPage(): JSX.Element {
 
   const selectedModelId = useUserSettings().chat.model;
   const completion = useAICompletion();
-
-  const handleStoryPickerSelect = useCallback(
-    (id: string): void => {
-      setStoryPickerOpen(false);
-      navigate(`/stories/${id}`);
-    },
-    [navigate],
-  );
 
   // [F52] Active chapter content is read via the cache-first single-chapter
   // query, then mirrored into local state so Paper's onUpdate can mutate it
@@ -683,13 +675,12 @@ export function EditorPage(): JSX.Element {
       <SelectionBubble proseSelector=".paper-prose" onAction={handleSelectionAction} />
 
       {/* [F55] Page-root modals. */}
-      <StoryPicker
+      <StoryBrowser
         open={storyPickerOpen}
         onClose={() => {
           setStoryPickerOpen(false);
         }}
         activeStoryId={story.id}
-        onSelectStory={handleStoryPickerSelect}
       />
       <SettingsModal
         open={settingsOpen}

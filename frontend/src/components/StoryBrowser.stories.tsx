@@ -1,10 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { useState } from 'react';
+import { MemoryRouter } from 'react-router-dom';
 import type { StoryListItem } from 'story-editor-shared';
-import { Button } from '@/design/primitives';
 import { storiesQueryKey } from '@/hooks/useStories';
-import { StoryPicker } from './StoryPicker';
+import { StoryBrowser } from './StoryBrowser';
 
 const SAMPLE_STORIES: StoryListItem[] = [
   {
@@ -33,19 +32,6 @@ const SAMPLE_STORIES: StoryListItem[] = [
     createdAt: '2026-03-04T00:00:00Z',
     updatedAt: '2026-04-29T00:00:00Z',
   },
-  {
-    id: 's3',
-    title: 'Untitled',
-    genre: null,
-    synopsis: null,
-    worldNotes: null,
-    targetWords: null,
-    includePreviousChaptersInPrompt: true,
-    chapterCount: 0,
-    totalWordCount: 0,
-    createdAt: '2026-04-30T00:00:00Z',
-    updatedAt: '2026-04-30T00:00:00Z',
-  },
 ];
 
 function makeClient(stories: StoryListItem[]): QueryClient {
@@ -69,55 +55,42 @@ interface DemoProps {
 }
 
 function Demo({ stories, embedded = false, activeStoryId = null }: DemoProps) {
-  const [open, setOpen] = useState(true);
   return (
     <QueryClientProvider client={makeClient(stories)}>
-      {!embedded ? (
-        <Button variant="ghost" onClick={() => setOpen(true)}>
-          Reopen picker
-        </Button>
-      ) : null}
-      <StoryPicker
-        open={embedded ? true : open}
-        onClose={() => setOpen(false)}
-        activeStoryId={activeStoryId}
-        onSelectStory={() => {
-          // demo no-op
-        }}
-        onCreateStory={() => {
-          // demo no-op
-        }}
-        onImportDocx={() => {
-          // demo no-op
-        }}
-        embedded={embedded}
-      />
+      <MemoryRouter>
+        <StoryBrowser
+          open
+          onClose={() => {
+            // demo no-op
+          }}
+          activeStoryId={activeStoryId}
+          embedded={embedded}
+        />
+      </MemoryRouter>
     </QueryClientProvider>
   );
 }
 
 const meta = {
-  title: 'Components/StoryPicker',
+  title: 'Components/StoryBrowser',
   component: Demo,
 } satisfies Meta<typeof Demo>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-/** Modal mode — opens with a backdrop and a close-X. */
-export const Open: Story = {
-  args: { stories: SAMPLE_STORIES, activeStoryId: 's1' },
-};
-
-/** Empty vault — renders <StoryPickerEmpty> in the body. */
-export const Empty: Story = {
-  args: { stories: [] },
-};
-
 /**
- * [F58] Embedded mode — dashboard surface. No backdrop, no Escape, no Close
- * button.
+ * Dashboard landing surface — embedded (no backdrop / Close). Click "New story"
+ * to open the create modal in place.
  */
 export const Embedded: Story = {
   args: { stories: SAMPLE_STORIES, embedded: true, activeStoryId: 's2' },
+};
+
+/**
+ * In-editor modal — dismissible picker. Click "New story" to open the create
+ * modal over it.
+ */
+export const Modal: Story = {
+  args: { stories: SAMPLE_STORIES, activeStoryId: 's1' },
 };

@@ -246,6 +246,37 @@ describe('StoryModal (F6)', () => {
     });
   });
 
+  it('create: calls onClose then onCreated with the new story', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(201, {
+        story: {
+          id: 'new-1',
+          title: 'Dune',
+          genre: null,
+          synopsis: null,
+          worldNotes: null,
+          targetWords: null,
+          includePreviousChaptersInPrompt: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        },
+      }),
+    );
+    const onCreated = vi.fn();
+    const user = userEvent.setup();
+    renderModal(<StoryModal mode="create" open onClose={onClose} onCreated={onCreated} />);
+
+    await user.type(screen.getByLabelText(/title/i), 'Dune');
+    await user.click(screen.getByRole('button', { name: /create story/i }));
+
+    await waitFor(() => {
+      expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'new-1' }));
+    });
+
+    expect(onClose).toHaveBeenCalledOnce();
+    expect(onClose.mock.invocationCallOrder[0]).toBeLessThan(onCreated.mock.invocationCallOrder[0]);
+  });
+
   it('does not render when open=false', () => {
     renderModal(<StoryModal mode="create" open={false} onClose={onClose} />);
     expect(screen.queryByRole('dialog')).toBeNull();

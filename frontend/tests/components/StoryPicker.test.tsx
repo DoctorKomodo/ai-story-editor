@@ -246,6 +246,28 @@ describe('StoryPicker (F30)', () => {
     expect(onImportDocx).toHaveBeenCalled();
   });
 
+  it('hides the New story button when onCreateStory is not provided', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { stories: [] }));
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('story-picker-count')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('story-picker-new')).toBeNull();
+  });
+
+  it('hides the Import .docx button when onImportDocx is not provided', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(200, { stories: [] }));
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+    await waitFor(() => {
+      expect(screen.getByTestId('story-picker-count')).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('story-picker-import')).toBeNull();
+  });
+
   it('clicking the close X fires onClose', async () => {
     fetchMock.mockResolvedValue(jsonResponse(200, { stories: [] }));
     const user = userEvent.setup();
