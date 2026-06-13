@@ -265,9 +265,10 @@ describe('summarise honors model settings + sends persona', () => {
     const { agent, chapterId, storyId } = await setup('sum-orch-reasoning-off');
     await storeKey(agent, fetchSpy);
 
-    await agent
+    const settingsRes = await agent
       .patch('/api/users/me/settings')
       .send({ chat: { overrides: { [MODEL_ID]: { reasoning: false } } } });
+    expect(settingsRes.status).toBe(200);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY_REASONING));
     fetchSpy.mockResolvedValueOnce(
