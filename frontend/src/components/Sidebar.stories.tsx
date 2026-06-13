@@ -99,3 +99,10 @@ export const LongStoryTitle: Story = {
   },
   decorators: [withTab('chapters')],
 };
+
+export const WithEditButton: Story = {
+  args: {
+    onEditStory: () => {},
+  },
+  decorators: [withTab('chapters')],
+};

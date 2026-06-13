@@ -53,6 +53,7 @@ import { type SelectionAction, SelectionBubble } from '@/components/SelectionBub
 import { SettingsModal } from '@/components/Settings';
 import { Sidebar } from '@/components/Sidebar';
 import { StoryBrowser } from '@/components/StoryBrowser';
+import { StoryModal } from '@/components/StoryModal';
 import { TopBar } from '@/components/TopBar';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
@@ -164,6 +165,7 @@ export function EditorPage(): JSX.Element {
   // [F55] Page-root modal state. The page renders each modal at the bottom
   // of its JSX; TopBar / Sidebar / ChatPanel callbacks flip these flags.
   const [storyPickerOpen, setStoryPickerOpen] = useState(false);
+  const [editStoryOpen, setEditStoryOpen] = useState(false);
   const settingsOpen = useSettingsModalStore((s) => s.open);
   const settingsInitialTab = useSettingsModalStore((s) => s.initialTab);
   // [F61] Account & privacy modal state — same page-root convention.
@@ -268,6 +270,24 @@ export function EditorPage(): JSX.Element {
   const setInlineAIResult = useInlineAIResultStore((s) => s.setInlineAIResult);
   const clearInlineAIResult = useInlineAIResultStore((s) => s.clear);
   const lastRunArgsRef = useRef<RunArgs | null>(null);
+
+  // StoryModal's reset effect re-seeds all fields whenever `initial` changes;
+  // a stable reference here prevents in-progress typing from being wiped on
+  // any EditorPage re-render (autosave ticks, balance polling, streaming).
+  const editStoryInitial = useMemo(
+    () =>
+      story
+        ? {
+            id: story.id,
+            title: story.title,
+            genre: story.genre,
+            synopsis: story.synopsis,
+            worldNotes: story.worldNotes,
+            includePreviousChaptersInPrompt: story.includePreviousChaptersInPrompt,
+          }
+        : undefined,
+    [story],
+  );
 
   const exportStory: ExportStory | null = useMemo(() => {
     if (!story) return null;
@@ -497,6 +517,9 @@ export function EditorPage(): JSX.Element {
             onOpenStoryPicker={() => {
               setStoryPickerOpen(true);
             }}
+            onEditStory={() => {
+              setEditStoryOpen(true);
+            }}
             chaptersBody={
               <ChapterList
                 storyId={story.id}
@@ -681,6 +704,14 @@ export function EditorPage(): JSX.Element {
           setStoryPickerOpen(false);
         }}
         activeStoryId={story.id}
+      />
+      <StoryModal
+        mode="edit"
+        open={editStoryOpen}
+        onClose={() => {
+          setEditStoryOpen(false);
+        }}
+        initial={editStoryInitial}
       />
       <SettingsModal
         open={settingsOpen}

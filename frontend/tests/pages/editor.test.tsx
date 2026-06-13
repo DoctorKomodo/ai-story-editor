@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,6 +7,7 @@ import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useSessionStore } from '@/store/session';
+import { useSettingsModalStore } from '@/store/settingsModal';
 import { useSidebarTabStore } from '@/store/sidebarTab';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -133,6 +134,7 @@ describe('EditorPage (F51 — AppShell shell)', () => {
       useSessionStore.setState({ user: null, status: 'idle' });
       useActiveChapterStore.setState({ activeChapterId: null });
       useSidebarTabStore.setState({ sidebarTab: 'chapters' });
+      useSettingsModalStore.setState({ open: false, initialTab: undefined });
     });
   });
 
@@ -289,5 +291,93 @@ describe('EditorPage (F51 — AppShell shell)', () => {
 
     // Shell is NOT mounted when the story can't load.
     expect(screen.queryByTestId('app-shell')).toBeNull();
+  });
+
+  it('edit-story button opens StoryModal seeded with the current story', async () => {
+    fetchMock.mockImplementation(
+      mockImpl(() =>
+        Promise.resolve(jsonResponse(200, { story: makeStory({ title: 'The Long Dark' }) })),
+      ),
+    );
+    renderEditor();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('sidebar-story-settings'));
+
+    const modal = await screen.findByTestId('story-modal');
+    expect(within(modal).getByRole('heading', { name: /edit story/i })).toBeInTheDocument();
+    expect(within(modal).getByLabelText(/title/i)).toHaveValue('The Long Dark');
+  });
+
+  it('saving the edit modal PATCHes and refreshes the displayed title', async () => {
+    let patchCount = 0;
+    const base = mockImpl(() =>
+      Promise.resolve(jsonResponse(200, { story: makeStory({ title: 'The Long Dark' }) })),
+    );
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/stories/abc123') && (init?.method ?? 'GET').toUpperCase() === 'PATCH') {
+        patchCount += 1;
+        return Promise.resolve(jsonResponse(200, { story: makeStory({ title: 'Renamed Novel' }) }));
+      }
+      // Pass only `url`: mockImpl's returned fn is single-arg, so `base(url, init)`
+      // would be a type error. The PATCH branch above already used `init`.
+      return base(url);
+    });
+    renderEditor();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('sidebar-story-settings'));
+    const modal = await screen.findByTestId('story-modal');
+    const titleInput = within(modal).getByLabelText(/title/i);
+    await user.clear(titleInput);
+    await user.type(titleInput, 'Renamed Novel');
+    await user.click(within(modal).getByTestId('story-modal-submit'));
+
+    await waitFor(() => {
+      expect(patchCount).toBe(1);
+    });
+    await waitFor(() => {
+      expect(screen.getAllByText('Renamed Novel').length).toBeGreaterThan(0);
+    });
+  });
+
+  it('keeps in-progress edits when EditorPage re-renders (memoized initial)', async () => {
+    fetchMock.mockImplementation(
+      mockImpl(() =>
+        Promise.resolve(jsonResponse(200, { story: makeStory({ title: 'The Long Dark' }) })),
+      ),
+    );
+    renderEditor();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByTestId('app-shell')).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId('sidebar-story-settings'));
+    const modal = await screen.findByTestId('story-modal');
+    const titleInput = within(modal).getByLabelText(/title/i);
+    await user.clear(titleInput);
+    await user.type(titleInput, 'Half-typed title');
+    expect(titleInput).toHaveValue('Half-typed title');
+
+    // Force an EditorPage re-render that does NOT change the story object.
+    // Without a memoized `initial`, StoryModal's reset effect would re-seed
+    // and wipe the field; with it, the typed value survives.
+    await act(async () => {
+      useSettingsModalStore.getState().openWith();
+    });
+
+    expect(within(screen.getByTestId('story-modal')).getByLabelText(/title/i)).toHaveValue(
+      'Half-typed title',
+    );
   });
 });

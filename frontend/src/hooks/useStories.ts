@@ -88,7 +88,8 @@ export function useUpdateStoryMutation(): UseMutationResult<Story, Error, Update
       const { story } = storyResponseSchema.parse(raw);
       return story;
     },
-    onSuccess: () => {
+    onSuccess: (story) => {
+      qc.setQueryData(storyQueryKey(story.id), story);
       void qc.invalidateQueries({ queryKey: storiesQueryKey });
     },
   });
