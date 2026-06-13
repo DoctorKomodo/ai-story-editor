@@ -487,6 +487,26 @@ describe('SettingsModal Models tab (X28)', () => {
   });
 
   // -------------------------------------------------------------------------
+  // 10. Max-tokens slider ceiling reflects the highlighted model cap (min with 32k)
+  // -------------------------------------------------------------------------
+  it('max-tokens slider ceiling reflects the highlighted model cap (min with 32k)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({
+        modelsBody: THREE_MODELS_BODY,
+        initialSettings: { model: 'm1', overrides: {} },
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    await screen.findByTestId('model-rail');
+    await user.click(screen.getByTestId('model-rail-m3')); // m3: maxCompletionTokens 4096
+    expect(screen.getByTestId('param-max-tokens')).toHaveAttribute('max', '4096');
+  });
+
+  // -------------------------------------------------------------------------
   // Legacy: renders the inline picker with the active model in the detail pane
   // -------------------------------------------------------------------------
   it('renders the inline picker with the active model in the detail pane', async () => {

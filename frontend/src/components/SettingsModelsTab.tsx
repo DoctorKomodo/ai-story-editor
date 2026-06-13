@@ -18,7 +18,7 @@ import { useEffect, useId, useMemo, useState } from 'react';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
 import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { resolveChatParams, useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
-import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
+import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '@/lib/textGenDefaults';
 
 interface SliderRowProps {
   id: string;
@@ -258,7 +258,11 @@ export function SettingsModelsTab(): JSX.Element {
           label="Max tokens"
           hint="Response length cap"
           min={1}
-          max={32_000}
+          max={
+            highlightedModel
+              ? Math.min(highlightedModel.maxCompletionTokens, MAX_OUTPUT_TOKENS_CEILING)
+              : MAX_OUTPUT_TOKENS_CEILING
+          }
           step={64}
           value={resolvedParams.maxTokens}
           decimals={0}
