@@ -155,6 +155,14 @@ async function callComplete(
   return JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
 }
 
+async function setReasoningOff(accessToken: string, modelId: string): Promise<void> {
+  const res = await request(app)
+    .patch('/api/users/me/settings')
+    .set('Authorization', `Bearer ${accessToken}`)
+    .send({ chat: { overrides: { [modelId]: { reasoning: false } } } });
+  expect(res.status).toBe(200);
+}
+
 describe('POST /api/ai/complete — reasoning model [V6]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
@@ -222,5 +230,35 @@ describe('POST /api/ai/complete — reasoning model [V6]', () => {
     const vp = requestBody.venice_parameters as Record<string, unknown>;
     // Must be absent — setting it to false would still be wrong.
     expect(vp.strip_thinking_response).toBeUndefined();
+  });
+
+  it('sends reasoning:{enabled:false} when a reasoning model is toggled off', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { storyId, chapterId } = await setupTestData(req);
+    await setReasoningOff(accessToken, REASONING_MODEL_ID);
+
+    const body = await callComplete(accessToken, storyId, chapterId, REASONING_MODEL_ID, fetchSpy);
+    expect(body.reasoning).toEqual({ enabled: false });
+  });
+
+  it('omits reasoning when on (default) and for non-reasoning models', async () => {
+    const accessToken = await registerAndLogin();
+    await storeKey(accessToken, fetchSpy);
+    const req = makeFakeReq(accessToken);
+    const { storyId, chapterId } = await setupTestData(req);
+
+    const onBody = await callComplete(
+      accessToken,
+      storyId,
+      chapterId,
+      REASONING_MODEL_ID,
+      fetchSpy,
+    );
+    expect(onBody.reasoning).toBeUndefined();
+
+    const plainBody = await callComplete(accessToken, storyId, chapterId, PLAIN_MODEL_ID, fetchSpy);
+    expect(plainBody.reasoning).toBeUndefined();
   });
 });

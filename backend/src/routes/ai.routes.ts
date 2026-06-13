@@ -21,6 +21,7 @@ import {
   hydrateUserSettings,
   logVeniceParams,
   promptCacheKey,
+  resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../services/venice-call.service';
 
@@ -152,6 +153,7 @@ export function createAiRouter() {
           base: baseVeniceParams,
           supportsReasoning: modelInfo?.supportsReasoning === true,
         });
+        const reasoningEnabled = resolveReasoningEnabled(settings, modelInfo);
 
         // ── 10b. Resolve text-gen parameters (X28) ────────────────────────────
         const resolved = resolveTextGenWithFallback(settings, modelInfo, max_completion_tokens);
@@ -163,6 +165,7 @@ export function createAiRouter() {
           resolved,
           action: body.action,
           modelCap: modelMaxCompletionTokens,
+          reasoningEnabled,
         });
 
         // ── 11. Get the Venice client ─────────────────────────────────────────
@@ -207,6 +210,7 @@ export function createAiRouter() {
             max_completion_tokens: resolved.max_completion_tokens,
             prompt_cache_key: cacheKey,
             venice_parameters,
+            ...(reasoningEnabled ? {} : { reasoning: { enabled: false } }),
           } as unknown as Parameters<typeof client.chat.completions.create>[0])
           .withResponse()) as unknown as {
           data: AsyncIterable<{

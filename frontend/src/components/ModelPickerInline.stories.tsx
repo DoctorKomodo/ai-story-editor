@@ -70,15 +70,19 @@ interface DemoArgs {
 
 function Demo({ activeId, loading, error, models = SAMPLE_MODELS }: DemoArgs): React.ReactElement {
   const [active, setActive] = useState(activeId);
+  const [highlighted, setHighlighted] = useState<string | null>(activeId);
   return (
     <div className="p-6" style={{ minWidth: 720 }}>
       <ModelPickerInline
         models={models}
         activeId={active}
+        highlightedId={highlighted}
+        onHighlightChange={setHighlighted}
         loading={loading}
         error={error}
         onUseModel={(id) => {
           setActive(id);
+          setHighlighted(id);
         }}
       />
     </div>

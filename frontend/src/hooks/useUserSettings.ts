@@ -8,7 +8,7 @@ import {
 import { useMemo } from 'react';
 import type { Model } from '@/hooks/useModels';
 import { api } from '@/lib/api';
-import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
+import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '@/lib/textGenDefaults';
 import { useErrorStore } from '@/store/errors';
 
 /**
@@ -43,6 +43,7 @@ export interface UserChatOverride {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
+  reasoning?: boolean;
 }
 
 export interface UserChatSettings {
@@ -281,8 +282,9 @@ export interface ResolvedChatParams {
  * For `maxTokens`, the model's `maxCompletionTokens` cap is always enforced:
  * a user override that exceeds the cap is silently clamped to the cap
  * (source becomes `'override-capped'`). When there is no user override, the
- * effective value is `min(GLOBAL_TEXT_GEN_DEFAULTS.maxTokens, cap)` and the
- * source is `'venice-default'` — the model cap is the authoritative bound.
+ * effective value is `min(cap, MAX_OUTPUT_TOKENS_CEILING)` — source is
+ * `'venice-default'` when the model cap binds (cap <= ceiling), `'global-default'`
+ * when our ceiling binds (cap > ceiling, the common case for modern models).
  */
 export function resolveChatParams(settings: UserSettings, modelInfo: Model): ResolvedChatParams {
   const override = settings.chat.overrides[modelInfo.id] ?? {};
@@ -321,8 +323,8 @@ export function resolveChatParams(settings: UserSettings, modelInfo: Model): Res
       maxSource = 'override';
     }
   } else {
-    maxTokens = Math.min(GLOBAL_TEXT_GEN_DEFAULTS.maxTokens, cap);
-    maxSource = 'venice-default';
+    maxTokens = Math.min(cap, MAX_OUTPUT_TOKENS_CEILING);
+    maxSource = cap <= MAX_OUTPUT_TOKENS_CEILING ? 'venice-default' : 'global-default';
   }
 
   return {

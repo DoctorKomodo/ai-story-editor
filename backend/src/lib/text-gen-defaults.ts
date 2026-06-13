@@ -10,7 +10,13 @@ export interface GlobalTextGenDefaults {
 }
 
 export const GLOBAL_TEXT_GEN_DEFAULTS: Readonly<GlobalTextGenDefaults> = Object.freeze({
-  temperature: 0.85,
+  temperature: 1.0,
   topP: 0.95,
   maxTokens: 800,
 });
+
+/**
+ * Upper bound for the Max-tokens slider and for the no-override default.
+ * The effective default output budget is `min(model.maxCompletionTokens, this)`.
+ */
+export const MAX_OUTPUT_TOKENS_CEILING = 32_000;

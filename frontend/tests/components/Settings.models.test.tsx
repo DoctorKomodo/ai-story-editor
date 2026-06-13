@@ -37,6 +37,7 @@ interface ChatOverride {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
+  reasoning?: boolean;
 }
 
 interface SettingsState {
@@ -139,8 +140,39 @@ const MODEL_M3: Model = {
   defaultTopP: null,
 };
 
+// A model that supports reasoning.
+const MODEL_REASONING: Model = {
+  id: 'reasoning-model',
+  name: 'Reasoning Model',
+  contextLength: 200000,
+  maxCompletionTokens: 32000,
+  supportsReasoning: true,
+  supportsVision: false,
+  supportsWebSearch: false,
+  description: 'A model with reasoning support.',
+  pricing: null,
+  defaultTemperature: 1.0,
+  defaultTopP: null,
+};
+
+// A plain model (no reasoning).
+const MODEL_PLAIN: Model = {
+  id: 'plain-model',
+  name: 'Plain Model',
+  contextLength: 64000,
+  maxCompletionTokens: 8000,
+  supportsReasoning: false,
+  supportsVision: false,
+  supportsWebSearch: false,
+  description: 'A model without reasoning support.',
+  pricing: null,
+  defaultTemperature: 0.8,
+  defaultTopP: null,
+};
+
 const TWO_MODELS_BODY = { models: [MODEL_M1, MODEL_M2] };
 const THREE_MODELS_BODY = { models: [MODEL_M1, MODEL_M2, MODEL_M3] };
+const REASONING_MODELS_BODY = { models: [MODEL_REASONING, MODEL_PLAIN] };
 
 function veniceKeyStatus(): unknown {
   return { hasKey: false, lastFour: null, endpoint: null };
@@ -458,6 +490,55 @@ describe('SettingsModal Models tab (X28)', () => {
   });
 
   // -------------------------------------------------------------------------
+  // 9. Params section follows the highlighted (clicked) model, not just the active one
+  // -------------------------------------------------------------------------
+  it('params section follows the highlighted (clicked) model, not just the active one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({
+        modelsBody: TWO_MODELS_BODY,
+        initialSettings: { model: 'm1', overrides: {} },
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    // Wait for models to load and initial params to show (m1: temp 0.70)
+    await waitFor(() => {
+      expect(screen.getByTestId('param-temperature-value')).toHaveTextContent('0.70');
+    });
+
+    // Click m2 in the rail WITHOUT clicking "Use this model"
+    await user.click(await screen.findByTestId('model-rail-m2'));
+
+    // Temperature slider now shows m2's defaultTemperature (1.2), NOT m1's (0.7)
+    await waitFor(() => {
+      expect(screen.getByTestId('param-temperature-value')).toHaveTextContent('1.20');
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 10. Max-tokens slider ceiling reflects the highlighted model cap (min with 32k)
+  // -------------------------------------------------------------------------
+  it('max-tokens slider ceiling reflects the highlighted model cap (min with 32k)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({
+        modelsBody: THREE_MODELS_BODY,
+        initialSettings: { model: 'm1', overrides: {} },
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    await screen.findByTestId('model-rail');
+    await user.click(screen.getByTestId('model-rail-m3')); // m3: maxCompletionTokens 4096
+    expect(screen.getByTestId('param-max-tokens')).toHaveAttribute('max', '4096');
+  });
+
+  // -------------------------------------------------------------------------
   // Legacy: renders the inline picker with the active model in the detail pane
   // -------------------------------------------------------------------------
   it('renders the inline picker with the active model in the detail pane', async () => {
@@ -522,5 +603,72 @@ describe('SettingsModal Models tab (X28)', () => {
     expect(screen.queryByTestId('settings-cancel')).toBeNull();
     expect(screen.queryByTestId('settings-done')).toBeNull();
     expect(screen.getByTestId('settings-autosave-hint')).toBeInTheDocument();
+  });
+
+  // -------------------------------------------------------------------------
+  // 11. Reasoning toggle is disabled and off for a non-reasoning model
+  // -------------------------------------------------------------------------
+  it('reasoning toggle is disabled and off for a non-reasoning model', async () => {
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({
+        modelsBody: REASONING_MODELS_BODY,
+        initialSettings: { model: 'reasoning-model', overrides: {} },
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    await screen.findByTestId('model-rail');
+    await user.click(screen.getByTestId('model-rail-plain-model'));
+
+    const toggle = screen.getByTestId('param-reasoning');
+    await waitFor(() => {
+      expect(toggle).toBeDisabled();
+      expect(toggle).not.toBeChecked();
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // 12. Reasoning toggle is enabled and on by default for a reasoning model,
+  //     and writes the override when toggled
+  // -------------------------------------------------------------------------
+  it('reasoning toggle is enabled and on by default for a reasoning model, and writes the override', async () => {
+    const fetchMock = buildFetch({
+      modelsBody: REASONING_MODELS_BODY,
+      initialSettings: { model: 'reasoning-model', overrides: {} },
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    await screen.findByTestId('model-rail');
+    await user.click(screen.getByTestId('model-rail-reasoning-model'));
+
+    const toggle = screen.getByTestId('param-reasoning');
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+      expect(toggle).toBeChecked();
+    });
+
+    await user.click(toggle);
+
+    await waitFor(
+      () => {
+        const patch = fetchMock.mock.calls.find(
+          ([url, init]: [string, RequestInit | undefined]) =>
+            url === '/api/users/me/settings' && init?.method === 'PATCH',
+        );
+        expect(patch).toBeDefined();
+        const init = (patch as [string, RequestInit])[1];
+        const body = JSON.parse(String(init.body)) as {
+          chat?: { overrides?: Record<string, { reasoning?: boolean }> };
+        };
+        expect(body.chat?.overrides?.['reasoning-model']?.reasoning).toBe(false);
+      },
+      { timeout: 1000 },
+    );
   });
 });

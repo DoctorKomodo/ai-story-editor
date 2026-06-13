@@ -62,6 +62,7 @@ const SettingsSchema = z
                 temperature: z.number().min(0).max(2).optional(),
                 topP: z.number().min(0).max(1).optional(),
                 maxTokens: z.number().int().min(1).max(1_000_000).optional(),
+                reasoning: z.boolean().optional(),
               })
               .strict(),
           )
@@ -116,6 +117,7 @@ export interface UserSettings {
         temperature?: number;
         topP?: number;
         maxTokens?: number;
+        reasoning?: boolean;
       };
     };
   };
@@ -148,7 +150,10 @@ const DEFAULT_SETTINGS = {
   },
   chat: {
     model: null as string | null,
-    overrides: {} as Record<string, { temperature?: number; topP?: number; maxTokens?: number }>,
+    overrides: {} as Record<
+      string,
+      { temperature?: number; topP?: number; maxTokens?: number; reasoning?: boolean }
+    >,
   },
   ai: { includeVeniceSystemPrompt: true },
   prompts: {

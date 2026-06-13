@@ -14,11 +14,11 @@
 // global-default) and write per-model overrides instead of flat top-level
 // fields. Reset button clears the active model's overrides back to defaults.
 import type { ChangeEvent, JSX } from 'react';
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
 import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { resolveChatParams, useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
-import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
+import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '@/lib/textGenDefaults';
 
 interface SliderRowProps {
   id: string;
@@ -87,20 +87,34 @@ export function SettingsModelsTab(): JSX.Element {
   const tempId = useId();
   const topPId = useId();
   const maxTokensId = useId();
+  const reasoningId = useId();
 
   const settings = useUserSettings();
   const updateSetting = useUpdateUserSetting();
   const modelsQuery = useModelsQuery();
 
-  const activeModelId = settings.chat.model;
-  const activeModel: Model | undefined = modelsQuery.data?.find((m) => m.id === activeModelId);
+  const models = modelsQuery.data ?? [];
 
-  const slidersDisabled = activeModel === null || activeModel === undefined;
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
-  // Resolve the effective params for the active model. When no model is
+  useEffect(() => {
+    const list = modelsQuery.data ?? [];
+    if (list.length === 0) return;
+    setHighlightedId((prev) => {
+      if (prev != null && list.some((m) => m.id === prev)) return prev;
+      return settings.chat.model ?? list[0].id;
+    });
+  }, [settings.chat.model, modelsQuery.data]);
+
+  const highlightedModel: Model | undefined =
+    models.find((m) => m.id === highlightedId) ?? models[0];
+
+  const slidersDisabled = highlightedModel == null;
+
+  // Resolve the effective params for the highlighted model. When no model is
   // selected (or models haven't loaded yet), fall back to global defaults.
-  const resolvedParams = activeModel
-    ? resolveChatParams(settings, activeModel)
+  const resolvedParams = highlightedModel
+    ? resolveChatParams(settings, highlightedModel)
     : {
         temperature: GLOBAL_TEXT_GEN_DEFAULTS.temperature,
         topP: GLOBAL_TEXT_GEN_DEFAULTS.topP,
@@ -119,52 +133,66 @@ export function SettingsModelsTab(): JSX.Element {
     resolvedParams.overridden.maxTokens;
 
   const onReset = (): void => {
-    if (activeModelId === null) return;
+    if (!highlightedId) return;
     updateSetting.mutate({
       chat: {
-        overrides: { ...settings.chat.overrides, [activeModelId]: {} },
+        overrides: { ...settings.chat.overrides, [highlightedId]: {} },
       },
     });
   };
 
   const resetTooltip = useMemo((): string | undefined => {
-    if (!activeModel) return undefined;
-    const venice = activeModel.defaultTemperature !== null || activeModel.defaultTopP !== null;
+    if (!highlightedModel) return undefined;
+    const venice =
+      highlightedModel.defaultTemperature !== null || highlightedModel.defaultTopP !== null;
     if (venice) {
       const parts: string[] = [];
-      if (activeModel.defaultTemperature !== null)
-        parts.push(`temp ${activeModel.defaultTemperature}`);
-      if (activeModel.defaultTopP !== null) parts.push(`topP ${activeModel.defaultTopP}`);
-      return `Reverts to ${activeModel.name} defaults from Venice (${parts.join(', ')})`;
+      if (highlightedModel.defaultTemperature !== null)
+        parts.push(`temp ${highlightedModel.defaultTemperature}`);
+      if (highlightedModel.defaultTopP !== null) parts.push(`topP ${highlightedModel.defaultTopP}`);
+      return `Reverts to ${highlightedModel.name} defaults from Venice (${parts.join(', ')})`;
     }
     return 'Reverts to general defaults';
-  }, [settings, activeModel]);
+  }, [highlightedModel]);
 
   const onTemperature = (v: number): void => {
-    if (!activeModelId) return;
-    const prev = settings.chat.overrides[activeModelId] ?? {};
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
     updateSetting.mutate({
       chat: {
-        overrides: { ...settings.chat.overrides, [activeModelId]: { ...prev, temperature: v } },
+        overrides: { ...settings.chat.overrides, [highlightedId]: { ...prev, temperature: v } },
       },
     });
   };
   const onTopP = (v: number): void => {
-    if (!activeModelId) return;
-    const prev = settings.chat.overrides[activeModelId] ?? {};
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
     updateSetting.mutate({
-      chat: { overrides: { ...settings.chat.overrides, [activeModelId]: { ...prev, topP: v } } },
+      chat: { overrides: { ...settings.chat.overrides, [highlightedId]: { ...prev, topP: v } } },
     });
   };
   const onMaxTokens = (v: number): void => {
-    if (!activeModelId) return;
-    const prev = settings.chat.overrides[activeModelId] ?? {};
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
     updateSetting.mutate({
       chat: {
         overrides: {
           ...settings.chat.overrides,
-          [activeModelId]: { ...prev, maxTokens: Math.round(v) },
+          [highlightedId]: { ...prev, maxTokens: Math.round(v) },
         },
+      },
+    });
+  };
+
+  const reasoningSupported = highlightedModel?.supportsReasoning === true;
+  const reasoningOn =
+    reasoningSupported && (settings.chat.overrides[highlightedId ?? '']?.reasoning ?? true);
+  const onReasoning = (next: boolean): void => {
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
+    updateSetting.mutate({
+      chat: {
+        overrides: { ...settings.chat.overrides, [highlightedId]: { ...prev, reasoning: next } },
       },
     });
   };
@@ -177,8 +205,10 @@ export function SettingsModelsTab(): JSX.Element {
         </p>
 
         <ModelPickerInline
-          models={modelsQuery.data ?? []}
+          models={models}
           activeId={settings.chat.model}
+          highlightedId={highlightedId}
+          onHighlightChange={setHighlightedId}
           loading={modelsQuery.isLoading}
           error={modelsQuery.isError}
           onUseModel={(id) => {
@@ -242,7 +272,11 @@ export function SettingsModelsTab(): JSX.Element {
           label="Max tokens"
           hint="Response length cap"
           min={1}
-          max={32_000}
+          max={
+            highlightedModel
+              ? Math.min(highlightedModel.maxCompletionTokens, MAX_OUTPUT_TOKENS_CEILING)
+              : MAX_OUTPUT_TOKENS_CEILING
+          }
           step={64}
           value={resolvedParams.maxTokens}
           decimals={0}
@@ -250,6 +284,24 @@ export function SettingsModelsTab(): JSX.Element {
           disabled={slidersDisabled}
           onChange={onMaxTokens}
         />
+        <label
+          htmlFor={reasoningId}
+          className={`flex items-center gap-2 text-[12px] ${!reasoningSupported ? 'opacity-50' : ''}`}
+        >
+          <input
+            id={reasoningId}
+            data-testid="param-reasoning"
+            type="checkbox"
+            checked={reasoningOn}
+            disabled={slidersDisabled || !reasoningSupported}
+            onChange={(e) => onReasoning(e.target.checked)}
+            className="accent-accent w-4 h-4"
+          />
+          <span className="font-medium text-ink-2">Reasoning</span>
+          {!reasoningSupported ? (
+            <span className="text-ink-4 font-sans">Not supported by this model</span>
+          ) : null}
+        </label>
       </section>
     </div>
   );

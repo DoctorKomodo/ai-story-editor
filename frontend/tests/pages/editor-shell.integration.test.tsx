@@ -99,7 +99,7 @@ function defaultRouter(url: string): Promise<Response> {
             focusMode: false,
             dailyWordGoal: 500,
           },
-          chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024 },
+          chat: { model: null, temperature: 0.7, topP: 1, maxTokens: 1024, overrides: {} },
           ai: { includeVeniceSystemPrompt: true },
         },
       }),

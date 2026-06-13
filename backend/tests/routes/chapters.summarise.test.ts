@@ -260,6 +260,46 @@ describe('summarise honors model settings + sends persona', () => {
     );
   });
 
+  it('sends reasoning:{enabled:false} when reasoning toggled off for a reasoning model', async () => {
+    const fetchSpy = stubVeniceFetch();
+    const { agent, chapterId, storyId } = await setup('sum-orch-reasoning-off');
+    await storeKey(agent, fetchSpy);
+
+    const settingsRes = await agent
+      .patch('/api/users/me/settings')
+      .send({ chat: { overrides: { [MODEL_ID]: { reasoning: false } } } });
+    expect(settingsRes.status).toBe(200);
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY_REASONING));
+    fetchSpy.mockResolvedValueOnce(
+      jsonResponse(200, {
+        choices: [
+          {
+            message: {
+              content: JSON.stringify({ events: 'A.', stateAtEnd: 'B.', openThreads: 'C?' }),
+            },
+          },
+        ],
+      }),
+    );
+
+    const res = await agent
+      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .send({ modelId: MODEL_ID });
+    expect(res.status).toBe(200);
+
+    const completionCall = fetchSpy.mock.calls.find(([url]) =>
+      String(url).includes('/chat/completions'),
+    );
+    expect(completionCall).toBeTruthy();
+    const sentBody = JSON.parse(String((completionCall![1] as RequestInit).body ?? '{}')) as Record<
+      string,
+      unknown
+    >;
+
+    expect(sentBody.reasoning).toEqual({ enabled: false });
+  });
+
   it('honors include_venice_system_prompt=false (user toggled OFF in settings)', async () => {
     const fetchSpy = stubVeniceFetch();
     const { agent, chapterId, storyId } = await setup('sum-orch-3');
