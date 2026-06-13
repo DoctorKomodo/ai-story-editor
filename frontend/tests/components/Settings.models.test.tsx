@@ -624,8 +624,10 @@ describe('SettingsModal Models tab (X28)', () => {
     await user.click(screen.getByTestId('model-rail-plain-model'));
 
     const toggle = screen.getByTestId('param-reasoning');
-    expect(toggle).toBeDisabled();
-    expect(toggle).not.toBeChecked();
+    await waitFor(() => {
+      expect(toggle).toBeDisabled();
+      expect(toggle).not.toBeChecked();
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -646,8 +648,10 @@ describe('SettingsModal Models tab (X28)', () => {
     await user.click(screen.getByTestId('model-rail-reasoning-model'));
 
     const toggle = screen.getByTestId('param-reasoning');
-    expect(toggle).toBeEnabled();
-    expect(toggle).toBeChecked();
+    await waitFor(() => {
+      expect(toggle).toBeEnabled();
+      expect(toggle).toBeChecked();
+    });
 
     await user.click(toggle);
 
