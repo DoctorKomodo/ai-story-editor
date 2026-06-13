@@ -43,6 +43,7 @@ export interface UserChatOverride {
   temperature?: number;
   topP?: number;
   maxTokens?: number;
+  reasoning?: boolean;
 }
 
 export interface UserChatSettings {

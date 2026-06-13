@@ -522,4 +522,14 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
     expect(replace.status).toBe(200);
     expect(replace.body.settings.chat.overrides.m1).toEqual({ temperature: 0.4 });
   });
+
+  it('accepts and round-trips a per-model reasoning override', async () => {
+    const token = await registerAndLogin('x28-reasoning-user');
+    const patch = await request(app)
+      .patch('/api/users/me/settings')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ chat: { overrides: { 'qwen-qwq-32b': { reasoning: false } } } });
+    expect(patch.status).toBe(200);
+    expect(patch.body.settings.chat.overrides['qwen-qwq-32b'].reasoning).toBe(false);
+  });
 });
