@@ -4,7 +4,7 @@ import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/text-gen-defaults';
 describe('GLOBAL_TEXT_GEN_DEFAULTS', () => {
   it('is the canonical text-generation defaults shape', () => {
     expect(GLOBAL_TEXT_GEN_DEFAULTS).toEqual({
-      temperature: 0.85,
+      temperature: 1.0,
       topP: 0.95,
       maxTokens: 800,
     });
@@ -16,7 +16,7 @@ describe('GLOBAL_TEXT_GEN_DEFAULTS', () => {
     const here = path.dirname(new URL(import.meta.url).pathname);
     const frontendFile = path.resolve(here, '../../../frontend/src/lib/textGenDefaults.ts');
     const text = await fs.readFile(frontendFile, 'utf8');
-    expect(text).toMatch(/temperature:\s*0\.85/);
+    expect(text).toMatch(/temperature:\s*1(\.0)?\b/);
     expect(text).toMatch(/topP:\s*0\.95/);
     expect(text).toMatch(/maxTokens:\s*800\b/);
   });

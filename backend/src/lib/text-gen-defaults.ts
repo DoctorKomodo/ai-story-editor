@@ -10,7 +10,7 @@ export interface GlobalTextGenDefaults {
 }
 
 export const GLOBAL_TEXT_GEN_DEFAULTS: Readonly<GlobalTextGenDefaults> = Object.freeze({
-  temperature: 0.85,
+  temperature: 1.0,
   topP: 0.95,
   maxTokens: 800,
 });
