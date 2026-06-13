@@ -5,13 +5,14 @@
 // Layout: 240px rail (scrollable list of models) + flex-1 detail pane
 // (capabilities, description, pricing/context grid, "Use this model" CTA).
 import type { JSX } from 'react';
-import { useEffect, useState } from 'react';
 import { Button } from '@/design/primitives';
 import type { Model } from '@/hooks/useModels';
 
 export interface ModelPickerInlineProps {
   models: Model[];
   activeId: string | null;
+  highlightedId: string | null;
+  onHighlightChange: (id: string) => void;
   onUseModel: (id: string) => void;
   loading?: boolean;
   error?: boolean;
@@ -190,21 +191,12 @@ function ErrorFrame(): JSX.Element {
 export function ModelPickerInline({
   models,
   activeId,
+  highlightedId,
+  onHighlightChange,
   onUseModel,
   loading = false,
   error = false,
 }: ModelPickerInlineProps): JSX.Element {
-  const initialHighlight = activeId ?? models[0]?.id ?? null;
-  const [highlightedId, setHighlightedId] = useState<string | null>(initialHighlight);
-
-  // Keep `highlighted` in sync if the parent flips activeId externally
-  // (e.g. the user just confirmed a different model in the same session).
-  useEffect(() => {
-    if (highlightedId == null && activeId != null) {
-      setHighlightedId(activeId);
-    }
-  }, [activeId, highlightedId]);
-
   if (error) {
     return (
       <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
@@ -242,7 +234,7 @@ export function ModelPickerInline({
             highlighted={m.id === highlighted.id}
             active={m.id === activeId}
             onPreview={() => {
-              setHighlightedId(m.id);
+              onHighlightChange(m.id);
             }}
           />
         ))}

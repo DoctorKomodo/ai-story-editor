@@ -458,6 +458,35 @@ describe('SettingsModal Models tab (X28)', () => {
   });
 
   // -------------------------------------------------------------------------
+  // 9. Params section follows the highlighted (clicked) model, not just the active one
+  // -------------------------------------------------------------------------
+  it('params section follows the highlighted (clicked) model, not just the active one', async () => {
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({
+        modelsBody: TWO_MODELS_BODY,
+        initialSettings: { model: 'm1', overrides: {} },
+      }),
+    );
+
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    // Wait for models to load and initial params to show (m1: temp 0.70)
+    await waitFor(() => {
+      expect(screen.getByTestId('param-temperature-value')).toHaveTextContent('0.70');
+    });
+
+    // Click m2 in the rail WITHOUT clicking "Use this model"
+    await user.click(await screen.findByTestId('model-rail-m2'));
+
+    // Temperature slider now shows m2's defaultTemperature (1.2), NOT m1's (0.7)
+    await waitFor(() => {
+      expect(screen.getByTestId('param-temperature-value')).toHaveTextContent('1.20');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // Legacy: renders the inline picker with the active model in the detail pane
   // -------------------------------------------------------------------------
   it('renders the inline picker with the active model in the detail pane', async () => {

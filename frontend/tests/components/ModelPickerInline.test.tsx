@@ -2,6 +2,7 @@
 // rendering, preview vs active states, and the "Use this model" CTA flow.
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
 import type { Model } from '@/hooks/useModels';
@@ -11,11 +12,14 @@ function makeModel(overrides: Partial<Model> = {}): Model {
     id: 'llama-3.3-70b',
     name: 'Llama 3.3 70B',
     contextLength: 128_000,
+    maxCompletionTokens: 16_384,
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: false,
     description: null,
     pricing: null,
+    defaultTemperature: null,
+    defaultTopP: null,
     ...overrides,
   };
 }
@@ -39,9 +43,40 @@ const TWO_MODELS: Model[] = [
   }),
 ];
 
+interface ControlledPickerProps {
+  models: Model[];
+  activeId: string | null;
+  initialHighlightedId?: string | null;
+  onUseModel?: (id: string) => void;
+  loading?: boolean;
+  error?: boolean;
+}
+
+function ControlledPicker({
+  models,
+  activeId,
+  initialHighlightedId = activeId,
+  onUseModel = () => {},
+  loading,
+  error,
+}: ControlledPickerProps): React.ReactElement {
+  const [highlightedId, setHighlightedId] = useState<string | null>(initialHighlightedId);
+  return (
+    <ModelPickerInline
+      models={models}
+      activeId={activeId}
+      highlightedId={highlightedId}
+      onHighlightChange={setHighlightedId}
+      onUseModel={onUseModel}
+      loading={loading}
+      error={error}
+    />
+  );
+}
+
 describe('ModelPickerInline (X33)', () => {
   it('renders one rail row per model with name, compact pricing, and ctx label', () => {
-    render(<ModelPickerInline models={TWO_MODELS} activeId={null} onUseModel={() => {}} />);
+    render(<ControlledPicker models={TWO_MODELS} activeId={null} initialHighlightedId={null} />);
     const llama = screen.getByTestId('model-rail-llama-3.3-70b');
     expect(llama).toHaveTextContent('Llama 3.3 70B');
     expect(llama).toHaveTextContent('$0.60');
@@ -54,13 +89,17 @@ describe('ModelPickerInline (X33)', () => {
 
   it('renders "no price" placeholder for bare models', () => {
     const bare = makeModel({ id: 'bare', name: 'Bare', pricing: null });
-    render(<ModelPickerInline models={[bare]} activeId={null} onUseModel={() => {}} />);
+    render(<ControlledPicker models={[bare]} activeId={null} initialHighlightedId={null} />);
     expect(screen.getByTestId('model-rail-bare')).toHaveTextContent(/no price/i);
   });
 
   it('marks the active model with a dot prefix in the rail', () => {
     render(
-      <ModelPickerInline models={TWO_MODELS} activeId="llama-3.3-70b" onUseModel={() => {}} />,
+      <ControlledPicker
+        models={TWO_MODELS}
+        activeId="llama-3.3-70b"
+        initialHighlightedId="llama-3.3-70b"
+      />,
     );
     const row = screen.getByTestId('model-rail-llama-3.3-70b');
     expect(row.querySelector('[aria-label="Currently in use"]')).not.toBeNull();
@@ -70,20 +109,29 @@ describe('ModelPickerInline (X33)', () => {
 
   it('opens with the active model highlighted in the detail pane', () => {
     render(
-      <ModelPickerInline models={TWO_MODELS} activeId="qwen-3-6-plus" onUseModel={() => {}} />,
+      <ControlledPicker
+        models={TWO_MODELS}
+        activeId="qwen-3-6-plus"
+        initialHighlightedId="qwen-3-6-plus"
+      />,
     );
     expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Qwen 3.6 Plus');
   });
 
-  it('falls back to the first model when activeId is null', () => {
-    render(<ModelPickerInline models={TWO_MODELS} activeId={null} onUseModel={() => {}} />);
+  it('falls back to the first model when highlightedId is null', () => {
+    render(<ControlledPicker models={TWO_MODELS} activeId={null} initialHighlightedId={null} />);
     expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Llama 3.3 70B');
   });
 
   it('clicking a rail row updates the detail pane without calling onUseModel', async () => {
     const onUseModel = vi.fn();
     render(
-      <ModelPickerInline models={TWO_MODELS} activeId="llama-3.3-70b" onUseModel={onUseModel} />,
+      <ControlledPicker
+        models={TWO_MODELS}
+        activeId="llama-3.3-70b"
+        initialHighlightedId="llama-3.3-70b"
+        onUseModel={onUseModel}
+      />,
     );
     await userEvent.setup().click(screen.getByTestId('model-rail-qwen-3-6-plus'));
     expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Qwen 3.6 Plus');
@@ -93,7 +141,12 @@ describe('ModelPickerInline (X33)', () => {
   it('CTA reads "Use this model" when previewing a non-active model and fires onUseModel on click', async () => {
     const onUseModel = vi.fn();
     render(
-      <ModelPickerInline models={TWO_MODELS} activeId="llama-3.3-70b" onUseModel={onUseModel} />,
+      <ControlledPicker
+        models={TWO_MODELS}
+        activeId="llama-3.3-70b"
+        initialHighlightedId="llama-3.3-70b"
+        onUseModel={onUseModel}
+      />,
     );
     const user = userEvent.setup();
     await user.click(screen.getByTestId('model-rail-qwen-3-6-plus'));
@@ -107,7 +160,11 @@ describe('ModelPickerInline (X33)', () => {
 
   it('CTA reads "Currently in use" disabled when previewing the active model', () => {
     render(
-      <ModelPickerInline models={TWO_MODELS} activeId="llama-3.3-70b" onUseModel={() => {}} />,
+      <ControlledPicker
+        models={TWO_MODELS}
+        activeId="llama-3.3-70b"
+        initialHighlightedId="llama-3.3-70b"
+      />,
     );
     const cta = screen.getByTestId('model-detail-cta');
     expect(cta).toHaveTextContent(/currently in use/i);
@@ -116,7 +173,7 @@ describe('ModelPickerInline (X33)', () => {
 
   it('renders capability chips for reasoning and web search; never renders vision', () => {
     render(
-      <ModelPickerInline
+      <ControlledPicker
         models={[
           makeModel({
             id: 'mm',
@@ -128,7 +185,7 @@ describe('ModelPickerInline (X33)', () => {
           }),
         ]}
         activeId="mm"
-        onUseModel={() => {}}
+        initialHighlightedId="mm"
       />,
     );
     expect(screen.getByText('Reasoning')).toBeInTheDocument();
@@ -138,10 +195,10 @@ describe('ModelPickerInline (X33)', () => {
 
   it('renders the description as full prose, and an italic empty-state when missing', () => {
     const { rerender } = render(
-      <ModelPickerInline
+      <ControlledPicker
         models={[makeModel({ id: 'with', description: 'Full description here.' })]}
         activeId="with"
-        onUseModel={() => {}}
+        initialHighlightedId="with"
       />,
     );
     expect(screen.getByTestId('model-detail-description')).toHaveTextContent(
@@ -149,10 +206,10 @@ describe('ModelPickerInline (X33)', () => {
     );
 
     rerender(
-      <ModelPickerInline
+      <ControlledPicker
         models={[makeModel({ id: 'no', description: null })]}
         activeId="no"
-        onUseModel={() => {}}
+        initialHighlightedId="no"
       />,
     );
     expect(screen.getByTestId('model-detail-description')).toHaveTextContent(
@@ -161,7 +218,7 @@ describe('ModelPickerInline (X33)', () => {
   });
 
   it('renders a skeleton rail and no detail pane when loading', () => {
-    render(<ModelPickerInline models={[]} activeId={null} loading onUseModel={() => {}} />);
+    render(<ControlledPicker models={[]} activeId={null} initialHighlightedId={null} loading />);
     expect(screen.queryByTestId('model-detail-name')).toBeNull();
     expect(screen.getByTestId('model-rail-skeleton')).toBeInTheDocument();
   });

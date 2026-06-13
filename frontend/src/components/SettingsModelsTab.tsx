@@ -14,7 +14,7 @@
 // global-default) and write per-model overrides instead of flat top-level
 // fields. Reset button clears the active model's overrides back to defaults.
 import type { ChangeEvent, JSX } from 'react';
-import { useId, useMemo } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
 import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { resolveChatParams, useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
@@ -92,15 +92,26 @@ export function SettingsModelsTab(): JSX.Element {
   const updateSetting = useUpdateUserSetting();
   const modelsQuery = useModelsQuery();
 
-  const activeModelId = settings.chat.model;
-  const activeModel: Model | undefined = modelsQuery.data?.find((m) => m.id === activeModelId);
+  const models = modelsQuery.data ?? [];
 
-  const slidersDisabled = activeModel === null || activeModel === undefined;
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
-  // Resolve the effective params for the active model. When no model is
+  useEffect(() => {
+    const list = modelsQuery.data ?? [];
+    if (list.length === 0) return;
+    if (highlightedId != null && list.some((m) => m.id === highlightedId)) return;
+    setHighlightedId(settings.chat.model ?? list[0].id);
+  }, [highlightedId, settings.chat.model, modelsQuery.data]);
+
+  const highlightedModel: Model | undefined =
+    models.find((m) => m.id === highlightedId) ?? models[0];
+
+  const slidersDisabled = highlightedModel == null;
+
+  // Resolve the effective params for the highlighted model. When no model is
   // selected (or models haven't loaded yet), fall back to global defaults.
-  const resolvedParams = activeModel
-    ? resolveChatParams(settings, activeModel)
+  const resolvedParams = highlightedModel
+    ? resolveChatParams(settings, highlightedModel)
     : {
         temperature: GLOBAL_TEXT_GEN_DEFAULTS.temperature,
         topP: GLOBAL_TEXT_GEN_DEFAULTS.topP,
@@ -119,51 +130,52 @@ export function SettingsModelsTab(): JSX.Element {
     resolvedParams.overridden.maxTokens;
 
   const onReset = (): void => {
-    if (activeModelId === null) return;
+    if (!highlightedId) return;
     updateSetting.mutate({
       chat: {
-        overrides: { ...settings.chat.overrides, [activeModelId]: {} },
+        overrides: { ...settings.chat.overrides, [highlightedId]: {} },
       },
     });
   };
 
   const resetTooltip = useMemo((): string | undefined => {
-    if (!activeModel) return undefined;
-    const venice = activeModel.defaultTemperature !== null || activeModel.defaultTopP !== null;
+    if (!highlightedModel) return undefined;
+    const venice =
+      highlightedModel.defaultTemperature !== null || highlightedModel.defaultTopP !== null;
     if (venice) {
       const parts: string[] = [];
-      if (activeModel.defaultTemperature !== null)
-        parts.push(`temp ${activeModel.defaultTemperature}`);
-      if (activeModel.defaultTopP !== null) parts.push(`topP ${activeModel.defaultTopP}`);
-      return `Reverts to ${activeModel.name} defaults from Venice (${parts.join(', ')})`;
+      if (highlightedModel.defaultTemperature !== null)
+        parts.push(`temp ${highlightedModel.defaultTemperature}`);
+      if (highlightedModel.defaultTopP !== null) parts.push(`topP ${highlightedModel.defaultTopP}`);
+      return `Reverts to ${highlightedModel.name} defaults from Venice (${parts.join(', ')})`;
     }
     return 'Reverts to general defaults';
-  }, [settings, activeModel]);
+  }, [settings, highlightedModel]);
 
   const onTemperature = (v: number): void => {
-    if (!activeModelId) return;
-    const prev = settings.chat.overrides[activeModelId] ?? {};
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
     updateSetting.mutate({
       chat: {
-        overrides: { ...settings.chat.overrides, [activeModelId]: { ...prev, temperature: v } },
+        overrides: { ...settings.chat.overrides, [highlightedId]: { ...prev, temperature: v } },
       },
     });
   };
   const onTopP = (v: number): void => {
-    if (!activeModelId) return;
-    const prev = settings.chat.overrides[activeModelId] ?? {};
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
     updateSetting.mutate({
-      chat: { overrides: { ...settings.chat.overrides, [activeModelId]: { ...prev, topP: v } } },
+      chat: { overrides: { ...settings.chat.overrides, [highlightedId]: { ...prev, topP: v } } },
     });
   };
   const onMaxTokens = (v: number): void => {
-    if (!activeModelId) return;
-    const prev = settings.chat.overrides[activeModelId] ?? {};
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
     updateSetting.mutate({
       chat: {
         overrides: {
           ...settings.chat.overrides,
-          [activeModelId]: { ...prev, maxTokens: Math.round(v) },
+          [highlightedId]: { ...prev, maxTokens: Math.round(v) },
         },
       },
     });
@@ -177,8 +189,10 @@ export function SettingsModelsTab(): JSX.Element {
         </p>
 
         <ModelPickerInline
-          models={modelsQuery.data ?? []}
+          models={models}
           activeId={settings.chat.model}
+          highlightedId={highlightedId}
+          onHighlightChange={setHighlightedId}
           loading={modelsQuery.isLoading}
           error={modelsQuery.isError}
           onUseModel={(id) => {
