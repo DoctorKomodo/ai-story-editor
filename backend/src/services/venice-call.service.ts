@@ -121,6 +121,20 @@ export function resolveTextGenWithFallback(
   return resolveTextGenParams(settings, modelInfo);
 }
 
+/**
+ * Whether reasoning should be left enabled (Venice's default) for this call.
+ * Only a reasoning-capable model whose per-model override is explicitly `false`
+ * disables it; everything else stays on. Computed at the assembly site so the
+ * 3-param resolveTextGenParams contract stays focused.
+ */
+export function resolveReasoningEnabled(
+  settings: UserSettings,
+  modelInfo: ModelInfo | null | undefined,
+): boolean {
+  if (modelInfo == null || modelInfo.supportsReasoning !== true) return true;
+  return settings.chat.overrides?.[modelInfo.id]?.reasoning !== false;
+}
+
 export interface LogVeniceParamsInput {
   route: 'ai-complete' | 'chat' | 'chapter-summarise';
   userId: string;
@@ -129,6 +143,7 @@ export interface LogVeniceParamsInput {
   action?: string;
   modelCap: number | undefined;
   enableWebSearch?: string;
+  reasoningEnabled: boolean;
 }
 
 /**
@@ -154,6 +169,7 @@ export function logVeniceParams(input: LogVeniceParamsInput): void {
       action: input.action,
       model_cap: input.modelCap,
       enable_web_search: input.enableWebSearch,
+      reasoning_enabled: input.reasoningEnabled,
     }),
   );
 }

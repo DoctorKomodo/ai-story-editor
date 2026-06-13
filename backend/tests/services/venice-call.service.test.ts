@@ -6,6 +6,7 @@ import {
   hydrateUserSettings,
   logVeniceParams,
   promptCacheKey,
+  resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../../src/services/venice-call.service';
 import { prisma } from '../setup';
@@ -229,7 +230,28 @@ describe('logVeniceParams', () => {
         source: { temperature: 'override', top_p: 'override', max_completion_tokens: 'override' },
       },
       modelCap: 100,
+      reasoningEnabled: true,
     });
     expect(logSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('resolveReasoningEnabled', () => {
+  const reasoning = { id: 'r', supportsReasoning: true } as unknown as ModelInfo;
+  const plain = { id: 'p', supportsReasoning: false } as unknown as ModelInfo;
+  const s = (ov: Record<string, { reasoning?: boolean }>) =>
+    ({ chat: { model: null, overrides: ov } }) as unknown as UserSettings;
+
+  it('defaults to enabled (true) for a reasoning model with no override', () => {
+    expect(resolveReasoningEnabled(s({}), reasoning)).toBe(true);
+  });
+  it('returns false only when a reasoning model is explicitly overridden off', () => {
+    expect(resolveReasoningEnabled(s({ r: { reasoning: false } }), reasoning)).toBe(false);
+  });
+  it('returns true for a non-reasoning model even if overridden off', () => {
+    expect(resolveReasoningEnabled(s({ p: { reasoning: false } }), plain)).toBe(true);
+  });
+  it('returns true for null modelInfo', () => {
+    expect(resolveReasoningEnabled(s({}), null)).toBe(true);
   });
 });

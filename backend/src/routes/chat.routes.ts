@@ -47,6 +47,7 @@ import {
   hydrateUserSettings,
   logVeniceParams,
   promptCacheKey,
+  resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../services/venice-call.service';
 
@@ -399,6 +400,7 @@ export function createChatMessagesRouter() {
           enableWebSearch: body.enableWebSearch === true,
           enableChatStreamHints: body.enableWebSearch === true,
         });
+        const reasoningEnabled = resolveReasoningEnabled(settings, modelInfo);
 
         // ── 9b. Resolve text-gen parameters (X28) ────────────────────────────
         const resolved = resolveTextGenWithFallback(settings, modelInfo, max_completion_tokens);
@@ -411,6 +413,7 @@ export function createChatMessagesRouter() {
           action,
           modelCap: modelMaxCompletionTokens,
           enableWebSearch: venice_parameters.enable_web_search as string | undefined,
+          reasoningEnabled,
         });
 
         // ── 10. Call Venice with streaming ────────────────────────────────────
@@ -448,6 +451,7 @@ export function createChatMessagesRouter() {
             stream_options: { include_usage: true },
             prompt_cache_key: cacheKey,
             venice_parameters,
+            ...(reasoningEnabled ? {} : { reasoning: { enabled: false } }),
           } as unknown as Parameters<typeof client.chat.completions.create>[0])
           .withResponse()) as unknown as {
           data: AsyncIterable<{

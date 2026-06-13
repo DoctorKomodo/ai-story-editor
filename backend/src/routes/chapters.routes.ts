@@ -39,6 +39,7 @@ import {
   hydrateUserSettings,
   logVeniceParams,
   promptCacheKey,
+  resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../services/venice-call.service';
 
@@ -319,6 +320,7 @@ export function createChaptersRouter() {
         supportsReasoning: modelInfo.supportsReasoning === true,
         includeVeniceSystemPrompt,
       });
+      const reasoningEnabled = resolveReasoningEnabled(settings, modelInfo);
 
       const resolved = resolveTextGenWithFallback(
         settings,
@@ -333,6 +335,7 @@ export function createChaptersRouter() {
         resolved,
         action: 'summariseChapter',
         modelCap: modelInfo.maxCompletionTokens,
+        reasoningEnabled,
       });
 
       const cacheKey = promptCacheKey(chapterId, body.modelId);
@@ -372,6 +375,7 @@ export function createChaptersRouter() {
           max_completion_tokens: resolved.max_completion_tokens,
           prompt_cache_key: cacheKey,
           venice_parameters,
+          ...(reasoningEnabled ? {} : { reasoning: { enabled: false } }),
         } as unknown as Parameters<typeof client.chat.completions.create>[0]);
         raw = completion as unknown as typeof raw;
       } catch (err) {
