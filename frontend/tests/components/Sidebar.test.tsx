@@ -57,6 +57,21 @@ describe('Sidebar', () => {
     expect(onOpenStoryPicker).toHaveBeenCalledTimes(1);
   });
 
+  it('does not render the edit-story button when onEditStory is absent', () => {
+    renderSidebar();
+    expect(screen.queryByTestId('sidebar-story-settings')).toBeNull();
+  });
+
+  it('renders the edit-story button and fires onEditStory when clicked', () => {
+    const onEditStory = vi.fn();
+    renderSidebar({ onEditStory });
+    const btn = screen.getByTestId('sidebar-story-settings');
+    expect(btn).toBeInTheDocument();
+    expect(btn).toHaveAttribute('aria-label', 'Edit story');
+    fireEvent.click(btn);
+    expect(onEditStory).toHaveBeenCalledTimes(1);
+  });
+
   it('does not render a sidebar-level + button (chapters owns its own add)', () => {
     renderSidebar();
     expect(screen.queryByTestId('sidebar-add-button')).toBeNull();
