@@ -134,6 +134,7 @@ describe('EditorPage (F51 — AppShell shell)', () => {
       useSessionStore.setState({ user: null, status: 'idle' });
       useActiveChapterStore.setState({ activeChapterId: null });
       useSidebarTabStore.setState({ sidebarTab: 'chapters' });
+      useSettingsModalStore.setState({ open: false, initialTab: undefined });
     });
   });
 
@@ -322,8 +323,8 @@ describe('EditorPage (F51 — AppShell shell)', () => {
         patchCount += 1;
         return Promise.resolve(jsonResponse(200, { story: makeStory({ title: 'Renamed Novel' }) }));
       }
-      // `base` (mockImpl's return) takes only `url`; the PATCH case is handled
-      // above, so no `init` is needed when delegating.
+      // Pass only `url`: mockImpl's returned fn is single-arg, so `base(url, init)`
+      // would be a type error. The PATCH branch above already used `init`.
       return base(url);
     });
     renderEditor();
@@ -371,7 +372,7 @@ describe('EditorPage (F51 — AppShell shell)', () => {
     // Force an EditorPage re-render that does NOT change the story object.
     // Without a memoized `initial`, StoryModal's reset effect would re-seed
     // and wipe the field; with it, the typed value survives.
-    act(() => {
+    await act(async () => {
       useSettingsModalStore.getState().openWith();
     });
 
