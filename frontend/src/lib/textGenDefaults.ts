@@ -11,3 +11,6 @@ export const GLOBAL_TEXT_GEN_DEFAULTS: Readonly<GlobalTextGenDefaults> = Object.
   topP: 0.95,
   maxTokens: 800,
 });
+
+/** Mirror of backend MAX_OUTPUT_TOKENS_CEILING; drift-caught by text-gen-defaults.test.ts. */
+export const MAX_OUTPUT_TOKENS_CEILING = 32_000;

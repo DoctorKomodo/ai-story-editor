@@ -8,7 +8,7 @@
 // inputs so callers can always pass the resolved value into buildPrompt
 // without further branching.
 
-import { GLOBAL_TEXT_GEN_DEFAULTS } from '../lib/text-gen-defaults';
+import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '../lib/text-gen-defaults';
 import type { UserSettings } from '../routes/user-settings.routes';
 import type { ModelInfo } from './venice.models.service';
 
@@ -104,13 +104,13 @@ export function resolveTextGenParams(
       maxSource = 'override';
     }
   } else {
-    // No user override. Apply global default but cap to model max. Source is
-    // always 'venice-default' because the model's published maxCompletionTokens
-    // (from Venice's /v1/models) is the authoritative bound — the global
-    // default is just the policy floor, not the source of truth. 'override-capped'
-    // is reserved for user overrides that exceeded the cap.
-    max_completion_tokens = Math.min(GLOBAL_TEXT_GEN_DEFAULTS.maxTokens, cap);
-    maxSource = 'venice-default';
+    // No user override. Default to as much output as the model allows, bounded
+    // by our UI ceiling: min(cap, CEILING). Source reflects which bound wins —
+    // the model's Venice-published cap when it's the binding value, our ceiling
+    // constant otherwise. (Most models expose >= 32K, so 'global-default' is the
+    // common outcome.) GLOBAL_TEXT_GEN_DEFAULTS.maxTokens no longer participates.
+    max_completion_tokens = Math.min(cap, MAX_OUTPUT_TOKENS_CEILING);
+    maxSource = cap <= MAX_OUTPUT_TOKENS_CEILING ? 'venice-default' : 'global-default';
   }
 
   return {

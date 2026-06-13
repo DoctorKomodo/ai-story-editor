@@ -160,18 +160,22 @@ describe('resolveTextGenParams', () => {
     expect(result.source.max_completion_tokens).toBe('override');
   });
 
-  it('maxTokens with no override falls to global default capped by model max', () => {
+  it('maxTokens with no override: cap <= ceiling -> model cap, source venice-default', () => {
     const result = resolveTextGenParams(settingsWith({}), SMALL_MODEL);
-    // global default 800 > model cap 500 → cap wins, source is venice-default
-    // (the cap came from the model itself, not from a user override)
     expect(result.max_completion_tokens).toBe(500);
     expect(result.source.max_completion_tokens).toBe('venice-default');
+  });
+
+  it('maxTokens with no override: cap > ceiling -> ceiling, source global-default', () => {
+    const result = resolveTextGenParams(settingsWith({}), MODEL_WITH_DEFAULTS);
+    expect(result.max_completion_tokens).toBe(32_000);
+    expect(result.source.max_completion_tokens).toBe('global-default');
   });
 
   it('treats overrides[modelId] === {} identically to absent key', () => {
     const result = resolveTextGenParams(settingsWith({ 'qwen-3-6-plus': {} }), MODEL_WITH_DEFAULTS);
     expect(result.source.temperature).toBe('venice-default');
     expect(result.source.top_p).toBe('venice-default');
-    expect(result.source.max_completion_tokens).toBe('venice-default');
+    expect(result.source.max_completion_tokens).toBe('global-default');
   });
 });
