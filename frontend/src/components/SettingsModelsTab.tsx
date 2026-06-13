@@ -87,6 +87,7 @@ export function SettingsModelsTab(): JSX.Element {
   const tempId = useId();
   const topPId = useId();
   const maxTokensId = useId();
+  const reasoningId = useId();
 
   const settings = useUserSettings();
   const updateSetting = useUpdateUserSetting();
@@ -183,6 +184,19 @@ export function SettingsModelsTab(): JSX.Element {
     });
   };
 
+  const reasoningSupported = highlightedModel?.supportsReasoning === true;
+  const reasoningOn =
+    reasoningSupported && (settings.chat.overrides[highlightedId ?? '']?.reasoning ?? true);
+  const onReasoning = (next: boolean): void => {
+    if (!highlightedId) return;
+    const prev = settings.chat.overrides[highlightedId] ?? {};
+    updateSetting.mutate({
+      chat: {
+        overrides: { ...settings.chat.overrides, [highlightedId]: { ...prev, reasoning: next } },
+      },
+    });
+  };
+
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3" data-testid="models-section-list">
@@ -270,6 +284,24 @@ export function SettingsModelsTab(): JSX.Element {
           disabled={slidersDisabled}
           onChange={onMaxTokens}
         />
+        <label
+          htmlFor={reasoningId}
+          className={`flex items-center gap-2 text-[12px] ${!reasoningSupported ? 'opacity-50' : ''}`}
+        >
+          <input
+            id={reasoningId}
+            data-testid="param-reasoning"
+            type="checkbox"
+            checked={reasoningOn}
+            disabled={slidersDisabled || !reasoningSupported}
+            onChange={(e) => onReasoning(e.target.checked)}
+            className="accent-accent w-4 h-4"
+          />
+          <span className="font-medium text-ink-2">Reasoning</span>
+          {!reasoningSupported ? (
+            <span className="text-ink-4 font-sans">Not supported by this model</span>
+          ) : null}
+        </label>
       </section>
     </div>
   );
