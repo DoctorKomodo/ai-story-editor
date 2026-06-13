@@ -99,9 +99,11 @@ export function SettingsModelsTab(): JSX.Element {
   useEffect(() => {
     const list = modelsQuery.data ?? [];
     if (list.length === 0) return;
-    if (highlightedId != null && list.some((m) => m.id === highlightedId)) return;
-    setHighlightedId(settings.chat.model ?? list[0].id);
-  }, [highlightedId, settings.chat.model, modelsQuery.data]);
+    setHighlightedId((prev) => {
+      if (prev != null && list.some((m) => m.id === prev)) return prev;
+      return settings.chat.model ?? list[0].id;
+    });
+  }, [settings.chat.model, modelsQuery.data]);
 
   const highlightedModel: Model | undefined =
     models.find((m) => m.id === highlightedId) ?? models[0];
@@ -150,7 +152,7 @@ export function SettingsModelsTab(): JSX.Element {
       return `Reverts to ${highlightedModel.name} defaults from Venice (${parts.join(', ')})`;
     }
     return 'Reverts to general defaults';
-  }, [settings, highlightedModel]);
+  }, [highlightedModel]);
 
   const onTemperature = (v: number): void => {
     if (!highlightedId) return;
