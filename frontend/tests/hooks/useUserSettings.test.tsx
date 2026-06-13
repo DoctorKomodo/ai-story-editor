@@ -207,10 +207,19 @@ describe('resolveChatParams (frontend)', () => {
     expect(r.overridden.maxTokens).toBe(true);
   });
 
-  it('maxTokens with no override uses min(global, cap)', () => {
+  it('maxTokens with no override: cap <= ceiling -> model cap, source venice-default', () => {
     const smallCapModel: Model = { ...MODEL_WITH_DEFAULTS, maxCompletionTokens: 500 };
     const r = resolveChatParams({ chat: { model: null, overrides: {} } } as never, smallCapModel);
     expect(r.maxTokens).toBe(500);
     expect(r.source.maxTokens).toBe('venice-default');
+  });
+
+  it('maxTokens with no override: cap > ceiling -> ceiling, source global-default', () => {
+    const r = resolveChatParams(
+      { chat: { model: null, overrides: {} } } as never,
+      MODEL_WITH_DEFAULTS,
+    );
+    expect(r.maxTokens).toBe(32_000);
+    expect(r.source.maxTokens).toBe('global-default');
   });
 });
