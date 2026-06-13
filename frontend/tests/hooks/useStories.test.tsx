@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { renderHook } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import type { Story } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -55,8 +55,6 @@ describe('useUpdateStoryMutation', () => {
 
     await result.current.mutateAsync({ id: 's1', input: { title: 'Renamed' } });
 
-    await waitFor(() => {
-      expect(client.getQueryData(storyQueryKey('s1'))).toEqual(updated);
-    });
+    expect(client.getQueryData(storyQueryKey('s1'))).toEqual(updated);
   });
 });
