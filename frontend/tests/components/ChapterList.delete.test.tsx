@@ -6,27 +6,13 @@ import { ChapterList } from '@/components/ChapterList';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
+import { makeChapterMeta } from '../fixtures/chapter';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-function chap(o: { id: string; orderIndex: number; title?: string; wordCount?: number }) {
-  return {
-    id: o.id,
-    storyId: 'story-1',
-    title: o.title ?? `Chapter ${String(o.orderIndex + 1)}`,
-    wordCount: o.wordCount ?? 100,
-    orderIndex: o.orderIndex,
-    status: 'draft' as const,
-    createdAt: '2026-04-01T00:00:00Z',
-    updatedAt: '2026-04-01T00:00:00Z',
-    hasSummary: false,
-    summaryIsStale: false,
-  };
 }
 
 function renderList(opts: {
@@ -73,7 +59,10 @@ describe('ChapterList — delete', () => {
   it('renders × only on the active row', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
-        chapters: [chap({ id: 'c1', orderIndex: 0 }), chap({ id: 'c2', orderIndex: 1 })],
+        chapters: [
+          makeChapterMeta({ id: 'c1', orderIndex: 0 }),
+          makeChapterMeta({ id: 'c2', orderIndex: 1 }),
+        ],
       }),
     );
     renderList({ activeChapterId: 'c2' });
@@ -84,7 +73,9 @@ describe('ChapterList — delete', () => {
 
   it('clicking × opens InlineConfirm and replaces the word-count slot', async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { chapters: [chap({ id: 'c1', orderIndex: 0, wordCount: 1500 })] }),
+      jsonResponse(200, {
+        chapters: [makeChapterMeta({ id: 'c1', orderIndex: 0, wordCount: 1500 })],
+      }),
     );
     renderList({ activeChapterId: 'c1' });
     await screen.findByTestId('chapter-row-c1');
@@ -96,7 +87,7 @@ describe('ChapterList — delete', () => {
 
   it('Escape dismisses the confirm', async () => {
     fetchMock.mockResolvedValueOnce(
-      jsonResponse(200, { chapters: [chap({ id: 'c1', orderIndex: 0 })] }),
+      jsonResponse(200, { chapters: [makeChapterMeta({ id: 'c1', orderIndex: 0 })] }),
     );
     renderList({ activeChapterId: 'c1' });
     await screen.findByTestId('chapter-row-c1');
@@ -111,11 +102,16 @@ describe('ChapterList — delete', () => {
     fetchMock
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          chapters: [chap({ id: 'c1', orderIndex: 0 }), chap({ id: 'c2', orderIndex: 1 })],
+          chapters: [
+            makeChapterMeta({ id: 'c1', orderIndex: 0 }),
+            makeChapterMeta({ id: 'c2', orderIndex: 1 }),
+          ],
         }),
       )
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
-      .mockResolvedValueOnce(jsonResponse(200, { chapters: [chap({ id: 'c2', orderIndex: 0 })] }));
+      .mockResolvedValueOnce(
+        jsonResponse(200, { chapters: [makeChapterMeta({ id: 'c2', orderIndex: 0 })] }),
+      );
 
     const onChapterDeleted = vi.fn();
     renderList({ activeChapterId: 'c1', onChapterDeleted });
@@ -131,7 +127,9 @@ describe('ChapterList — delete', () => {
 
   it('on 500 the row is restored and an aria-live status is set', async () => {
     fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, { chapters: [chap({ id: 'c1', orderIndex: 0 })] }))
+      .mockResolvedValueOnce(
+        jsonResponse(200, { chapters: [makeChapterMeta({ id: 'c1', orderIndex: 0 })] }),
+      )
       .mockResolvedValueOnce(jsonResponse(500, { error: { code: 'oops' } }));
 
     renderList({ activeChapterId: 'c1' });

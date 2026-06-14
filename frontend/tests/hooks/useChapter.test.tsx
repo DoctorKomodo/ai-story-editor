@@ -12,6 +12,7 @@ import {
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
 import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { makeChapter, makeChapterMeta } from '../fixtures/chapter';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -25,25 +26,6 @@ function jsonResponse(status: number, body: unknown): Response {
 function makeWrapper(client: QueryClient): (props: { children: ReactNode }) => JSX.Element {
   return function Wrapper({ children }) {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
-  };
-}
-
-function makeChapter(overrides: Partial<Chapter> = {}): Chapter {
-  return {
-    id: 'c1',
-    storyId: 's1',
-    title: 'Opening',
-    orderIndex: 0,
-    wordCount: 42,
-    status: 'draft',
-    bodyJson: { type: 'doc', content: [] },
-    hasSummary: false,
-    summaryIsStale: false,
-    summary: null,
-    summaryUpdatedAt: null,
-    createdAt: '2026-04-01T00:00:00.000Z',
-    updatedAt: '2026-04-24T00:00:00.000Z',
-    ...overrides,
   };
 }
 
@@ -189,29 +171,22 @@ describe('useUpdateChapterMutation', () => {
   });
 });
 
-function meta(id: string, orderIndex: number): ChapterMeta {
-  return {
-    id,
-    storyId: 's',
-    title: id,
-    wordCount: 0,
-    orderIndex,
-    status: 'draft',
-    hasSummary: false,
-    summaryIsStale: false,
-    createdAt: '2026-04-01T00:00:00Z',
-    updatedAt: '2026-04-01T00:00:00Z',
-  };
-}
-
 describe('computeChaptersAfterDelete', () => {
   it('returns null when the chapter id is not present', () => {
-    const list = [meta('a', 0), meta('b', 1)];
+    const list = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+    ];
     expect(computeChaptersAfterDelete(list, 'zzz')).toBeNull();
   });
 
   it('removes the chapter and reassigns orderIndex 0..N-1', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2), meta('d', 3)];
+    const list = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+      makeChapterMeta({ id: 'd', orderIndex: 3 }),
+    ];
     const next = computeChaptersAfterDelete(list, 'b');
     expect(next).not.toBeNull();
     expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
@@ -222,7 +197,11 @@ describe('computeChaptersAfterDelete', () => {
   });
 
   it('preserves existing orderIndex when no shift is needed', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const list = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+    ];
     const next = computeChaptersAfterDelete(list, 'c');
     expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
       ['a', 0],
@@ -248,8 +227,15 @@ describe('useDeleteChapterMutation', () => {
 
   it('DELETEs the chapter, evicts the per-chapter cache, and reassigns the list cache optimistically', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(chaptersQueryKey('s1'), [meta('a', 0), meta('b', 1), meta('c', 2)]);
-    qc.setQueryData(chapterQueryKey('b'), { ...meta('b', 1), bodyJson: null });
+    qc.setQueryData(chaptersQueryKey('s1'), [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+    ]);
+    qc.setQueryData(chapterQueryKey('b'), {
+      ...makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      bodyJson: null,
+    });
 
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
@@ -276,7 +262,10 @@ describe('useDeleteChapterMutation', () => {
 
   it('rolls back the cache on 500', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(chaptersQueryKey('s1'), [meta('a', 0), meta('b', 1)]);
+    qc.setQueryData(chaptersQueryKey('s1'), [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+    ]);
 
     fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: { code: 'oops' } }));
 

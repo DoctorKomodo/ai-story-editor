@@ -12,6 +12,7 @@ import {
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
+import { makeChapterMeta } from '../fixtures/chapter';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -20,21 +21,6 @@ function jsonResponse(status: number, body: unknown): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-function chap(id: string, orderIndex: number): ChapterMeta {
-  return {
-    id,
-    storyId: 'story-1',
-    title: `Chapter ${String(orderIndex + 1)}`,
-    wordCount: 0,
-    orderIndex,
-    status: 'draft',
-    hasSummary: false,
-    summaryIsStale: false,
-    createdAt: '2026-04-01T00:00:00.000Z',
-    updatedAt: '2026-04-01T00:00:00.000Z',
-  };
 }
 
 describe('arrayMove', () => {
@@ -59,7 +45,11 @@ describe('arrayMove', () => {
 });
 
 describe('computeReorderedChapters', () => {
-  const list = [chap('a', 0), chap('b', 1), chap('c', 2)];
+  const list = [
+    makeChapterMeta({ id: 'a', orderIndex: 0 }),
+    makeChapterMeta({ id: 'b', orderIndex: 1 }),
+    makeChapterMeta({ id: 'c', orderIndex: 2 }),
+  ];
 
   it('returns null when overId is null', () => {
     expect(computeReorderedChapters(list, 'a', null)).toBeNull();
@@ -115,7 +105,11 @@ describe('useReorderChaptersMutation', () => {
   }
 
   it('optimistically updates the cache before the PATCH resolves', async () => {
-    const original = [chap('a', 0), chap('b', 1), chap('c', 2)];
+    const original = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+    ];
     const { qc, Wrapper } = wrapper();
     qc.setQueryData(chaptersQueryKey('story-1'), original);
 
@@ -163,7 +157,11 @@ describe('useReorderChaptersMutation', () => {
   });
 
   it('rolls back the cache when the server returns 500', async () => {
-    const original = [chap('a', 0), chap('b', 1), chap('c', 2)];
+    const original = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+    ];
     const { qc, Wrapper } = wrapper();
     qc.setQueryData(chaptersQueryKey('story-1'), original);
 
@@ -195,7 +193,11 @@ describe('useReorderChaptersMutation', () => {
   });
 
   it('keeps the new order in the cache when the PATCH succeeds', async () => {
-    const original = [chap('a', 0), chap('b', 1), chap('c', 2)];
+    const original = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+    ];
     const reordered = computeReorderedChapters(original, 'a', 'c')!;
     const { qc, Wrapper } = wrapper();
     qc.setQueryData(chaptersQueryKey('story-1'), original);
