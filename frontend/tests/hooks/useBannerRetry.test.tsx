@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type MutateOptions, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { useRef } from 'react';
 import type { Message } from 'story-editor-shared';
@@ -9,6 +9,7 @@ import {
   type SendChatMessageArgs,
   type useSendChatMessageMutation,
 } from '@/hooks/useChat';
+import type { ApiError } from '@/lib/api';
 
 function makeMessage(over: Partial<Message> & { id: string }): Message {
   return {
@@ -40,9 +41,20 @@ function makeFakeMutation(): ReturnType<typeof useSendChatMessageMutation> {
     isIdle: true,
     isPending: false,
     isSuccess: false,
-    mutate: vi.fn<(variables: SendChatMessageArgs) => void>(),
+    mutate:
+      vi.fn<
+        (
+          variables: SendChatMessageArgs,
+          options?: MutateOptions<void, ApiError, SendChatMessageArgs, unknown>,
+        ) => void
+      >(),
     mutateAsync: vi
-      .fn<(variables: SendChatMessageArgs) => Promise<void>>()
+      .fn<
+        (
+          variables: SendChatMessageArgs,
+          options?: MutateOptions<void, ApiError, SendChatMessageArgs, unknown>,
+        ) => Promise<void>
+      >()
       .mockResolvedValue(undefined),
     reset: vi.fn<() => void>(),
     stop: vi.fn<() => void>(),
