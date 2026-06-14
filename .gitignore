@@ -40,3 +40,6 @@ backups/*.sql.gz
 .dolt/
 *.db
 .beads-credential-key
+
+# Harness-created agent git worktrees (local-only scratch copies)
+.claude/worktrees/
