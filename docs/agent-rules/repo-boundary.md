@@ -67,8 +67,8 @@ When a narrative model adds a new encrypted column:
 ## Ciphertext egress: never
 
 - **Never return ciphertext fields** (`*Ciphertext`, `*Iv`,
-  `*AuthTag`, `contentDekEnc`, `contentDekPassword*`,
-  `contentDekRecovery*`, `veniceApiKeyEnc`) from any API endpoint.
+  `*AuthTag`, `contentDekPassword*`, `contentDekRecovery*`,
+  `veniceApiKeyEnc`) from any API endpoint.
   The repo layer strips them on read; if you see one in a response,
   that path is bypassing the repo.
 - **Never log ciphertext** even in dev. It serves no debugging

@@ -29,7 +29,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 └── SELF_HOSTING.md
 ```
 
-**UI source of truth:** Storybook. Run `npm --prefix frontend run storybook` and browse `Primitives/`, `Tokens/`, and the component-namespaced stories before authoring new UI. New components and new feature mockups are written as `*.stories.tsx` files alongside the component source — there is no parallel HTML mockup universe. Theme tokens (`--ink-*`, `--bg-*`, theme blocks, radii, shadows) live in `frontend/src/index.css`; Tailwind references them via `theme.extend`. Themes (`paper` default, `sepia`, `dark`) switch via `data-theme` on `<html>`. The `lint:design` CI guard (`frontend/scripts/lint-design.mjs`) enforces token-only usage in `frontend/src/`. Historical mockups live read-only at `mockups/archive/v1-2025-11/`.
+**UI source of truth:** Storybook. Run `npm --prefix frontend run storybook` and browse `Primitives/`, `Tokens/`, and the component-namespaced stories before authoring new UI. New components and new feature mockups are written as `*.stories.tsx` files alongside the component source — there is no parallel HTML mockup universe. Theme tokens (`--ink-*`, `--bg-*`, theme blocks, radii, shadows) live in `frontend/src/index.css`; Tailwind v4 exposes them via the CSS-first `@theme` block in that file. Themes (`paper` default, `sepia`, `dark`) switch via `data-theme` on `<html>`. The `lint:design` CI guard (`frontend/scripts/lint-design.mjs`) enforces token-only usage in `frontend/src/`. Historical mockups live read-only at `mockups/archive/v1-2025-11/`.
 
 ---
 
@@ -240,7 +240,7 @@ The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a re
 
 **`/bd-close-reviewed` auto-dispatches this reviewer** when the branch diff touches that surface (path-matched), and refuses to close on `BLOCK` / `FIX_BEFORE_MERGE`. That is the normal path — you rarely invoke it by hand. Do not bypass a blocking finding with `--override-block` unless explicitly authorised by the user.
 
-It is **in-lane for any change to**: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/ai.service.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`. (The historical task groups that built these surfaces — AU*, E3/E9/E12/E14, V17/V18, I7 — are closed; their detail lives in `docs/done/done-{AU,E,V,I}.md`.)
+It is **in-lane for any change to**: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/venice-call.service.ts`, `backend/src/lib/venice.ts`, `backend/src/services/session-store.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`. (The historical task groups that built these surfaces — AU*, E3/E9/E12/E14, V17/V18, I7 — are closed; their detail lives in `docs/done/done-{AU,E,V,I}.md`.)
 
 For an out-of-band review (a spike not going through the close gate), invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope:
 
@@ -249,7 +249,7 @@ For an out-of-band review (a spike not going through the close gate), invoke via
 Agent(
   description: "Review BYOK endpoints",
   subagent_type: "security-reviewer",
-  prompt: "Review the BYOK Venice-key endpoints as currently implemented. Scope: backend/src/routes/venice-key.routes.ts + backend/src/services/crypto.service.ts + content-crypto.service.ts. Confirm: (1) decrypted keys never logged or returned; (2) PUT validates against Venice before storing; (3) response bodies on GET expose only { hasKey, lastFour, endpoint }."
+  prompt: "Review the BYOK Venice-key endpoints as currently implemented. Scope: backend/src/routes/venice-key.routes.ts + backend/src/services/crypto.service.ts + content-crypto.service.ts. Confirm: (1) decrypted keys never logged or returned; (2) PUT validates against Venice before storing; (3) response bodies on GET expose only { hasKey, lastSix, endpoint }."
 )
 ```
 

@@ -31,7 +31,6 @@
 | `backend/src/routes/chat.routes.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
 | `backend/src/services/content-crypto.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
 | `backend/src/services/prompt.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
-| `backend/src/services/ai.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
 | `backend/prisma/schema.prisma` | `general.md` + `backend.md` + `repo-boundary.md` *(narrative tables present)* |
 | `backend/prisma/migrations/**` | `general.md` + `backend.md` + `repo-boundary.md` *(if migration touches narrative columns; otherwise drop `repo-boundary.md`)* |
 | `backend/tests/**` | `general.md` + `backend.md` |

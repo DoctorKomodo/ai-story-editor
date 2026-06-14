@@ -32,12 +32,15 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
 
 ## State management
 
-- **Zustand for client / UI state** (`session`, `activeStoryId`,
-  `activeChapterId`, `sidebarTab`, `selection`, `inlineAIResult`,
-  `attachedSelection`, `model`, `params`, `tweaks`).
-- **TanStack Query for server state** (`stories`, `story(id)`,
-  `chapter(id)`, `characters(storyId)`, `outline(storyId)`,
-  `chats(chapterId)`).
+- **Zustand for client / UI state** — e.g. `session`, `activeChapter`,
+  `sidebarTab`, `ui` (layout mode), `selection`, `inlineAIResult`,
+  `attachedSelection`, `chatDraft`, `composerDraft`, `selectedCharacter`,
+  `errors`. (Model / params / theme / prose settings are **server** state
+  via `useUserSettings`, not a Zustand store.)
+- **TanStack Query for server state** — e.g. `stories`, `story(id)`,
+  `chapters(storyId)` / `chapter(id)`, `characters(storyId)`,
+  `outline(storyId)`, `chats(chapterId)`, chat `messages(chatId)`,
+  user-settings, venice account / key status, AI models, default prompts.
 - **No other stores.** No Redux, no MobX, no React Context for app
   data. (Context is fine for inert tree-wide things like theme or
   router primitives.)
@@ -82,7 +85,8 @@ entry — call `useFooStore.persist.clearStorage()` from
 - **TailwindCSS for layout + utilities.**
 - **Theme-level design tokens** (colours, typography, spacing,
   radii, shadows) live as CSS custom properties in `src/index.css`.
-  Tailwind references them via `theme.extend`.
+  Tailwind v4 exposes them via the CSS-first `@theme` block in that file
+  (not a `tailwind.config` `theme.extend`).
 - **Themes** (`paper` default, `sepia`, `dark`) switch via
   `data-theme` on `<html>`.
 - **No inline styles.** No per-component CSS files.
@@ -127,10 +131,10 @@ entry — call `useFooStore.persist.clearStorage()` from
   `ReadableStream` reader on the response, **not**
   `fetch(...).then(r => r.json())` — JSON-parsing the stream
   body will fail.
-- Streaming endpoints live under `/api/ai/*` and are routable only
-  after V5+ ships. If you're touching `[F33]`–`[F42]`-class UI
-  (selection bubble, inline result, chat panel, model picker),
-  confirm V5+ is alive locally.
+- Streaming endpoints live under `/api/ai/*` and are **live** — they power
+  the inline AI result card, chat/scene send, and continue-writing. Consume
+  them via `apiStream()` (`src/lib/api.ts`) + the SSE reader in `src/lib/sse.ts`
+  / `streamingAI.ts`, never `fetch(...).then(r => r.json())`.
 
 ## Testing (frontend lane)
 

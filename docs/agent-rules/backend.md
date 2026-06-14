@@ -23,18 +23,20 @@ talks to Venice.ai directly.
   shape; per-route catches that just `res.status(500).json(...)` are
   noise and cost coverage of the global path.
 - All routes except `/api/auth/register`, `/api/auth/login`,
-  `/api/auth/refresh`, and `/api/health` require the auth middleware.
+  `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/reset-password`,
+  and `/api/health` require the auth middleware.
 - All story / chapter / character / outline / chat / message routes
   require auth middleware **and** ownership middleware (scoped to
   `req.user.id`).
 - **Never expose `passwordHash`** in any response.
 - **Never expose stack traces** when `NODE_ENV=production`.
 - **Never return ciphertext fields** (`*Ciphertext`, `*Iv`, `*AuthTag`,
-  `contentDekEnc`, `veniceApiKeyEnc`, …) from any endpoint. The repo
-  layer strips them on read; if you see one in a response, it's a bug.
+  `contentDekPasswordEnc` / `contentDekRecoveryEnc`, `veniceApiKeyEnc`, …)
+  from any endpoint. The repo layer strips them on read; if you see one
+  in a response, it's a bug.
 - **Never return or log the decrypted Venice API key.** The
   `GET /api/users/me/venice-key` endpoint returns only
-  `{ hasKey, lastFour, endpoint }`. The plaintext key never serializes.
+  `{ hasKey, lastSix, endpoint }`. The plaintext key never serializes.
 
 ## Database access
 
@@ -67,12 +69,14 @@ talks to Venice.ai directly.
   ciphertext: chapter bodies are decrypted via the chapter repo
   before reaching the builder, and decrypted bodies exist only for
   the lifetime of the request.
-- **Context budget is dynamic.** Reserve 20% of the selected model's
-  `context_length` for the response and use the remainder for prompt
-  content. Chapter content truncates from the **top** (oldest first)
-  when over-budget. Character context is condensed to
-  `{ name, role, key traits }`. Character context and `worldNotes`
-  are **never truncated**.
+- **Context budget is dynamic.** The prompt budget is the model's
+  `context_length` minus the response allowance (max-completion-tokens)
+  minus a fixed safety margin (`SAFETY_MARGIN_TOKENS`, currently 512) —
+  not a fixed-percentage reserve. Chapter context truncates from the
+  **top** (oldest first) when over-budget. Character context and
+  `worldNotes` are **never truncated**; character context renders the
+  full character fields (name, role, age, appearance, personality,
+  voice, backstory, arc, relationships), not a condensed subset.
 - Per-story `systemPrompt` overrides the default creative-writing
   system prompt when non-null (`[V13]`).
 - Venice-specific features go via `venice_parameters`:
@@ -85,19 +89,21 @@ talks to Venice.ai directly.
     controls whether Venice additionally prepends its own
     creative-writing prompt.
   - `strip_thinking_response: true` for reasoning models (`[V6]`).
-  - `enable_web_search` + `enable_web_citations` when the request
-    opts in (`[V7]`).
-  - `prompt_cache_key` set to a hash of `storyId + modelId`
-    (`[V8]`).
+  - `enable_web_search: 'auto'` + `enable_web_citations: true` when the
+    request opts in (`[V7]`).
+  - `prompt_cache_key` set to a hash of the context id + `modelId`
+    (`storyId + modelId` for `/api/ai/complete`; `chatId + modelId` for
+    chat/scene messages) (`[V8]`).
 
 - **Canonical message-array shape (k1r).** Every action goes through the
   same code path in `buildPrompt`. The `system` message carries everything
   stable across turns (system prompt + world-notes + characters + chapter +
   per-action task template); the `user` message carries only what the user
   contributed this turn. No `if (action === ...)` branches in `buildPrompt`'s
-  system-message assembly. Per-action `freeformInstruction`-required
-  validation lives in `buildUserPayload`'s switch arms (`scene` / `ask` /
-  `freeform`). New actions inherit this shape automatically — add a
+  system-message assembly. Per-action user-payload
+  validation lives in `buildUserPayload`'s switch arms, one per `UserPromptKey`
+  (`continue` / `rephrase` / `expand` / `summarise` / `rewrite` / `describe` /
+  `scene` / `ask`). New actions inherit this shape automatically — add a
   `DEFAULT_PROMPTS.<action>` entry, a `UserPromptKey` member, a
   `buildUserPayload` arm describing the user payload, and the rest is free.
   See
