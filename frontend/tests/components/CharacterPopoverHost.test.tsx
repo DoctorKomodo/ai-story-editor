@@ -3,12 +3,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { JSX, ReactNode, RefObject } from 'react';
+import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CharacterPopoverHost,
   type CharacterPopoverHostHandle,
 } from '@/components/CharacterPopoverHost';
-import { type Character, charactersQueryKey } from '@/hooks/useCharacters';
+import { charactersQueryKey } from '@/hooks/useCharacters';
 
 function makeCharacter(overrides: Partial<Character> = {}): Character {
   return {

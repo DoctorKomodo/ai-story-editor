@@ -1,8 +1,8 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen } from '@testing-library/react';
+import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CastTab } from '@/components/CastTab';
-import type { Character } from '@/hooks/useCharacters';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 
 function meta(id: string, orderIndex: number, name?: string): Character {

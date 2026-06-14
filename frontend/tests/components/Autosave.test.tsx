@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import type React from 'react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutosaveIndicator } from '@/components/AutosaveIndicator';
@@ -18,7 +19,7 @@ interface HarnessProps {
   initial?: string | null;
 }
 
-function Harness({ save, initial = 'baseline' }: HarnessProps): JSX.Element {
+function Harness({ save, initial = 'baseline' }: HarnessProps): React.JSX.Element {
   const [payload, setPayload] = useState<string | null>(initial);
   const { status, savedAt, retryAt } = useAutosave({ payload, save, debounceMs: DEBOUNCE_MS });
   return (
@@ -227,7 +228,7 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     const saveA = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
     const saveB = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
 
-    function FlushHarness(): JSX.Element {
+    function FlushHarness(): React.JSX.Element {
       const [key, setKey] = useState<string>('A');
       const [payload, setPayload] = useState<string | null>('baseline-A');
       const save = key === 'A' ? saveA : saveB;
@@ -296,7 +297,7 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     );
     const saveB = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
 
-    function FollowUpHarness(): JSX.Element {
+    function FollowUpHarness(): React.JSX.Element {
       const [key, setKey] = useState<string>('A');
       const [payload, setPayload] = useState<string | null>('baseline-A');
       const save = key === 'A' ? saveA : saveB;

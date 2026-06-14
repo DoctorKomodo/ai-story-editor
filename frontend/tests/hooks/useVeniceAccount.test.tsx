@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
+import type React from 'react';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useVeniceAccountQuery, veniceAccountQueryKey } from '@/hooks/useVeniceAccount';
@@ -13,13 +14,13 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 function makeWrapper(): {
-  wrapper: ({ children }: { children: ReactNode }) => JSX.Element;
+  wrapper: ({ children }: { children: ReactNode }) => React.JSX.Element;
   client: QueryClient;
 } {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });
-  function wrapper({ children }: { children: ReactNode }): JSX.Element {
+  function wrapper({ children }: { children: ReactNode }): React.JSX.Element {
     return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
   }
   return { wrapper, client };

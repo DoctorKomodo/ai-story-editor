@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
+import type React from 'react';
 import type { ReactNode } from 'react';
 import type { Chat, ChatSummary } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -37,14 +38,17 @@ function sseResponse(lines: ReadonlyArray<string>): Response {
   });
 }
 
-function withClient(): { wrapper: (p: { children: ReactNode }) => JSX.Element; qc: QueryClient } {
+function withClient(): {
+  wrapper: (p: { children: ReactNode }) => React.JSX.Element;
+  qc: QueryClient;
+} {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   });
-  const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+  const wrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
   return { wrapper, qc };
@@ -377,7 +381,7 @@ describe('useSendChatMessageMutation — invalidates chats list (story-editor-lo
     );
 
     // We need a wrapper that uses OUR qc, not the one from withClient().
-    const customWrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    const customWrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
 
@@ -463,7 +467,7 @@ describe('useCreateChatMutation cache invalidation', () => {
     const stateBefore = qc.getQueryState(sceneKey);
     expect(stateBefore?.isInvalidated).toBeFalsy();
 
-    const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    const wrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
 
@@ -517,7 +521,7 @@ describe('useCreateChatMutation cache invalidation', () => {
     };
     qc.setQueryData(askKey, [existingChat]);
 
-    const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    const wrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
     const { result } = renderHook(() => useCreateChatMutation(), { wrapper });
@@ -594,7 +598,7 @@ describe('useRenameChatMutation', () => {
     };
     qc.setQueryData(askKey, [existingChat]);
 
-    const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    const wrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
     const { result } = renderHook(() => useRenameChatMutation(CHAPTER_ID, 'ask'), { wrapper });
@@ -663,7 +667,7 @@ describe('useRemoveChatMutation', () => {
     };
     qc.setQueryData(askKey, [chatToKeep, chatToDelete]);
 
-    const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    const wrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
     const { result } = renderHook(() => useRemoveChatMutation(CHAPTER_ID, 'ask'), { wrapper });
@@ -720,7 +724,7 @@ describe('useChat schema drift', () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
-    const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+    const wrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
     const { result } = renderHook(() => useCreateChatMutation(), { wrapper });
@@ -735,7 +739,7 @@ describe('useChat schema drift', () => {
 
 function wrapQc() {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  const Wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
+  const Wrapper = ({ children }: { children: ReactNode }): React.JSX.Element => (
     <QueryClientProvider client={qc}>{children}</QueryClientProvider>
   );
   return Wrapper;

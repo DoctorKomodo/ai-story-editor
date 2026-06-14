@@ -1,4 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
+import type React from 'react';
 import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutosaveIndicator } from '@/components/AutosaveIndicator';
@@ -134,7 +135,7 @@ interface ReportedState {
 function HookHarness({
   save,
   onState,
-}: HookHarnessProps & { onState: (s: ReportedState) => void }): JSX.Element {
+}: HookHarnessProps & { onState: (s: ReportedState) => void }): React.JSX.Element {
   const [payload, setPayload] = useState<string | null>('baseline');
   const { status, savedAt, retryAt } = useAutosave({
     payload,
