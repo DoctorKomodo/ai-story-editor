@@ -53,6 +53,7 @@ export function serializeMessage(row: RepoMessage): Message {
     tokens: row.tokens,
     latencyMs: row.latencyMs,
     createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt ? row.updatedAt.toISOString() : null,
   };
 }
 

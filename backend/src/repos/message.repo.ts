@@ -20,7 +20,10 @@ export interface MessageCreateInput {
   latencyMs?: number | null;
 }
 
-export type RepoMessage = Omit<Message, 'createdAt'> & { createdAt: Date };
+export type RepoMessage = Omit<Message, 'createdAt' | 'updatedAt'> & {
+  createdAt: Date;
+  updatedAt: Date | null;
+};
 
 function resolveUserId(req: Request): string {
   const id = req.user?.id;
@@ -68,6 +71,35 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
         select: { id: true },
       });
       return created;
+    });
+    return shape(row, req);
+  }
+
+  async function update(id: string, chatId: string, input: { content: string }) {
+    const userId = resolveUserId(req);
+    // Ownership + role gate: only the owner's own user messages are editable,
+    // and the message must belong to the specific chat named in the URL.
+    const target = await client.message.findFirst({
+      where: { id, chatId, chat: { chapter: { story: { userId } } } },
+      select: { id: true, role: true },
+    });
+    if (!target || target.role !== 'user') return null;
+
+    const row = await client.$transaction(async (tx) => {
+      const updated = await tx.message.update({
+        where: { id },
+        data: {
+          ...writeEncrypted(req, 'content', input.content),
+          updatedAt: new Date(),
+        },
+      });
+      // An edit counts as activity — bump lastActivityAt like create does.
+      await tx.chat.update({
+        where: { id: chatId },
+        data: { lastActivityAt: new Date() },
+        select: { id: true },
+      });
+      return updated;
     });
     return shape(row, req);
   }
@@ -128,7 +160,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     return { count: result.count };
   }
 
-  return { create, findById, findManyForChat, countForChat, deleteAllAfter };
+  return { create, update, findById, findManyForChat, countForChat, deleteAllAfter };
 }
 
 // The `as unknown as RepoMessage` cast lands at end-of-function (not at the

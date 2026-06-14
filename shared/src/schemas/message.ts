@@ -44,8 +44,8 @@ export const messagesResponseSchema = z.strictObject({
 // Single-message response shape: PATCH /api/chats/:chatId/messages/:id.
 export const messageResponseSchema = z.strictObject({ message: messageSchema });
 
-// Wire POST→PATCH body: PATCH /api/chats/:chatId/messages/:id.
-// An edit only changes text; no modelId/attachment/retry.
+// PATCH body: PATCH /api/chats/:chatId/messages/:id — edit only changes text.
+// No modelId/attachment/retry.
 export const editMessageBodySchema = z.strictObject({
   content: z.string().min(1),
 });

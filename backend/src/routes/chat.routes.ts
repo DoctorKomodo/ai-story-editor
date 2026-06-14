@@ -16,7 +16,9 @@ import {
   chatResponseSchema,
   chatsResponseSchema,
   chatUpdateSchema,
+  editMessageBodySchema,
   type MessageRole,
+  messageResponseSchema,
   messagesResponseSchema,
   sendMessageBodySchema,
   toCharacterPromptInput,
@@ -194,6 +196,30 @@ export function createChatMessagesRouter() {
   });
 
   // TODO: add per-chat rate limiting in a future task (chat rate limit follow-up).
+
+  // PATCH /api/chats/:chatId/messages/:id — edit a user message in place.
+  router.patch(
+    '/:id',
+    validateBody(editMessageBodySchema, async (body, req, res) => {
+      const chatId = req.params.chatId as string;
+      const id = req.params.id as string;
+
+      // Ownership pre-check on the chat (clean 404 for missing/unowned chat).
+      const chat = await createChatRepo(req).findById(chatId);
+      if (!chat) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+
+      const updated = await createMessageRepo(req).update(id, chatId, { content: body.content });
+      if (!updated) {
+        // null = not found / not owned / not a user message.
+        res.status(404).json({ error: { message: 'Message not editable', code: 'not_found' } });
+        return;
+      }
+      return respond(messageResponseSchema, res, { message: serializeMessage(updated) }, 200);
+    }),
+  );
 
   // POST /api/chats/:chatId/messages — append a user message, stream assistant reply.
   router.post(
