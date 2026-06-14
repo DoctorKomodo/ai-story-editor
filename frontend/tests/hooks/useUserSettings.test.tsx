@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type React from 'react';
-import type { ReactNode } from 'react';
+import type { JSX, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Model } from '@/hooks/useModels';
 import {
@@ -24,7 +23,7 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-function makeWrapper(qc: QueryClient): (props: { children: ReactNode }) => React.JSX.Element {
+function makeWrapper(qc: QueryClient): (props: { children: ReactNode }) => JSX.Element {
   return function Wrapper({ children }) {
     return <QueryClientProvider client={qc}>{children}</QueryClientProvider>;
   };

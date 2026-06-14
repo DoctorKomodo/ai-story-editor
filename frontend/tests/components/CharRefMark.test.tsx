@@ -1,8 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { Editor as TiptapEditor } from '@tiptap/core';
 import { useEditor } from '@tiptap/react';
-import type React from 'react';
-import { useEffect } from 'react';
+import { type JSX, useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CharRef,
@@ -224,7 +223,7 @@ describe('useCharRefHoverDispatcher (F36)', () => {
 
 describe('CharRef + Editor integration (F36)', () => {
   it('renders the .char-ref class on the live editor surface', async () => {
-    function Mount({ onReady }: { onReady: (ed: TiptapEditor) => void }): React.JSX.Element {
+    function Mount({ onReady }: { onReady: (ed: TiptapEditor) => void }): JSX.Element {
       const editor = useEditor({
         extensions: formatBarExtensions,
         content: '<p>Hi <span class="char-ref" data-character-id="char-555">Lin</span>.</p>',
