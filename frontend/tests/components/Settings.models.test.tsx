@@ -334,11 +334,12 @@ describe('SettingsModal Models tab (X28)', () => {
     await waitFor(
       () => {
         const patch = fetchMock.mock.calls.find(
-          ([url, init]: [string, RequestInit | undefined]) =>
-            url === '/api/users/me/settings' && init?.method === 'PATCH',
+          (call): call is [string, RequestInit] =>
+            call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
         );
         expect(patch).toBeDefined();
-        const init = (patch as [string, RequestInit])[1];
+        if (!patch) return;
+        const init = patch[1];
         const body = JSON.parse(String(init.body)) as {
           chat?: { overrides?: Record<string, { temperature?: number }> };
         };
@@ -396,12 +397,13 @@ describe('SettingsModal Models tab (X28)', () => {
     await waitFor(
       () => {
         const patches = fetchMock.mock.calls.filter(
-          ([url, init]: [string, RequestInit | undefined]) =>
-            url === '/api/users/me/settings' && init?.method === 'PATCH',
+          (call): call is [string, RequestInit] =>
+            call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
         );
         expect(patches.length).toBeGreaterThan(0);
         const lastPatch = patches[patches.length - 1];
-        const init = (lastPatch as [string, RequestInit])[1];
+        if (!lastPatch) return;
+        const init = lastPatch[1];
         const body = JSON.parse(String(init.body)) as {
           chat?: { overrides?: Record<string, unknown> };
         };
@@ -572,11 +574,12 @@ describe('SettingsModal Models tab (X28)', () => {
 
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
-        ([url, init]: [string, RequestInit | undefined]) =>
-          url === '/api/users/me/settings' && init?.method === 'PATCH',
+        (call): call is [string, RequestInit] =>
+          call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
       );
       expect(patch).toBeDefined();
-      const init = (patch as [string, RequestInit])[1];
+      if (!patch) return;
+      const init = patch[1];
       const body = JSON.parse(String(init.body)) as Record<string, unknown>;
       expect(body).toEqual({ chat: { model: 'm2' } });
     });
@@ -658,11 +661,12 @@ describe('SettingsModal Models tab (X28)', () => {
     await waitFor(
       () => {
         const patch = fetchMock.mock.calls.find(
-          ([url, init]: [string, RequestInit | undefined]) =>
-            url === '/api/users/me/settings' && init?.method === 'PATCH',
+          (call): call is [string, RequestInit] =>
+            call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
         );
         expect(patch).toBeDefined();
-        const init = (patch as [string, RequestInit])[1];
+        if (!patch) return;
+        const init = patch[1];
         const body = JSON.parse(String(init.body)) as {
           chat?: { overrides?: Record<string, { reasoning?: boolean }> };
         };

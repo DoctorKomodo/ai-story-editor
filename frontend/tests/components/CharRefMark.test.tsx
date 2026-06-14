@@ -44,7 +44,7 @@ describe('CharRef mark (F36)', () => {
     // doc -> paragraph -> [text, text-with-mark, text]
     const para = json.content?.[0];
     expect(para?.type).toBe('paragraph');
-    const elenaNode = para?.content?.find((n) => n.text === 'Elena');
+    const elenaNode = para?.content?.find((n) => 'text' in n && n.text === 'Elena');
     expect(elenaNode).toBeDefined();
     const mark = elenaNode!.marks?.find((m) => m.type === 'charRef');
     expect(mark).toBeDefined();

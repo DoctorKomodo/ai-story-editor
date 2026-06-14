@@ -135,7 +135,7 @@ describe('OutlineTab (F29)', () => {
   });
 
   it('shows the loading state', async () => {
-    let resolveFetch: ((res: Response) => void) | null = null;
+    let resolveFetch!: (res: Response) => void;
     const pending = new Promise<Response>((resolve) => {
       resolveFetch = resolve;
     });
@@ -149,7 +149,7 @@ describe('OutlineTab (F29)', () => {
     const status = await screen.findByRole('status');
     expect(status.textContent ?? '').toMatch(/loading outline/i);
 
-    resolveFetch?.(jsonResponse(200, { outline: [] }));
+    resolveFetch(jsonResponse(200, { outline: [] }));
   });
 
   it('shows the error state', async () => {

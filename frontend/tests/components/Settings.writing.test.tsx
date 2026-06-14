@@ -98,20 +98,19 @@ async function openWritingTab(): Promise<void> {
 
 function findSettingsPatch(fetchMock: FetchMock): RequestInit | undefined {
   const entry = fetchMock.mock.calls.find(
-    ([url, init]: [string, RequestInit | undefined]) =>
-      url === '/api/users/me/settings' && init?.method === 'PATCH',
+    (call): call is [string, RequestInit] =>
+      call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
   );
-  if (entry == null) return undefined;
-  return (entry as [string, RequestInit])[1];
+  return entry?.[1];
 }
 
 function findAllSettingsPatches(fetchMock: FetchMock): RequestInit[] {
   return fetchMock.mock.calls
     .filter(
-      ([url, init]: [string, RequestInit | undefined]) =>
-        url === '/api/users/me/settings' && init?.method === 'PATCH',
+      (call): call is [string, RequestInit] =>
+        call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
     )
-    .map(([, init]: [string, RequestInit]) => init);
+    .map(([, init]) => init);
 }
 
 describe('SettingsModal Writing tab (F45)', () => {

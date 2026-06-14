@@ -95,9 +95,12 @@ describe('StoryModal (F6)', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const call = fetchMock.mock.calls.find(([url]: [string]) => url === '/api/stories');
+    const call = fetchMock.mock.calls.find(
+      (c): c is [string, RequestInit] => c[0] === '/api/stories',
+    );
     expect(call).toBeDefined();
-    const [, init] = call as [string, RequestInit];
+    if (!call) return;
+    const [, init] = call;
     expect(init.method).toBe('POST');
     expect(init.body).toBe(
       JSON.stringify({
@@ -163,9 +166,12 @@ describe('StoryModal (F6)', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const call = fetchMock.mock.calls.find(([url]: [string]) => url === '/api/stories/s1');
+    const call = fetchMock.mock.calls.find(
+      (c): c is [string, RequestInit] => c[0] === '/api/stories/s1',
+    );
     expect(call).toBeDefined();
-    const [, init] = call as [string, RequestInit];
+    if (!call) return;
+    const [, init] = call;
     expect(init.method).toBe('PATCH');
     // Only `title` should be in the body — genre/synopsis/worldNotes unchanged.
     expect(init.body).toBe(JSON.stringify({ title: 'Dune (revised)' }));

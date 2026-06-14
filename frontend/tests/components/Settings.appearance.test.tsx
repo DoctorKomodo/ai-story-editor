@@ -123,10 +123,10 @@ async function openAppearanceTab(): Promise<void> {
 function findAllSettingsPatches(fetchMock: FetchMock): RequestInit[] {
   return fetchMock.mock.calls
     .filter(
-      ([url, init]: [string, RequestInit | undefined]) =>
-        url === '/api/users/me/settings' && init?.method === 'PATCH',
+      (call): call is [string, RequestInit] =>
+        call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
     )
-    .map(([, init]: [string, RequestInit]) => init);
+    .map(([, init]) => init);
 }
 
 function findLastSettingsPatchBody(fetchMock: FetchMock): Record<string, unknown> | undefined {

@@ -158,7 +158,7 @@ describe('CharacterSheet (F19)', () => {
   });
 
   it('shows role="status" while GET is pending', async () => {
-    let resolveFetch: ((res: Response) => void) | null = null;
+    let resolveFetch!: (res: Response) => void;
     const pending = new Promise<Response>((resolve) => {
       resolveFetch = resolve;
     });
@@ -174,7 +174,7 @@ describe('CharacterSheet (F19)', () => {
     const status = await screen.findByRole('status');
     expect(status.textContent ?? '').toMatch(/loading character/i);
 
-    resolveFetch?.(jsonResponse(200, { character: char({ id: 'c1' }) }));
+    resolveFetch(jsonResponse(200, { character: char({ id: 'c1' }) }));
   });
 
   it('fetch error shows role="alert" with "Could not load character"', async () => {
@@ -240,14 +240,15 @@ describe('CharacterSheet (F19)', () => {
 
     await waitFor(() => {
       const patchCall = fetchMock.mock.calls.find(
-        ([, init]: [string, RequestInit | undefined]) => init && init.method === 'PATCH',
+        (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
       );
       expect(patchCall).toBeDefined();
     });
 
     const patchCall = fetchMock.mock.calls.find(
-      ([, init]: [string, RequestInit | undefined]) => init && init.method === 'PATCH',
-    ) as [string, RequestInit];
+      (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
+    );
+    if (!patchCall) return;
     expect(patchCall[1].body).toBe(JSON.stringify({ name: 'AdaX' }));
   });
 
@@ -280,14 +281,15 @@ describe('CharacterSheet (F19)', () => {
 
     await waitFor(() => {
       const patchCall = fetchMock.mock.calls.find(
-        ([, init]: [string, RequestInit | undefined]) => init && init.method === 'PATCH',
+        (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
       );
       expect(patchCall).toBeDefined();
     });
 
     const patchCall = fetchMock.mock.calls.find(
-      ([, init]: [string, RequestInit | undefined]) => init && init.method === 'PATCH',
-    ) as [string, RequestInit];
+      (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
+    );
+    if (!patchCall) return;
     const body = JSON.parse(String(patchCall[1].body)) as Record<string, unknown>;
     expect(body).toHaveProperty('role', null);
     expect(body).not.toHaveProperty('name');
@@ -373,7 +375,7 @@ describe('CharacterSheet (F19)', () => {
 
     await waitFor(() => {
       const del = fetchMock.mock.calls.find(
-        ([, init]: [string, RequestInit | undefined]) => init && init.method === 'DELETE',
+        (call): call is [string, RequestInit] => call[1]?.method === 'DELETE',
       );
       expect(del).toBeDefined();
     });

@@ -125,9 +125,12 @@ describe('recovery-code handoff (F59)', () => {
       expect(screen.getByRole('heading', { name: /your stories/i })).toBeInTheDocument();
     });
 
-    const loginCall = fetchMock.mock.calls.find(([url]: [string]) => url === '/api/auth/login');
+    const loginCall = fetchMock.mock.calls.find(
+      (c): c is [string, RequestInit] => c[0] === '/api/auth/login',
+    );
     expect(loginCall).toBeDefined();
-    const [, init] = loginCall as [string, RequestInit];
+    if (!loginCall) return;
+    const [, init] = loginCall;
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ username: 'bob', password: 'hunter2hunter2' }));
   });

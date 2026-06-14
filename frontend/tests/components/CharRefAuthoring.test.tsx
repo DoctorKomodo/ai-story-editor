@@ -117,7 +117,7 @@ describe('charRef @-trigger authoring (F62)', () => {
     const run = para?.content?.find(
       (n) =>
         n.type === 'text' &&
-        typeof n.text === 'string' &&
+        'text' in n &&
         n.text.includes('Eli Bracken') &&
         Array.isArray(n.marks) &&
         n.marks.some((m) => m.type === 'charRef' && m.attrs?.characterId === 'c2'),
@@ -201,9 +201,7 @@ describe('charRef @-trigger authoring (F62)', () => {
     const named = runs.find(
       (r) => Array.isArray(r.marks) && r.marks.some((m) => m.type === 'charRef'),
     );
-    const space = runs.find(
-      (r) => r.type === 'text' && typeof r.text === 'string' && r.text === ' ',
-    );
+    const space = runs.find((r) => r.type === 'text' && 'text' in r && r.text === ' ');
     expect(named).toBeDefined();
     expect(space).toBeDefined();
     expect(space?.marks ?? []).toEqual([]);

@@ -178,7 +178,7 @@ describe('ChapterList (F10)', () => {
   });
 
   it('loading state has role="status"', async () => {
-    let resolveFetch: ((res: Response) => void) | null = null;
+    let resolveFetch!: (res: Response) => void;
     const pending = new Promise<Response>((resolve) => {
       resolveFetch = resolve;
     });
@@ -194,7 +194,7 @@ describe('ChapterList (F10)', () => {
     const status = await screen.findByRole('status');
     expect(status.textContent ?? '').toMatch(/loading chapters/i);
 
-    resolveFetch?.(jsonResponse(200, { chapters: [] }));
+    resolveFetch(jsonResponse(200, { chapters: [] }));
   });
 
   it('drag handle has aria-label="Reorder"', async () => {
