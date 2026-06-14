@@ -3,6 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import { useRef } from 'react';
 import type { Message } from 'story-editor-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SendArgs } from '@/components/ChatComposer';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
 import {
   chatMessagesQueryKey,
@@ -13,7 +14,6 @@ import type { ApiError } from '@/lib/api';
 
 function makeMessage(over: Partial<Message> & { id: string }): Message {
   return {
-    id: over.id,
     role: 'user',
     content: '',
     attachmentJson: null,
@@ -75,10 +75,10 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     qc.setQueryData(chatMessagesQueryKey('chat-1'), []);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X', attachment: null, enableWebSearch: false };
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -108,11 +108,15 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn();
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'new question', enableWebSearch: false };
+    const lastSendArgs: SendArgs = {
+      content: 'new question',
+      attachment: null,
+      enableWebSearch: false,
+    };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -146,11 +150,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -181,11 +185,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'hello', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'hello', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -220,11 +224,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X2', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X2', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -263,11 +267,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
 
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',

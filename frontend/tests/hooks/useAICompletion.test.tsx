@@ -20,7 +20,7 @@ vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
   return {
     ...actual,
-    apiStream: vi.fn(),
+    apiStream: vi.fn<typeof actual.apiStream>(),
   };
 });
 
@@ -200,14 +200,14 @@ describe('useAICompletion', () => {
   });
 
   it('aborts the in-flight completion when resetClientState runs', async () => {
-    let abortedSignal: AbortSignal | null = null;
+    const signalBox: { current: AbortSignal | null } = { current: null };
     const body = new ReadableStream<Uint8Array>({
       start(_controller) {
         // Never enqueue — hold the stream open until the reset aborts it.
       },
     });
     vi.mocked(apiStream).mockImplementationOnce(async (_path, init) => {
-      abortedSignal = (init as { signal?: AbortSignal } | undefined)?.signal ?? null;
+      signalBox.current = init?.signal ?? null;
       return new Response(body, {
         status: 200,
         headers: { 'content-type': 'text/event-stream' },
@@ -220,12 +220,12 @@ describe('useAICompletion', () => {
       void result.current.run(BASE_ARGS);
     });
 
-    await vi.waitFor(() => expect(abortedSignal).not.toBeNull());
+    await vi.waitFor(() => expect(signalBox.current).not.toBeNull());
 
     await act(async () => {
       await resetClientState(new QueryClient());
     });
 
-    expect(abortedSignal?.aborted).toBe(true);
+    expect(signalBox.current?.aborted).toBe(true);
   });
 });
