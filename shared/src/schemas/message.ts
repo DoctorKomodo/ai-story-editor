@@ -33,35 +33,62 @@ export const messageSchema = z.strictObject({
   tokens: z.number().int().nullable(),
   latencyMs: z.number().int().nullable(),
   createdAt: z.string().datetime(),
+  // Null = never edited; ISO timestamp of the last in-place edit otherwise.
+  updatedAt: z.string().datetime().nullable(),
 });
 
 export const messagesResponseSchema = z.strictObject({
   messages: z.array(messageSchema),
 });
 
+// Single-message response shape: PATCH /api/chats/:chatId/messages/:id.
+export const messageResponseSchema = z.strictObject({ message: messageSchema });
+
+// Wire POST→PATCH body: PATCH /api/chats/:chatId/messages/:id.
+// An edit only changes text; no modelId/attachment/retry.
+export const editMessageBodySchema = z.strictObject({
+  content: z.string().min(1),
+});
+export type EditMessageInput = z.infer<typeof editMessageBodySchema>;
+
 // Wire POST body: POST /api/chats/:chatId/messages.
-// Replaces the inline `PostMessageBody` in chat.routes.ts byte-for-byte.
+// Exactly one of three modes:
+//   • new message      → { content, modelId, … }
+//   • banner retry     → { retry: true, modelId }           (replay last user turn)
+//   • resend/regenerate→ { fromMessageId, modelId }          (replay that user turn)
 export const sendMessageBodySchema = z
   .strictObject({
     content: z.string().min(1).optional(),
     modelId: z.string().min(1),
     retry: z.boolean().optional(),
+    fromMessageId: z.string().min(1).optional(),
     attachment: messageAttachmentSchema.optional(),
     enableWebSearch: z.boolean().optional(),
   })
   .superRefine((body, ctx) => {
-    if (!body.retry && !body.content) {
+    const isReplay = body.retry === true || body.fromMessageId !== undefined;
+    // 1. content required unless this is a replay.
+    if (!isReplay && !body.content) {
       ctx.addIssue({
         code: 'custom',
-        message: 'content is required unless retry is true',
+        message: 'content is required unless retry or fromMessageId is set',
         path: ['content'],
       });
     }
-    if (body.retry && body.content !== undefined) {
+    // 2. content must be omitted on a replay (it reuses the anchor's stored text).
+    if (isReplay && body.content !== undefined) {
       ctx.addIssue({
         code: 'custom',
-        message: 'content must be omitted when retry is true',
+        message: 'content must be omitted when retry or fromMessageId is set',
         path: ['content'],
+      });
+    }
+    // 3. retry and fromMessageId are two ways to name the same anchor — exclusive.
+    if (body.retry === true && body.fromMessageId !== undefined) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'retry and fromMessageId are mutually exclusive',
+        path: ['fromMessageId'],
       });
     }
   });
