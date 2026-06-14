@@ -860,6 +860,206 @@ describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries'
   });
 });
 
+// ─── POST resend via fromMessageId suite ─────────────────────────────────────
+
+// Shared setup: creates a chat with two completed turns [u1, a1, u2, a2].
+// Returns the chat and the IDs of u1 and a1 (used as anchors in various tests).
+async function setupTwoTurnChat(
+  username: string,
+  kind: 'ask' | 'scene' = 'ask',
+): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  chatId: string;
+  u1Id: string;
+  a1Id: string;
+  u2Id: string;
+  a2Id: string;
+  fetchSpy: ReturnType<typeof vi.fn>;
+}> {
+  const { agent, chapterId } = await setup(username);
+  const fetchSpy = stubVeniceFetch();
+  await storeKey(agent, fetchSpy);
+
+  const created = await agent
+    .post(`/api/chapters/${chapterId}/chats`)
+    .send({ title: 'resend-test', kind });
+  const chatId = created.body.chat.id as string;
+
+  // Turn 1
+  queueSseResponse(fetchSpy, 'first assistant reply');
+  await sendMessage(agent, chatId, { content: 'user message one', modelId: MODEL_ID });
+
+  // Turn 2 — models cache warm; only queue the stream.
+  fetchSpy.mockResolvedValueOnce(
+    sseStreamResponse([
+      {
+        id: 'chatcmpl-turn2',
+        object: 'chat.completion.chunk',
+        choices: [{ index: 0, delta: { content: 'second assistant reply' }, finish_reason: null }],
+      },
+    ]),
+  );
+  await sendMessage(agent, chatId, { content: 'user message two', modelId: MODEL_ID });
+
+  // Snapshot IDs for assertions.
+  const msgsRes = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+  const msgs = msgsRes.body.messages as Array<{ id: string; role: string }>;
+  const u1Id = msgs[0].id;
+  const a1Id = msgs[1].id;
+  const u2Id = msgs[2].id;
+  const a2Id = msgs[3].id;
+
+  return { agent, chatId, u1Id, a1Id, u2Id, a2Id, fetchSpy };
+}
+
+describe('POST resend via fromMessageId', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('drops everything after the anchor user message and regenerates', async () => {
+    const { agent, chatId, u1Id, fetchSpy } = await setupTwoTurnChat('resend-drop-u1');
+
+    // Resend from u1: expect a1/u2/a2 to be dropped and a fresh assistant to appear.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-resend1',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'regenerated from u1' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const res = await sendMessage(agent, chatId, { modelId: MODEL_ID, fromMessageId: u1Id });
+    expect(res).toBe(200);
+
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const roles = (list.body.messages as Array<{ role: string }>).map((m) => m.role);
+    expect(roles).toEqual(['user', 'assistant']);
+    expect((list.body.messages as Array<{ id: string }>)[0].id).toBe(u1Id);
+  });
+
+  it('does NOT create a duplicate user message on resend', async () => {
+    const { agent, chatId, u1Id, fetchSpy } = await setupTwoTurnChat('resend-nodup-u1');
+
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-nodup',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'again' }, finish_reason: null }],
+        },
+      ]),
+    );
+    await sendMessage(agent, chatId, { modelId: MODEL_ID, fromMessageId: u1Id });
+
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const userCount = (list.body.messages as Array<{ role: string }>).filter(
+      (m) => m.role === 'user',
+    ).length;
+    expect(userCount).toBe(1); // u1 reused, not re-inserted
+  });
+
+  it('rejects fromMessageId pointing at an assistant message with 400', async () => {
+    const { agent, chatId, a1Id } = await setupTwoTurnChat('resend-asst-u1');
+
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ modelId: MODEL_ID, fromMessageId: a1Id });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('resend_invalid_state');
+  });
+
+  it('rejects an unknown fromMessageId with 400', async () => {
+    const { agent, chatId } = await setupTwoTurnChat('resend-unknown-u1');
+
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ modelId: MODEL_ID, fromMessageId: 'does-not-exist' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('resend_invalid_state');
+  });
+
+  it('rejects a fromMessageId from a different chat (same user) with 400', async () => {
+    const { agent, chatId, chapterId } = await (async () => {
+      const base = await setup('resend-cross-chat-u1');
+      const fetchSpy = stubVeniceFetch();
+      await storeKey(base.agent, fetchSpy);
+      const created = await base.agent
+        .post(`/api/chapters/${base.chapterId}/chats`)
+        .send({ title: 'main-chat', kind: 'ask' });
+      return {
+        agent: base.agent,
+        chatId: created.body.chat.id as string,
+        chapterId: base.chapterId,
+        fetchSpy,
+      };
+    })();
+
+    // Create a SECOND chat for the same user.
+    const otherCreated = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'other-chat', kind: 'ask' });
+    const otherChatId = otherCreated.body.chat.id as string;
+
+    // Add a user message to the OTHER chat via the route.
+    // We need a warm models cache — reinitialise.
+    veniceModelsService.resetCache();
+    const fetchSpy2 = stubVeniceFetch();
+    await storeKey(agent, fetchSpy2);
+    queueSseResponse(fetchSpy2, 'other chat reply');
+    await sendMessage(agent, otherChatId, { content: 'other chat message', modelId: MODEL_ID });
+
+    const otherMsgs = await agent.get(`/api/chats/${otherChatId}/messages`).expect(200);
+    const otherChatUserMsgId = (
+      otherMsgs.body.messages as Array<{ id: string; role: string }>
+    ).find((m) => m.role === 'user')!.id;
+
+    // Attempt to use that message ID against the FIRST (empty) chat.
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ modelId: MODEL_ID, fromMessageId: otherChatUserMsgId });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('resend_invalid_state');
+
+    // The rejected resend wrote nothing to the target chat (it started empty
+    // and the 400 returns before any persist).
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(list.body.messages as Array<{ id: string }>).toHaveLength(0);
+  });
+
+  it('drop+regenerate works for kind=scene (kind-agnostic)', async () => {
+    const { agent, chatId, u1Id, fetchSpy } = await setupTwoTurnChat('resend-scene-u1', 'scene');
+
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-scene-resend',
+          object: 'chat.completion.chunk',
+          choices: [
+            { index: 0, delta: { content: 'scene regenerated from u1' }, finish_reason: null },
+          ],
+        },
+      ]),
+    );
+    const status = await sendMessage(agent, chatId, { modelId: MODEL_ID, fromMessageId: u1Id });
+    expect(status).toBe(200);
+
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const roles = (list.body.messages as Array<{ role: string }>).map((m) => m.role);
+    expect(roles).toEqual(['user', 'assistant']);
+    expect((list.body.messages as Array<{ id: string }>)[0].id).toBe(u1Id);
+  });
+});
+
 // ─── PATCH /api/chats/:chatId/messages/:id suite ──────────────────────────────
 
 describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
