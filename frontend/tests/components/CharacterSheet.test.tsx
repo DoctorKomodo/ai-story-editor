@@ -240,13 +240,13 @@ describe('CharacterSheet (F19)', () => {
 
     await waitFor(() => {
       const patchCall = fetchMock.mock.calls.find(
-        (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
+        (call): call is [string, RequestInit] => call[1] != null && call[1].method === 'PATCH',
       );
       expect(patchCall).toBeDefined();
     });
 
     const patchCall = fetchMock.mock.calls.find(
-      (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
+      (call): call is [string, RequestInit] => call[1] != null && call[1].method === 'PATCH',
     );
     if (!patchCall) return;
     expect(patchCall[1].body).toBe(JSON.stringify({ name: 'AdaX' }));
@@ -281,13 +281,13 @@ describe('CharacterSheet (F19)', () => {
 
     await waitFor(() => {
       const patchCall = fetchMock.mock.calls.find(
-        (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
+        (call): call is [string, RequestInit] => call[1] != null && call[1].method === 'PATCH',
       );
       expect(patchCall).toBeDefined();
     });
 
     const patchCall = fetchMock.mock.calls.find(
-      (call): call is [string, RequestInit] => call[1]?.method === 'PATCH',
+      (call): call is [string, RequestInit] => call[1] != null && call[1].method === 'PATCH',
     );
     if (!patchCall) return;
     const body = JSON.parse(String(patchCall[1].body)) as Record<string, unknown>;
@@ -375,7 +375,7 @@ describe('CharacterSheet (F19)', () => {
 
     await waitFor(() => {
       const del = fetchMock.mock.calls.find(
-        (call): call is [string, RequestInit] => call[1]?.method === 'DELETE',
+        (call): call is [string, RequestInit] => call[1] != null && call[1].method === 'DELETE',
       );
       expect(del).toBeDefined();
     });

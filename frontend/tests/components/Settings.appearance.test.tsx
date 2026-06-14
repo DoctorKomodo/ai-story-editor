@@ -124,7 +124,7 @@ function findAllSettingsPatches(fetchMock: FetchMock): RequestInit[] {
   return fetchMock.mock.calls
     .filter(
       (call): call is [string, RequestInit] =>
-        call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
+        call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
     )
     .map(([, init]) => init);
 }

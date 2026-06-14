@@ -352,7 +352,9 @@ describe('SettingsModal (F43)', () => {
         const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
         const putCall = fetchMock.mock.calls.find(
           (call): call is [string, RequestInit] =>
-            String(call[0]).endsWith('/api/users/me/venice-key') && call[1]?.method === 'PUT',
+            String(call[0]).endsWith('/api/users/me/venice-key') &&
+            call[1] != null &&
+            call[1].method === 'PUT',
         );
         expect(putCall).toBeDefined();
         if (!putCall) return;
@@ -498,7 +500,9 @@ describe('SettingsModal (F43)', () => {
       await waitFor(() => {
         const deleteCall = fetchMock.mock.calls.find(
           (call): call is [string, RequestInit] =>
-            call[0] === '/api/users/me/venice-key' && call[1]?.method === 'DELETE',
+            call[0] === '/api/users/me/venice-key' &&
+            call[1] != null &&
+            call[1].method === 'DELETE',
         );
         expect(deleteCall).toBeDefined();
       });
@@ -534,7 +538,7 @@ describe('SettingsModal (F43)', () => {
       await waitFor(() => {
         const patchCall = fetchMock.mock.calls.find(
           (call): call is [string, RequestInit] =>
-            call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
+            call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
         );
         expect(patchCall).toBeDefined();
         if (!patchCall) return;

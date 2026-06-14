@@ -335,7 +335,7 @@ describe('SettingsModal Models tab (X28)', () => {
       () => {
         const patch = fetchMock.mock.calls.find(
           (call): call is [string, RequestInit] =>
-            call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
+            call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
         );
         expect(patch).toBeDefined();
         if (!patch) return;
@@ -398,7 +398,7 @@ describe('SettingsModal Models tab (X28)', () => {
       () => {
         const patches = fetchMock.mock.calls.filter(
           (call): call is [string, RequestInit] =>
-            call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
+            call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
         );
         expect(patches.length).toBeGreaterThan(0);
         const lastPatch = patches[patches.length - 1];
@@ -575,7 +575,7 @@ describe('SettingsModal Models tab (X28)', () => {
     await waitFor(() => {
       const patch = fetchMock.mock.calls.find(
         (call): call is [string, RequestInit] =>
-          call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
+          call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
       );
       expect(patch).toBeDefined();
       if (!patch) return;
@@ -662,7 +662,7 @@ describe('SettingsModal Models tab (X28)', () => {
       () => {
         const patch = fetchMock.mock.calls.find(
           (call): call is [string, RequestInit] =>
-            call[0] === '/api/users/me/settings' && call[1]?.method === 'PATCH',
+            call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
         );
         expect(patch).toBeDefined();
         if (!patch) return;
