@@ -14,8 +14,8 @@
 ## Mapping
 
 > **`general.md` is part of every match.** It carries cross-cutting
-> rules (TS strict, comments policy, YAGNI, no data-migration
-> branches, dependency policy, secrets, library-version awareness)
+> rules (TS strict, comments policy, YAGNI, dependency policy,
+> secrets, library-version awareness)
 > that apply regardless of lane. Listed explicitly on every row so
 > the union mechanism stays uniform — no special-case "always
 > prepend" logic in the bridge skill.

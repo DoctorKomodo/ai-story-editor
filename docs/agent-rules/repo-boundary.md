@@ -113,12 +113,16 @@ module scope.
 - Plan the schema change explicitly — schema changes after the
   initial migration require approval (CLAUDE.md "When to Stop and
   Ask").
-- **Pre-deployment, there are no users, no stored content, no
-  legacy rows.** Do not write dual-write / lazy-backfill / "read
-  plaintext if ciphertext null" branches. They handle a population
-  that does not exist. The codebase was scrubbed of every such
-  branch post-`[X10]`; reintroduce one only with a dated TODO and
-  a real reason.
+- **Existing rows are real** (the app is at/near release). But the
+  server has **no DEK at migration time** — it's per-user, unwrapped
+  only inside an authed request — so you **cannot** backfill a new
+  encrypted narrative column offline. Add the triple **nullable**;
+  old rows read as `null` (`readEncrypted` returns `null` for a
+  full-null triple) until the owner next saves that row and the repo
+  populates it (populate-on-write). Plan that explicitly, and treat a
+  narrative-column breaking change as a stop-and-ask (CLAUDE.md "When
+  to Stop and Ask"). Plaintext / non-narrative columns backfill
+  normally.
 
 ## Chapter bodies, specifically
 

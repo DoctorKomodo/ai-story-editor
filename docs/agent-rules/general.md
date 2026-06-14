@@ -45,59 +45,33 @@
   feature flags or compat shims you can just inline. If something is
   certainly unused, delete it.
 
-## Pre-deployment: no data-migration branches
-
-- Pre-deployment, there are no users, no stored content, and no
-  legacy rows. Code paths that exist only to handle "pre-[Tn]"
-  shapes (null wrap columns, bcrypt hashes, plaintext-only rows,
-  optional `sessionId` claims, dual-write toggles, lazy-backfill
-  reads, "read plaintext if ciphertext null" fallbacks) serve a
-  population that doesn't exist and cost complexity + test surface
-  + review burden.
-- When a task's rollout plan asks for a dual-write, lazy-backfill,
-  or legacy-read fallback, **skip it and implement the post-rollout
-  shape directly**. If the app is ever deployed against pre-existing
-  data in future, reintroduce only the specific branch needed for
-  that actual population with a dated TODO for its removal.
-- The codebase was scrubbed of every such branch post-`[X10]`
-  (bcrypt removed, sessionId required, lazy wraps deleted, plaintext
-  fallbacks deleted). Don't reintroduce them.
-
 ## Dependencies
 
-- Install the current stable mainline by default, not whatever range
-  the LLM remembers. Before adding a new package — or pinning one
-  that doesn't already exist in `package.json` — check the current
-  stable via `npm view <pkg> version` and, if the major-version jump
-  matters (Express 4 → 5, Vite 5 → 8, Tiptap 2 → 3, Zod 3 → 4),
-  `npm view <pkg> versions --json | tail` to confirm the latest stable.
-- Pin to the latest stable. Going in on an older major needs a real
-  reason recorded in the commit (e.g. "blocked on upstream peer X"
-  with a removal trigger), not silence.
-- Applies equally to `dependencies`, `devDependencies`,
-  `peerDependencies`, and tooling pulled in via skill / hook / agent
-  glue. Exception: intentional downgrades to dodge a known regression
-  — same commit-message justification.
+- Install the current stable mainline, not whatever range the LLM
+  remembers. Before adding or pinning a package, check `npm view <pkg>
+  version`; if a major jump matters (Express 4→5, Vite 5→8, Tiptap
+  2→3, Zod 3→4), confirm via `npm view <pkg> versions --json | tail`.
+- Pin to the latest stable. An older major needs a reason in the
+  commit ("blocked on upstream peer X" + removal trigger), not
+  silence — same for an intentional downgrade dodging a known
+  regression.
+- Applies to `dependencies`, `devDependencies`, `peerDependencies`,
+  and tooling pulled in via skill / hook / agent glue.
 
 ## External capability lookup
 
-- Before stating — in code, in design/spec docs, or in
-  conversation — that an external library or SaaS API has, lacks,
-  or behaves a certain way regarding a specific feature, **look
-  it up first**. Do not infer from our wrappers, our type
-  definitions, our prior usage, or memory.
-- **Lookup order (same for libraries and SaaS APIs):**
-  1. **Context7 MCP** — `resolve-library-id` then `query-docs`.
-     Indexes vendor API docs (Venice, OpenAI, Anthropic, GitHub)
-     as well as npm packages — try it first regardless of source
-     type.
-  2. **WebFetch** on the vendor's official docs URL — fallback
-     when Context7 has no entry or its index is thin.
-- Our internal client wrappers tell you what WE surface, not what
-  the upstream actually exposes. Workarounds, fallbacks, and
-  "we can't because X doesn't support it" claims are the most
-  common form of this failure — verify the negative claim before
-  designing around it.
+- Before stating — in code, docs, or conversation — that an external
+  library or SaaS API has, lacks, or behaves a certain way, **look it
+  up first.** Don't infer from our wrappers, our types, prior usage,
+  or memory.
+- Order: **Context7 MCP** (`resolve-library-id` → `query-docs`; it
+  indexes Venice / OpenAI / Anthropic / GitHub API docs as well as
+  npm packages), then **WebFetch** the vendor's official docs if
+  Context7 is thin.
+- **Negative claims are the trap** — "we can't because X doesn't
+  support it" workarounds are the most common form of this failure.
+  Verify the upstream actually lacks the feature before designing
+  around its absence.
 
 ## Secrets
 
@@ -111,5 +85,11 @@
 
 - `shared/` is the wire-format authority. Backend and frontend
   import from `story-editor-shared`, never from each other.
+- `shared/` exports the canonical **Zod schemas** (runtime) alongside
+  their inferred wire types and validation constants. Both lanes
+  **parse against the schema at the boundary** — backend on egress
+  (`respond`), frontend on ingress (`.parse()`). The schemas are
+  `z.strictObject`, so an unexpected field throws rather than passing
+  silently.
 - Don't re-export types across lanes to dodge import constraints —
   if a type belongs in `shared/`, put it there.

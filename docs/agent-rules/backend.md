@@ -108,6 +108,12 @@ Three steps, used by every CRUD route:
 - Schema changes after the initial migration require explicit
   approval (see CLAUDE.md "When to Stop and Ask"). Plan migrations
   in batches.
+- **Migrations run against real, populated tables** (the app is
+  at/near release). Preserve and migrate existing rows: backfill new
+  non-null columns, make column drops/renames two-step or reversible,
+  never assume a table is empty. A breaking or lossy change — one
+  needing a backfill, a data-migration branch, or lazy/on-write
+  population — is a stop-and-ask (CLAUDE.md "When to Stop and Ask").
 
 ## AI integration (Venice.ai)
 
