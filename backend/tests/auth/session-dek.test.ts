@@ -200,7 +200,7 @@ describe('[E3] session / DEK end-to-end via auth middleware', () => {
     // the response body of an earlier test, but here we generate a fresh
     // pair to avoid cross-test state.
     const { generateDekAndWraps, unwrapDekWithRecoveryCode } = await import(
-      '../../src/services/content-crypto.service'
+      '../../src/services/content-crypto.service.js'
     );
     const gen = await generateDekAndWraps('whatever');
     const user = {

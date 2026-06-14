@@ -272,9 +272,10 @@ describe('Outline routes [B8]', () => {
     // 0+1=1, collides with the seeded racer, hits P2002, and retries.
     const aggSpy = vi.spyOn(appPrisma.outlineItem, 'aggregate');
     aggSpy.mockImplementationOnce(
-      async () =>
-        ({ _max: { order: 0 } }) as unknown as Awaited<
-          ReturnType<typeof appPrisma.outlineItem.aggregate>
+      // Promise satisfies PrismaPromise at runtime; cast bridges the type-only gap
+      () =>
+        Promise.resolve({ _max: { order: 0 } }) as unknown as ReturnType<
+          typeof appPrisma.outlineItem.aggregate
         >,
     );
 

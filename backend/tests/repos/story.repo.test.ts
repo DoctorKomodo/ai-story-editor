@@ -97,11 +97,11 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
     const s = await repo.create({ title: 'locked' });
 
     // Construct a fresh req without calling attachDekToRequest.
-    const { createStoryRepo: freshRepo } = await import('../../src/repos/story.repo');
+    const { createStoryRepo: freshRepo } = await import('../../src/repos/story.repo.js');
     const noDekReq = {
       user: { id: ctx.user.id, email: null },
     } as unknown as import('express').Request;
-    const { DekNotAvailableError } = await import('../../src/services/content-crypto.service');
+    const { DekNotAvailableError } = await import('../../src/services/content-crypto.service.js');
     await expect(freshRepo(noDekReq).findById(s.id as string)).rejects.toBeInstanceOf(
       DekNotAvailableError,
     );
