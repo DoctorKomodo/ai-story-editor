@@ -4,7 +4,11 @@ import { useRef } from 'react';
 import type { Message } from 'story-editor-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
-import { chatMessagesQueryKey } from '@/hooks/useChat';
+import {
+  chatMessagesQueryKey,
+  type SendChatMessageArgs,
+  type useSendChatMessageMutation,
+} from '@/hooks/useChat';
 
 function makeMessage(over: Partial<Message> & { id: string }): Message {
   return {
@@ -21,13 +25,27 @@ function makeMessage(over: Partial<Message> & { id: string }): Message {
   };
 }
 
-function makeFakeMutation(): {
-  mutateAsync: ReturnType<typeof vi.fn>;
-  isPending: boolean;
-} {
+function makeFakeMutation(): ReturnType<typeof useSendChatMessageMutation> {
   return {
-    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    data: undefined,
+    error: null,
+    variables: undefined,
+    context: undefined,
+    failureCount: 0,
+    failureReason: null,
+    isPaused: false,
+    status: 'idle',
+    submittedAt: 0,
+    isError: false,
+    isIdle: true,
     isPending: false,
+    isSuccess: false,
+    mutate: vi.fn<(variables: SendChatMessageArgs) => void>(),
+    mutateAsync: vi
+      .fn<(variables: SendChatMessageArgs) => Promise<void>>()
+      .mockResolvedValue(undefined),
+    reset: vi.fn<() => void>(),
+    stop: vi.fn<() => void>(),
   };
 }
 

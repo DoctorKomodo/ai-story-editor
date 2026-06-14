@@ -9,7 +9,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
@@ -115,7 +115,7 @@ function findAllSettingsPatches(fetchMock: FetchMock): RequestInit[] {
 }
 
 describe('SettingsModal Writing tab (F45)', () => {
-  let onClose: ReturnType<typeof vi.fn>;
+  let onClose: Mock<() => void>;
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -128,7 +128,7 @@ describe('SettingsModal Writing tab (F45)', () => {
       status: 'authenticated',
     });
     window.localStorage.clear();
-    onClose = vi.fn();
+    onClose = vi.fn<() => void>();
   });
 
   afterEach(() => {

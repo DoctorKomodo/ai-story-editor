@@ -13,7 +13,7 @@ import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
 import type { Model } from '@/hooks/useModels';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
@@ -236,7 +236,7 @@ function renderModal(
 }
 
 describe('SettingsModal Models tab (X28)', () => {
-  let onClose: ReturnType<typeof vi.fn>;
+  let onClose: Mock<() => void>;
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -248,7 +248,7 @@ describe('SettingsModal Models tab (X28)', () => {
       user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
-    onClose = vi.fn();
+    onClose = vi.fn<() => void>();
   });
 
   afterEach(() => {

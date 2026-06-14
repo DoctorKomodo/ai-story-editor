@@ -1,15 +1,15 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SceneComposer } from '@/components/SceneComposer';
 
 describe('SceneComposer', () => {
-  let onGenerate: ReturnType<typeof vi.fn>;
-  let onStop: ReturnType<typeof vi.fn>;
+  let onGenerate: Mock<(text: string) => void>;
+  let onStop: Mock<() => void>;
 
   beforeEach(() => {
-    onGenerate = vi.fn();
-    onStop = vi.fn();
+    onGenerate = vi.fn<(text: string) => void>();
+    onStop = vi.fn<() => void>();
   });
 
   it('shows Generate and a placeholder when idle', () => {

@@ -1,12 +1,12 @@
 import { act, renderHook } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 
 describe('useSoftDelete', () => {
-  let removeFn: ReturnType<typeof vi.fn>;
+  let removeFn: Mock<(id: string) => Promise<unknown>>;
 
   beforeEach(() => {
-    removeFn = vi.fn().mockResolvedValue(undefined);
+    removeFn = vi.fn<(id: string) => Promise<unknown>>().mockResolvedValue(undefined);
     vi.useFakeTimers();
   });
 

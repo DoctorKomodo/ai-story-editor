@@ -1,7 +1,7 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { CharacterSheet } from '@/components/CharacterSheet';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
@@ -64,9 +64,9 @@ function renderSheet(props: {
   characterId: string | null;
   onClose?: () => void;
   client?: QueryClient;
-}): { client: QueryClient; onClose: ReturnType<typeof vi.fn> } {
+}): { client: QueryClient; onClose: Mock<() => void> } {
   const qc = props.client ?? createQueryClient();
-  const onClose = (props.onClose ?? vi.fn()) as ReturnType<typeof vi.fn>;
+  const onClose = vi.fn<() => void>().mockImplementation(props.onClose ?? (() => {}));
   render(
     <QueryClientProvider client={qc}>
       {props.characterId !== null ? (

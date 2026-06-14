@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { type Session, SessionPicker } from '@/components/SessionPicker';
 
 const LABELS = {
@@ -16,16 +16,16 @@ const sessions: Session[] = [
 ];
 
 describe('SessionPicker', () => {
-  let onSelect: ReturnType<typeof vi.fn>;
-  let onRename: ReturnType<typeof vi.fn>;
-  let onDelete: ReturnType<typeof vi.fn>;
-  let onNew: ReturnType<typeof vi.fn>;
+  let onSelect: Mock<(id: string) => void>;
+  let onRename: Mock<(id: string, title: string) => void>;
+  let onDelete: Mock<(id: string) => void>;
+  let onNew: Mock<() => void>;
 
   beforeEach(() => {
-    onSelect = vi.fn();
-    onRename = vi.fn();
-    onDelete = vi.fn();
-    onNew = vi.fn();
+    onSelect = vi.fn<(id: string) => void>();
+    onRename = vi.fn<(id: string, title: string) => void>();
+    onDelete = vi.fn<(id: string) => void>();
+    onNew = vi.fn<() => void>();
   });
 
   function renderPicker(
