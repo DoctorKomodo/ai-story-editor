@@ -30,6 +30,8 @@ function chap(id: string, orderIndex: number): ChapterMeta {
     wordCount: 0,
     orderIndex,
     status: 'draft',
+    hasSummary: false,
+    summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
   };

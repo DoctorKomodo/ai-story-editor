@@ -135,7 +135,7 @@ describe('useUpdateChapterMutation', () => {
     resetApiClientForTests();
   });
 
-  it('PATCHes the chapter with bodyJson + wordCount', async () => {
+  it('PATCHes the chapter with bodyJson', async () => {
     const client = new QueryClient({ defaultOptions: { mutations: { retry: false } } });
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, { chapter: makeChapter({ wordCount: 5, bodyJson: { type: 'doc' } }) }),
@@ -149,7 +149,7 @@ describe('useUpdateChapterMutation', () => {
       await result.current.mutateAsync({
         storyId: 's1',
         chapterId: 'c1',
-        input: { bodyJson: { type: 'doc' }, wordCount: 5 },
+        input: { bodyJson: { type: 'doc' } },
       });
     });
 
@@ -157,7 +157,7 @@ describe('useUpdateChapterMutation', () => {
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe('/api/stories/s1/chapters/c1');
     expect(init.method).toBe('PATCH');
-    expect(init.body).toBe(JSON.stringify({ bodyJson: { type: 'doc' }, wordCount: 5 }));
+    expect(init.body).toBe(JSON.stringify({ bodyJson: { type: 'doc' } }));
   });
 
   it('updates the chapters-list cache with the response on success', async () => {
@@ -176,7 +176,7 @@ describe('useUpdateChapterMutation', () => {
       await result.current.mutateAsync({
         storyId: 's1',
         chapterId: 'c1',
-        input: { bodyJson: { type: 'doc' }, wordCount: 5 },
+        input: { bodyJson: { type: 'doc' } },
       });
     });
 
