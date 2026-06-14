@@ -190,12 +190,23 @@ export function useSendChatMessageMutation(): UseMutationResult<
   const abortRef = useRef<AbortController | null>(null);
 
   const mutation = useMutation<void, ApiError, SendChatMessageArgs>({
-    onMutate: ({ chatId, content, attachment }) => {
+    onMutate: ({ chatId, content, attachment, fromMessageId }) => {
       useChatDraftStore.getState().start({
         chatId,
         userContent: content ?? '',
         attachment: attachment ?? null,
       });
+      // Resend/regenerate: the backend drops everything after the anchor before
+      // streaming, so trim the cache now — the streaming reply then renders in
+      // the right place with no post-success snap. Scoped to fromMessageId so
+      // retry/normal sends are unaffected.
+      if (fromMessageId !== undefined) {
+        qc.setQueryData<Message[]>(chatMessagesQueryKey(chatId), (prev) => {
+          if (!prev) return prev;
+          const idx = prev.findIndex((m) => m.id === fromMessageId);
+          return idx < 0 ? prev : prev.slice(0, idx + 1);
+        });
+      }
     },
     mutationFn: async ({
       chatId,
@@ -245,6 +256,14 @@ export function useSendChatMessageMutation(): UseMutationResult<
       } finally {
         deregister();
         if (abortRef.current === controller) abortRef.current = null;
+      }
+    },
+    onError: (_err, vars) => {
+      // The server deletes below-anchor rows before streaming, so the optimistic
+      // trim must NOT be rolled back. Refetch server truth instead: honest whether
+      // the delete happened (stream error) or not (pre-handler error).
+      if (vars.fromMessageId !== undefined) {
+        void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(vars.chatId) });
       }
     },
     onSuccess: (_void, vars) => {

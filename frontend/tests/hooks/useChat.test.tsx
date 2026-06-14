@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type { JSX, ReactNode } from 'react';
-import type { Chat, ChatSummary } from 'story-editor-shared';
+import type { Chat, ChatSummary, Message } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   chatMessagesQueryKey,
@@ -291,6 +291,62 @@ describe('useSendChatMessageMutation', () => {
     await act(async () => {
       await p;
     });
+  });
+
+  it('optimistically trims the messages cache to the anchor on resend (fromMessageId)', async () => {
+    const { wrapper, qc } = withClient();
+    const mk = (id: string, role: 'user' | 'assistant'): Message => ({
+      id,
+      role,
+      content: id,
+      attachmentJson: null,
+      citationsJson: null,
+      model: null,
+      tokens: null,
+      latencyMs: null,
+      createdAt: '2026-06-01T00:00:00.000Z',
+      updatedAt: null,
+    });
+    qc.setQueryData<Message[]>(chatMessagesQueryKey('c1'), [
+      mk('u1', 'user'),
+      mk('a1', 'assistant'),
+      mk('u2', 'user'),
+      mk('a2', 'assistant'),
+    ]);
+    // Never-ending stream so the mutation stays pending and onSuccess can't refetch.
+    vi.mocked(apiStream).mockResolvedValueOnce(
+      new Response(new ReadableStream({ start() {} }), {
+        status: 200,
+        headers: { 'content-type': 'text/event-stream' },
+      }),
+    );
+
+    const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
+    act(() => {
+      result.current.mutate({ chatId: 'c1', chapterId: 'ch1', modelId: 'm', fromMessageId: 'u1' });
+    });
+
+    // onMutate ran synchronously: everything after u1 is dropped, u1 kept.
+    expect(qc.getQueryData<Message[]>(chatMessagesQueryKey('c1'))?.map((m) => m.id)).toEqual([
+      'u1',
+    ]);
+    result.current.stop(); // abort the hanging stream
+  });
+
+  it('refetches the messages query on resend error (does not roll back the trim)', async () => {
+    const { wrapper, qc } = withClient();
+    qc.setQueryData<Message[]>(chatMessagesQueryKey('c1'), []);
+    const invalidate = vi.spyOn(qc, 'invalidateQueries');
+    vi.mocked(apiStream).mockRejectedValueOnce(new ApiError(500, 'boom'));
+
+    const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
+    await act(async () => {
+      await result.current
+        .mutateAsync({ chatId: 'c1', chapterId: 'ch1', modelId: 'm', fromMessageId: 'u1' })
+        .catch(() => {});
+    });
+
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: chatMessagesQueryKey('c1') });
   });
 
   it('aborts the stream and drops the draft when resetClientState runs mid-stream', async () => {
