@@ -294,6 +294,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
                     tokens: null,
                     latencyMs: null,
                     createdAt: new Date().toISOString(),
+                    updatedAt: null,
                   }}
                 />
               );
@@ -312,6 +313,7 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
                     tokens: null,
                     latencyMs: null,
                     createdAt: new Date().toISOString(),
+                    updatedAt: null,
                   }}
                   actions={null}
                   isStreaming

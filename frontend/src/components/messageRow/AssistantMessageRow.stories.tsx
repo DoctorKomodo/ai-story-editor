@@ -41,6 +41,7 @@ const baseMessage: Message = {
   tokens: 312,
   latencyMs: 2100,
   createdAt: new Date().toISOString(),
+  updatedAt: null,
 };
 
 const meta: Meta<typeof AssistantMessageRow> = {

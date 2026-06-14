@@ -13,6 +13,7 @@ import {
   chatResponseSchema,
   chatsResponseSchema,
   type Message,
+  messageResponseSchema,
   messagesResponseSchema,
 } from 'story-editor-shared';
 import { ApiError, api, deleteChat } from '@/lib/api';
@@ -160,6 +161,8 @@ export interface SendChatMessageArgs {
   content?: string;
   /** When true, replays the existing trailing user turn without persisting a new message. */
   retry?: boolean;
+  /** Replay from this specific user message (resend/regenerate). Drops everything after it. */
+  fromMessageId?: string;
   /** The selection attached to this message. `attachment.chapterId` is the selection's source
    *  chapter — in practice the same as the top-level `chapterId` but semantically distinct. */
   attachment?: { selectionText: string; chapterId: string };
@@ -194,7 +197,15 @@ export function useSendChatMessageMutation(): UseMutationResult<
         attachment: attachment ?? null,
       });
     },
-    mutationFn: async ({ chatId, content, modelId, retry, attachment, enableWebSearch }) => {
+    mutationFn: async ({
+      chatId,
+      content,
+      modelId,
+      retry,
+      fromMessageId,
+      attachment,
+      enableWebSearch,
+    }) => {
       const controller = new AbortController();
       abortRef.current = controller;
       const deregister = registerStream(controller);
@@ -202,6 +213,7 @@ export function useSendChatMessageMutation(): UseMutationResult<
       const body: Record<string, unknown> = { modelId };
       if (content !== undefined) body.content = content;
       if (retry === true) body.retry = true;
+      if (fromMessageId !== undefined) body.fromMessageId = fromMessageId;
       if (attachment) body.attachment = attachment;
       if (enableWebSearch === true) body.enableWebSearch = true;
 
@@ -263,4 +275,30 @@ export function useSendChatMessageMutation(): UseMutationResult<
       abortRef.current?.abort();
     },
   };
+}
+
+export interface EditMessageArgs {
+  chatId: string;
+  /** Needed so onSuccess can invalidate the chats list (edit bumps lastActivityAt). */
+  chapterId: string;
+  messageId: string;
+  content: string;
+}
+
+export function useEditMessageMutation(): UseMutationResult<Message, Error, EditMessageArgs> {
+  const qc = useQueryClient();
+  return useMutation<Message, Error, EditMessageArgs>({
+    mutationFn: async ({ chatId, messageId, content }) => {
+      const res = await api<unknown>(
+        `/chats/${encodeURIComponent(chatId)}/messages/${encodeURIComponent(messageId)}`,
+        { method: 'PATCH', body: { content } },
+      );
+      return messageResponseSchema.parse(res).message;
+    },
+    onSuccess: (_message, { chatId, chapterId }) => {
+      void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(chatId) });
+      // Edit bumps Chat.lastActivityAt — re-sort the session list, same as send.
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
+    },
+  });
 }

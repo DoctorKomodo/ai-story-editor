@@ -21,6 +21,7 @@ function buildMessages(): Message[] {
       tokens: null,
       latencyMs: null,
       createdAt: new Date(Date.now() - 60_000).toISOString(),
+      updatedAt: null,
     },
     {
       id: 'm-2',
@@ -32,6 +33,7 @@ function buildMessages(): Message[] {
       tokens: 412,
       latencyMs: 1800,
       createdAt: new Date().toISOString(),
+      updatedAt: null,
     },
   ];
 }

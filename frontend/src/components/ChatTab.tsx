@@ -260,6 +260,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                     tokens: null,
                     latencyMs: null,
                     createdAt: new Date().toISOString(),
+                    updatedAt: null,
                   }}
                 />
               );
@@ -278,6 +279,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                     tokens: null,
                     latencyMs: null,
                     createdAt: new Date().toISOString(),
+                    updatedAt: null,
                   }}
                   actions={null}
                   isStreaming
