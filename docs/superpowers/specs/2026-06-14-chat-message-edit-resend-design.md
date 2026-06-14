@@ -119,8 +119,9 @@ populated but nothing renders it yet.
   to name a specific message, so this path stays byte-for-byte unchanged.
   `fromMessageId` is purely additive for the new buttons, which always send it
   explicitly. After the handler resolves the anchor (`retry` → last user
-  message; `fromMessageId` → `findById`), both replay modes converge on the same
-  `deleteAllAfter(anchor.id)` + regenerate logic.
+  message; `fromMessageId` → looked up in the chat-scoped `priorMessages`), both
+  replay modes converge on the same `deleteAllAfter(anchor.id)` + regenerate
+  logic.
 - Tests for the new schema and refinement live in
   `shared/tests/message.schema.test.ts` — including the three refine rules
   (accept each of the three valid modes; reject `content`+`retry`,
@@ -173,18 +174,26 @@ body.fromMessageId !== undefined` and resolve the anchor once:
 
 ```
 anchor = body.fromMessageId
-  ? await messageRepo.findById(body.fromMessageId)   // ownership-scoped
+  ? priorMessages.find((m) => m.id === body.fromMessageId)   // chat-scoped
   : lastUserMsg;
 ```
+
+Resolve from the already-loaded, **chat-scoped** `priorMessages`
+(`findManyForChat(chatId)`), **not** `messageRepo.findById` — `findById` is
+user-scoped only, so a `fromMessageId` from another of the user's chats would
+pass validation, then `deleteAllAfter` (chat-scoped) would drop nothing while
+the handler replayed foreign content against this chat's untrimmed thread. With
+`priorMessages.find`, an unknown *or* cross-chat id resolves to `undefined` and
+is rejected by the 400 below.
 
 Then update every `body.retry` site to `isReplay` and read from `anchor`:
 
 1. **Validation 400** (currently chat.routes.ts:240-248): the existing
    `retry && !lastUserMsg` → 400 keeps its meaning. Add a sibling for the
-   `fromMessageId` path: if `fromMessageId` is set and `anchor` is null
+   `fromMessageId` path: if `fromMessageId` is set and `anchor` is undefined
    (not found / not owned / wrong chat) **or** `anchor.role !== 'user'`, return
-   a 400 (`code: 'resend_invalid_state'`). `findById` is ownership-scoped, so a
-   foreign or missing id resolves to null and is rejected here.
+   a 400 (`code: 'resend_invalid_state'`). `priorMessages` is chat-scoped, so a
+   foreign or missing id resolves to `undefined` and is rejected here.
 2. **Delete + refetch** (254-258): `if (isReplay && anchor)` →
    `deleteAllAfter(chatId, anchor.id)` then re-fetch history.
 3. **`trailingUserContent`** (314-316): read `anchor.content`, **not**
