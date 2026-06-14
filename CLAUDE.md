@@ -128,42 +128,13 @@ A single line starting with `verify:`, the runnable command on the rest of that 
 
 ### Historical archives
 
-Closed work from the original bring-up letters lives in immutable `docs/done/done-<section>.md` archives. To find a historical task ID, grep both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. Closed `[x]` rows still in TASKS.md (F Phase 4, a few X tasks) are pending rotation into their respective `done-*.md` archives — leave them alone unless you're doing the rotation.
+Closed work from the original bring-up letters lives in immutable `docs/done/done-<section>.md` archives. To find a historical task ID, grep both: `grep -rE "\[<ID>\]" TASKS.md docs/done/`. The letter→scope glossary (S/A/D/AU/E/V/L/B/F/I/T/X plus live M = maintenance, DS = design-system), with per-letter status and archive pointers, lives in `TASKS.md`. Closed `[x]` rows still in TASKS.md (F Phase 4, a few X tasks) are pending rotation into their respective `done-*.md` archives — leave them alone unless you're doing the rotation.
 
 ### Local tooling
 
 - **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + spec-reviewer + code-quality-reviewer (Sonnet by default; per-task `model: opus` opt-in) per task, hands off to `/bd-close-reviewed` after the loop reports CLEAN.
 - **`/bd-close-reviewed <BD_ID>`** — `.claude/skills/bd-close-reviewed/`. Gates close on typecheck + path-matched surface reviewers + verify-line. Wraps `scripts/bd-close-reviewed.sh` for the mechanical phases.
 - **`scripts/bd-link-plan.sh <id> <plan-path>`** — links a plan file to a bd issue's `--notes`. Idempotent; preserves the `verify:` line. Called as a step in the protocol above when the issue lacks a plan link.
-
----
-
-## Task Order
-
-> The section letters below are the **bring-up sequence** used during the project's initial build. Most letters (S, A, D, AU, E, V, L, B, I, T) are now archived under `docs/done/`. New work flows through `bd ready` — the table is retained as a glossary for cross-references in plans, agent prompts, and the still-live F/X/M/DS sections.
-
-Original bring-up order (preserved for reference):
-
-**S → A → D → AU → E → V → L → B → F → I → T → X**
-
-| Section | Scope |
-|---|---|
-| S | scaffold |
-| A | architecture docs (`docs/data-model.md`, `docs/api-contract.md`, `docs/venice-integration.md`, `docs/encryption.md`) |
-| D | database (schema + migrations + seed) |
-| AU | auth — username register/login (supersedes email), refresh rotation, middleware, security headers, **BYOK Venice key** (AU9–AU14) |
-| E | encryption at rest — envelope encryption: per-user random DEK wrapped by argon2id-derived keys from the user's password + a one-time recovery code (no server-held KEK) (E1–E15); see `docs/encryption.md` |
-| V | Venice.ai integration — **per-user OpenAI-compatible client**, prompt builder, SSE streaming, reasoning/web-search flags |
-| L | live Venice testing — opt-in, dev-only path (`backend/.env.live`, `npm run test:live`, `venice:probe` CLI). Never in the default test run or in CI. |
-| B | backend non-AI routes (stories / chapters / characters / outline / chats / user-settings) |
-| F | frontend — mockup-fidelity UI; source of truth is Storybook (`npm --prefix frontend run storybook`) |
-| I | infra (Dockerfiles, compose, backup, `SELF_HOSTING.md`) |
-| T | testing (integration + E2E) |
-| X | extras |
-| M | maintenance & dependency upgrades — recurring work (Node major bumps, security advisories, lint cleanup) |
-| DS | design-system follow-ups — new primitives, token additions, lint:design rule changes, Storybook story patterns |
-
-> The original bring-up "hard gates" (B requires AU, narrative CRUD requires E3+E9, V requires AU11+AU12, etc.) are all satisfied — the prerequisite groups are complete and archived under `docs/done/`. New work declares its own dependencies via bd (`bd dep add`), so there is no standing gate list to consult here.
 
 ---
 
