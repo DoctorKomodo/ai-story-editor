@@ -41,7 +41,7 @@ make dev                    # brings up postgres + backend + frontend
 make dev                    # start stack
 make stop                   # stop stack
 make logs                   # tail all services
-make migrate                # apply pending migrations (prisma migrate deploy)
+make migrate                # apply pending migrations (prisma migrate deploy) + restart backend to refresh its Prisma client
 make reset-db               # DESTRUCTIVE — wipes pgdata volume and re-migrates
 make rebuild-frontend       # rebuild + restart after a frontend package.json change
 make rebuild-backend        # rebuild + restart after a backend package.json change
@@ -159,13 +159,7 @@ Original bring-up order (preserved for reference):
 | M | maintenance & dependency upgrades — recurring work (Node major bumps, security advisories, lint cleanup) |
 | DS | design-system follow-ups — new primitives, token additions, lint:design rule changes, Storybook story patterns |
 
-Hard gates (do not start until the prerequisite is complete):
-- **B** requires **AU** — ownership middleware gates every non-auth route.
-- **Any narrative-entity CRUD** (Story / Chapter / Character / OutlineItem / Chat / Message — touches both B and F) requires **E3 + E9** — writing plaintext you'd have to re-encrypt later is wasted work and a leak risk.
-- **V** beyond `[A4]` requires **AU11 + AU12** — BYOK is the only key path; there is no server-wide Venice key.
-- **L** requires **V17** — the probe CLI and live tests reuse the per-user OpenAI-compatible client construction. No separate Venice client lives in `scripts/` or `tests/live/`.
-- **F AI features** (`[F33]`–`[F42]`: selection bubble, inline result, chat panel, model picker) require **V5+** streaming endpoints to be routable.
-- **E2E tests** (`[T8]`) require the full stack to run via Docker Compose.
+> The original bring-up "hard gates" (B requires AU, narrative CRUD requires E3+E9, V requires AU11+AU12, etc.) are all satisfied — the prerequisite groups are complete and archived under `docs/done/`. New work declares its own dependencies via bd (`bd dep add`), so there is no standing gate list to consult here.
 
 ---
 
@@ -267,34 +261,20 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 
 ## Security Review
 
-The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a read-only reviewer tuned to this project's auth / session / key / encryption surface. **Invoke it automatically** before marking any of these task groups `[x]`:
+The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a read-only reviewer tuned to this project's auth / session / key / encryption surface: password hashing, login, JWT issuance + refresh rotation, auth/ownership middleware, helmet / CORS / rate-limit, the AES-256-GCM crypto helper, the BYOK Venice-key path (store/validate/delete + no-leak), the per-user Venice client, the change/reset-password + recovery-code-rotation endpoints (DEK-wrap columns), and the env / encryption-key bootstrap.
 
-- **AU1–AU4** — password hashing, login, JWT issuance, refresh rotation.
-- **AU5–AU7** — auth middleware, ownership middleware, helmet / CORS / rate-limit.
-- **AU8** — original Venice-key-in-env isolation (now superseded by AU13).
-- **AU9–AU10** — username register + login with timing equalisation.
-- **AU11** — AES-256-GCM crypto helper (reused by BYOK and encryption-at-rest).
-- **AU12** — BYOK Venice-key endpoints (store, validate, delete). Review *after* the frontend build exists.
-- **AU13** — no-leak proof for the BYOK path (supersedes AU8).
-- **AU14** — argon2id migration path (if taken).
-- **AU15 / AU16 / AU17** — change-password, reset-password (recovery-code flow), rotate-recovery-code endpoints. Each touches the DEK-wrap columns and the password hash; review for plaintext/recovery-code leakage, rate-limiting, timing equalisation, and correct transaction boundaries.
-- **E3** — per-user DEK generation, password + recovery-code argon2id wraps, request-scoped unwrap cache, session-lifetime DEK availability mechanism (see open design question in [AU10] / Encryption-at-Rest section).
-- **E9** — repo-layer boundary (confirm no Prisma bypasses for narrative entities).
-- **E12** — encryption leak test integrity.
-- **E14** — DEK-wrap rotation script (recovery-code rotation, admin-force-rotation).
-- **V17** — per-user Venice client construction; must not cache across users.
-- **V18** — Venice-key verify endpoint.
-- **I7** — env swap (`VENICE_API_KEY` removed, `APP_ENCRYPTION_KEY` added — no `CONTENT_ENCRYPTION_KEY`).
-- Any change to: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/ai.service.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`.
+**`/bd-close-reviewed` auto-dispatches this reviewer** when the branch diff touches that surface (path-matched), and refuses to close on `BLOCK` / `FIX_BEFORE_MERGE`. That is the normal path — you rarely invoke it by hand. Do not bypass a blocking finding with `--override-block` unless explicitly authorised by the user.
 
-Invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope in the prompt (e.g. "review AU9–AU10 as currently implemented" or "review the repo-layer boundary for E9"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before closing the bd issue — `/bd-close-reviewed` already enforces this; do not bypass with `--override-block` unless explicitly authorised by the user.
+It is **in-lane for any change to**: `backend/src/services/auth.service.ts`, `backend/src/services/crypto.service.ts`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/ai.service.ts`, `backend/src/middleware/`, `backend/src/repos/`, `backend/src/routes/auth.routes.ts`, `backend/src/routes/venice-key.routes.ts`, or the `cookie` / `cors` / `helmet` / `rate-limit` / encryption-key bootstrap in `backend/src/index.ts`. (The historical task groups that built these surfaces — AU*, E3/E9/E12/E14, V17/V18, I7 — are closed; their detail lives in `docs/done/done-{AU,E,V,I}.md`.)
+
+For an out-of-band review (a spike not going through the close gate), invoke via the Agent tool with `subagent_type: security-reviewer` and a concrete scope:
 
 **Example invocation:**
 ```
 Agent(
   description: "Review BYOK endpoints",
   subagent_type: "security-reviewer",
-  prompt: "Review [AU12] as currently implemented. Scope: backend/src/routes/venice-key.routes.ts + backend/src/services/crypto.service.ts + content-crypto.service.ts. Confirm: (1) decrypted keys never logged or returned; (2) PUT validates against Venice before storing; (3) response bodies on GET expose only { hasKey, lastFour, endpoint }."
+  prompt: "Review the BYOK Venice-key endpoints as currently implemented. Scope: backend/src/routes/venice-key.routes.ts + backend/src/services/crypto.service.ts + content-crypto.service.ts. Confirm: (1) decrypted keys never logged or returned; (2) PUT validates against Venice before storing; (3) response bodies on GET expose only { hasKey, lastFour, endpoint }."
 )
 ```
 
@@ -302,16 +282,11 @@ Agent(
 
 ## Repo-Boundary Review
 
-The `repo-boundary-reviewer` subagent (`.claude/agents/repo-boundary-reviewer.md`) is a read-only reviewer tuned to the narrative-entity boundary and the encrypt-on-write / decrypt-on-read symmetry enforced by the repo layer. It owns a narrower surface than `security-reviewer` — specifically the repo-layer invariant from the "Database" rules and the ciphertext-egress / DEK-cache invariants from "Encryption at Rest". **Invoke it automatically** before marking any of these task groups `[x]`:
+The `repo-boundary-reviewer` subagent (`.claude/agents/repo-boundary-reviewer.md`) is a read-only reviewer tuned to the narrative-entity boundary and the encrypt-on-write / decrypt-on-read symmetry enforced by the repo layer. It owns a narrower surface than `security-reviewer` — the repo-layer invariant from the "Database" rules and the ciphertext-egress / DEK-cache invariants from "Encryption at Rest": every narrative read goes through decrypt and every write through encrypt, no `*Ciphertext`/`*Iv`/`*AuthTag` field appears in any response, `wordCount` is computed from plaintext before encryption, the leak test ([E12]) sentinel covers every narrative table, and no controller/service/route/script touches Prisma directly for a narrative model.
 
-- **E4–E8** — per-entity encryption schema + dual-write. Confirm new ciphertext columns are wired through both write and read paths in the matching repo.
-- **E9** — repo-layer boundary. The one that defines the invariant; review for any controller/service/route that still talks to Prisma for a narrative model.
-- **E11** — plaintext-column drop. Confirm every repo read has already migrated to ciphertext-only before the migration runs. ([E10] backfill was cancelled — no legacy plaintext rows existed pre-deployment.)
-- **E12** — leak test. Confirm the sentinel covers every narrative table and the test is not skipped.
-- Any change to: `backend/src/repos/**`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/prompt.service.ts` (reads chapter bodies), `backend/src/routes/{stories,chapters,characters,outline,chat}.routes.ts`, or any migration touching narrative columns.
-- Any new one-off script under `backend/prisma/scripts/**` or `scripts/**` that touches narrative tables.
+**`/bd-close-reviewed` auto-dispatches this reviewer** when the branch diff touches that surface (path-matched), and refuses to close on `BLOCK` / `FIX_BEFORE_MERGE`. That is the normal path; invoke it by hand only for an out-of-band review.
 
-Invoke via the Agent tool with `subagent_type: repo-boundary-reviewer` and a concrete scope (e.g. "review the chapter repo changes on this branch" or "review the new `/api/stories/:id/export` route for raw Prisma access"). Treat `BLOCK` and `FIX_BEFORE_MERGE` findings as hard gates before ticking the box.
+It is **in-lane for any change to**: `backend/src/repos/**`, `backend/src/services/content-crypto.service.ts`, `backend/src/services/prompt.service.ts` (reads chapter bodies), `backend/src/routes/{stories,chapters,characters,outline,chat}.routes.ts`, any migration touching narrative columns, or any new one-off script under `backend/prisma/scripts/**` or `scripts/**` that touches narrative tables. (The historical task groups that built this boundary — E4–E12 — are closed; detail lives in `docs/done/done-E.md`.)
 
 `security-reviewer` and `repo-boundary-reviewer` are complements, not substitutes — run both when a change touches both surfaces (e.g. a new narrative route that also adds auth middleware). Each stays in its own lane: `security-reviewer` owns auth/session/key/crypto-primitive surface; `repo-boundary-reviewer` owns the narrative-entity boundary.
 
@@ -355,7 +330,8 @@ Do not ask for permission to:
 - Venice.ai streaming responses use SSE — use `ReadableStream` on the frontend to consume them, not a standard `fetch().then(res => res.json())`
 - `wordCount` on `Chapter` must be computed from the TipTap JSON tree **before encryption** — you can't derive it from ciphertext. Order: parse JSON → count words → write ciphertext + plaintext wordCount in one repo call.
 - Refresh token rotation: when a refresh token is used, delete the old one and create a new one in the same transaction
-- Docker hot reload for the backend uses `tsx watch` (the `dev` script). `tsx` is a backend devDependency — the production image runs the bundled `dist/index.js` via plain `node` and ships no TS runner. The backend `build` script is `tsup`, which inlines `story-editor-shared` into the bundle; there is no `shared/dist` and nothing resolves a `story-editor-shared` specifier at prod runtime
+- Docker hot reload for the backend uses `tsx watch` (the `dev` script is `prisma generate && tsx watch` — see the Prisma-client-drift gotcha below). `tsx` is a backend devDependency — the production image runs the bundled `dist/index.js` via plain `node` and ships no TS runner. The backend `build` script is `tsup`, which inlines `story-editor-shared` into the bundle; there is no `shared/dist` and nothing resolves a `story-editor-shared` specifier at prod runtime
+- **Dev-container Prisma client drift.** The dev compose keeps `node_modules` in anonymous volumes, so a host-side `npx prisma generate` (or a host-run migration) never reaches the *running* container's generated client. After a schema migration this leaves the container on a stale client and every affected write 500s with `Unknown argument …` until it's regenerated — and the close-gate `verify` runs on the **host**, so it won't catch this. Self-healed: the backend `dev` script runs `prisma generate` on every start, and `make migrate` restarts the backend afterward. After any migration, restart the backend (`docker compose restart backend` or `make dev`) to refresh the client; never hand-edit the generated client
 - BYOK Venice key: only `content-crypto.service` / `crypto.service` touch the plaintext key, and only within the lifetime of a single request. Never log it, never echo it, never serialize it to an error object
 - `Chapter.content` plaintext mirror from `[D4]`/`[D10]` is intentionally **dropped** in `[E5]`/`[E11]` — TipTap JSON (decrypted on read via the chapter repo) is the sole source of truth for chapter bodies after that point; plaintext is derived on demand for export / AI prompts, never stored
 - Selection bubble: use `onMouseDown: preventDefault()` on the bubble so clicking it doesn't collapse the user's selection
