@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add `backend/tsconfig.test.json` + `frontend/tsconfig.test.json`, fold them into the existing `typecheck` scripts so CI / `make verify` inherit them, and fix all 206 frontend test-type errors (backend is already clean) — all test-side, no production code.
+**Goal:** Add `backend/tsconfig.test.json` + `frontend/tsconfig.test.json`, fold them into the existing `typecheck` scripts so CI / `make verify` inherit them, and fix all test-type errors (**29 backend + 206 frontend**) — all test-side, no production code.
 
-**Architecture:** Two new test tsconfigs that `extend` their workspace base config and add `tests/**` to scope. Backend lands green (0 errors) and is wired immediately. The frontend config file lands early (unwired, so no script/CI references a red gate), the 206 errors are fixed in cluster-grouped tasks using the compiler output as the worklist, and the frontend `typecheck` script is wired only in the final task once the gate is green.
+**Architecture:** Two new test tsconfigs that `extend` their workspace base config and add `tests/**` to scope. Each workspace lands its config file *unwired* first (so no committed `typecheck` script ever points at a red gate), then the errors are fixed in cluster-grouped tasks using the compiler output as the worklist, then the script is wired once that workspace's gate is green.
+
+> **REVISION (2026-06-14, during execution of `story-editor-4ry`):** The original plan claimed "backend is already clean (0 errors)" and wired the backend script immediately in Task 1. That recon was **invalid** — it was measured against a *no-op* config. `backend/tsconfig.json` declares `"exclude": ["node_modules","dist","tests"]`, and a child config that `extends` it **inherits that `exclude`** unless it redeclares it. The plan's original `backend/tsconfig.test.json` (no `exclude` key) therefore type-checked **0 of 110 test files** — the wired `typecheck` script exited green but checked nothing new (verify with `tsc -p tsconfig.test.json --noEmit --listFiles | grep -c '/tests/'` → `0`). The corrected config (explicit `exclude` override + `@/*` `paths` re-added, since the base has none + `tests/live/**` excluded to mirror `vitest.config.ts`) brings 109 test files into scope and reveals **29 real backend errors**. Backend now mirrors the frontend shape: config-lands-unwired → fix cluster → wire. The frontend half is unaffected — `frontend/tsconfig.app.json` uses `include: ["src"]` with **no** `exclude`, so the frontend test config works exactly as originally written (130 files in scope, 206 errors confirmed). The already-committed `df1bcdd` (no-op config + premature wiring) is corrected forward in the revised Task 1 below.
 
 **Tech Stack:** TypeScript 5 (`tsc`), Vitest 4, React 19, npm workspaces.
 
@@ -23,8 +25,9 @@
 
 ## File Structure
 
-- `backend/tsconfig.test.json` — **new.** Extends `tsconfig.json`; relaxes `rootDir` to `.`, `noEmit: true`, includes `src` + `tests`.
-- `backend/package.json` — `typecheck` script → `tsc -p tsconfig.test.json --noEmit`.
+- `backend/tsconfig.test.json` — **new.** Extends `tsconfig.json`; relaxes `rootDir` to `.`, `noEmit: true`, **redeclares `exclude` (drops the inherited `"tests"`, adds `tests/live/**`)**, **re-adds `paths` (`@/*` — the base has none)**, includes `src` + `tests`.
+- `backend/package.json` — `typecheck` script → `tsc -p tsconfig.test.json --noEmit` (**unwired in Task 1, wired in Task 1b after backend is green**).
+- `backend/tests/**` — ~10 files edited across the backend fix cluster (Task 1b). No production files.
 - `frontend/tsconfig.test.json` — **new.** Extends `tsconfig.app.json`; explicit `types` array (with the exhaustive-list NOTE comment), includes `src` + `tests`.
 - `frontend/package.json` — `typecheck` script → `tsc -b && tsc -p tsconfig.test.json --noEmit` (**wired in the final task only**).
 - `frontend/tests/**` — ~41 files edited across the fix-cluster tasks. No production files.
@@ -33,13 +36,15 @@ No CI/Makefile edits: `.github/workflows/ci.yml` (lines 79/82) and the `Makefile
 
 ---
 
-### Task 1: Backend test tsconfig + wire (lands green)
+### Task 1: Backend test tsconfig (corrected config — UNWIRED; establishes the ~29-error baseline)
+
+> **Supersedes the original Task 1.** Commit `df1bcdd` already created a *no-op* `backend/tsconfig.test.json` (inherited `exclude:["tests"]` → 0 test files checked) and prematurely wired the backend `typecheck` script to it. This task corrects both forward: fix the config so it actually checks tests, and **revert the script back to the src-only check** until Task 1b makes the gate green. No history rewrite — forward commit.
 
 **Files:**
-- Create: `backend/tsconfig.test.json`
-- Modify: `backend/package.json`
+- Modify: `backend/tsconfig.test.json` (correct the existing file from `df1bcdd`)
+- Modify: `backend/package.json` (revert `typecheck` to `tsc --noEmit` — unwire)
 
-- [ ] **Step 1: Create `backend/tsconfig.test.json`**
+- [ ] **Step 1: Correct `backend/tsconfig.test.json`**
 
 ```jsonc
 {
@@ -47,20 +52,92 @@ No CI/Makefile edits: `.github/workflows/ci.yml` (lines 79/82) and the `Makefile
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "incremental": false
+    "incremental": false,
+    // The base tsconfig.json has no `paths`; re-add the @/ alias so test files
+    // that import `@/lib/...` resolve under the gate (vitest aliases @ → src).
+    "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": ["src/**/*", "tests/**/*"],
+  // The base excludes `tests` entirely; redeclare to DROP that (so tests are checked)
+  // while still excluding the opt-in live suite (mirrors vitest.config.ts exclude).
+  "exclude": ["node_modules", "dist", "tests/live/**"]
 }
 ```
 
-- [ ] **Step 2: Confirm it's already clean**
+- [ ] **Step 2: Confirm the gate now actually checks test files**
 
-Run: `cd backend && npx tsc -p tsconfig.test.json --noEmit`
-Expected: exits 0, no errors. (Recon measured 0 backend test-type errors.) If any error appears, fix the **test** per the two hard rules, do not relax the config.
+Run: `cd backend && npx tsc -p tsconfig.test.json --noEmit --listFiles | grep -c '/tests/'`
+Expected: `109` (non-zero — proves the no-op is fixed).
 
-- [ ] **Step 3: Wire the backend `typecheck` script**
+- [ ] **Step 3: Establish the backend error baseline**
 
-In `backend/package.json`, change:
+Run: `cd backend && npx tsc -p tsconfig.test.json --noEmit 2>&1 | grep -c "error TS"`
+Expected: `29`. This is the baseline Task 1b burns down. (Breakdown: 9×TS2345, 4×TS2307, 3×TS7006, 3×TS2741, 3×TS2578, 3×TS2322, 2×TS6133, 2×TS1470.)
+
+- [ ] **Step 4: Unwire the backend `typecheck` script**
+
+In `backend/package.json`, revert:
+```json
+    "typecheck": "tsc -p tsconfig.test.json --noEmit",
+```
+back to:
+```json
+    "typecheck": "tsc --noEmit",
+```
+(Keeps the branch CI-green: the wired script must never point at a red gate. Re-wired in Task 1b after the 29 errors are fixed.)
+
+- [ ] **Step 5: Verify the unwired script still passes**
+
+Run: `npm -w story-editor-backend run typecheck`
+Expected: PASS (exit 0 — src-only check, unchanged from before this plan).
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/tsconfig.test.json backend/package.json
+git commit -m "[story-editor-4ry] backend: correct tsconfig.test.json to actually check tests (unwired; 29 errors to fix)"
+```
+
+---
+
+### Task 1b: Fix the 29 backend test-type errors + wire the backend gate
+
+**Files:** `backend/tests/**` — the files the compiler flags (see Step 1). No production files. Then `backend/package.json` (wire, final step).
+
+**Root causes (cluster):** fixture drift against canonical types after entity/schema changes — same class of bug the whole plan exists to catch. Representative sites from the baseline:
+- **TS2741 (3)** — fixtures missing a now-required field: `AuthenticatedUser.sessionId` (`ownership.middleware.test.ts:11,103`), `ModelInfo.supportsResponseSchema` (`user-settings-resolvers.test.ts:67`).
+- **TS2345 (9)** — argument-shape drift: `chat-messages-list.test.ts` Express `Request` generic mismatches (×7), `LogVeniceParamsInput` missing `reasoningEnabled` (`venice-call.service.test.ts:194`), `VeniceRawModel` shape (`venice.models.service.test.ts:489`).
+- **TS2307 (4)** — extensionless **dynamic** `await import('../../src/...')` under NodeNext (`session-dek.test.ts:203`, `story.repo.test.ts:100,104`) + `@/lib/text-gen-defaults` (`text-gen-defaults.test.ts:25`; resolved by the Task 1 `paths` add, confirm). Static imports of the same modules already resolve — fix the dynamic-import specifiers to match how the source is actually importable (add the explicit extension the resolver wants, or switch to the static-import style the file already uses).
+- **TS2322 (3)** — `null` → Prisma `InputJsonValue` (`complete.test.ts:655`) and `Promise<…>` vs `PrismaPromise<…>` (`chapters.test.ts:269`, `outline.test.ts:276`).
+- **TS7006 (3)** — implicit-`any` callback params (`venice-errors.test.ts:565,593,614`) — annotate the param with its real type.
+- **TS2578 (3)** — unused `@ts-expect-error` (`venice.models.service.test.ts:341,379,390`) — the underlying call now type-checks; remove the directive (do not leave it).
+- **TS6133 (2)** — unused locals (`complete.test.ts:289` `_req`, `message.repo.test.ts:240` `_userMsgA`) — remove or genuinely use.
+
+**The compiler output IS the worklist** — fix every flagged site per the two hard rules (fix the test to match the real type; never `any`/cast/source-widening; `@ts-expect-error <reason>` only for deliberate error-path inputs). If any error exposes a genuine **source** bug, STOP and report DONE_WITH_CONCERNS. (Recon found none — all flagged source modules exist and are imported successfully elsewhere.)
+
+- [ ] **Step 1: Enumerate the cluster**
+
+Run: `cd backend && npx tsc -p tsconfig.test.json --noEmit 2>&1 | grep "error TS"`
+This is the site list.
+
+- [ ] **Step 2: Fix every flagged site**
+
+Read the real type before each fix (the error message names the expected type; confirm field names against `shared/src/**` or the backend source that declares them — e.g. `grep -rn "sessionId" backend/src/middleware backend/src/types`, the `ModelInfo`/`LogVeniceParamsInput`/`VeniceRawModel` declarations). Apply the canonical fix. Do not loosen any source type.
+
+- [ ] **Step 3: Verify the gate is fully clean**
+
+Run: `cd backend && npx tsc -p tsconfig.test.json --noEmit 2>&1 | grep -c "error TS"`
+Expected: `0`.
+
+- [ ] **Step 4: Confirm no behavior change (backend suite)**
+
+The backend suite needs the stack up (vitest `globalSetup` resets the test DB against Postgres). Ensure `make dev` is running, then:
+Run: `npm -w story-editor-backend run test`
+Expected: PASS, same test count as before (type-only edits). If the stack isn't up, run `make dev` first and wait for healthy. (Per project memory: backend test verify lines require the compose stack up.)
+
+- [ ] **Step 5: Wire the backend `typecheck` script**
+
+Now that the gate is green, in `backend/package.json` change:
 ```json
     "typecheck": "tsc --noEmit",
 ```
@@ -68,18 +145,17 @@ to:
 ```json
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
 ```
-(The test config is a strict superset of the src-only config via `extends`, so this one command covers `src` + `tests`. The production build is `tsup`, unaffected.)
 
-- [ ] **Step 4: Verify the script**
+- [ ] **Step 6: Verify the wired script**
 
 Run: `npm -w story-editor-backend run typecheck`
-Expected: PASS (exit 0).
+Expected: PASS (exit 0 — now covers src + tests).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add backend/tsconfig.test.json backend/package.json
-git commit -m "[story-editor-4ry] backend: bring tests into the typecheck gate (tsconfig.test.json)"
+git add backend/tests backend/package.json
+git commit -m "[story-editor-4ry] backend tests: fix 29 fixture-drift type errors; wire tests into the typecheck gate"
 ```
 
 ---
@@ -424,9 +500,9 @@ git commit -m "[story-editor-4ry] frontend: wire tests into the typecheck gate (
 ## Self-Review
 
 **Spec coverage:**
-- Backend tsconfig.test.json + script wiring (green). ✓ Task 1
+- Backend tsconfig.test.json (corrected: `exclude` override + `@/*` paths) + 29 backend test fixes + script wiring. ✓ Tasks 1, 1b
 - Frontend tsconfig.test.json (with exhaustive-`types` NOTE comment). ✓ Task 2
-- Fold into existing `typecheck` scripts (CI/Makefile inherit; no new wiring). ✓ Tasks 1, 8 + confirmed ci.yml 79/82 / Makefile
+- Fold into existing `typecheck` scripts (CI/Makefile inherit; no new wiring). ✓ Tasks 1b, 8 + confirmed ci.yml 79/82 / Makefile
 - Fix all 206 frontend errors across the clusters. ✓ Tasks 3–7:
   - **T3** — 122 bare-`vi.fn()` `Mock<Procedure | Constructable>` (TS2322) + the ~5 TS2345 that reference the same type.
   - **T4** — keyboard/soft-delete handler mocks, `apiStream` mock, `useBannerRetry` `makeFakeMutation` + 6× `lastSendArgsRef` `RefObject<SendArgs|null>`, and the 1× Paper `:195` already-typed-but-wrong mock.
@@ -442,4 +518,4 @@ git commit -m "[story-editor-4ry] frontend: wire tests into the typecheck gate (
 
 **Type consistency:** `tsc -p tsconfig.test.json --noEmit` used identically as the per-cluster verify throughout; backend `typecheck` → `tsc -p tsconfig.test.json --noEmit`; frontend `typecheck` → `tsc -b && tsc -p tsconfig.test.json --noEmit` (matches the corrected bd verify line). Config field names (`rootDir`, `composite`, `types`, `include`) consistent between the File Structure section and Tasks 1–2.
 
-**Ordering safety:** No committed state has a red `typecheck` script — backend is green from Task 1; the frontend script is wired only in Task 8 after the gate is clean. Intermediate cluster commits touch only `frontend/tests` and never the script/CI, so the branch stays CI-green throughout.
+**Ordering safety:** No committed state has a red `typecheck` script. Each workspace lands its config *unwired* (backend: Task 1 reverts the premature `df1bcdd` wiring; frontend: Task 2 never wires), is wired only after its own gate is green (backend: Task 1b Step 5; frontend: Task 8 Step 2). Intermediate cluster commits touch only `backend/tests` / `frontend/tests`, never the script/CI, so the branch stays CI-green throughout.
