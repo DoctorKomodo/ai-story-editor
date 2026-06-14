@@ -10,7 +10,7 @@
  *     `data-testid="assistant-${id}"` and action button `aria-label`s.
  */
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -641,7 +641,9 @@ describe('SceneTab — [5] retry semantics', () => {
     teardownTest();
   });
 
-  it('clicking Regenerate fires mutateAsync with retry: true (linear retry)', async () => {
+  it('clicking Regenerate replays from the preceding user turn via fromMessageId', async () => {
+    // [u1, a1] — a1 is the only assistant row; its preceding user is u1.
+    // count = 1 (only a1 below u1) so no dialog; send fires directly with fromMessageId: 'u1'.
     const now = new Date().toISOString();
     const qc = makeModelClient();
 
@@ -709,7 +711,7 @@ describe('SceneTab — [5] retry semantics', () => {
       return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
     });
 
-    // The retry triggers another SSE stream.
+    // Regenerate triggers another SSE stream.
     vi.mocked(apiStream).mockResolvedValueOnce(sseResponse());
 
     const user = userEvent.setup();
@@ -718,18 +720,20 @@ describe('SceneTab — [5] retry semantics', () => {
     // Wait for the assistant row to appear.
     await screen.findByTestId('assistant-a1');
 
-    // Spy on apiStream calls to check the body includes retry: true.
     const regenerateBtn = await screen.findByRole('button', { name: /regenerate/i });
     await user.click(regenerateBtn);
 
+    // No confirm dialog — count = 1.
+    expect(screen.queryByTestId('resend-confirm')).toBeNull();
+
+    // The apiStream body must carry fromMessageId: 'u1' (resolved preceding user turn).
     await waitFor(() => {
       const calls = vi.mocked(apiStream).mock.calls;
       expect(calls.length).toBeGreaterThan(0);
       const lastCall = calls[calls.length - 1];
-      // lastCall[1] is { method, body, signal } — the init object passed to apiStream.
       const init = lastCall[1] as { body?: Record<string, unknown> };
       const body = init.body ?? {};
-      expect(body.retry).toBe(true);
+      expect(body.fromMessageId).toBe('u1');
     });
   });
 });
@@ -1044,5 +1048,214 @@ describe('SceneTab — [9] send error → banner retry', () => {
       const body = init.body ?? {};
       expect(body.retry).toBe(true);
     });
+  });
+});
+
+// ─── Test 10: useMessageActions parity ─────────────────────────────────────────
+
+describe('SceneTab — [10] useMessageActions parity', () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    fetchMock = vi.fn();
+    setupTest(fetchMock);
+  });
+
+  afterEach(() => {
+    vi.mocked(apiStream).mockReset();
+    teardownTest();
+  });
+
+  it('mid-thread Regenerate shows confirm dialog with message count', async () => {
+    const now = new Date().toISOString();
+    const qc = makeModelClient();
+
+    const messages = [
+      {
+        id: 'u1',
+        role: 'user' as const,
+        content: 'First',
+        attachmentJson: null,
+        citationsJson: null,
+        model: null,
+        tokens: null,
+        latencyMs: null,
+        createdAt: now,
+        updatedAt: null,
+      },
+      {
+        id: 'a1',
+        role: 'assistant' as const,
+        content: 'Reply one',
+        attachmentJson: null,
+        citationsJson: null,
+        model: 'venice-scene-1',
+        tokens: null,
+        latencyMs: null,
+        createdAt: now,
+        updatedAt: null,
+      },
+      {
+        id: 'u2',
+        role: 'user' as const,
+        content: 'Second',
+        attachmentJson: null,
+        citationsJson: null,
+        model: null,
+        tokens: null,
+        latencyMs: null,
+        createdAt: now,
+        updatedAt: null,
+      },
+      {
+        id: 'a2',
+        role: 'assistant' as const,
+        content: 'Reply two',
+        attachmentJson: null,
+        citationsJson: null,
+        model: 'venice-scene-1',
+        tokens: null,
+        latencyMs: null,
+        createdAt: now,
+        updatedAt: null,
+      },
+    ];
+
+    qc.setQueryData(chatMessagesQueryKey('scene1'), messages);
+    qc.setQueryData(chatsQueryKey('c1', 'scene'), [
+      {
+        id: 'scene1',
+        title: 'Test scene',
+        chapterId: 'c1',
+        kind: 'scene',
+        messageCount: 4,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      },
+    ]);
+
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/messages')) {
+        return Promise.resolve(jsonResponse(200, { messages }));
+      }
+      if (typeof url === 'string' && url.includes('/chats')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chats: [
+              {
+                id: 'scene1',
+                title: 'Test scene',
+                chapterId: 'c1',
+                kind: 'scene',
+                messageCount: 4,
+                createdAt: now,
+                updatedAt: now,
+                lastActivityAt: now,
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, qc);
+
+    await screen.findByTestId('assistant-a1');
+
+    // Click Regenerate on a1 (non-trailing) — anchor is u1, count = 3 (a1, u2, a2).
+    const regenerateBtns = await screen.findAllByRole('button', { name: /regenerate/i });
+    await user.click(regenerateBtns[0]);
+
+    const dialog = await screen.findByTestId('resend-confirm');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('3 messages');
+    // Scope within dialog to avoid matching the transcript action buttons.
+    expect(within(dialog).getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
+  });
+
+  it('user Edit button on a scene user row shows inline textarea', async () => {
+    const now = new Date().toISOString();
+    const qc = makeModelClient();
+
+    const messages = [
+      {
+        id: 'u1',
+        role: 'user' as const,
+        content: 'Write a scene',
+        attachmentJson: null,
+        citationsJson: null,
+        model: null,
+        tokens: null,
+        latencyMs: null,
+        createdAt: now,
+        updatedAt: null,
+      },
+      {
+        id: 'a1',
+        role: 'assistant' as const,
+        content: 'Linda sat on the veranda.',
+        attachmentJson: null,
+        citationsJson: null,
+        model: 'venice-scene-1',
+        tokens: null,
+        latencyMs: null,
+        createdAt: now,
+        updatedAt: null,
+      },
+    ];
+
+    qc.setQueryData(chatMessagesQueryKey('scene1'), messages);
+    qc.setQueryData(chatsQueryKey('c1', 'scene'), [
+      {
+        id: 'scene1',
+        title: 'Test scene',
+        chapterId: 'c1',
+        kind: 'scene',
+        messageCount: 2,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      },
+    ]);
+
+    fetchMock.mockImplementation((url: string) => {
+      if (typeof url === 'string' && url.includes('/messages')) {
+        return Promise.resolve(jsonResponse(200, { messages }));
+      }
+      if (typeof url === 'string' && url.includes('/chats')) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            chats: [
+              {
+                id: 'scene1',
+                title: 'Test scene',
+                chapterId: 'c1',
+                kind: 'scene',
+                messageCount: 2,
+                createdAt: now,
+                updatedAt: now,
+                lastActivityAt: now,
+              },
+            ],
+          }),
+        );
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
+    });
+
+    const user = userEvent.setup();
+    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, qc);
+
+    await screen.findByTestId('assistant-a1');
+
+    const editBtn = await screen.findByRole('button', { name: /^edit$/i });
+    await user.click(editBtn);
+
+    const textarea = await screen.findByRole('textbox', { name: /edit message/i });
+    expect(textarea).toBeInTheDocument();
+    expect(textarea).toHaveValue('Write a scene');
   });
 });

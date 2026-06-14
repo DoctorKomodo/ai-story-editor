@@ -28,12 +28,14 @@ import {
   MessageActions,
   RegenerateAction,
 } from '@/components/messageRow/primitives';
+import { ResendConfirmDialog } from '@/components/messageRow/ResendConfirmDialog';
 import { TranscriptView } from '@/components/messageRow/TranscriptView';
 import { UserMessageRow } from '@/components/messageRow/UserMessageRow';
 import { SceneEmptyState } from '@/components/SceneEmptyState';
 import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
 import {
+  useChatMessagesQuery,
   useChatsQuery,
   useCreateChatMutation,
   useRemoveChatMutation,
@@ -41,6 +43,7 @@ import {
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useMessageActions } from '@/hooks/useMessageActions';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -75,6 +78,15 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
   const sendChatMessage = useSendChatMessageMutation();
 
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
+
+  const messagesQuery = useChatMessagesQuery(activeChatId);
+  const actions = useMessageActions({
+    chatId: activeChatId,
+    chapterId,
+    modelId: selectedModelId,
+    messages: messagesQuery.data ?? [],
+    sendMutation: sendChatMessage,
+  });
   const lastSceneSendArgsRef = useRef<ChatSendArgs | null>(null);
 
   // Default-select first session when no active selection or active is stale.
@@ -155,24 +167,6 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
     onSend,
   });
 
-  const onRegenerate = useCallback(() => {
-    // Reuse the same guard `onSend` runs through; this catches "no chapter" /
-    // "no model selected" the same way and surfaces the canonical error to
-    // useErrorStore.
-    const guard = checkChatSendGuards({ activeChapterId: chapterId, selectedModelId });
-    if (guard) {
-      useErrorStore.getState().push(guard);
-      return;
-    }
-    if (activeChatId === null) return;
-    void sendChatMessage.mutateAsync({
-      chatId: activeChatId,
-      chapterId: chapterId as string,
-      modelId: selectedModelId as string,
-      retry: true,
-    });
-  }, [activeChatId, chapterId, selectedModelId, sendChatMessage]);
-
   const { copy: copyToClipboard, status: copyStatus } = useCopyToClipboard();
 
   const onCopy = useCallback(
@@ -251,7 +245,18 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
         {(rows) =>
           rows.map((r) => {
             if (r.kind === 'persisted' && r.message.role === 'user') {
-              return <UserMessageRow key={r.message.id} message={r.message} />;
+              return (
+                <UserMessageRow
+                  key={r.message.id}
+                  message={r.message}
+                  isEditing={actions.editingMessageId === r.message.id}
+                  onBeginEdit={actions.beginEdit}
+                  onCancelEdit={actions.cancelEdit}
+                  onConfirmEdit={actions.confirmEdit}
+                  onResend={actions.resendFromUser}
+                  actionsDisabled={actions.actionsDisabled}
+                />
+              );
             }
             if (r.kind === 'persisted' && r.message.role === 'assistant') {
               return (
@@ -272,8 +277,10 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
                         status={copyStatus}
                       />
                       <RegenerateAction
-                        onClick={onRegenerate}
-                        disabled={sendChatMessage.isPending}
+                        onClick={() => actions.regenerateFromAssistant(r.message.id)}
+                        disabled={
+                          actions.actionsDisabled || !actions.hasPrecedingUser(r.message.id)
+                        }
                       />
                     </MessageActions>
                   }
@@ -346,6 +353,14 @@ export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
           onStop={sendChatMessage.stop}
         />
       </div>
+      {actions.confirmState ? (
+        <ResendConfirmDialog
+          count={actions.confirmState.count}
+          verb={actions.confirmState.verb}
+          onConfirm={actions.confirmState.onConfirm}
+          onCancel={actions.confirmState.onCancel}
+        />
+      ) : null}
     </div>
   );
 }
