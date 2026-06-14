@@ -14,13 +14,17 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ├── frontend/                  React + Vite + TypeScript + TailwindCSS + TipTap + Zustand + TanStack Query
 ├── backend/                   Node.js + Express + TypeScript + Prisma (schema/migrations/seed under backend/prisma/)
 ├── shared/                    story-editor-shared — canonical Zod schemas + wire types, imported by frontend AND backend
-├── scripts/                   Utility shell scripts (backup, seed, reset)
-├── docs/                      Architecture documentation — data-model, api-contract, venice-integration, encryption
+├── scripts/                   Utility shell scripts (DB backup + restore-drill, test-DB reset, bd plan-link + close-gate, proxy smoke)
+├── tests/e2e/                 Playwright E2E specs (run against a live stack)
+├── docs/                      Architecture docs (data-model, api-contract, venice-integration, encryption) + agent-rules/ (rule digests + index.md), agent-workflow.md, superpowers/{plans,specs}/, done/ (closed-work archives)
 ├── mockups/archive/v1-2025-11/ Read-only archive of the original HTML prototype (Storybook is the live design surface)
+├── .claude/                   Skills (/bd-execute, /bd-close-reviewed) + agent defs (security-reviewer, repo-boundary-reviewer)
+├── .beads/                    bd (beads) issue tracker — local Dolt DB + tracked issues.jsonl export
 ├── docker-compose.yml
 ├── docker-compose.override.yml  (local dev, hot reload)
 ├── .env.example
 ├── Makefile
+├── AGENTS.md                  Agent quick-reference for the bd workflow (companion to this file)
 ├── TASKS.md                   Historical journal + ID-mapping table (working tracker is bd)
 └── SELF_HOSTING.md
 ```
@@ -62,8 +66,8 @@ make verify                 # local CI-equivalent: lint + typecheck + design-lin
 # no `build` script; the backend tsup build inlines it via `noExternal`.
 # Use `typecheck` for the equivalent compile-time gate.
 npm --prefix shared run typecheck     # tsc --noEmit (shared, source-only — no build artifact)
-npm --prefix backend run typecheck    # tsc --noEmit (backend)
-npm --prefix frontend run typecheck   # tsc -b (frontend, project references)
+npm --prefix backend run typecheck    # tsc -p tsconfig.test.json --noEmit (backend src + tests)
+npm --prefix frontend run typecheck   # tsc -b && tsc -p tsconfig.test.json --noEmit (project refs + tests)
 
 # Working tracker (bd) — see "Task Completion Protocol" below
 bd ready                       # list available tasks (no blockers)
@@ -148,7 +152,7 @@ Original bring-up order (preserved for reference):
 | A | architecture docs (`docs/data-model.md`, `docs/api-contract.md`, `docs/venice-integration.md`, `docs/encryption.md`) |
 | D | database (schema + migrations + seed) |
 | AU | auth — username register/login (supersedes email), refresh rotation, middleware, security headers, **BYOK Venice key** (AU9–AU14) |
-| E | encryption at rest — envelope encryption with per-user DEK wrapped by server KEK (E1–E15); see `docs/encryption.md` |
+| E | encryption at rest — envelope encryption: per-user random DEK wrapped by argon2id-derived keys from the user's password + a one-time recovery code (no server-held KEK) (E1–E15); see `docs/encryption.md` |
 | V | Venice.ai integration — **per-user OpenAI-compatible client**, prompt builder, SSE streaming, reasoning/web-search flags |
 | L | live Venice testing — opt-in, dev-only path (`backend/.env.live`, `npm run test:live`, `venice:probe` CLI). Never in the default test run or in CI. |
 | B | backend non-AI routes (stories / chapters / characters / outline / chats / user-settings) |
@@ -184,13 +188,13 @@ Original bring-up order (preserved for reference):
 *Frontend implementation rules live in `docs/agent-rules/frontend.md` (read by implementer + code-quality-reviewer at dispatch time via `/bd-execute`).*
 
 ### Database
-*Database / repo-layer rules live in `docs/agent-rules/backend.md` (general database rules) and `docs/agent-rules/repo-boundary.md` (narrative-entity boundary, encrypt-on-write / decrypt-on-read template). Every model has `createdAt`; most have `updatedAt`; `Message` is append-only with `createdAt` only. `[E10]` is cancelled and `[X10]` is retired — see "General" rules above for the no-data-migration-branches policy.*
+*Database / repo-layer rules live in `docs/agent-rules/backend.md` (general database rules) and `docs/agent-rules/repo-boundary.md` (narrative-entity boundary, encrypt-on-write / decrypt-on-read template). Every model has `createdAt`; most have `updatedAt`. `Message` carries a nullable `updatedAt` (`null` = never edited; set only by the in-place edit path `message.repo.update`) — it is no longer append-only. `Session` and `RefreshToken` are `createdAt`-only by design. `[E10]` is cancelled and `[X10]` is retired — see "General" rules above for the no-data-migration-branches policy.*
 
 ### AI Integration
 *AI integration rules (per-user Venice client, prompt service, context budget, `venice_parameters`) live in `docs/agent-rules/backend.md`.*
 
 ### Encryption at Rest
-*Encryption-at-rest rules live in `docs/agent-rules/repo-boundary.md` (envelope model, request-scoped DEK, ciphertext-egress, leak-test invariant) and `docs/agent-rules/backend.md` (the surrounding backend invariants and `APP_ENCRYPTION_KEY` policy). The DEK must survive across requests within a single session — implementation (process-memory session cache, session-key wrap in access token, `Session` table, etc.) is pending resolution in `docs/encryption.md` and must be finalised before `[E3]` starts.*
+*Encryption-at-rest rules live in `docs/agent-rules/repo-boundary.md` (envelope model, request-scoped DEK, ciphertext-egress, leak-test invariant) and `docs/agent-rules/backend.md` (the surrounding backend invariants and `APP_ENCRYPTION_KEY` policy). The DEK survives across requests within a session via the process-memory session store (`backend/src/services/session-store.ts`, binding `{ userId, dek, expiresAt }`) plus a request-scoped `WeakMap` unwrap cache in `content-crypto.service.ts` — shipped across the E3–E15 series; see `docs/encryption.md` for the design.*
 
 ---
 
@@ -244,7 +248,7 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 | API routes | kebab-case nouns | `/api/stories`, `/api/ai/complete` |
 | React components | PascalCase | `CharacterSheet` |
 | React hooks | camelCase, `use` prefix | `useAuth`, `useStory` |
-| Environment vars | SCREAMING_SNAKE_CASE | `VENICE_API_KEY` |
+| Environment vars | SCREAMING_SNAKE_CASE | `APP_ENCRYPTION_KEY` |
 | Test files | mirror source path + `.test.ts` | `tests/routes/stories.test.ts` |
 
 ---
@@ -253,7 +257,7 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 
 - Create a new branch for each task group (e.g. `feature/auth`, `feature/stories-crud`)
 - Commit after each passing verify command — small, frequent commits
-- Commit message format: `[TASK_ID] brief description` e.g. `[AU1] add user registration with bcrypt`
+- Commit message format: `[TASK_ID] brief description` — `TASK_ID` is the bd issue id, e.g. `[story-editor-7tg] add nullable Message.updatedAt column`
 - Never commit directly to `main`
 - Never commit `.env` or any file containing real credentials
 
@@ -386,3 +390,10 @@ bd close <id>         # Complete work
 - NEVER say "ready to push when you are" - YOU must push
 - If push fails, resolve and retry until it succeeds
 <!-- END BEADS INTEGRATION -->
+
+---
+
+> **The project protocol above overrides the generic bd template in the integration block.** That block is bd-generated; where it conflicts with this file's "Task Completion Protocol", this file wins:
+> - **Never run bare `bd close`** — close through `/bd-close-reviewed` so the verify + typecheck + surface-reviewer gates run. (The block's `bd close <id>` is the raw command, not the project flow.)
+> - **`/bd-execute` *does* use `TodoWrite`** as its within-session per-task ledger. The block's "do NOT use TodoWrite" applies to *cross-session* task tracking, which belongs in bd — not to the implementer loop's scratch checklist.
+> - **Push only when the user asks, and never commit directly to `main`.** The block's "MANDATORY git push / YOU must push" steps are not how this project operates — work lands on a branch and the user controls when it's pushed/merged.
