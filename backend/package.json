@@ -8,7 +8,7 @@
     "build": "tsup",
     "typecheck": "tsc -p tsconfig.test.json --noEmit",
     "start": "node --enable-source-maps dist/index.js",
-    "dev": "tsx watch src/index.ts",
+    "dev": "prisma generate && tsx watch src/index.ts",
     "test": "vitest run",
     "test:backend": "vitest",
     "db:test:reset": "bash ../scripts/db-test-reset.sh",

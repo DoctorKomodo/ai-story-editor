@@ -859,3 +859,406 @@ describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries'
     expect(systemMessage).not.toContain('<previous_chapters>');
   });
 });
+
+// ─── POST resend via fromMessageId suite ─────────────────────────────────────
+
+// Shared setup: creates a chat with two completed turns [u1, a1, u2, a2].
+// Returns the chat and the IDs of u1 and a1 (used as anchors in various tests).
+async function setupTwoTurnChat(
+  username: string,
+  kind: 'ask' | 'scene' = 'ask',
+): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  chatId: string;
+  u1Id: string;
+  a1Id: string;
+  u2Id: string;
+  a2Id: string;
+  fetchSpy: ReturnType<typeof vi.fn>;
+}> {
+  const { agent, chapterId } = await setup(username);
+  const fetchSpy = stubVeniceFetch();
+  await storeKey(agent, fetchSpy);
+
+  const created = await agent
+    .post(`/api/chapters/${chapterId}/chats`)
+    .send({ title: 'resend-test', kind });
+  const chatId = created.body.chat.id as string;
+
+  // Turn 1
+  queueSseResponse(fetchSpy, 'first assistant reply');
+  await sendMessage(agent, chatId, { content: 'user message one', modelId: MODEL_ID });
+
+  // Turn 2 — models cache warm; only queue the stream.
+  fetchSpy.mockResolvedValueOnce(
+    sseStreamResponse([
+      {
+        id: 'chatcmpl-turn2',
+        object: 'chat.completion.chunk',
+        choices: [{ index: 0, delta: { content: 'second assistant reply' }, finish_reason: null }],
+      },
+    ]),
+  );
+  await sendMessage(agent, chatId, { content: 'user message two', modelId: MODEL_ID });
+
+  // Snapshot IDs for assertions.
+  const msgsRes = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+  const msgs = msgsRes.body.messages as Array<{ id: string; role: string }>;
+  const u1Id = msgs[0].id;
+  const a1Id = msgs[1].id;
+  const u2Id = msgs[2].id;
+  const a2Id = msgs[3].id;
+
+  return { agent, chatId, u1Id, a1Id, u2Id, a2Id, fetchSpy };
+}
+
+describe('POST resend via fromMessageId', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  it('drops everything after the anchor user message and regenerates', async () => {
+    const { agent, chatId, u1Id, fetchSpy } = await setupTwoTurnChat('resend-drop-u1');
+
+    // Resend from u1: expect a1/u2/a2 to be dropped and a fresh assistant to appear.
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-resend1',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'regenerated from u1' }, finish_reason: null }],
+        },
+      ]),
+    );
+    const res = await sendMessage(agent, chatId, { modelId: MODEL_ID, fromMessageId: u1Id });
+    expect(res).toBe(200);
+
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const roles = (list.body.messages as Array<{ role: string }>).map((m) => m.role);
+    expect(roles).toEqual(['user', 'assistant']);
+    expect((list.body.messages as Array<{ id: string }>)[0].id).toBe(u1Id);
+  });
+
+  it('does NOT create a duplicate user message on resend', async () => {
+    const { agent, chatId, u1Id, fetchSpy } = await setupTwoTurnChat('resend-nodup-u1');
+
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-nodup',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'again' }, finish_reason: null }],
+        },
+      ]),
+    );
+    await sendMessage(agent, chatId, { modelId: MODEL_ID, fromMessageId: u1Id });
+
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const userCount = (list.body.messages as Array<{ role: string }>).filter(
+      (m) => m.role === 'user',
+    ).length;
+    expect(userCount).toBe(1); // u1 reused, not re-inserted
+  });
+
+  it('rejects fromMessageId pointing at an assistant message with 400', async () => {
+    const { agent, chatId, a1Id } = await setupTwoTurnChat('resend-asst-u1');
+
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ modelId: MODEL_ID, fromMessageId: a1Id });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('resend_invalid_state');
+  });
+
+  it('rejects an unknown fromMessageId with 400', async () => {
+    const { agent, chatId } = await setupTwoTurnChat('resend-unknown-u1');
+
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ modelId: MODEL_ID, fromMessageId: 'does-not-exist' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('resend_invalid_state');
+  });
+
+  it('rejects a fromMessageId from a different chat (same user) with 400', async () => {
+    const { agent, chatId, chapterId } = await (async () => {
+      const base = await setup('resend-cross-chat-u1');
+      const fetchSpy = stubVeniceFetch();
+      await storeKey(base.agent, fetchSpy);
+      const created = await base.agent
+        .post(`/api/chapters/${base.chapterId}/chats`)
+        .send({ title: 'main-chat', kind: 'ask' });
+      return {
+        agent: base.agent,
+        chatId: created.body.chat.id as string,
+        chapterId: base.chapterId,
+        fetchSpy,
+      };
+    })();
+
+    // Create a SECOND chat for the same user.
+    const otherCreated = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'other-chat', kind: 'ask' });
+    const otherChatId = otherCreated.body.chat.id as string;
+
+    // Add a user message to the OTHER chat via the route.
+    // We need a warm models cache — reinitialise.
+    veniceModelsService.resetCache();
+    const fetchSpy2 = stubVeniceFetch();
+    await storeKey(agent, fetchSpy2);
+    queueSseResponse(fetchSpy2, 'other chat reply');
+    await sendMessage(agent, otherChatId, { content: 'other chat message', modelId: MODEL_ID });
+
+    const otherMsgs = await agent.get(`/api/chats/${otherChatId}/messages`).expect(200);
+    const otherChatUserMsgId = (
+      otherMsgs.body.messages as Array<{ id: string; role: string }>
+    ).find((m) => m.role === 'user')!.id;
+
+    // Attempt to use that message ID against the FIRST (empty) chat.
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .send({ modelId: MODEL_ID, fromMessageId: otherChatUserMsgId });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('resend_invalid_state');
+
+    // The rejected resend wrote nothing to the target chat (it started empty
+    // and the 400 returns before any persist).
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    expect(list.body.messages as Array<{ id: string }>).toHaveLength(0);
+  });
+
+  it('drop+regenerate works for kind=scene (kind-agnostic)', async () => {
+    const { agent, chatId, u1Id, fetchSpy } = await setupTwoTurnChat('resend-scene-u1', 'scene');
+
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-scene-resend',
+          object: 'chat.completion.chunk',
+          choices: [
+            { index: 0, delta: { content: 'scene regenerated from u1' }, finish_reason: null },
+          ],
+        },
+      ]),
+    );
+    const status = await sendMessage(agent, chatId, { modelId: MODEL_ID, fromMessageId: u1Id });
+    expect(status).toBe(200);
+
+    const list = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const roles = (list.body.messages as Array<{ role: string }>).map((m) => m.role);
+    expect(roles).toEqual(['user', 'assistant']);
+    expect((list.body.messages as Array<{ id: string }>)[0].id).toBe(u1Id);
+  });
+});
+
+// ─── PATCH /api/chats/:chatId/messages/:id suite ──────────────────────────────
+
+describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
+  beforeEach(async () => {
+    _resetSessionStore();
+    await resetAll();
+    veniceModelsService.resetCache();
+  });
+
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    _resetSessionStore();
+    await resetAll();
+  });
+
+  // Creates a chat with one user message + one assistant message, returning
+  // their IDs and the chatId along with the agent.
+  async function setupChatWithMessages(username: string): Promise<{
+    agent: ReturnType<typeof request.agent>;
+    chatId: string;
+    userMessageId: string;
+    assistantMessageId: string;
+  }> {
+    const { agent, chapterId } = await setup(username);
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'edit-test', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // POST a full turn so we get both a user and an assistant message.
+    queueSseResponse(fetchSpy, 'Assistant reply for edit test.');
+    await sendMessage(agent, chatId, { content: 'original user content', modelId: MODEL_ID });
+
+    // Retrieve messages to capture both IDs.
+    const msgsRes = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const messages = msgsRes.body.messages as Array<{ id: string; role: string }>;
+    const userMessageId = messages.find((m) => m.role === 'user')!.id;
+    const assistantMessageId = messages.find((m) => m.role === 'assistant')!.id;
+
+    return { agent, chatId, userMessageId, assistantMessageId };
+  }
+
+  it('edits a user message in place, sets updatedAt, bumps lastActivityAt', async () => {
+    const { agent, chatId, userMessageId } = await setupChatWithMessages('edit-u1');
+
+    // Capture updatedAt before the edit (must be null for a fresh message).
+    const beforeMsgs = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const userMsgBefore = (
+      beforeMsgs.body.messages as Array<{ id: string; content: string; updatedAt: string | null }>
+    ).find((m) => m.id === userMessageId)!;
+    expect(userMsgBefore.content).toBe('original user content');
+    expect(userMsgBefore.updatedAt).toBeNull();
+
+    const res = await agent
+      .patch(`/api/chats/${chatId}/messages/${userMessageId}`)
+      .send({ content: 'edited text' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.message.content).toBe('edited text');
+    expect(res.body.message.updatedAt).not.toBeNull();
+    expect(typeof res.body.message.updatedAt).toBe('string');
+  });
+
+  it('bumps Chat.lastActivityAt on edit', async () => {
+    const { agent, chapterId } = await setup('edit-lastactivity-u1');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    // Capture a known chapter ID and build a chat.
+    const created = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'act-test', kind: 'ask' });
+    const chatId = created.body.chat.id as string;
+
+    // Send a full turn so we get a user message to edit.
+    queueSseResponse(fetchSpy, 'reply');
+    await sendMessage(agent, chatId, { content: 'hello', modelId: MODEL_ID });
+
+    // Get lastActivityAt via the chapter chats list.
+    const chatsBefore = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
+    const beforeAt = (chatsBefore.body.chats as Array<{ id: string; lastActivityAt: string }>).find(
+      (c) => c.id === chatId,
+    )!.lastActivityAt;
+
+    // Get user message ID.
+    const msgsRes = await agent.get(`/api/chats/${chatId}/messages`).expect(200);
+    const userMessageId = (msgsRes.body.messages as Array<{ id: string; role: string }>).find(
+      (m) => m.role === 'user',
+    )!.id;
+
+    // Wait a tick so the timestamp can advance.
+    await new Promise((r) => setTimeout(r, 5));
+
+    await agent
+      .patch(`/api/chats/${chatId}/messages/${userMessageId}`)
+      .send({ content: 'edited' })
+      .expect(200);
+
+    const chatsAfter = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
+    const afterAt = (chatsAfter.body.chats as Array<{ id: string; lastActivityAt: string }>).find(
+      (c) => c.id === chatId,
+    )!.lastActivityAt;
+
+    expect(new Date(afterAt).getTime()).toBeGreaterThan(new Date(beforeAt).getTime());
+  });
+
+  it('rejects editing an assistant message (role !== user) with 404', async () => {
+    const { agent, chatId, assistantMessageId } = await setupChatWithMessages('edit-u2');
+
+    const res = await agent
+      .patch(`/api/chats/${chatId}/messages/${assistantMessageId}`)
+      .send({ content: 'nope' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a message id that does not exist', async () => {
+    const { agent, chatId } = await setupChatWithMessages('edit-u3');
+
+    const res = await agent
+      .patch(`/api/chats/${chatId}/messages/does-not-exist`)
+      .send({ content: 'x' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 for a chat that does not exist', async () => {
+    const { agent } = await setup('edit-u4');
+
+    const res = await agent
+      .patch('/api/chats/does-not-exist/messages/also-not-real')
+      .send({ content: 'x' });
+    expect(res.status).toBe(404);
+  });
+
+  it('returns 404 when the message belongs to a different chat (same user)', async () => {
+    // Both chats belong to the same user; the bug would allow a message from chatB
+    // to be edited through the chatA URL (same userId ownership passes, wrong chatId).
+    const { agent, chapterId } = await setup('edit-cross-chat-u1');
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    // Create chatA with a user message.
+    const createdA = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'chat-a', kind: 'ask' });
+    const chatAId = createdA.body.chat.id as string;
+    queueSseResponse(fetchSpy, 'Chat A assistant reply.');
+    await sendMessage(agent, chatAId, { content: 'chat A original content', modelId: MODEL_ID });
+
+    // Create chatB (same user, same chapter) with its own user message.
+    // Models cache is already warm after chatA's send — only queue the stream.
+    const createdB = await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .send({ title: 'chat-b', kind: 'ask' });
+    const chatBId = createdB.body.chat.id as string;
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-cross-chat-b',
+          object: 'chat.completion.chunk',
+          choices: [
+            { index: 0, delta: { content: 'Chat B assistant reply.' }, finish_reason: null },
+          ],
+        },
+      ]),
+    );
+    await sendMessage(agent, chatBId, {
+      content: 'chat B original content',
+      modelId: MODEL_ID,
+    });
+
+    // Get chatB's user message ID.
+    const chatBMsgs = await agent.get(`/api/chats/${chatBId}/messages`).expect(200);
+    const chatBUserMessageId = (
+      chatBMsgs.body.messages as Array<{ id: string; role: string }>
+    ).find((m) => m.role === 'user')!.id;
+
+    // PATCH chatA URL with chatB's message ID — must be 404 because chatId doesn't match.
+    const res = await agent
+      .patch(`/api/chats/${chatAId}/messages/${chatBUserMessageId}`)
+      .send({ content: 'cross-chat edit attempt' });
+    expect(res.status).toBe(404);
+
+    // Confirm chatB's message content is unchanged.
+    const chatBMsgsAfter = await agent.get(`/api/chats/${chatBId}/messages`).expect(200);
+    const chatBUserMsgAfter = (
+      chatBMsgsAfter.body.messages as Array<{ id: string; role: string; content: string }>
+    ).find((m) => m.id === chatBUserMessageId)!;
+    expect(chatBUserMsgAfter.content).toBe('chat B original content');
+  });
+
+  it('rejects empty content', async () => {
+    const { agent, chatId, userMessageId } = await setupChatWithMessages('edit-u5');
+
+    const res = await agent
+      .patch(`/api/chats/${chatId}/messages/${userMessageId}`)
+      .send({ content: '' });
+    expect(res.status).toBe(400);
+  });
+});

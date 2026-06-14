@@ -5,11 +5,13 @@ import { ChatComposer, type SendArgs as ChatSendArgs } from '@/components/ChatCo
 import { ChatEmptyState } from '@/components/ChatEmptyState';
 import { AssistantMessageRow } from '@/components/messageRow/AssistantMessageRow';
 import { CopyAction, MessageActions, RegenerateAction } from '@/components/messageRow/primitives';
+import { ResendConfirmDialog } from '@/components/messageRow/ResendConfirmDialog';
 import { TranscriptView } from '@/components/messageRow/TranscriptView';
 import { UserMessageRow } from '@/components/messageRow/UserMessageRow';
 import { SessionPicker, type SessionPickerLabels } from '@/components/SessionPicker';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
 import {
+  useChatMessagesQuery,
   useChatsQuery,
   useCreateChatMutation,
   useRemoveChatMutation,
@@ -17,6 +19,7 @@ import {
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
+import { useMessageActions } from '@/hooks/useMessageActions';
 import { useSoftDelete } from '@/hooks/useSoftDelete';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { checkChatSendGuards } from '@/lib/chatSendGuards';
@@ -55,6 +58,15 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
 
   const settings = useUserSettings();
   const selectedModelId = settings.chat.model;
+
+  const messagesQuery = useChatMessagesQuery(activeChatId);
+  const actions = useMessageActions({
+    chatId: activeChatId,
+    chapterId,
+    modelId: selectedModelId,
+    messages: messagesQuery.data ?? [],
+    sendMutation: sendChatMessage,
+  });
 
   const lastChatSendArgsRef = useRef<ChatSendArgs | null>(null);
 
@@ -173,27 +185,6 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
     [copyToClipboard],
   );
 
-  const onRegenerate = useCallback(() => {
-    // Reuse the same guard `onSend` runs through; this catches "no chapter" /
-    // "no model selected" the same way and surfaces the canonical error to
-    // useErrorStore.
-    const guard = checkChatSendGuards({
-      activeChapterId: chapterId,
-      selectedModelId,
-    });
-    if (guard) {
-      useErrorStore.getState().push(guard);
-      return;
-    }
-    if (activeChatId === null) return;
-    void sendChatMessage.mutateAsync({
-      chatId: activeChatId,
-      chapterId: chapterId as string,
-      modelId: selectedModelId as string,
-      retry: true,
-    });
-  }, [chapterId, selectedModelId, activeChatId, sendChatMessage]);
-
   const visibleSessions = sessions.filter((s) => !isDeletePending(s.id));
 
   const pendingEntries = Array.from(pendingDeletes.entries());
@@ -227,7 +218,18 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
         {(rows) =>
           rows.map((r) => {
             if (r.kind === 'persisted' && r.message.role === 'user') {
-              return <UserMessageRow key={r.message.id} message={r.message} />;
+              return (
+                <UserMessageRow
+                  key={r.message.id}
+                  message={r.message}
+                  isEditing={actions.editingMessageId === r.message.id}
+                  onBeginEdit={actions.beginEdit}
+                  onCancelEdit={actions.cancelEdit}
+                  onConfirmEdit={actions.confirmEdit}
+                  onResend={actions.resendFromUser}
+                  actionsDisabled={actions.actionsDisabled}
+                />
+              );
             }
             if (r.kind === 'persisted' && r.message.role === 'assistant') {
               return (
@@ -238,8 +240,10 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                     <MessageActions>
                       <CopyAction onClick={() => onCopy(r.message)} status={copyStatus} />
                       <RegenerateAction
-                        onClick={onRegenerate}
-                        disabled={sendChatMessage.isPending}
+                        onClick={() => actions.regenerateFromAssistant(r.message.id)}
+                        disabled={
+                          actions.actionsDisabled || !actions.hasPrecedingUser(r.message.id)
+                        }
                       />
                     </MessageActions>
                   }
@@ -260,6 +264,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                     tokens: null,
                     latencyMs: null,
                     createdAt: new Date().toISOString(),
+                    updatedAt: null,
                   }}
                 />
               );
@@ -278,6 +283,7 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
                     tokens: null,
                     latencyMs: null,
                     createdAt: new Date().toISOString(),
+                    updatedAt: null,
                   }}
                   actions={null}
                   isStreaming
@@ -309,6 +315,13 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
           onStop={sendChatMessage.stop}
         />
       </div>
+      {actions.confirmState ? (
+        <ResendConfirmDialog
+          count={actions.confirmState.count}
+          onConfirm={actions.confirmState.onConfirm}
+          onCancel={actions.confirmState.onCancel}
+        />
+      ) : null}
     </div>
   );
 }

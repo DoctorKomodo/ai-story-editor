@@ -16,6 +16,7 @@ function makeMessage(overrides: Partial<Message> = {}): Message {
     tokens: 42,
     latencyMs: 1200,
     createdAt: new Date().toISOString(),
+    updatedAt: null,
     ...overrides,
   };
 }

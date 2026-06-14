@@ -22,6 +22,7 @@ function makeMessage(over: Partial<Message> & { id: string }): Message {
     tokens: null,
     latencyMs: null,
     createdAt: new Date().toISOString(),
+    updatedAt: null,
     ...over,
   };
 }

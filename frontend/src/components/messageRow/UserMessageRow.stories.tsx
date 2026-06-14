@@ -12,6 +12,7 @@ const baseMessage: Message = {
   tokens: null,
   latencyMs: null,
   createdAt: new Date().toISOString(),
+  updatedAt: null,
 };
 
 const meta: Meta<typeof UserMessageRow> = {
@@ -53,5 +54,24 @@ export const LongContent: Story = {
       content:
         'Could you draft three alternative chapter titles that emphasize tension rather than mystery? The current one is fine but feels too detached for the pacing of this section.',
     },
+  },
+};
+
+export const Actions: Story = {
+  args: {
+    message: baseMessage,
+    onBeginEdit: (id) => console.log('beginEdit', id),
+    onResend: (id) => console.log('resend', id),
+  },
+};
+
+export const Editing: Story = {
+  args: {
+    message: baseMessage,
+    isEditing: true,
+    onBeginEdit: (id) => console.log('beginEdit', id),
+    onCancelEdit: () => console.log('cancelEdit'),
+    onConfirmEdit: (id, content) => console.log('confirmEdit', id, content),
+    onResend: (id) => console.log('resend', id),
   },
 };

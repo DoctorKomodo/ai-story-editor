@@ -1,9 +1,22 @@
-import type { JSX } from 'react';
+import { type JSX, useLayoutEffect, useRef, useState } from 'react';
 import type { Message } from 'story-editor-shared';
+import { Button } from '@/design/primitives';
+import { EditAction, MessageActions, RegenerateAction } from './primitives';
 
 export interface UserMessageRowProps {
   message: Message;
   chapterTitle?: string | null;
+  /** When true, the bubble renders an inline editable textarea. */
+  isEditing?: boolean;
+  /** Begin editing this message. Absent → no Edit/Resend actions (e.g. draft rows). */
+  onBeginEdit?: (id: string) => void;
+  onCancelEdit?: () => void;
+  /** Called only when the text actually changed and is non-empty. */
+  onConfirmEdit?: (id: string, content: string) => void;
+  /** Resend (replay) from this user message. */
+  onResend?: (id: string) => void;
+  /** Disables Edit/Resend (e.g. a turn is streaming). */
+  actionsDisabled?: boolean;
 }
 
 function chapterCaption(chapterTitle: string | null | undefined): string {
@@ -11,13 +24,84 @@ function chapterCaption(chapterTitle: string | null | undefined): string {
   return '—';
 }
 
-export function UserMessageRow({ message, chapterTitle }: UserMessageRowProps): JSX.Element {
+function EditBox({
+  initial,
+  onConfirm,
+  onCancel,
+}: {
+  initial: string;
+  onConfirm: (text: string) => void;
+  onCancel: () => void;
+}): JSX.Element {
+  const [draft, setDraft] = useState(initial);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+  const trimmed = draft.trim();
+  const unchanged = draft === initial;
+  const canConfirm = trimmed.length > 0;
+  // Grow the field to fit its content so the editor opens at the same height
+  // as the bubble it replaces (no thread jump) and stays comfortable for long
+  // messages. A raw <textarea> mirrors the bubble's exact box model; the
+  // Textarea primitive uses form-field metrics (padding/leading/border) that
+  // wouldn't line up with the bubble.
+  const resize = (): void => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useLayoutEffect(resize, []);
+  const confirm = (): void => {
+    if (!canConfirm) return;
+    if (unchanged) {
+      onCancel(); // no-op edit — exit without a PATCH
+      return;
+    }
+    onConfirm(draft);
+  };
+  return (
+    <div className="flex flex-col items-end gap-1 w-full">
+      <textarea
+        ref={taRef}
+        // biome-ignore lint/a11y/noAutofocus: editing affordance focuses its field on open
+        autoFocus
+        aria-label="Edit message"
+        value={draft}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          resize();
+        }}
+        rows={1}
+        className="bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] font-sans ml-auto w-[80%] resize-none overflow-y-auto max-h-[60vh] focus:[outline:2px_solid_var(--accent)]"
+      />
+      <div className="flex items-center gap-1.5">
+        <Button variant="ghost" size="sm" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button variant="primary" size="sm" disabled={!canConfirm} onClick={confirm}>
+          Confirm
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function UserMessageRow({
+  message,
+  chapterTitle,
+  isEditing,
+  onBeginEdit,
+  onCancelEdit,
+  onConfirmEdit,
+  onResend,
+  actionsDisabled,
+}: UserMessageRowProps): JSX.Element {
   const text = message.content;
   const attachment = message.attachmentJson;
   const hasAttachmentText =
     attachment !== null &&
     typeof attachment.selectionText === 'string' &&
     attachment.selectionText.length > 0;
+  const showActions = onBeginEdit !== undefined || onResend !== undefined;
 
   return (
     <li className="flex flex-col items-end" data-message-id={message.id} data-role="user">
@@ -34,9 +118,30 @@ export function UserMessageRow({ message, chapterTitle }: UserMessageRowProps): 
           </blockquote>
         </div>
       ) : null}
-      <div className="bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] font-sans ml-auto max-w-[80%] whitespace-pre-wrap">
-        {text}
-      </div>
+
+      {isEditing ? (
+        <EditBox
+          initial={text}
+          onConfirm={(t) => onConfirmEdit?.(message.id, t)}
+          onCancel={() => onCancelEdit?.()}
+        />
+      ) : (
+        <>
+          <div className="bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] font-sans ml-auto max-w-[80%] whitespace-pre-wrap">
+            {text}
+          </div>
+          {showActions ? (
+            <MessageActions>
+              {onBeginEdit ? (
+                <EditAction onClick={() => onBeginEdit(message.id)} disabled={actionsDisabled} />
+              ) : null}
+              {onResend ? (
+                <RegenerateAction onClick={() => onResend(message.id)} disabled={actionsDisabled} />
+              ) : null}
+            </MessageActions>
+          ) : null}
+        </>
+      )}
     </li>
   );
 }

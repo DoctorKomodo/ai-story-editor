@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   citationSchema,
+  editMessageBodySchema,
   MESSAGE_ENCRYPTED_FIELD_KEYS,
   MESSAGE_JSON_PAYLOAD_FIELD_KEYS,
   messageAttachmentSchema,
@@ -32,6 +33,7 @@ const validMessage = {
   tokens: null,
   latencyMs: null,
   createdAt: '2026-05-11T00:00:00.000Z',
+  updatedAt: null,
 };
 
 describe('messageSchema', () => {
@@ -74,6 +76,22 @@ describe('messageSchema', () => {
 
   it('rejects empty id', () => {
     expect(() => messageSchema.parse({ ...validMessage, id: '' })).toThrow();
+  });
+
+  it('accepts updatedAt as an ISO string', () => {
+    expect(() =>
+      messageSchema.parse({ ...validMessage, updatedAt: '2026-05-12T00:00:00.000Z' }),
+    ).not.toThrow();
+  });
+
+  it('accepts updatedAt as null', () => {
+    expect(() => messageSchema.parse({ ...validMessage, updatedAt: null })).not.toThrow();
+  });
+
+  it('rejects a missing updatedAt', () => {
+    const { ...noUpdatedAt } = validMessage as Record<string, unknown>;
+    delete (noUpdatedAt as { updatedAt?: unknown }).updatedAt;
+    expect(() => messageSchema.parse(noUpdatedAt)).toThrow();
   });
 });
 
@@ -209,5 +227,45 @@ describe('MESSAGE_ENCRYPTED_FIELD_KEYS', () => {
 describe('MESSAGE_JSON_PAYLOAD_FIELD_KEYS', () => {
   it('is exactly ["attachmentJson", "citationsJson"]', () => {
     expect(MESSAGE_JSON_PAYLOAD_FIELD_KEYS).toEqual(['attachmentJson', 'citationsJson']);
+  });
+});
+
+describe('editMessageBodySchema', () => {
+  it('accepts { content: "new text" }', () => {
+    expect(() => editMessageBodySchema.parse({ content: 'new text' })).not.toThrow();
+  });
+
+  it('rejects empty content', () => {
+    expect(() => editMessageBodySchema.parse({ content: '' })).toThrow();
+  });
+
+  it('rejects unknown keys (strict)', () => {
+    expect(() => editMessageBodySchema.parse({ content: 'x', modelId: 'm' })).toThrow();
+  });
+});
+
+describe('sendMessageBodySchema fromMessageId mode', () => {
+  const baseBody = { modelId: 'venice-model-1' };
+
+  it('(fromMessageId set, content omitted) → passes', () => {
+    expect(() =>
+      sendMessageBodySchema.parse({ ...baseBody, fromMessageId: 'msg-1' }),
+    ).not.toThrow();
+  });
+
+  it('(fromMessageId set, content present) → fails', () => {
+    expect(() =>
+      sendMessageBodySchema.parse({ ...baseBody, fromMessageId: 'msg-1', content: 'x' }),
+    ).toThrow();
+  });
+
+  it('(fromMessageId set, retry true) → fails (mutually exclusive)', () => {
+    expect(() =>
+      sendMessageBodySchema.parse({ ...baseBody, fromMessageId: 'msg-1', retry: true }),
+    ).toThrow();
+  });
+
+  it('(none of content/retry/fromMessageId) → fails', () => {
+    expect(() => sendMessageBodySchema.parse({ ...baseBody })).toThrow();
   });
 });

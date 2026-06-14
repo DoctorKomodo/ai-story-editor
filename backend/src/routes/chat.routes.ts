@@ -16,7 +16,9 @@ import {
   chatResponseSchema,
   chatsResponseSchema,
   chatUpdateSchema,
+  editMessageBodySchema,
   type MessageRole,
+  messageResponseSchema,
   messagesResponseSchema,
   sendMessageBodySchema,
   toCharacterPromptInput,
@@ -195,6 +197,30 @@ export function createChatMessagesRouter() {
 
   // TODO: add per-chat rate limiting in a future task (chat rate limit follow-up).
 
+  // PATCH /api/chats/:chatId/messages/:id — edit a user message in place.
+  router.patch(
+    '/:id',
+    validateBody(editMessageBodySchema, async (body, req, res) => {
+      const chatId = req.params.chatId as string;
+      const id = req.params.id as string;
+
+      // Ownership pre-check on the chat (clean 404 for missing/unowned chat).
+      const chat = await createChatRepo(req).findById(chatId);
+      if (!chat) {
+        res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
+        return;
+      }
+
+      const updated = await createMessageRepo(req).update(id, chatId, { content: body.content });
+      if (!updated) {
+        // null = not found / not owned / not a user message.
+        res.status(404).json({ error: { message: 'Message not editable', code: 'not_found' } });
+        return;
+      }
+      return respond(messageResponseSchema, res, { message: serializeMessage(updated) }, 200);
+    }),
+  );
+
   // POST /api/chats/:chatId/messages — append a user message, stream assistant reply.
   router.post(
     '/',
@@ -223,21 +249,30 @@ export function createChatMessagesRouter() {
           return;
         }
 
-        // ── 1b. Load message history early for retry validation ──────────────
-        // Done here — before any external calls — so an invalid retry state
+        // ── 1b. Load message history early for replay validation ─────────────
+        // Done here — before any external calls — so an invalid replay state
         // returns 400 without touching the Venice API or user settings.
         // messageRepo is hoisted here so it can also be used for deleteAllAfter
-        // in the retry branch below (step 1c) and for persisting the user/assistant
+        // in the replay branch below (step 1c) and for persisting the user/assistant
         // messages later (step 9a / stream handler).
         const messageRepo = createMessageRepo(req);
         const priorMessages = await messageRepo.findManyForChat(chatId);
 
-        // ── [SC6] Retry validation ────────────────────────────────────────────
-        // Compute lastUserMsg once; reused below for trailingUserContent.
-        // Retry replays the last user turn; there must be at least one user
-        // message in the history (regardless of what the trailing message is).
+        // ── [SC6] Retry / resend validation and anchor resolution ───────────
+        // retry=true  → anchor is the last user message (classic linear retry).
+        // fromMessageId → anchor is that specific message, looked up from THIS
+        //   chat's already-loaded list. We use priorMessages.find (chat-scoped)
+        //   rather than messageRepo.findById (user-scoped only) so that a
+        //   fromMessageId belonging to another of the same user's chats is
+        //   correctly rejected — findById would pass ownership but deleteAllAfter
+        //   (chat-scoped) would then silently drop nothing and replay foreign content.
         const lastUserMsg = priorMessages.findLast((m) => m.role === 'user');
-        if (body.retry && !lastUserMsg) {
+        const isReplay = body.retry === true || body.fromMessageId !== undefined;
+        const anchor = body.fromMessageId
+          ? priorMessages.find((m) => m.id === body.fromMessageId)
+          : lastUserMsg;
+
+        if (body.retry === true && !lastUserMsg) {
           res.status(400).json({
             error: {
               message: 'Cannot retry: no user message exists in this chat.',
@@ -246,14 +281,24 @@ export function createChatMessagesRouter() {
           });
           return;
         }
+        if (body.fromMessageId !== undefined && (!anchor || anchor.role !== 'user')) {
+          // Not found in this chat / belongs to another chat / not a user message.
+          res.status(400).json({
+            error: {
+              message: 'Cannot resend: target is not an editable user message in this chat.',
+              code: 'resend_invalid_state',
+            },
+          });
+          return;
+        }
 
-        // ── 1c. [ai-surfaces-v1] On retry, delete trailing-after-lastUser rows ─
-        // Delete any rows that came after the last user turn (typically a prior
-        // assistant turn this retry is replacing), then re-fetch so history is
+        // ── 1c. [ai-surfaces-v1] On replay, delete trailing-after-anchor rows ─
+        // Delete any rows that came after the anchor user turn (typically a prior
+        // assistant turn this replay is replacing), then re-fetch so history is
         // correct. On a normal turn this block is skipped entirely.
         let priorMessagesForHistory = priorMessages;
-        if (body.retry && lastUserMsg) {
-          await messageRepo.deleteAllAfter(chatId, lastUserMsg.id as string);
+        if (isReplay && anchor) {
+          await messageRepo.deleteAllAfter(chatId, anchor.id);
           priorMessagesForHistory = await messageRepo.findManyForChat(chatId);
         }
 
@@ -305,15 +350,14 @@ export function createChatMessagesRouter() {
         // user message, scene template in system); ask chats use the ask action.
         const action: 'ask' | 'scene' = chat.kind === 'scene' ? 'scene' : 'ask';
 
-        // [SC6] On retry, use the last user turn's content as the user
-        // instruction (passed via freeformInstruction, which the ask/scene
-        // builder arms read) so the prompt builder assembles the system
-        // message correctly. On a normal turn, use body.content (guaranteed
-        // non-empty by superRefine when retry is false/omitted).
-        // lastUserMsg is guaranteed non-null here for retry (checked above).
-        const trailingUserContent: string = body.retry
-          ? lastUserMsg!.content
-          : (body.content as string);
+        // On replay, use the anchor's stored content as the user instruction so
+        // the prompt builder assembles the system message correctly. On a normal
+        // turn use body.content (guaranteed non-empty by superRefine).
+        // Both retry and fromMessageId paths have validated anchor is non-null
+        // and role==='user' above; we extract to a local to satisfy TypeScript.
+        // anchor is non-null whenever isReplay (both validation guards above
+        // early-return otherwise); TS can't narrow through the ternary.
+        const trailingUserContent: string = isReplay ? anchor!.content : (body.content as string);
 
         const {
           messages: baseMessages,
@@ -366,19 +410,19 @@ export function createChatMessagesRouter() {
             content: rawContent,
           };
         });
-        // [k1r] On retry the trailing history entry equals what
-        // buildUserPayload would emit for the same inputs (both are built from
-        // lastUserMsg.content + lastUserMsg.attachmentJson under the
-        // unified history mapping). So the retry path uses [systemMsg, ...history]
-        // and the trailing entry IS the user message — chapter / characters /
-        // world-notes context lives in systemMsg in both branches, so the
-        // 9ph context-loss bug is structurally impossible.
-        const messages: Array<{ role: MessageRole; content: string }> = body.retry
+        // [k1r] On replay the trailing history entry equals what buildUserPayload
+        // would emit for the same inputs (built from anchor.content +
+        // anchor.attachmentJson under the unified history mapping). So the replay
+        // path uses [systemMsg, ...history] and the trailing entry IS the user
+        // message — chapter / characters / world-notes context lives in systemMsg
+        // in both branches, so the 9ph context-loss bug is structurally impossible.
+        const messages: Array<{ role: MessageRole; content: string }> = isReplay
           ? [systemMsg, ...history]
           : [systemMsg, ...history, synthesisedUserMsg];
 
         // ── 9a. Persist the user message BEFORE calling Venice (normal turn only)
-        if (!body.retry) {
+        // Replay paths (retry / fromMessageId) reuse the anchor — do NOT re-create.
+        if (!isReplay) {
           await messageRepo.create({
             chatId,
             role: 'user' as MessageRole,

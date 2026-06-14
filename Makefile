@@ -44,6 +44,11 @@ clean-docker:
 
 migrate:
 	cd backend && npx prisma migrate deploy
+	# Restart the backend so its dev-stage `prisma generate` (in the `dev`
+	# script) regenerates the client against the new schema — the container's
+	# node_modules is an anonymous volume, so a host-side generate never
+	# reaches it. Without this the running client lags the migrated DB.
+	docker compose restart backend
 
 seed:
 	docker compose exec backend npx prisma generate

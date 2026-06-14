@@ -67,6 +67,7 @@ export {
 
 export type {
   Citation,
+  EditMessageInput,
   Message,
   MessageAttachment,
   MessageEncryptedFieldKey,
@@ -76,9 +77,11 @@ export type {
 } from './schemas/message';
 export {
   citationSchema,
+  editMessageBodySchema,
   MESSAGE_ENCRYPTED_FIELD_KEYS,
   MESSAGE_JSON_PAYLOAD_FIELD_KEYS,
   messageAttachmentSchema,
+  messageResponseSchema,
   messageRoleSchema,
   messageSchema,
   messagesResponseSchema,

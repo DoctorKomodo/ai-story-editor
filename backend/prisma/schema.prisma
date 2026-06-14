@@ -252,6 +252,10 @@ model Message {
   citationsJsonIv          String?
   citationsJsonAuthTag     String?
   createdAt                DateTime @default(now())
+  // Null = never edited. Set explicitly by the edit path (message.repo.update),
+  // never by create — deliberately not @updatedAt, so "edited?" is unambiguous.
+  // See docs/superpowers/specs/2026-06-14-chat-message-edit-resend-design.md.
+  updatedAt                DateTime?
 
   chatId String
   chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)

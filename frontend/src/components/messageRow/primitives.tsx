@@ -163,6 +163,47 @@ export function RegenerateAction({
   );
 }
 
+/* ---------------- EditAction ---------------- */
+
+export interface EditActionProps {
+  onClick: () => void;
+  disabled?: boolean;
+}
+
+function EditIcon(): JSX.Element {
+  return (
+    <svg
+      width="11"
+      height="11"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 20h9" />
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4Z" />
+    </svg>
+  );
+}
+
+export function EditAction({ onClick, disabled }: EditActionProps): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="px-2 py-1 rounded-[var(--radius)] text-ink-2 hover:bg-surface-hover inline-flex items-center gap-1 transition-colors disabled:opacity-60"
+      aria-label="Edit"
+      title="Edit"
+      onClick={onClick}
+      disabled={disabled}
+    >
+      <EditIcon />
+    </button>
+  );
+}
+
 /* ---------------- InsertAtEndAction ---------------- */
 
 export interface InsertAtEndActionProps {

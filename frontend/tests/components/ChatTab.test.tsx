@@ -5,11 +5,12 @@
  * Query cache (settings + empty models), and a fresh session store per test.
  */
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatTab } from '@/components/ChatTab';
+import { chatMessagesQueryKey, chatsQueryKey } from '@/hooks/useChat';
 import { modelsQueryKey } from '@/hooks/useModels';
 import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import {
@@ -21,6 +22,7 @@ import {
 import { createQueryClient } from '@/lib/queryClient';
 import { truncateAtWordBoundary } from '@/lib/strings';
 import { useChatDraftStore } from '@/store/chatDraft';
+import { useErrorStore } from '@/store/errors';
 import { useSessionStore } from '@/store/session';
 
 // Partially mock @/lib/api so we can intercept `apiStream` for the SSE send
@@ -361,5 +363,335 @@ describe('ChatTab — smoke', () => {
 
     // Cleanup: abort the in-flight stream so the test doesn't leak.
     await user.click(stopBtn);
+  });
+});
+
+// ─── useMessageActions integration ────────────────────────────────────────────
+
+function makeModelClient(modelId = 'venice-model-1'): QueryClient {
+  const qc = createQueryClient();
+  qc.setQueryData(userSettingsQueryKey, {
+    ...DEFAULT_SETTINGS,
+    chat: { ...DEFAULT_SETTINGS.chat, model: modelId },
+  });
+  qc.setQueryData(modelsQueryKey, []);
+  return qc;
+}
+
+function baseMessage(id: string, role: 'user' | 'assistant', content: string, createdAt?: string) {
+  return {
+    id,
+    role,
+    content,
+    attachmentJson: null,
+    citationsJson: null,
+    model: role === 'assistant' ? 'venice-model-1' : null,
+    tokens: null,
+    latencyMs: null,
+    createdAt: createdAt ?? new Date().toISOString(),
+    updatedAt: null,
+  };
+}
+
+function standardFetchMock(chatId: string, chapterId: string): FetchMock {
+  return vi.fn(async (input: RequestInfo | URL) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    if (url.includes(`/chats/${chatId}/messages`)) {
+      return jsonResponse(200, { messages: [] });
+    }
+    if (url.includes(`/chapters/${chapterId}/chats`)) {
+      return jsonResponse(200, {
+        chats: [
+          {
+            id: chatId,
+            title: 'Test chat',
+            chapterId,
+            kind: 'ask',
+            messageCount: 4,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            lastActivityAt: new Date().toISOString(),
+          },
+        ],
+      });
+    }
+    return jsonResponse(404, { error: 'not_mocked' });
+  }) as FetchMock;
+}
+
+describe('ChatTab — useMessageActions integration', () => {
+  let fetchMock: FetchMock;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setAccessToken('test-token');
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    useChatDraftStore.setState({ drafts: {} });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(apiStream).mockReset();
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
+    useChatDraftStore.setState({ drafts: {} });
+  });
+
+  it('resending a mid-thread user message shows the confirm dialog naming the drop count', async () => {
+    const now = new Date().toISOString();
+    const messages = [
+      baseMessage('u1', 'user', 'Hello', now),
+      baseMessage('a1', 'assistant', 'World', now),
+      baseMessage('u2', 'user', 'Again', now),
+      baseMessage('a2', 'assistant', 'Sure', now),
+    ];
+
+    fetchMock = standardFetchMock('c1', 'ch1');
+    vi.stubGlobal('fetch', fetchMock);
+
+    const qc = makeModelClient();
+    // Seed [u1, a1, u2, a2] into the cache — TranscriptView calls the same query key.
+    qc.setQueryData(chatMessagesQueryKey('c1'), messages);
+    qc.setQueryData(chatsQueryKey('ch1', 'ask'), [
+      {
+        id: 'c1',
+        title: 'Test chat',
+        chapterId: 'ch1',
+        kind: 'ask',
+        messageCount: 4,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+
+    // Wait for u1's row to appear.
+    await screen.findByTestId('chat-tab');
+
+    // Scope to u1's user row and click its Regenerate button.
+    // After the rename both user and assistant rows share the "Regenerate" label, so
+    // we must narrow to the specific row via data-message-id / data-role.
+    const u1Row = document.querySelector('[data-message-id="u1"][data-role="user"]') as HTMLElement;
+    expect(u1Row).toBeTruthy();
+    await user.click(within(u1Row).getByRole('button', { name: 'Regenerate' }));
+
+    // Confirm dialog shows with count = 3.
+    const dialog = await screen.findByTestId('resend-confirm');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('3 messages');
+    // Scope within dialog to avoid matching transcript row action buttons.
+    expect(within(dialog).getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
+  });
+
+  it('resending the last user turn fires immediately with no dialog', async () => {
+    const now = new Date().toISOString();
+    const messages = [
+      baseMessage('u1', 'user', 'Hello', now),
+      baseMessage('a1', 'assistant', 'World', now),
+    ];
+
+    fetchMock = standardFetchMock('c1', 'ch1');
+    vi.stubGlobal('fetch', fetchMock);
+
+    // Never-ending SSE so isPending stays true long enough to assert.
+    const neverEndingStream = new ReadableStream({ start() {} });
+    vi.mocked(apiStream).mockResolvedValueOnce(
+      new Response(neverEndingStream, {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    );
+
+    const qc = makeModelClient();
+    qc.setQueryData(chatMessagesQueryKey('c1'), messages);
+    qc.setQueryData(chatsQueryKey('ch1', 'ask'), [
+      {
+        id: 'c1',
+        title: 'Test chat',
+        chapterId: 'ch1',
+        kind: 'ask',
+        messageCount: 2,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+
+    await screen.findByTestId('chat-tab');
+
+    // Click Regenerate on u1 — count = 1 (only a1 below), so no dialog, send fires directly.
+    // Scope to the user row to avoid collision with a1's assistant Regenerate button.
+    const u1Row = document.querySelector('[data-message-id="u1"][data-role="user"]') as HTMLElement;
+    expect(u1Row).toBeTruthy();
+    await user.click(within(u1Row).getByRole('button', { name: 'Regenerate' }));
+
+    // No confirm dialog should appear.
+    expect(screen.queryByTestId('resend-confirm')).toBeNull();
+
+    // apiStream called with fromMessageId: 'u1' in the body.
+    await waitFor(() => {
+      const calls = vi.mocked(apiStream).mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const init = calls[calls.length - 1][1] as { body?: Record<string, unknown> };
+      expect(init.body?.fromMessageId).toBe('u1');
+    });
+
+    // Cleanup: abort the in-flight stream.
+    await user.click(screen.getByRole('button', { name: 'Stop generation' }));
+  });
+
+  it('clicking Edit on a user row shows the inline textarea', async () => {
+    const now = new Date().toISOString();
+    const messages = [
+      baseMessage('u1', 'user', 'Hello there', now),
+      baseMessage('a1', 'assistant', 'World', now),
+    ];
+
+    fetchMock = standardFetchMock('c1', 'ch1');
+    vi.stubGlobal('fetch', fetchMock);
+
+    const qc = makeModelClient();
+    qc.setQueryData(chatMessagesQueryKey('c1'), messages);
+    qc.setQueryData(chatsQueryKey('ch1', 'ask'), [
+      {
+        id: 'c1',
+        title: 'Test chat',
+        chapterId: 'ch1',
+        kind: 'ask',
+        messageCount: 2,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+
+    await screen.findByTestId('chat-tab');
+
+    const editBtn = await screen.findByRole('button', { name: /^edit$/i });
+    await user.click(editBtn);
+
+    // Inline edit textarea should appear with the message content.
+    const textarea = await screen.findByRole('textbox', { name: /edit message/i });
+    expect(textarea).toBeInTheDocument();
+    expect(textarea).toHaveValue('Hello there');
+  });
+
+  it('assistant Regenerate on a non-trailing reply confirms and replays from its preceding user turn', async () => {
+    const now = new Date().toISOString();
+    const messages = [
+      baseMessage('u1', 'user', 'First', now),
+      baseMessage('a1', 'assistant', 'Reply one', now),
+      baseMessage('u2', 'user', 'Second', now),
+      baseMessage('a2', 'assistant', 'Reply two', now),
+    ];
+
+    fetchMock = standardFetchMock('c1', 'ch1');
+    vi.stubGlobal('fetch', fetchMock);
+
+    const qc = makeModelClient();
+    qc.setQueryData(chatMessagesQueryKey('c1'), messages);
+    qc.setQueryData(chatsQueryKey('ch1', 'ask'), [
+      {
+        id: 'c1',
+        title: 'Test chat',
+        chapterId: 'ch1',
+        kind: 'ask',
+        messageCount: 4,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      },
+    ]);
+
+    const user = userEvent.setup();
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+
+    await screen.findByTestId('chat-tab');
+
+    // Click Regenerate on a1's assistant row (non-trailing reply).
+    // Scope to the specific assistant row to avoid ambiguity with user-row Regenerate buttons.
+    const a1Row = await screen.findByTestId('assistant-a1');
+    await user.click(within(a1Row).getByRole('button', { name: 'Regenerate' }));
+
+    // Confirm dialog: count = 3 (a1, u2, a2 are below the anchor u1).
+    const dialog = await screen.findByTestId('resend-confirm');
+    expect(dialog).toBeInTheDocument();
+    expect(dialog).toHaveTextContent('3 messages');
+    // The dialog confirm button is labelled "Regenerate" — scope within dialog.
+    expect(within(dialog).getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
+  });
+
+  it('Resend with no model selected surfaces the guard toast and does not call apiStream', async () => {
+    const now = new Date().toISOString();
+    const messages = [
+      baseMessage('u1', 'user', 'Hello', now),
+      baseMessage('a1', 'assistant', 'World', now),
+    ];
+
+    fetchMock = standardFetchMock('c1', 'ch1');
+    vi.stubGlobal('fetch', fetchMock);
+
+    // No model selected — mirrors DEFAULT_SETTINGS where chat.model is null.
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, {
+      ...DEFAULT_SETTINGS,
+      chat: { ...DEFAULT_SETTINGS.chat, model: null },
+    });
+    qc.setQueryData(modelsQueryKey, []);
+    qc.setQueryData(chatMessagesQueryKey('c1'), messages);
+    qc.setQueryData(chatsQueryKey('ch1', 'ask'), [
+      {
+        id: 'c1',
+        title: 'Test chat',
+        chapterId: 'ch1',
+        kind: 'ask',
+        messageCount: 2,
+        createdAt: now,
+        updatedAt: now,
+        lastActivityAt: now,
+      },
+    ]);
+
+    // Clear the error store before the test so prior noise doesn't interfere.
+    useErrorStore.getState().clear();
+
+    const user = userEvent.setup();
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+
+    await screen.findByTestId('chat-tab');
+
+    // Click Regenerate on u1 — count = 1 (only a1 below), fires directly (no confirm dialog).
+    // Scope to the user row to avoid collision with a1's assistant Regenerate button.
+    const u1Row = document.querySelector('[data-message-id="u1"][data-role="user"]') as HTMLElement;
+    expect(u1Row).toBeTruthy();
+    await user.click(within(u1Row).getByRole('button', { name: 'Regenerate' }));
+
+    // Guard should have pushed a 'no_model' error — same code checkChatSendGuards returns.
+    await waitFor(() => {
+      const errors = useErrorStore.getState().errors;
+      expect(errors.some((e) => e.code === 'no_model')).toBe(true);
+    });
+
+    // apiStream must NOT have been called — the send was blocked.
+    expect(vi.mocked(apiStream).mock.calls.length).toBe(0);
+
+    // Clean up error store.
+    useErrorStore.getState().clear();
   });
 });
