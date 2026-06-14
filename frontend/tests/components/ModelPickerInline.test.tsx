@@ -6,23 +6,7 @@ import { useState } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
 import type { Model } from '@/hooks/useModels';
-
-function makeModel(overrides: Partial<Model> = {}): Model {
-  return {
-    id: 'llama-3.3-70b',
-    name: 'Llama 3.3 70B',
-    contextLength: 128_000,
-    maxCompletionTokens: 16_384,
-    supportsReasoning: false,
-    supportsVision: false,
-    supportsWebSearch: false,
-    description: null,
-    pricing: null,
-    defaultTemperature: null,
-    defaultTopP: null,
-    ...overrides,
-  };
-}
+import { makeModel } from '../fixtures/model';
 
 const TWO_MODELS: Model[] = [
   makeModel({
