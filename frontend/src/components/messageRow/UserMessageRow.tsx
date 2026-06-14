@@ -1,6 +1,6 @@
-import { type JSX, useState } from 'react';
+import { type JSX, useLayoutEffect, useRef, useState } from 'react';
 import type { Message } from 'story-editor-shared';
-import { Button, Textarea } from '@/design/primitives';
+import { Button } from '@/design/primitives';
 import { EditAction, MessageActions, RegenerateAction } from './primitives';
 
 export interface UserMessageRowProps {
@@ -34,9 +34,22 @@ function EditBox({
   onCancel: () => void;
 }): JSX.Element {
   const [draft, setDraft] = useState(initial);
+  const taRef = useRef<HTMLTextAreaElement>(null);
   const trimmed = draft.trim();
   const unchanged = draft === initial;
   const canConfirm = trimmed.length > 0;
+  // Grow the field to fit its content so the editor opens at the same height
+  // as the bubble it replaces (no thread jump) and stays comfortable for long
+  // messages. A raw <textarea> mirrors the bubble's exact box model; the
+  // Textarea primitive uses form-field metrics (padding/leading/border) that
+  // wouldn't line up with the bubble.
+  const resize = (): void => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  };
+  useLayoutEffect(resize, []);
   const confirm = (): void => {
     if (!canConfirm) return;
     if (unchanged) {
@@ -47,15 +60,18 @@ function EditBox({
   };
   return (
     <div className="flex flex-col items-end gap-1 w-full">
-      <Textarea
+      <textarea
+        ref={taRef}
         // biome-ignore lint/a11y/noAutofocus: editing affordance focuses its field on open
         autoFocus
         aria-label="Edit message"
-        font="sans"
         value={draft}
-        onChange={(e) => setDraft(e.target.value)}
-        className="bg-[var(--accent-soft)] rounded-[var(--radius-lg)] ml-auto w-[80%]"
-        rows={2}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          resize();
+        }}
+        rows={1}
+        className="bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] font-sans ml-auto w-[80%] resize-none overflow-y-auto max-h-[60vh] focus:[outline:2px_solid_var(--accent)]"
       />
       <div className="flex items-center gap-1.5">
         <Button variant="ghost" size="sm" onClick={onCancel}>
