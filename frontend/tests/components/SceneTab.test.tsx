@@ -548,6 +548,7 @@ describe('SceneTab — [4] insert-at-end', () => {
       tokens: null,
       latencyMs: null,
       createdAt: now,
+      updatedAt: null,
     };
     const userMsg = {
       id: 'u1',
@@ -559,6 +560,7 @@ describe('SceneTab — [4] insert-at-end', () => {
       tokens: null,
       latencyMs: null,
       createdAt: now,
+      updatedAt: null,
     };
 
     qc.setQueryData(chatMessagesQueryKey('scene1'), [userMsg, assistantMsg]);
@@ -653,6 +655,7 @@ describe('SceneTab — [5] retry semantics', () => {
       tokens: null,
       latencyMs: null,
       createdAt: now,
+      updatedAt: null,
     };
     const assistantMsg = {
       id: 'a1',
@@ -664,6 +667,7 @@ describe('SceneTab — [5] retry semantics', () => {
       tokens: null,
       latencyMs: null,
       createdAt: now,
+      updatedAt: null,
     };
 
     qc.setQueryData(chatMessagesQueryKey('scene1'), [userMsg, assistantMsg]);
@@ -989,6 +993,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
       tokens: null,
       latencyMs: null,
       createdAt: now,
+      updatedAt: null,
     };
 
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {

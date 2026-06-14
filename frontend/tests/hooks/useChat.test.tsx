@@ -789,6 +789,7 @@ describe('useChatMessagesQuery runtime validation', () => {
           tokens: null,
           latencyMs: null,
           createdAt: '2026-05-01T00:00:00.000Z',
+          updatedAt: null,
         },
       ],
     };

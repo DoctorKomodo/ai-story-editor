@@ -1,6 +1,6 @@
 import { type JSX, useState } from 'react';
 import type { Message } from 'story-editor-shared';
-import { Button } from '@/design/primitives';
+import { Button, Textarea } from '@/design/primitives';
 import { EditAction, MessageActions, RegenerateAction } from './primitives';
 
 export interface UserMessageRowProps {
@@ -47,12 +47,14 @@ function EditBox({
   };
   return (
     <div className="flex flex-col items-end gap-1 w-full">
-      <textarea
+      <Textarea
         // biome-ignore lint/a11y/noAutofocus: editing affordance focuses its field on open
         autoFocus
+        aria-label="Edit message"
+        font="sans"
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        className="bg-[var(--accent-soft)] rounded-[var(--radius-lg)] px-3 py-2 text-[13px] font-sans ml-auto w-[80%] resize-y"
+        className="bg-[var(--accent-soft)] rounded-[var(--radius-lg)] ml-auto w-[80%]"
         rows={2}
       />
       <div className="flex items-center gap-1.5">

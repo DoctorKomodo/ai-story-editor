@@ -28,7 +28,7 @@ export function ResendConfirmDialog({
       <ModalHeader titleId={titleId} title={`${verb} from here?`} />
       <ModalBody>
         <p className="text-[13px] text-ink-2">
-          {`This will delete ${String(count)} messages below and regenerate the reply.`}
+          {`This will delete ${String(count)} ${count === 1 ? 'message' : 'messages'} below and regenerate the reply.`}
         </p>
       </ModalBody>
       <ModalFooter>

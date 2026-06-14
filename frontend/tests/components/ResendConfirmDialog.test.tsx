@@ -17,4 +17,10 @@ describe('ResendConfirmDialog', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
+
+  it('uses singular "message" when count is 1', () => {
+    render(<ResendConfirmDialog count={1} onConfirm={vi.fn()} onCancel={vi.fn()} />);
+    expect(screen.getByText(/1 message\b/)).toBeTruthy();
+    expect(screen.queryByText(/1 messages/)).toBeNull();
+  });
 });
