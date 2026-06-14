@@ -22,15 +22,31 @@ future entity migration.
 
 ## Measured blast radius
 
+> **REVISION (2026-06-14, during implementation):** The "Backend: 0 errors" figure below was
+> **invalid** — it was measured against a *no-op* config. `backend/tsconfig.json` declares
+> `"exclude": ["node_modules","dist","tests"]`, and a child config that `extends` it **inherits that
+> `exclude`** unless it redeclares it. The original backend `tsconfig.test.json` (no `exclude` key)
+> therefore type-checked **0 of 110 test files** (`tsc -p tsconfig.test.json --noEmit --listFiles |
+> grep -c '/tests/'` → `0`). The corrected config (explicit `exclude` override + `@/*` `paths`
+> re-added, since the base has none, + `tests/live/**` excluded to mirror `vitest.config.ts`) brings
+> 109 test files into scope and reveals **29 real backend errors** — same class of fixture/mock drift
+> as the frontend. Still **no production-code bugs**; all 29 fixed test-side. The frontend figures
+> below are correct as written. See the corrected config in "Configuration" below and the
+> plan's REVISION note. The original (now-corrected) text follows.
+
 Probed by compiling each workspace's `src + tests` under its strict config:
 
-- **Backend: 0 errors.** Tests already conform. Adding the gate is purely structural.
+- ~~**Backend: 0 errors.** Tests already conform. Adding the gate is purely structural.~~ **Corrected:
+  29 errors** (the 0 was a no-op-config artifact — see REVISION above). Real per-site fixture/mock
+  drift, fixed test-side.
 - **Frontend: 206 errors across 41 test files.** Real per-site work. (Confirmed not a config artifact:
   adding `react`/`react-dom` to the `types` array did not change the count.)
 
-The 206 frontend errors map to 13 root-cause clusters (recon). **No genuine source-code bugs** were
-found — every error is test-side type sloppiness or fixture/mock drift. Therefore **no production
-code under `backend/src` or `frontend/src` is touched** by this work.
+The 206 frontend errors map to 13 root-cause clusters (recon); the 29 backend errors are the same
+drift class (missing fixture fields, argument-shape drift, stale `@ts-expect-error`, extensionless
+dynamic imports). **No genuine source-code bugs** were found in either workspace — every error is
+test-side type sloppiness or fixture/mock drift. Therefore **no production code under `backend/src`
+or `frontend/src` is touched** by this work.
 
 ## Decision (from brainstorming)
 
@@ -55,7 +71,9 @@ code under `backend/src` or `frontend/src` is touched** by this work.
 - **Strictness tax — accepted consciously.** The test configs inherit
   `noUnusedLocals`/`noUnusedParameters` from their base configs, so throwaway mocks must drop unused
   locals/params (e.g. prefix-unused with `_` or omit them). This is intended — it catches dead test
-  code and stale mock args, which are a drift vector. Backend already passes these with 0 errors. If
+  code and stale mock args, which are a drift vector. (The original "backend already passes with 0
+  errors" claim here was the no-op-config artifact — see the REVISION under "Measured blast radius";
+  backend had 29 drift errors, fixed test-side.) If
   this friction proves costly in practice, relaxing **only those two flags in `tsconfig.test.json`**
   (not the base configs) is the defensible escape valve — but we start strict and only relax on
   evidence, not speculatively.
@@ -70,16 +88,27 @@ code under `backend/src` or `frontend/src` is touched** by this work.
   "compilerOptions": {
     "rootDir": ".",          // tsconfig.json pins rootDir: "src"; relax so tests/ is in scope
     "noEmit": true,          // typecheck only — the prod build is tsup, not tsc
-    "incremental": false
+    "incremental": false,
+    // The base tsconfig.json has no `paths`; re-add the @/ alias so test files
+    // that import `@/lib/...` resolve under the gate (vitest aliases @ → src).
+    "paths": { "@/*": ["./src/*"] }
   },
-  "include": ["src/**/*", "tests/**/*"]
+  "include": ["src/**/*", "tests/**/*"],
+  // CRITICAL: the base excludes `tests` entirely; redeclare to DROP that (so tests are
+  // actually checked) while still excluding the opt-in live suite (mirrors vitest.config.ts).
+  // Without this override the gate inherits `exclude: ["tests"]` and checks 0 test files.
+  "exclude": ["node_modules", "dist", "tests/live/**"]
 }
 ```
 
+> **The `exclude` + `paths` lines above are the 2026-06-14 correction** (see REVISION under "Measured
+> blast radius"). The original snippet omitted both: it inherited the base's `exclude: ["tests"]` (→
+> no-op gate) and lacked `paths` (→ `@/`-import test files would `TS2307` once tests were actually in
+> scope).
+
 `backend/package.json` `typecheck` script: `tsc --noEmit` → **`tsc -p tsconfig.test.json --noEmit`**.
-The test config is a superset of the src-only config (same strict flags via `extends`), so one
-command covers both `src` and `tests`. The production build (`tsup`) is unaffected — it never used
-`tsc`.
+With the `exclude` override, the test config covers both `src` and `tests` under the same strict flags
+(via `extends`). The production build (`tsup`) is unaffected — it never used `tsc`.
 
 ### Frontend — `frontend/tsconfig.test.json` (new)
 
