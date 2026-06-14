@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "composite": false,
+    "incremental": false,
+    // NOTE: an explicit `types` array disables automatic @types inclusion. This list is
+    // EXHAUSTIVE — any new test dependency that ships ambient types (a new @testing-library, a
+    // global-registering matcher lib, etc.) must be added here or its types won't be found.
+    "types": ["vitest/globals", "@testing-library/jest-dom", "node", "react", "react-dom"]
+  },
+  "include": ["src", "tests"]
+}
