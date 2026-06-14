@@ -9,33 +9,13 @@ import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '
 import { createQueryClient } from '@/lib/queryClient';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
+import { makeCharacter } from '../fixtures/character';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-function chr(o: { id: string; orderIndex: number; name?: string }): Character {
-  return {
-    id: o.id,
-    storyId: 's1',
-    name: o.name ?? o.id,
-    role: null,
-    age: null,
-    appearance: null,
-    voice: null,
-    arc: null,
-    personality: null,
-    backstory: null,
-    relationships: null,
-    color: null,
-    initial: null,
-    orderIndex: o.orderIndex,
-    createdAt: '2026-04-01T00:00:00Z',
-    updatedAt: '2026-04-01T00:00:00Z',
-  };
 }
 
 /**
@@ -103,7 +83,10 @@ describe('CastTab — delete', () => {
 
   it('× is only rendered for the selected card', () => {
     renderCast({
-      characters: [chr({ id: 'a', orderIndex: 0 }), chr({ id: 'b', orderIndex: 1 })],
+      characters: [
+        makeCharacter({ id: 'a', orderIndex: 0 }),
+        makeCharacter({ id: 'b', orderIndex: 1 }),
+      ],
       selected: 'b',
     });
     expect(screen.getByTestId('character-row-b-delete')).toBeInTheDocument();
@@ -112,7 +95,7 @@ describe('CastTab — delete', () => {
 
   it('clicking × opens InlineConfirm and removes the × slot', async () => {
     renderCast({
-      characters: [chr({ id: 'a', orderIndex: 0 })],
+      characters: [makeCharacter({ id: 'a', orderIndex: 0 })],
       selected: 'a',
     });
     await userEvent.click(screen.getByTestId('character-row-a-delete'));
@@ -122,7 +105,7 @@ describe('CastTab — delete', () => {
 
   it('Escape dismisses the confirm', async () => {
     renderCast({
-      characters: [chr({ id: 'a', orderIndex: 0 })],
+      characters: [makeCharacter({ id: 'a', orderIndex: 0 })],
       selected: 'a',
     });
     await userEvent.click(screen.getByTestId('character-row-a-delete'));
@@ -137,7 +120,7 @@ describe('CastTab — delete', () => {
       .mockResolvedValueOnce(new Response(null, { status: 204 }))
       .mockResolvedValueOnce(jsonResponse(200, { characters: [] }));
     renderCast({
-      characters: [chr({ id: 'a', orderIndex: 0 })],
+      characters: [makeCharacter({ id: 'a', orderIndex: 0 })],
       selected: 'a',
     });
     await userEvent.click(screen.getByTestId('character-row-a-delete'));
@@ -152,7 +135,7 @@ describe('CastTab — delete', () => {
   it('on 500 the row is restored and aria-live announces failure', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: { code: 'oops' } }));
     renderCast({
-      characters: [chr({ id: 'a', orderIndex: 0 })],
+      characters: [makeCharacter({ id: 'a', orderIndex: 0 })],
       selected: 'a',
     });
     await userEvent.click(screen.getByTestId('character-row-a-delete'));

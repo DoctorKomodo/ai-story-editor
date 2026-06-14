@@ -1,11 +1,13 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { CharacterSheet } from '@/components/CharacterSheet';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
+import { makeCharacter } from '../fixtures/character';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -20,27 +22,8 @@ function noContent(): Response {
   return new Response(null, { status: 204 });
 }
 
-interface CharacterFixture {
-  id: string;
-  storyId: string;
-  name: string;
-  role: string | null;
-  age: string | null;
-  appearance: string | null;
-  voice: string | null;
-  arc: string | null;
-  personality: string | null;
-  backstory: string | null;
-  relationships: string | null;
-  orderIndex: number;
-  color: string | null;
-  initial: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-function char(overrides: Partial<CharacterFixture> & { id: string }): CharacterFixture {
-  return {
+function char(overrides: Partial<Character> & { id: string }): Character {
+  return makeCharacter({
     storyId: 'story-1',
     name: 'Ada',
     role: 'Protagonist',
@@ -49,15 +32,8 @@ function char(overrides: Partial<CharacterFixture> & { id: string }): CharacterF
     voice: 'Measured',
     arc: 'Redemption',
     personality: 'Curious',
-    backstory: null,
-    relationships: null,
-    orderIndex: 0,
-    color: null,
-    initial: null,
-    createdAt: '2026-04-01T00:00:00.000Z',
-    updatedAt: '2026-04-01T00:00:00.000Z',
     ...overrides,
-  };
+  });
 }
 
 function renderSheet(props: {

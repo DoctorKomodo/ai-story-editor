@@ -8,6 +8,7 @@ import { charactersQueryKey } from '@/hooks/useCharacters';
 import { setCharRefSuggestionProvider } from '@/lib/charRefSuggestion';
 import { createQueryClient } from '@/lib/queryClient';
 import { useCharRefSuggestionStore } from '@/store/charRefSuggestion';
+import { makeCharacter } from '../fixtures/character';
 
 /**
  * X30 regression test.
@@ -24,27 +25,6 @@ import { useCharRefSuggestionStore } from '@/store/charRefSuggestion';
  * characters → `@` opens the menu populated.
  */
 
-function makeChar(id: string, name: string, role: string | null = null): Character {
-  return {
-    id,
-    storyId: 's1',
-    name,
-    role,
-    age: null,
-    appearance: null,
-    voice: null,
-    arc: null,
-    personality: null,
-    backstory: null,
-    relationships: null,
-    color: null,
-    initial: null,
-    orderIndex: 0,
-    createdAt: '2026-05-07T00:00:00Z',
-    updatedAt: '2026-05-07T00:00:00Z',
-  };
-}
-
 describe('Paper @-mention character picker (X30 regression)', () => {
   afterEach(() => {
     setCharRefSuggestionProvider(null);
@@ -56,8 +36,8 @@ describe('Paper @-mention character picker (X30 regression)', () => {
   it('populates the menu with the active story characters when user types @', async () => {
     const client = createQueryClient();
     client.setQueryData<Character[]>(charactersQueryKey('s1'), [
-      makeChar('c1', 'Elena Marsh', 'Protagonist'),
-      makeChar('c2', 'Marcus Stone', null),
+      makeCharacter({ id: 'c1', name: 'Elena Marsh', role: 'Protagonist' }),
+      makeCharacter({ id: 'c2', name: 'Marcus Stone', role: null }),
     ]);
 
     let editor: TiptapEditor | null = null;

@@ -1,11 +1,13 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { CharacterSheet } from '@/components/CharacterSheet';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
+import { makeCharacter } from '../fixtures/character';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -18,45 +20,13 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-interface CharacterFixture {
-  id: string;
-  storyId: string;
-  name: string;
-  role: string | null;
-  age: string | null;
-  appearance: string | null;
-  voice: string | null;
-  arc: string | null;
-  personality: string | null;
-  backstory: string | null;
-  relationships: string | null;
-  orderIndex: number;
-  color: string | null;
-  initial: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-function makeChar(
-  overrides: Partial<CharacterFixture> & { id: string; name: string },
-): CharacterFixture {
-  return {
+function makeChar(overrides: Partial<Character> & { id: string; name: string }): Character {
+  return makeCharacter({
     storyId: STORY_ID,
-    role: null,
-    age: null,
-    appearance: null,
-    voice: null,
-    arc: null,
-    personality: null,
-    backstory: null,
-    relationships: null,
-    orderIndex: 0,
-    color: null,
-    initial: null,
     createdAt: '2026-05-01T00:00:00.000Z',
     updatedAt: '2026-05-01T00:00:00.000Z',
     ...overrides,
-  };
+  });
 }
 
 function renderSheet(props: { onClose?: (id: string | null) => void; client?: QueryClient }): {
