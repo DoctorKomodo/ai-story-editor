@@ -3,15 +3,12 @@ import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/pri
 
 export interface ResendConfirmDialogProps {
   count: number;
-  /** Action verb, so the dialog reads correctly from both entry points. */
-  verb?: 'Resend' | 'Regenerate';
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 export function ResendConfirmDialog({
   count,
-  verb = 'Resend',
   onConfirm,
   onCancel,
 }: ResendConfirmDialogProps): JSX.Element {
@@ -25,7 +22,7 @@ export function ResendConfirmDialog({
       role="alertdialog"
       testId="resend-confirm"
     >
-      <ModalHeader titleId={titleId} title={`${verb} from here?`} />
+      <ModalHeader titleId={titleId} title="Regenerate from here?" />
       <ModalBody>
         <p className="text-[13px] text-ink-2">
           {`This will delete ${String(count)} ${count === 1 ? 'message' : 'messages'} below and regenerate the reply.`}
@@ -36,7 +33,7 @@ export function ResendConfirmDialog({
           Cancel
         </Button>
         <Button variant="primary" size="sm" onClick={onConfirm}>
-          {verb}
+          Regenerate
         </Button>
       </ModalFooter>
     </Modal>

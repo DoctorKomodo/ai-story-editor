@@ -718,9 +718,11 @@ describe('SceneTab — [5] retry semantics', () => {
     renderWithProviders(<SceneTab chapterId="c1" editor={null} />, qc);
 
     // Wait for the assistant row to appear.
-    await screen.findByTestId('assistant-a1');
+    const a1Row = await screen.findByTestId('assistant-a1');
 
-    const regenerateBtn = await screen.findByRole('button', { name: /regenerate/i });
+    // Scope to the assistant row — after the rename both user and assistant rows have
+    // a "Regenerate" button, so an unscoped query would find multiple.
+    const regenerateBtn = within(a1Row).getByRole('button', { name: /regenerate/i });
     await user.click(regenerateBtn);
 
     // No confirm dialog — count = 1.

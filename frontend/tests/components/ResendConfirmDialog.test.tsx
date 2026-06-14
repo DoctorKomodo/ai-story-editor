@@ -7,7 +7,7 @@ describe('ResendConfirmDialog', () => {
     const onConfirm = vi.fn();
     render(<ResendConfirmDialog count={7} onConfirm={onConfirm} onCancel={vi.fn()} />);
     expect(screen.getByText(/7 messages/)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: 'Resend' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Regenerate' }));
     expect(onConfirm).toHaveBeenCalledTimes(1);
   });
 

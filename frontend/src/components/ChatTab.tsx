@@ -318,7 +318,6 @@ export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
       {actions.confirmState ? (
         <ResendConfirmDialog
           count={actions.confirmState.count}
-          verb={actions.confirmState.verb}
           onConfirm={actions.confirmState.onConfirm}
           onCancel={actions.confirmState.onCancel}
         />

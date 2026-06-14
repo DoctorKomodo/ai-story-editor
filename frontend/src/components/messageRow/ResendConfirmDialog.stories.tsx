@@ -19,16 +19,6 @@ type Story = StoryObj<typeof ResendConfirmDialog>;
 export const Default: Story = {
   args: {
     count: 3,
-    verb: 'Resend',
-    onConfirm: () => console.log('confirmed'),
-    onCancel: () => console.log('cancelled'),
-  },
-};
-
-export const Regenerate: Story = {
-  args: {
-    count: 2,
-    verb: 'Regenerate',
     onConfirm: () => console.log('confirmed'),
     onCancel: () => console.log('cancelled'),
   },

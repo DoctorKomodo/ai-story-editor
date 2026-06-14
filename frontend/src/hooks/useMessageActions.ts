@@ -15,7 +15,6 @@ export interface UseMessageActionsOptions {
 
 export interface ResendConfirmState {
   count: number;
-  verb: 'Resend' | 'Regenerate';
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -79,14 +78,13 @@ export function useMessageActions({
 
   // count = messages strictly after the anchor (what deleteAllAfter removes).
   const replayWithGuard = useCallback(
-    (anchorId: string, verb: 'Resend' | 'Regenerate') => {
+    (anchorId: string) => {
       const idx = messages.findIndex((m) => m.id === anchorId);
       if (idx < 0) return;
       const count = messages.length - idx - 1;
       if (count > 1) {
         setConfirmState({
           count,
-          verb,
           onConfirm: () => {
             setConfirmState(null);
             fireReplay(anchorId);
@@ -101,7 +99,7 @@ export function useMessageActions({
   );
 
   const resendFromUser = useCallback(
-    (userId: string) => replayWithGuard(userId, 'Resend'),
+    (userId: string) => replayWithGuard(userId),
     [replayWithGuard],
   );
 
@@ -122,7 +120,7 @@ export function useMessageActions({
     (assistantId: string) => {
       const anchor = precedingUserId(assistantId);
       if (anchor === null) return; // defensive — button is disabled in this case
-      replayWithGuard(anchor, 'Regenerate');
+      replayWithGuard(anchor);
     },
     [precedingUserId, replayWithGuard],
   );

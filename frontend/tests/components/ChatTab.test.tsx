@@ -478,18 +478,19 @@ describe('ChatTab — useMessageActions integration', () => {
     // Wait for u1's row to appear.
     await screen.findByTestId('chat-tab');
 
-    // The Resend button on u1's row (3 messages below it: a1, u2, a2).
-    const resendBtns = await screen.findAllByRole('button', { name: /resend/i });
-    // u1 is the first user row — click its Resend.
-    await user.click(resendBtns[0]);
+    // Scope to u1's user row and click its Regenerate button.
+    // After the rename both user and assistant rows share the "Regenerate" label, so
+    // we must narrow to the specific row via data-message-id / data-role.
+    const u1Row = document.querySelector('[data-message-id="u1"][data-role="user"]') as HTMLElement;
+    expect(u1Row).toBeTruthy();
+    await user.click(within(u1Row).getByRole('button', { name: 'Regenerate' }));
 
     // Confirm dialog shows with count = 3.
     const dialog = await screen.findByTestId('resend-confirm');
     expect(dialog).toBeInTheDocument();
     expect(dialog).toHaveTextContent('3 messages');
-    // The dialog confirm button is labelled "Resend" — scope within dialog to avoid
-    // matching the transcript row action buttons with the same label.
-    expect(within(dialog).getByRole('button', { name: 'Resend' })).toBeInTheDocument();
+    // Scope within dialog to avoid matching transcript row action buttons.
+    expect(within(dialog).getByRole('button', { name: 'Regenerate' })).toBeInTheDocument();
   });
 
   it('resending the last user turn fires immediately with no dialog', async () => {
@@ -531,9 +532,11 @@ describe('ChatTab — useMessageActions integration', () => {
 
     await screen.findByTestId('chat-tab');
 
-    // Click Resend on u1 — count = 1 (only a1 below), so no dialog, send fires directly.
-    const resendBtn = await screen.findByRole('button', { name: /resend/i });
-    await user.click(resendBtn);
+    // Click Regenerate on u1 — count = 1 (only a1 below), so no dialog, send fires directly.
+    // Scope to the user row to avoid collision with a1's assistant Regenerate button.
+    const u1Row = document.querySelector('[data-message-id="u1"][data-role="user"]') as HTMLElement;
+    expect(u1Row).toBeTruthy();
+    await user.click(within(u1Row).getByRole('button', { name: 'Regenerate' }));
 
     // No confirm dialog should appear.
     expect(screen.queryByTestId('resend-confirm')).toBeNull();
@@ -621,9 +624,10 @@ describe('ChatTab — useMessageActions integration', () => {
 
     await screen.findByTestId('chat-tab');
 
-    // Both assistant rows have a Regenerate button; click the first one (a1).
-    const regenerateBtns = await screen.findAllByRole('button', { name: /regenerate/i });
-    await user.click(regenerateBtns[0]);
+    // Click Regenerate on a1's assistant row (non-trailing reply).
+    // Scope to the specific assistant row to avoid ambiguity with user-row Regenerate buttons.
+    const a1Row = await screen.findByTestId('assistant-a1');
+    await user.click(within(a1Row).getByRole('button', { name: 'Regenerate' }));
 
     // Confirm dialog: count = 3 (a1, u2, a2 are below the anchor u1).
     const dialog = await screen.findByTestId('resend-confirm');
@@ -672,9 +676,11 @@ describe('ChatTab — useMessageActions integration', () => {
 
     await screen.findByTestId('chat-tab');
 
-    // Click Resend on u1 — count = 1 (only a1 below), fires directly (no confirm dialog).
-    const resendBtn = await screen.findByRole('button', { name: /resend/i });
-    await user.click(resendBtn);
+    // Click Regenerate on u1 — count = 1 (only a1 below), fires directly (no confirm dialog).
+    // Scope to the user row to avoid collision with a1's assistant Regenerate button.
+    const u1Row = document.querySelector('[data-message-id="u1"][data-role="user"]') as HTMLElement;
+    expect(u1Row).toBeTruthy();
+    await user.click(within(u1Row).getByRole('button', { name: 'Regenerate' }));
 
     // Guard should have pushed a 'no_model' error — same code checkChatSendGuards returns.
     await waitFor(() => {

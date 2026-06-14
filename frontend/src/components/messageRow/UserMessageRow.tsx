@@ -120,11 +120,7 @@ export function UserMessageRow({
                 <EditAction onClick={() => onBeginEdit(message.id)} disabled={actionsDisabled} />
               ) : null}
               {onResend ? (
-                <RegenerateAction
-                  label="Resend"
-                  onClick={() => onResend(message.id)}
-                  disabled={actionsDisabled}
-                />
+                <RegenerateAction onClick={() => onResend(message.id)} disabled={actionsDisabled} />
               ) : null}
             </MessageActions>
           ) : null}

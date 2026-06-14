@@ -20,10 +20,10 @@ function makeMsg(overrides: Partial<Message> = {}): Message {
 }
 
 describe('UserMessageRow edit/resend', () => {
-  it('renders Edit + Resend when handlers are provided', () => {
+  it('renders Edit + Regenerate when handlers are provided', () => {
     render(<UserMessageRow message={makeMsg()} onBeginEdit={vi.fn()} onResend={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Edit' })).toBeTruthy();
-    expect(screen.getByRole('button', { name: 'Resend' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Regenerate' })).toBeTruthy();
   });
 
   it('renders no actions when handlers are absent (draft rows)', () => {
@@ -99,7 +99,7 @@ describe('UserMessageRow edit/resend', () => {
     );
   });
 
-  it('disables Edit + Resend while actionsDisabled', () => {
+  it('disables Edit + Regenerate while actionsDisabled', () => {
     render(
       <UserMessageRow
         message={makeMsg()}
@@ -109,7 +109,7 @@ describe('UserMessageRow edit/resend', () => {
       />,
     );
     expect((screen.getByRole('button', { name: 'Edit' }) as HTMLButtonElement).disabled).toBe(true);
-    expect((screen.getByRole('button', { name: 'Resend' }) as HTMLButtonElement).disabled).toBe(
+    expect((screen.getByRole('button', { name: 'Regenerate' }) as HTMLButtonElement).disabled).toBe(
       true,
     );
   });
