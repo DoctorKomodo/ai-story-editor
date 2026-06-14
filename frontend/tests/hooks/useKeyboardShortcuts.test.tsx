@@ -34,12 +34,13 @@ describe('useKeyboardShortcuts', () => {
 
   it('calls the highest-priority handler first; returning true stops propagation', () => {
     const calls: string[] = [];
-    const high = vi.fn(() => {
+    const high = vi.fn<(e: KeyboardEvent) => boolean | undefined>(() => {
       calls.push('high');
       return true;
     });
-    const low = vi.fn(() => {
+    const low = vi.fn<(e: KeyboardEvent) => boolean | undefined>(() => {
       calls.push('low');
+      return undefined;
     });
 
     renderHook(() => useEscape(low, { priority: 0 }));
@@ -53,12 +54,13 @@ describe('useKeyboardShortcuts', () => {
 
   it('returning false / void lets the next-priority handler fire', () => {
     const calls: string[] = [];
-    const high = vi.fn(() => {
+    const high = vi.fn<(e: KeyboardEvent) => boolean | undefined>(() => {
       calls.push('high');
-      // implicit void return
+      // implicit undefined return
     });
-    const low = vi.fn(() => {
+    const low = vi.fn<(e: KeyboardEvent) => boolean | undefined>(() => {
       calls.push('low');
+      return undefined;
     });
 
     renderHook(() => useEscape(low, { priority: 0 }));
@@ -193,9 +195,12 @@ describe('useKeyboardShortcuts', () => {
     const first = vi.fn();
     const second = vi.fn();
 
-    const { rerender } = renderHook(({ h }: { h: (e: KeyboardEvent) => void }) => useEscape(h), {
-      initialProps: { h: first },
-    });
+    const { rerender } = renderHook(
+      ({ h }: { h: (e: KeyboardEvent) => boolean | undefined }) => useEscape(h),
+      {
+        initialProps: { h: first },
+      },
+    );
 
     fireKey({ key: 'Escape' });
     expect(first).toHaveBeenCalledTimes(1);

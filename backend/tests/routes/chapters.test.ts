@@ -265,9 +265,10 @@ describe('Chapter routes [B3]', () => {
     // First call → pretend _max is still 0 (the losing side of the race).
     // Subsequent calls → real aggregate (now returns 1, so handler picks 2).
     aggSpy.mockImplementationOnce(
-      async () =>
-        ({ _max: { orderIndex: 0 } }) as unknown as Awaited<
-          ReturnType<typeof appPrisma.chapter.aggregate>
+      // Promise satisfies PrismaPromise at runtime; cast bridges the type-only gap
+      () =>
+        Promise.resolve({ _max: { orderIndex: 0 } }) as unknown as ReturnType<
+          typeof appPrisma.chapter.aggregate
         >,
     );
 

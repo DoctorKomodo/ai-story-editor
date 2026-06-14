@@ -1,9 +1,10 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { Editor as TiptapEditor } from '@tiptap/core';
+import type { Character } from 'story-editor-shared';
 import { afterEach, describe, expect, it } from 'vitest';
 import { Paper } from '@/components/Paper';
-import { type Character, charactersQueryKey } from '@/hooks/useCharacters';
+import { charactersQueryKey } from '@/hooks/useCharacters';
 import { setCharRefSuggestionProvider } from '@/lib/charRefSuggestion';
 import { createQueryClient } from '@/lib/queryClient';
 import { useCharRefSuggestionStore } from '@/store/charRefSuggestion';
@@ -34,6 +35,10 @@ function makeChar(id: string, name: string, role: string | null = null): Charact
     voice: null,
     arc: null,
     personality: null,
+    backstory: null,
+    relationships: null,
+    color: null,
+    initial: null,
     orderIndex: 0,
     createdAt: '2026-05-07T00:00:00Z',
     updatedAt: '2026-05-07T00:00:00Z',

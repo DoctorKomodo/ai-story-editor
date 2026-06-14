@@ -26,9 +26,14 @@ function makeModel(over: Partial<Model> & { id: string }): Model {
   return {
     name: over.id,
     contextLength: 8000,
+    maxCompletionTokens: 4096,
     supportsReasoning: false,
     supportsVision: false,
     supportsWebSearch: false,
+    description: null,
+    pricing: null,
+    defaultTemperature: null,
+    defaultTopP: null,
     ...over,
   };
 }

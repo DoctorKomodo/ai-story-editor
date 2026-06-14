@@ -139,7 +139,7 @@ describe('EditorPage (F51 — AppShell shell)', () => {
   });
 
   it('renders loading state with role=status before the story resolves', async () => {
-    let resolveStory: ((res: Response) => void) | null = null;
+    let resolveStory!: (res: Response) => void;
     const pending = new Promise<Response>((resolve) => {
       resolveStory = resolve;
     });
@@ -155,7 +155,7 @@ describe('EditorPage (F51 — AppShell shell)', () => {
     // Shell isn't mounted while loading.
     expect(screen.queryByTestId('app-shell')).toBeNull();
 
-    resolveStory?.(jsonResponse(200, { story: makeStory() }));
+    resolveStory(jsonResponse(200, { story: makeStory() }));
   });
 
   it('mounts the AppShell with topbar / sidebar / editor / chat slots once the story loads', async () => {

@@ -338,7 +338,6 @@ describe('venice.models.service [V2]', () => {
         model_spec: {
           name: 'Has Cap',
           availableContextTokens: 65536,
-          // @ts-expect-error — field is absent from the test's local raw type
           maxCompletionTokens: 8192,
         },
       };
@@ -376,7 +375,6 @@ describe('venice.models.service [V2]', () => {
         model_spec: {
           name: 'Zero',
           availableContextTokens: 65536,
-          // @ts-expect-error — local type omits field
           maxCompletionTokens: 0,
         },
       };
@@ -387,7 +385,6 @@ describe('venice.models.service [V2]', () => {
         model_spec: {
           name: 'Neg',
           availableContextTokens: 65536,
-          // @ts-expect-error — local type omits field
           maxCompletionTokens: -10,
         },
       };
@@ -481,7 +478,7 @@ describe('venice.models.service [V2]', () => {
           availableContextTokens: 8_000,
           maxCompletionTokens: 2_000,
           constraints: {
-            temperature: { min: 0, max: 2 }, // no `default`
+            temperature: {}, // no `default`
             // top_p key entirely absent
           },
         },

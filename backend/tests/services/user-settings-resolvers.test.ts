@@ -72,6 +72,7 @@ const MODEL_WITH_DEFAULTS: ModelInfo = {
   supportsReasoning: true,
   supportsVision: true,
   supportsWebSearch: true,
+  supportsResponseSchema: false,
   description: null,
   pricing: null,
   defaultTemperature: 0.7,

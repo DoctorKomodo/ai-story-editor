@@ -9,7 +9,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
@@ -98,24 +98,23 @@ async function openWritingTab(): Promise<void> {
 
 function findSettingsPatch(fetchMock: FetchMock): RequestInit | undefined {
   const entry = fetchMock.mock.calls.find(
-    ([url, init]: [string, RequestInit | undefined]) =>
-      url === '/api/users/me/settings' && init?.method === 'PATCH',
+    (call): call is [string, RequestInit] =>
+      call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
   );
-  if (entry == null) return undefined;
-  return (entry as [string, RequestInit])[1];
+  return entry?.[1];
 }
 
 function findAllSettingsPatches(fetchMock: FetchMock): RequestInit[] {
   return fetchMock.mock.calls
     .filter(
-      ([url, init]: [string, RequestInit | undefined]) =>
-        url === '/api/users/me/settings' && init?.method === 'PATCH',
+      (call): call is [string, RequestInit] =>
+        call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
     )
-    .map(([, init]: [string, RequestInit]) => init);
+    .map(([, init]) => init);
 }
 
 describe('SettingsModal Writing tab (F45)', () => {
-  let onClose: ReturnType<typeof vi.fn>;
+  let onClose: Mock<() => void>;
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -128,7 +127,7 @@ describe('SettingsModal Writing tab (F45)', () => {
       status: 'authenticated',
     });
     window.localStorage.clear();
-    onClose = vi.fn();
+    onClose = vi.fn<() => void>();
   });
 
   afterEach(() => {

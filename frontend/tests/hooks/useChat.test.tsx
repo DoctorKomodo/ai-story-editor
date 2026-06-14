@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import type { JSX, ReactNode } from 'react';
 import type { Chat, ChatSummary } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -20,7 +20,7 @@ import { useChatDraftStore } from '@/store/chatDraft';
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
-  return { ...actual, apiStream: vi.fn() };
+  return { ...actual, apiStream: vi.fn<typeof actual.apiStream>() };
 });
 
 function sseResponse(lines: ReadonlyArray<string>): Response {
@@ -37,7 +37,10 @@ function sseResponse(lines: ReadonlyArray<string>): Response {
   });
 }
 
-function withClient(): { wrapper: (p: { children: ReactNode }) => JSX.Element; qc: QueryClient } {
+function withClient(): {
+  wrapper: (p: { children: ReactNode }) => JSX.Element;
+  qc: QueryClient;
+} {
   const qc = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
@@ -199,7 +202,7 @@ describe('useSendChatMessageMutation', () => {
   it('stop() aborts the in-flight stream', async () => {
     // Build an apiStream mock that returns a never-resolving SSE stream so we
     // can call stop() mid-flight and assert the abort propagates.
-    let abortedSignal: AbortSignal | null = null;
+    const signalBox: { current: AbortSignal | null } = { current: null };
     const neverEndingStream = new ReadableStream({
       start(_controller) {
         // Intentionally don't enqueue anything — the test aborts before any
@@ -207,7 +210,7 @@ describe('useSendChatMessageMutation', () => {
       },
     });
     vi.mocked(apiStream).mockImplementation(async (_path, init) => {
-      abortedSignal = (init as { signal?: AbortSignal } | undefined)?.signal ?? null;
+      signalBox.current = init?.signal ?? null;
       return new Response(neverEndingStream, {
         status: 200,
         headers: { 'Content-Type': 'text/event-stream' },
@@ -236,8 +239,8 @@ describe('useSendChatMessageMutation', () => {
     // that the signal passed to apiStream was aborted.
     await expect(sendPromise).resolves.toBeUndefined();
 
-    expect(abortedSignal).not.toBeNull();
-    expect(abortedSignal?.aborted).toBe(true);
+    expect(signalBox.current).not.toBeNull();
+    expect(signalBox.current?.aborted).toBe(true);
   });
 
   it('flips status to streaming on the first non-empty content delta', async () => {
@@ -291,7 +294,7 @@ describe('useSendChatMessageMutation', () => {
   });
 
   it('aborts the stream and drops the draft when resetClientState runs mid-stream', async () => {
-    let abortedSignal: AbortSignal | null = null;
+    const signalBox: { current: AbortSignal | null } = { current: null };
     let enqueue!: (s: string) => void;
     const body = new ReadableStream<Uint8Array>({
       start(controller) {
@@ -300,7 +303,7 @@ describe('useSendChatMessageMutation', () => {
       },
     });
     vi.mocked(apiStream).mockImplementationOnce(async (_path, init) => {
-      abortedSignal = (init as { signal?: AbortSignal } | undefined)?.signal ?? null;
+      signalBox.current = init?.signal ?? null;
       return new Response(body, {
         status: 200,
         headers: { 'content-type': 'text/event-stream' },
@@ -330,8 +333,8 @@ describe('useSendChatMessageMutation', () => {
       await resetClientState(qc);
     });
 
-    expect(abortedSignal).not.toBeNull();
-    expect(abortedSignal?.aborted).toBe(true);
+    expect(signalBox.current).not.toBeNull();
+    expect(signalBox.current?.aborted).toBe(true);
     expect(useChatDraftStore.getState().drafts['c1']).toBeUndefined();
 
     try {

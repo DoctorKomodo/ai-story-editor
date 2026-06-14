@@ -1,5 +1,5 @@
+import type { Character } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
-import type { Character } from '@/hooks/useCharacters';
 import { computeReorderedCharacters } from '@/hooks/useCharacters';
 
 function meta(id: string, orderIndex: number): Character {
@@ -13,6 +13,10 @@ function meta(id: string, orderIndex: number): Character {
     voice: null,
     arc: null,
     personality: null,
+    backstory: null,
+    relationships: null,
+    color: null,
+    initial: null,
     orderIndex,
     createdAt: '2026-04-01T00:00:00Z',
     updatedAt: '2026-04-01T00:00:00Z',

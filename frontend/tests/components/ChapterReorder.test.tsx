@@ -1,6 +1,6 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import type { ReactNode } from 'react';
+import type { JSX, ReactNode } from 'react';
 import type { ChapterMeta } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -30,6 +30,8 @@ function chap(id: string, orderIndex: number): ChapterMeta {
     wordCount: 0,
     orderIndex,
     status: 'draft',
+    hasSummary: false,
+    summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',
   };

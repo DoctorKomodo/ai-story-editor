@@ -3,6 +3,7 @@
 // Story + chapter data is created directly via repo layer after decoding the
 // session DEK from the in-process session store.
 
+import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import request from 'supertest';
@@ -286,7 +287,6 @@ describe('POST /api/ai/complete [V5]', () => {
 
   it('returns 409 venice_key_required when user has no BYOK key', async () => {
     const accessToken = await registerAndLogin();
-    const _req = makeFakeReq(accessToken);
 
     // Prime the models cache manually with a stub so we hit the "no BYOK key"
     // path from getVeniceClient, not from fetchModels. But the handler calls
@@ -652,7 +652,7 @@ describe('POST /api/ai/complete [V5]', () => {
     const decoded = jwt.decode(accessToken) as AccessTokenPayload;
     await prisma.user.update({
       where: { id: decoded.sub },
-      data: { settingsJson: null },
+      data: { settingsJson: Prisma.DbNull },
     });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));

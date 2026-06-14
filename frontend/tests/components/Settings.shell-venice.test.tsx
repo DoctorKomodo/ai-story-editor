@@ -5,7 +5,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
@@ -87,7 +87,7 @@ function renderModal(ui: ReactElement): ReturnType<typeof render> {
 }
 
 describe('SettingsModal (F43)', () => {
-  let onClose: ReturnType<typeof vi.fn>;
+  let onClose: Mock<() => void>;
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -99,7 +99,7 @@ describe('SettingsModal (F43)', () => {
       user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
-    onClose = vi.fn();
+    onClose = vi.fn<() => void>();
   });
 
   afterEach(() => {
@@ -351,11 +351,14 @@ describe('SettingsModal (F43)', () => {
       await waitFor(() => {
         const fetchMock = global.fetch as ReturnType<typeof vi.fn>;
         const putCall = fetchMock.mock.calls.find(
-          ([furl, finit]: [string, RequestInit | undefined]) =>
-            furl.endsWith('/api/users/me/venice-key') && finit?.method === 'PUT',
+          (call): call is [string, RequestInit] =>
+            String(call[0]).endsWith('/api/users/me/venice-key') &&
+            call[1] != null &&
+            call[1].method === 'PUT',
         );
         expect(putCall).toBeDefined();
-        const finit = (putCall as [string, RequestInit])[1];
+        if (!putCall) return;
+        const finit = putCall[1];
         const body = JSON.parse(String(finit.body)) as Record<string, unknown>;
         expect(body.apiKey).toBe('abc');
       });
@@ -496,8 +499,10 @@ describe('SettingsModal (F43)', () => {
 
       await waitFor(() => {
         const deleteCall = fetchMock.mock.calls.find(
-          ([url, init]: [string, RequestInit | undefined]) =>
-            url === '/api/users/me/venice-key' && init?.method === 'DELETE',
+          (call): call is [string, RequestInit] =>
+            call[0] === '/api/users/me/venice-key' &&
+            call[1] != null &&
+            call[1].method === 'DELETE',
         );
         expect(deleteCall).toBeDefined();
       });
@@ -532,11 +537,12 @@ describe('SettingsModal (F43)', () => {
 
       await waitFor(() => {
         const patchCall = fetchMock.mock.calls.find(
-          ([url, init]: [string, RequestInit | undefined]) =>
-            url === '/api/users/me/settings' && init?.method === 'PATCH',
+          (call): call is [string, RequestInit] =>
+            call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
         );
         expect(patchCall).toBeDefined();
-        const init = (patchCall as [string, RequestInit])[1];
+        if (!patchCall) return;
+        const init = patchCall[1];
         const body = JSON.parse(String(init.body)) as Record<string, unknown>;
         expect(body).toEqual({ ai: { includeVeniceSystemPrompt: false } });
       });

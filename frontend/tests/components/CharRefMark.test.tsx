@@ -1,7 +1,7 @@
 import { fireEvent, render, waitFor } from '@testing-library/react';
 import { Editor as TiptapEditor } from '@tiptap/core';
 import { useEditor } from '@tiptap/react';
-import { useEffect } from 'react';
+import { type JSX, useEffect } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CharRef,
@@ -44,7 +44,7 @@ describe('CharRef mark (F36)', () => {
     // doc -> paragraph -> [text, text-with-mark, text]
     const para = json.content?.[0];
     expect(para?.type).toBe('paragraph');
-    const elenaNode = para?.content?.find((n) => n.text === 'Elena');
+    const elenaNode = para?.content?.find((n) => 'text' in n && n.text === 'Elena');
     expect(elenaNode).toBeDefined();
     const mark = elenaNode!.marks?.find((m) => m.type === 'charRef');
     expect(mark).toBeDefined();

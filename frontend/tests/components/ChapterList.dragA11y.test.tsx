@@ -10,6 +10,8 @@ function meta(id: string, orderIndex: number): ChapterMeta {
     wordCount: 0,
     orderIndex,
     status: 'draft',
+    hasSummary: false,
+    summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00Z',
     updatedAt: '2026-04-01T00:00:00Z',
   };

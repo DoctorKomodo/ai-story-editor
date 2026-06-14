@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import {
   ApiError,
   api,
@@ -29,13 +29,13 @@ function jsonResponse(status: number, body: unknown): Response {
 
 describe('api client — terminal 401 handler invocation (F65)', () => {
   let fetchMock: FetchMock;
-  let onUnauthorized: ReturnType<typeof vi.fn>;
+  let onUnauthorized: Mock<() => void>;
 
   beforeEach(() => {
     resetApiClientForTests();
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    onUnauthorized = vi.fn();
+    onUnauthorized = vi.fn<() => void>();
     setUnauthorizedHandler(onUnauthorized);
   });
 

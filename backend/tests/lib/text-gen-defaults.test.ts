@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/text-gen-defaults';
+import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '@/lib/text-gen-defaults';
 
 describe('GLOBAL_TEXT_GEN_DEFAULTS', () => {
   it('is the canonical text-generation defaults shape', () => {
@@ -13,7 +13,7 @@ describe('GLOBAL_TEXT_GEN_DEFAULTS', () => {
   it('frontend/src/lib/textGenDefaults.ts hardcodes the same values', async () => {
     const fs = await import('node:fs/promises');
     const path = await import('node:path');
-    const here = path.dirname(new URL(import.meta.url).pathname);
+    const here = __dirname;
     const frontendFile = path.resolve(here, '../../../frontend/src/lib/textGenDefaults.ts');
     const text = await fs.readFile(frontendFile, 'utf8');
     expect(text).toMatch(/temperature:\s*1(\.0)?\b/);
@@ -22,11 +22,10 @@ describe('GLOBAL_TEXT_GEN_DEFAULTS', () => {
   });
 
   it('exposes MAX_OUTPUT_TOKENS_CEILING and the frontend mirror matches', async () => {
-    const { MAX_OUTPUT_TOKENS_CEILING } = await import('@/lib/text-gen-defaults');
     expect(MAX_OUTPUT_TOKENS_CEILING).toBe(32_000);
     const fs = await import('node:fs/promises');
     const path = await import('node:path');
-    const here = path.dirname(new URL(import.meta.url).pathname);
+    const here = __dirname;
     const frontendFile = path.resolve(here, '../../../frontend/src/lib/textGenDefaults.ts');
     const text = await fs.readFile(frontendFile, 'utf8');
     expect(text).toMatch(/MAX_OUTPUT_TOKENS_CEILING\s*=\s*32_?000\b/);

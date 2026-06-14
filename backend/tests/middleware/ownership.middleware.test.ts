@@ -8,7 +8,7 @@ import { prisma } from '../setup';
 function mountProtected(resource: OwnedResource, idParam: string, userId: string) {
   const app = express();
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    req.user = { id: userId, email: null };
+    req.user = { id: userId, email: null, sessionId: 'test-session-id' };
     next();
   });
   app.get(`/:${idParam}`, requireOwnership(resource, { idParam, client: prisma }), (_req, res) =>
@@ -100,7 +100,7 @@ describe('requireOwnership middleware', () => {
     const { ownerId } = await seedTwoUsersAndAStory();
     const app = express();
     app.use((req: Request, _res: Response, next: NextFunction) => {
-      req.user = { id: ownerId, email: null };
+      req.user = { id: ownerId, email: null, sessionId: 'test-session-id' };
       next();
     });
     // Mount without a param segment — Express gives an empty string at req.params.storyId.

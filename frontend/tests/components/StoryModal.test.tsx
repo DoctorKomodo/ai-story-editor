@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { StoryModalInitial } from '@/components/StoryModal';
 import { StoryModal } from '@/components/StoryModal';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
@@ -24,7 +24,7 @@ function renderModal(ui: React.ReactElement): ReturnType<typeof render> {
 
 describe('StoryModal (F6)', () => {
   let fetchMock: FetchMock;
-  let onClose: ReturnType<typeof vi.fn>;
+  let onClose: Mock<() => void>;
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -38,7 +38,7 @@ describe('StoryModal (F6)', () => {
     });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    onClose = vi.fn();
+    onClose = vi.fn<() => void>();
   });
 
   afterEach(() => {
@@ -95,9 +95,12 @@ describe('StoryModal (F6)', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const call = fetchMock.mock.calls.find(([url]: [string]) => url === '/api/stories');
+    const call = fetchMock.mock.calls.find(
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/stories',
+    );
     expect(call).toBeDefined();
-    const [, init] = call as [string, RequestInit];
+    if (!call) return;
+    const [, init] = call;
     expect(init.method).toBe('POST');
     expect(init.body).toBe(
       JSON.stringify({
@@ -163,9 +166,12 @@ describe('StoryModal (F6)', () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const call = fetchMock.mock.calls.find(([url]: [string]) => url === '/api/stories/s1');
+    const call = fetchMock.mock.calls.find(
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/stories/s1',
+    );
     expect(call).toBeDefined();
-    const [, init] = call as [string, RequestInit];
+    if (!call) return;
+    const [, init] = call;
     expect(init.method).toBe('PATCH');
     // Only `title` should be in the body — genre/synopsis/worldNotes unchanged.
     expect(init.body).toBe(JSON.stringify({ title: 'Dune (revised)' }));

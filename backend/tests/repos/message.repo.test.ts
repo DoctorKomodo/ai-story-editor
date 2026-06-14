@@ -235,9 +235,8 @@ describe('MessageRepo.deleteAllAfter', () => {
     const chatA = await chatRepo.create({ chapterId, kind: 'ask', title: null });
     const chatB = await chatRepo.create({ chapterId, kind: 'ask', title: null });
 
-    // Two messages in chat A — they should survive. The user-msg ref is
-    // unused; we only need to assert chat A's row count post-call.
-    const _userMsgA = await repo.create({
+    // Two messages in chat A — they should survive; we only need the row count.
+    await repo.create({
       chatId: chatA.id as string,
       role: 'user',
       content: 'A user',

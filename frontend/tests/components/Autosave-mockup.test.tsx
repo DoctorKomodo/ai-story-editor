@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { useState } from 'react';
+import { type JSX, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutosaveIndicator } from '@/components/AutosaveIndicator';
 import { useAutosave } from '@/hooks/useAutosave';

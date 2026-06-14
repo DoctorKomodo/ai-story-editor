@@ -1,14 +1,19 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { type MutateOptions, QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook } from '@testing-library/react';
 import { useRef } from 'react';
 import type { Message } from 'story-editor-shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { SendArgs } from '@/components/ChatComposer';
 import { useBannerRetry } from '@/hooks/useBannerRetry';
-import { chatMessagesQueryKey } from '@/hooks/useChat';
+import {
+  chatMessagesQueryKey,
+  type SendChatMessageArgs,
+  type useSendChatMessageMutation,
+} from '@/hooks/useChat';
+import type { ApiError } from '@/lib/api';
 
 function makeMessage(over: Partial<Message> & { id: string }): Message {
   return {
-    id: over.id,
     role: 'user',
     content: '',
     attachmentJson: null,
@@ -21,13 +26,38 @@ function makeMessage(over: Partial<Message> & { id: string }): Message {
   };
 }
 
-function makeFakeMutation(): {
-  mutateAsync: ReturnType<typeof vi.fn>;
-  isPending: boolean;
-} {
+function makeFakeMutation(): ReturnType<typeof useSendChatMessageMutation> {
   return {
-    mutateAsync: vi.fn().mockResolvedValue(undefined),
+    data: undefined,
+    error: null,
+    variables: undefined,
+    context: undefined,
+    failureCount: 0,
+    failureReason: null,
+    isPaused: false,
+    status: 'idle',
+    submittedAt: 0,
+    isError: false,
+    isIdle: true,
     isPending: false,
+    isSuccess: false,
+    mutate:
+      vi.fn<
+        (
+          variables: SendChatMessageArgs,
+          options?: MutateOptions<void, ApiError, SendChatMessageArgs, unknown>,
+        ) => void
+      >(),
+    mutateAsync: vi
+      .fn<
+        (
+          variables: SendChatMessageArgs,
+          options?: MutateOptions<void, ApiError, SendChatMessageArgs, unknown>,
+        ) => Promise<void>
+      >()
+      .mockResolvedValue(undefined),
+    reset: vi.fn<() => void>(),
+    stop: vi.fn<() => void>(),
   };
 }
 
@@ -45,10 +75,10 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     qc.setQueryData(chatMessagesQueryKey('chat-1'), []);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X', attachment: null, enableWebSearch: false };
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -78,11 +108,15 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn();
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'new question', enableWebSearch: false };
+    const lastSendArgs: SendArgs = {
+      content: 'new question',
+      attachment: null,
+      enableWebSearch: false,
+    };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -116,11 +150,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -151,11 +185,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'hello', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'hello', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -190,11 +224,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
     ]);
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X2', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X2', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',
@@ -233,11 +267,11 @@ describe('useBannerRetry — trailing-role dispatch table', () => {
 
     const onSend = vi.fn().mockResolvedValue(undefined);
     const mutation = makeFakeMutation();
-    const lastSendArgs = { content: 'X', enableWebSearch: false };
+    const lastSendArgs: SendArgs = { content: 'X', attachment: null, enableWebSearch: false };
 
     const { result } = renderHook(
       () => {
-        const ref = useRef(lastSendArgs);
+        const ref = useRef<SendArgs | null>(lastSendArgs);
         return useBannerRetry({
           chatId: 'chat-1',
           chapterId: 'chapter-1',

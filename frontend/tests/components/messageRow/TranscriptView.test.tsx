@@ -14,7 +14,6 @@ function makeQc(): QueryClient {
 
 function makeMessage(over: Partial<Message> & { id: string }): Message {
   return {
-    id: over.id,
     role: 'user',
     content: '',
     attachmentJson: null,

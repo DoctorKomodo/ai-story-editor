@@ -3,12 +3,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import type { JSX, ReactNode, RefObject } from 'react';
+import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CharacterPopoverHost,
   type CharacterPopoverHostHandle,
 } from '@/components/CharacterPopoverHost';
-import { type Character, charactersQueryKey } from '@/hooks/useCharacters';
+import { charactersQueryKey } from '@/hooks/useCharacters';
 
 function makeCharacter(overrides: Partial<Character> = {}): Character {
   return {
@@ -21,6 +22,11 @@ function makeCharacter(overrides: Partial<Character> = {}): Character {
     voice: 'Calm',
     arc: 'Grows up',
     personality: null,
+    backstory: null,
+    relationships: null,
+    color: null,
+    initial: null,
+    orderIndex: 0,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T00:00:00.000Z',
     ...overrides,

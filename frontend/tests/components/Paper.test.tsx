@@ -189,7 +189,7 @@ describe('Paper (F32)', () => {
   });
 
   it('fires onReady with the editor instance', async () => {
-    const onReady = vi.fn<(editor: TiptapEditor) => void>();
+    const onReady = vi.fn<(editor: TiptapEditor | null) => void>();
     const { editor, unmount } = await renderAndGrab({
       storyTitle: 'Hollow Crown',
       onReady,

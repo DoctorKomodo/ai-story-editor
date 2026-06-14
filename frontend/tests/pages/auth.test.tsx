@@ -174,9 +174,12 @@ describe('auth pages (F4)', () => {
     });
 
     // The second fetch call is the login.
-    const loginCall = fetchMock.mock.calls.find(([url]: [string]) => url === '/api/auth/login');
+    const loginCall = fetchMock.mock.calls.find(
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/auth/login',
+    );
     expect(loginCall).toBeDefined();
-    const [, init] = loginCall as [string, RequestInit];
+    if (!loginCall) return;
+    const [, init] = loginCall;
     expect(init.method).toBe('POST');
     expect(init.body).toBe(JSON.stringify({ username: 'alice', password: 'hunter2hunter2' }));
   });
@@ -248,10 +251,11 @@ describe('auth pages (F4)', () => {
     expect(screen.getByText(/horse-battery-staple/)).toBeInTheDocument();
 
     const registerCall = fetchMock.mock.calls.find(
-      ([url]: [string]) => url === '/api/auth/register',
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/auth/register',
     );
     expect(registerCall).toBeDefined();
-    const [, init] = registerCall as [string, RequestInit];
+    if (!registerCall) return;
+    const [, init] = registerCall;
     expect(init.method).toBe('POST');
     // The register form now collects a user-supplied display name; the body
     // sends the trimmed name alongside username + password.

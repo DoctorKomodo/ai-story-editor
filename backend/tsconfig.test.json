@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "noEmit": true,
+    "incremental": false,
+    // The base tsconfig.json has no `paths`; re-add the @/ alias so test files
+    // that import `@/lib/...` resolve under the gate (vitest aliases @ → src).
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src/**/*", "tests/**/*"],
+  // The base excludes `tests` entirely; redeclare to DROP that (so tests are checked)
+  // while still excluding the opt-in live suite (mirrors vitest.config.ts exclude).
+  "exclude": ["node_modules", "dist", "tests/live/**"]
+}

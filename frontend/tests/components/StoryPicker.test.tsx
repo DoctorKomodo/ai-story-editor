@@ -6,7 +6,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { StoryPicker } from '@/components/StoryPicker';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
@@ -45,10 +45,10 @@ function renderPicker(ui: ReactElement): ReturnType<typeof render> {
 
 describe('StoryPicker (F30)', () => {
   let fetchMock: FetchMock;
-  let onClose: ReturnType<typeof vi.fn>;
-  let onSelectStory: ReturnType<typeof vi.fn>;
-  let onCreateStory: ReturnType<typeof vi.fn>;
-  let onImportDocx: ReturnType<typeof vi.fn>;
+  let onClose: Mock<() => void>;
+  let onSelectStory: Mock<(id: string) => void>;
+  let onCreateStory: Mock<() => void>;
+  let onImportDocx: Mock<() => void>;
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -62,10 +62,10 @@ describe('StoryPicker (F30)', () => {
     });
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    onClose = vi.fn();
-    onSelectStory = vi.fn();
-    onCreateStory = vi.fn();
-    onImportDocx = vi.fn();
+    onClose = vi.fn<() => void>();
+    onSelectStory = vi.fn<(id: string) => void>();
+    onCreateStory = vi.fn<() => void>();
+    onImportDocx = vi.fn<() => void>();
   });
 
   afterEach(() => {

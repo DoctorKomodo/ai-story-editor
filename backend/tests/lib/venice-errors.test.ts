@@ -562,7 +562,7 @@ describe('mapVeniceError — structured [venice.error] log', () => {
 
     mapVeniceError(err, res, { userId: 'u1', route: 'ai-complete' });
 
-    const veniceLogCalls = errorSpy.mock.calls.filter((c) => c[0] === '[venice.error]');
+    const veniceLogCalls = errorSpy.mock.calls.filter((c: unknown[]) => c[0] === '[venice.error]');
     expect(veniceLogCalls).toHaveLength(1);
     const payload = JSON.parse(veniceLogCalls[0]?.[1] as string);
     expect(payload).toMatchObject({
@@ -590,7 +590,7 @@ describe('mapVeniceError — structured [venice.error] log', () => {
       route: 'chat',
     });
 
-    const veniceLogCalls = errorSpy.mock.calls.filter((c) => c[0] === '[venice.error]');
+    const veniceLogCalls = errorSpy.mock.calls.filter((c: unknown[]) => c[0] === '[venice.error]');
     expect(veniceLogCalls).toHaveLength(1);
     expect(JSON.parse(veniceLogCalls[0]?.[1] as string)).toMatchObject({
       streaming: true,
@@ -611,7 +611,7 @@ describe('mapVeniceError — structured [venice.error] log', () => {
     );
 
     const legacyCalls = errorSpy.mock.calls.filter(
-      (c) => typeof c[0] === 'string' && (c[0] as string).startsWith('[V11]'),
+      (c: unknown[]) => typeof c[0] === 'string' && (c[0] as string).startsWith('[V11]'),
     );
     expect(legacyCalls).toHaveLength(0);
   });

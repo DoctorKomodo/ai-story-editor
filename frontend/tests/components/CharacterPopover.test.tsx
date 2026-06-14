@@ -1,9 +1,9 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JSX } from 'react';
+import type { Character } from 'story-editor-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CharacterPopover } from '@/components/CharacterPopover';
-import type { Character } from '@/hooks/useCharacters';
 
 /**
  * F37 tests.
@@ -29,6 +29,10 @@ function makeCharacter(overrides: Partial<Character> = {}): Character {
     voice: 'Measured and warm',
     arc: 'From doubt to conviction',
     personality: 'Curious',
+    backstory: null,
+    relationships: null,
+    color: null,
+    initial: null,
     orderIndex: 0,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-01T00:00:00.000Z',

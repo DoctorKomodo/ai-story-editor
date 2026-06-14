@@ -9,6 +9,7 @@
 //   - projected fields match the contract (id, role, content, attachmentJson,
 //     model, tokens, latencyMs, createdAt) with no ciphertext / *Iv / *AuthTag leak
 
+import type { Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';

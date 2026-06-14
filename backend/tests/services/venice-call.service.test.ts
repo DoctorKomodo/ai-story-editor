@@ -207,6 +207,7 @@ describe('logVeniceParams', () => {
       },
       action: 'summariseChapter',
       modelCap: 4096,
+      reasoningEnabled: false,
     });
     expect(logSpy).toHaveBeenCalledOnce();
     expect(logSpy.mock.calls[0]?.[0]).toBe('[venice.params]');

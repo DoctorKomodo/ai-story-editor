@@ -97,7 +97,7 @@ describe('runStreamingAI', () => {
   });
 
   it('calls onResponseHeaders with the Response before reading body', async () => {
-    let capturedHeaders: Headers | null = null;
+    const captured: { headers: Headers | null } = { headers: null };
     vi.mocked(apiStream).mockResolvedValue(makeSseResponse([], { 'x-test': 'value' }));
     await runStreamingAI({
       endpoint: '/test',
@@ -105,10 +105,11 @@ describe('runStreamingAI', () => {
       signal: new AbortController().signal,
       onChunk: () => {},
       onResponseHeaders: (res) => {
-        capturedHeaders = res.headers;
+        captured.headers = res.headers;
       },
     });
-    expect(capturedHeaders?.get('x-test')).toBe('value');
+    if (!captured.headers) throw new Error('expected onResponseHeaders to have been called');
+    expect(captured.headers.get('x-test')).toBe('value');
   });
 
   it('resolves when stream exhausts without explicit [DONE]', async () => {
