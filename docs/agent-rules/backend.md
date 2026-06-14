@@ -16,27 +16,81 @@ talks to Venice.ai directly.
 
 - Handlers stay **thin**. Logic goes in `src/services/*.service.ts`;
   data access for narrative entities goes through `src/repos/*.repo.ts`.
-- **Validate every request body with Zod** before the controller sees
-  it. No untyped `req.body` reads.
+- Routers are built by `createXRouter()` factories and mounted in
+  `src/index.ts`. Put `router.use(requireAuth)` at the top of an authed
+  router; nested routers (`/stories/:storyId/chapters`) use
+  `Router({ mergeParams: true })` to see the parent param.
+- **Validate every request body with Zod** before the handler sees it,
+  via `validateBody` (see "Responses & serialization"). No untyped
+  `req.body` reads.
 - **No per-route `try/catch`** unless the catch adds genuinely useful
-  context. The global error handler in `src/index.ts` owns the default
-  shape; per-route catches that just `res.status(500).json(...)` are
-  noise and cost coverage of the global path.
-- All routes except `/api/auth/register`, `/api/auth/login`,
-  `/api/auth/refresh`, `/api/auth/logout`, `/api/auth/reset-password`,
-  and `/api/health` require the auth middleware.
-- All story / chapter / character / outline / chat / message routes
-  require auth middleware **and** ownership middleware (scoped to
-  `req.user.id`).
-- **Never expose `passwordHash`** in any response.
+  context. A handler either uses the `validateBody` wrapper (which
+  forwards a throw to `next`) or ends with `catch (err) { next(err) }`;
+  the global error handler in `src/index.ts` owns the default shape.
+  Per-route catches that just `res.status(500).json(...)` are noise and
+  cost coverage of the global path.
+- `req.user` is `{ id, email, sessionId }`. **`requireAuth` also
+  attaches the request-scoped DEK** (`attachDekToRequest`) from the
+  session store — that is the DEK the narrative repos consume. No auth
+  middleware → no DEK → the repo throws `DekNotAvailableError`.
+
+## Auth & ownership
+
+- **Public routes** (no `requireAuth`): `POST /api/auth/{register,login,
+  refresh,logout,reset-password}` and `GET /api/health`. Everything
+  else requires auth.
+- Story / chapter / character / outline / chat / message routes require
+  **both** `requireAuth` and `requireOwnership(type, { idParam })`.
+  `idParam` defaults to `${type}Id`; pass `{ idParam: 'id' }` when the
+  route param is `:id`.
+- **No id-enumeration oracle:** an unknown id and an unowned id collapse
+  to the **same 403**. After ownership passes, a row that then reads back
+  null is a delete race — return **404**, not 500.
+- `requireAuth` returns **two distinct 401s**: `unauthorized` (no /
+  malformed / invalid token) vs `session_expired` (token parsed but the
+  session is gone from the store). They are separate codes on purpose —
+  the frontend only triggers its silent-refresh / re-login flow on
+  `session_expired`. Don't collapse them.
+- **Never expose `passwordHash`** or any `User` secret column
+  (`contentDekPassword*`, `contentDekRecovery*`, `veniceApiKeyEnc`).
+  These live on `User`, are **not** touched by the narrative repo layer,
+  and are kept off the wire by the hand-built response objects in their
+  own routes — not by any automatic stripping.
 - **Never expose stack traces** when `NODE_ENV=production`.
-- **Never return ciphertext fields** (`*Ciphertext`, `*Iv`, `*AuthTag`,
-  `contentDekPasswordEnc` / `contentDekRecoveryEnc`, `veniceApiKeyEnc`, …)
-  from any endpoint. The repo layer strips them on read; if you see one
-  in a response, it's a bug.
-- **Never return or log the decrypted Venice API key.** The
-  `GET /api/users/me/venice-key` endpoint returns only
-  `{ hasKey, lastSix, endpoint }`. The plaintext key never serializes.
+- **Never return narrative ciphertext triples** (`*Ciphertext` / `*Iv` /
+  `*AuthTag`). The narrative repo strips these on read and `serialize*`
+  builds the final wire shape; a triple in a response means a path
+  bypassed the repo.
+- **Never return or log the decrypted Venice API key.**
+  `GET /api/users/me/venice-key` returns only
+  `{ hasKey, lastSix, endpoint }`.
+
+## Responses & serialization
+
+The egress side of a handler is as conventional as the ingress side.
+Three steps, used by every CRUD route:
+
+1. **Never return a repo row directly.** Pass it through the matching
+   `serialize*` helper in `src/lib/serialize.ts`. These do an **explicit
+   field pick, not a spread** — deliberately. The repo's
+   `projectDecrypted` strips only the ciphertext triples; the runtime row
+   still carries `userId` (Story), `chatId` (Message), and `Date` objects.
+   A spread leaks those onto the wire and throws against the
+   `strictObject` shared schemas. **The serialize layer — not the repo —
+   produces the wire shape** (no owner ids, ISO-string timestamps).
+2. **Send success through `respond(schema, res, data, status?)`**
+   (`src/lib/respond.ts`), passing the shared wire schema. In non-prod it
+   re-parses the payload against the schema to catch repo↔contract drift;
+   in prod it skips the parse. Default status 200; pass 201 on create.
+3. **Use the canonical error envelope `{ error: { message, code } }`**
+   for every hand-written error (404 `not_found`, 403 `forbidden`, 409,
+   …). For request-body validation use `validateBody(schema, handler)` /
+   `validateQuery` (`src/middleware/validate.ts`) — the standard entry
+   point that parses and, on failure, emits the project's 400 shape
+   (`code: "validation_error"` with an `issues[]` array) via
+   `badRequestFromZod`. For *manual* (non-Zod) validation, emit the same
+   shape with `badRequest(res, message, path)` (`src/lib/bad-request.ts`).
+   Don't hand-roll `safeParse` + an ad-hoc 400.
 
 ## Database access
 
@@ -58,57 +112,65 @@ talks to Venice.ai directly.
 ## AI integration (Venice.ai)
 
 - All Venice calls are **proxied through the backend** — the frontend
-  only talks to `/api/ai/*`.
-- The **per-user Venice client** (`getVeniceClient(userId)`, `[V17]`)
-  is the only path to Venice. There is **no singleton**, and there is
-  **no server-wide Venice key**. If the user has no stored key, the
-  call throws `NoVeniceKeyError`, mapped to HTTP **409**
-  `{ error: "venice_key_required" }`.
-- Prompt construction lives in `src/services/prompt.service.ts` —
-  keep it separate and unit-testable. The builder never sees
-  ciphertext: chapter bodies are decrypted via the chapter repo
-  before reaching the builder, and decrypted bodies exist only for
-  the lifetime of the request.
-- **Context budget is dynamic.** The prompt budget is the model's
-  `context_length` minus the response allowance (max-completion-tokens)
-  minus a fixed safety margin (`SAFETY_MARGIN_TOKENS`, currently 512) —
-  not a fixed-percentage reserve. Chapter context truncates from the
-  **top** (oldest first) when over-budget. Character context and
-  `worldNotes` are **never truncated**; character context renders the
-  full character fields (name, role, age, appearance, personality,
-  voice, backstory, arc, relationships), not a condensed subset.
-- Per-story `systemPrompt` overrides the default creative-writing
-  system prompt when non-null (`[V13]`).
-- Venice-specific features go via `venice_parameters`:
+  only talks to `/api/ai/*`. There is **no singleton client and no
+  server-wide Venice key**.
+- The **per-user Venice client** (`getVeniceClient(userId)`) is the only
+  path to Venice. If the user has no stored key it throws
+  `NoVeniceKeyError`, which the global error handler maps to HTTP **409**
+  in the canonical envelope (`{ error: { message, code:
+  "venice_key_required" } }`).
+- **Every other Venice failure is mapped at the route, not by the global
+  handler.** In a non-streaming catch call `mapVeniceError(err, res, ctx)`
+  (`src/lib/venice-errors.ts`): it returns `true` when it wrote a
+  structured response (and you stop) and `false` when you should
+  `next(err)`. It picks the status + `venice_*` code per failure class,
+  scrubs `sk-…` tokens, and never echoes Venice's raw body. You don't need
+  the code/status table — `mapVeniceError` owns it; see
+  `docs/venice-integration.md` if you do.
+- **SSE streaming routes have a hard boundary at header flush.**
+  `/api/ai/complete` streams `data: <chunk>\n\n` frames ending with
+  `data: [DONE]\n\n`. Once `res.flushHeaders()` has run you **cannot** use
+  the global error handler — on a mid-stream error write a terminal frame
+  via `mapVeniceErrorToSse(...)` (falling back to a `stream_error` frame)
+  then `res.end()`; **never call `next(err)`**. Honour `req.on('close')`
+  by aborting the upstream Venice stream so connections don't leak.
+- Prompt construction lives in `src/services/prompt.service.ts` — keep it
+  separate and unit-testable. It never sees ciphertext: chapter bodies are
+  decrypted via the chapter repo before reaching it, and decrypted bodies
+  exist only for the lifetime of the request.
+- **Context budget is dynamic:** the model's `context_length` minus the
+  response allowance (max-completion-tokens) minus a fixed safety margin
+  (`SAFETY_MARGIN_TOKENS`, currently 512) — not a fixed-percentage
+  reserve. Chapter context truncates from the **top** (oldest first) when
+  over budget. Character context and `worldNotes` are **never truncated**;
+  character context renders the full field set, not a condensed subset.
+- Inkwell's own system message is sent in **every** call — the default
+  creative-writing prompt, or per-story `Story.systemPrompt` when non-null.
+- Venice features go via `venice_parameters` (see
+  `docs/venice-integration.md` for the full shape — reasoning models get
+  `strip_thinking_response`; web-search opt-in adds `enable_web_search` +
+  `enable_web_citations`, chat surface only). Two load-bearing rules:
   - `include_venice_system_prompt` is driven by the user setting
     `settingsJson.ai.includeVeniceSystemPrompt` (default `true` when
-    absent). The AI route reads it off `req.user` and passes it to
-    the prompt builder; the builder must **never hardcode** this
-    flag. Inkwell's own system message (default or per-story
-    `Story.systemPrompt`) is sent in every case; the flag only
-    controls whether Venice additionally prepends its own
-    creative-writing prompt.
-  - `strip_thinking_response: true` for reasoning models (`[V6]`).
-  - `enable_web_search: 'auto'` + `enable_web_citations: true` when the
-    request opts in (`[V7]`).
-  - `prompt_cache_key` set to a hash of the context id + `modelId`
-    (`storyId + modelId` for `/api/ai/complete`; `chatId + modelId` for
-    chat/scene messages) (`[V8]`).
-
-- **Canonical message-array shape (k1r).** Every action goes through the
-  same code path in `buildPrompt`. The `system` message carries everything
-  stable across turns (system prompt + world-notes + characters + chapter +
-  per-action task template); the `user` message carries only what the user
-  contributed this turn. No `if (action === ...)` branches in `buildPrompt`'s
-  system-message assembly. Per-action user-payload
-  validation lives in `buildUserPayload`'s switch arms, one per `UserPromptKey`
-  (`continue` / `rephrase` / `expand` / `summarise` / `rewrite` / `describe` /
-  `scene` / `ask`). New actions inherit this shape automatically — add a
-  `DEFAULT_PROMPTS.<action>` entry, a `UserPromptKey` member, a
-  `buildUserPayload` arm describing the user payload, and the rest is free.
-  See
-  `docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md`
-  for rationale (why `ask` was special pre-k1r, why we unified).
+    absent), read off `req.user` and passed to the builder — the builder
+    must **never hardcode** it. The flag controls only whether Venice
+    *additionally* prepends its own creative-writing prompt; Inkwell's own
+    system message is sent regardless.
+  - `prompt_cache_key` is a Venice **top-level** field (sibling of
+    `model` / `messages` / `stream`), **not** nested under
+    `venice_parameters`. It's a hash of the context id + `modelId`.
+- **Canonical message-array shape.** Every action goes through the same
+  `buildPrompt` path: the `system` message carries everything stable across
+  turns (system prompt + world-notes + characters + chapter + per-action
+  task template); the `user` message carries only this turn's input. **No
+  `if (action === …)` branches** in the system-message assembly — per-action
+  user-payload validation lives in `buildUserPayload`'s switch arms, keyed by
+  `PromptAction`. Override/template strings use a separate, *not* 1:1
+  `UserPromptKey` union (`rephrase` reuses the `rewrite` key;
+  `summariseChapter` / `system` have no action). A new action = a
+  `PromptAction` member + a `buildUserPayload` arm + a `DEFAULT_PROMPTS`
+  template (new `UserPromptKey`, or reuse one). See
+  `docs/superpowers/specs/2026-05-10-k1r-prompt-building-unification-design.md`.
 
 ## Encryption at rest (backend lane)
 
@@ -122,16 +184,16 @@ talks to Venice.ai directly.
   (`contentDekPassword*` and `contentDekRecovery*` columns, each
   with its own salt). **No server-held KEK** wraps content.
 - The DEK itself is random; only its **wraps** are user-secret-derived.
-  Password reset requires the recovery code (`[AU16]`). Password
-  change (`[AU15]`) only re-wraps the password copy — narrative
-  ciphertext is untouched. Recovery-code rotation (`[AU17]`) only
-  re-wraps the recovery copy.
+  Password reset requires the recovery code. Password change only
+  re-wraps the password copy — narrative ciphertext is untouched.
+  Recovery-code rotation only re-wraps the recovery copy.
 - The server **cannot decrypt user content while the user is logged
   out** — there is no offline / background / admin decryption path.
   This is by design.
-- The content-crypto service (`src/services/content-crypto.service.ts`,
-  `[E3]`) unwraps DEKs **only into a request-scoped `WeakMap`**.
-  Module-level caching of unwrapped DEKs is a bug.
+- The content-crypto service (`src/services/content-crypto.service.ts`)
+  unwraps DEKs **only into a request-scoped `WeakMap`** (keyed by the
+  request object, populated by `requireAuth`). Module-level caching of
+  unwrapped DEKs is a bug.
 - `APP_ENCRYPTION_KEY` is the only server-held encryption env secret.
   It wraps **BYOK Venice keys only**. There is no
   `CONTENT_ENCRYPTION_KEY`, and one must not be reintroduced — the
@@ -142,7 +204,10 @@ talks to Venice.ai directly.
 
 - **vitest** is the runner. Tests live under `backend/tests/`.
 - **Use the test database** defined in `.env.test`, not the dev DB.
-  Run `npm run db:test:reset` before a full suite.
+  Run `npm run db:test:reset` before a full suite. Note: vitest's
+  `globalSetup` resets + migrates the DB against the running compose
+  stack on **every** invocation (even a single-file run), so a backend
+  test always needs `make dev` up first.
 - **Integration tests against narrative entities go through the repo
   layer**, not raw Prisma. Otherwise the test doesn't exercise the
   encrypt/decrypt path and is unrepresentative.
@@ -158,9 +223,10 @@ talks to Venice.ai directly.
 
 ## Library-version awareness (backend lane)
 
-- Fast-moving libraries in this lane: Express, Prisma, Zod, Vitest,
-  Helmet, argon2id. (General principle — prefer Context7 MCP
-  `query-docs` over muscle-memory — lives in `general.md`.)
+- Fast-movers in this lane to version-check before pinning: Express,
+  Prisma, Zod, Vitest, Helmet, argon2id. (The "prefer Context7
+  `query-docs` over muscle-memory" principle and the dependency policy
+  live in `general.md`.)
 
 ## Forbidden
 
@@ -175,4 +241,7 @@ talks to Venice.ai directly.
   permitted; the leak test enforces the production rule via a
   sentinel.)
 - Bypassing the repo layer for any narrative entity.
+- Returning a repo row directly (spread) instead of through a
+  `serialize*` pick — leaks `userId` / `chatId`.
 - Module-level caching of unwrapped DEKs.
+- Calling `next(err)` after SSE headers have been flushed.
