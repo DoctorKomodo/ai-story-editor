@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
-import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   characterQueryKey,
@@ -14,48 +13,42 @@ import {
 } from '@/hooks/useCharacters';
 import * as apiModule from '@/lib/api';
 import { resetApiClientForTests, setAccessToken } from '@/lib/api';
-
-function meta(id: string, orderIndex: number): Character {
-  return {
-    id,
-    storyId: 's',
-    name: id,
-    role: null,
-    age: null,
-    appearance: null,
-    personality: null,
-    voice: null,
-    backstory: null,
-    arc: null,
-    relationships: null,
-    orderIndex,
-    color: null,
-    initial: null,
-    createdAt: '2026-04-01T00:00:00.000Z',
-    updatedAt: '2026-04-01T00:00:00.000Z',
-  };
-}
+import { makeCharacter } from '../fixtures/character';
 
 describe('computeReorderedCharacters', () => {
   it('returns null when overId is null', () => {
-    const list = [meta('a', 0), meta('b', 1)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+    ];
     expect(computeReorderedCharacters(list, 'a', null)).toBeNull();
   });
 
   it('returns null when active === over', () => {
-    const list = [meta('a', 0), meta('b', 1)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+    ];
     expect(computeReorderedCharacters(list, 'a', 'a')).toBeNull();
   });
 
   it('reorders and reassigns 0..N-1 (move down by 1)', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+      makeCharacter({ id: 'c', orderIndex: 2 }),
+    ];
     const next = computeReorderedCharacters(list, 'a', 'b');
     expect(next?.map((c) => c.id)).toEqual(['b', 'a', 'c']);
     expect(next?.map((c) => c.orderIndex)).toEqual([0, 1, 2]);
   });
 
   it('reorders and reassigns 0..N-1 (move up by 1)', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+      makeCharacter({ id: 'c', orderIndex: 2 }),
+    ];
     const next = computeReorderedCharacters(list, 'c', 'b');
     expect(next?.map((c) => c.id)).toEqual(['a', 'c', 'b']);
   });
@@ -63,12 +56,20 @@ describe('computeReorderedCharacters', () => {
 
 describe('computeCharactersAfterDelete', () => {
   it('returns null when the id is not present', () => {
-    const list = [meta('a', 0), meta('b', 1)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+    ];
     expect(computeCharactersAfterDelete(list, 'zzz')).toBeNull();
   });
 
   it('removes the character and reassigns 0..N-1', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2), meta('d', 3)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+      makeCharacter({ id: 'c', orderIndex: 2 }),
+      makeCharacter({ id: 'd', orderIndex: 3 }),
+    ];
     const next = computeCharactersAfterDelete(list, 'b');
     expect(next?.map((c) => [c.id, c.orderIndex])).toEqual([
       ['a', 0],
@@ -109,7 +110,10 @@ describe('useReorderCharactersMutation', () => {
 
   it('PATCHes /characters/reorder and writes optimistic cache; rolls back on 500', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    const seed = [meta('a', 0), meta('b', 1)];
+    const seed = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+    ];
     qc.setQueryData(charactersQueryKey('s1'), seed);
 
     fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: { code: 'oops' } }));
@@ -119,7 +123,12 @@ describe('useReorderCharactersMutation', () => {
     });
 
     await act(async () => {
-      await expect(result.current.mutateAsync([meta('b', 0), meta('a', 1)])).rejects.toBeDefined();
+      await expect(
+        result.current.mutateAsync([
+          makeCharacter({ id: 'b', orderIndex: 0 }),
+          makeCharacter({ id: 'a', orderIndex: 1 }),
+        ]),
+      ).rejects.toBeDefined();
     });
 
     // Cache rolled back to original.
@@ -152,8 +161,12 @@ describe('useDeleteCharacterMutation — optimistic reassign', () => {
 
   it('removes optimistically with sequential reassign; evicts per-character cache on success', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(charactersQueryKey('s1'), [meta('a', 0), meta('b', 1), meta('c', 2)]);
-    qc.setQueryData(characterQueryKey('s1', 'b'), { ...meta('b', 1) });
+    qc.setQueryData(charactersQueryKey('s1'), [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+      makeCharacter({ id: 'c', orderIndex: 2 }),
+    ]);
+    qc.setQueryData(characterQueryKey('s1', 'b'), { ...makeCharacter({ id: 'b', orderIndex: 1 }) });
 
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
 
@@ -178,7 +191,10 @@ describe('useDeleteCharacterMutation — optimistic reassign', () => {
 
   it('rolls back the cache on 500', async () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    qc.setQueryData(charactersQueryKey('s1'), [meta('a', 0), meta('b', 1)]);
+    qc.setQueryData(charactersQueryKey('s1'), [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+    ]);
 
     fetchMock.mockResolvedValueOnce(jsonResponse(500, { error: { code: 'oops' } }));
 

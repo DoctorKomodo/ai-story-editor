@@ -6,6 +6,7 @@ import { ChapterList } from '@/components/ChapterList';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
+import { makeChapterMeta } from '../fixtures/chapter';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -14,35 +15,6 @@ function jsonResponse(status: number, body: unknown): Response {
     status,
     headers: { 'Content-Type': 'application/json' },
   });
-}
-
-interface ChapterFixture {
-  id: string;
-  storyId: string;
-  title: string;
-  wordCount: number;
-  orderIndex: number;
-  status: 'draft';
-  createdAt: string;
-  updatedAt: string;
-  hasSummary: boolean;
-  summaryIsStale: boolean;
-}
-
-function chap(
-  overrides: Partial<ChapterFixture> & { id: string; orderIndex: number },
-): ChapterFixture {
-  return {
-    storyId: 'story-1',
-    title: `Chapter ${String(overrides.orderIndex + 1)}`,
-    wordCount: 0,
-    status: 'draft',
-    createdAt: '2026-04-01T00:00:00.000Z',
-    updatedAt: '2026-04-01T00:00:00.000Z',
-    hasSummary: false,
-    summaryIsStale: false,
-    ...overrides,
-  };
 }
 
 function renderList(
@@ -97,8 +69,8 @@ describe('ChapterList (F10)', () => {
         return Promise.resolve(
           jsonResponse(200, {
             chapters: [
-              chap({ id: 'c1', orderIndex: 0, title: 'The Beginning', wordCount: 1234 }),
-              chap({ id: 'c2', orderIndex: 1, title: 'The Middle', wordCount: 2 }),
+              makeChapterMeta({ id: 'c1', orderIndex: 0, title: 'The Beginning', wordCount: 1234 }),
+              makeChapterMeta({ id: 'c2', orderIndex: 1, title: 'The Middle', wordCount: 2 }),
             ],
           }),
         );
@@ -122,8 +94,8 @@ describe('ChapterList (F10)', () => {
         return Promise.resolve(
           jsonResponse(200, {
             chapters: [
-              chap({ id: 'c1', orderIndex: 0, title: 'One' }),
-              chap({ id: 'c2', orderIndex: 1, title: 'Two' }),
+              makeChapterMeta({ id: 'c1', orderIndex: 0, title: 'One' }),
+              makeChapterMeta({ id: 'c2', orderIndex: 1, title: 'Two' }),
             ],
           }),
         );
@@ -145,8 +117,8 @@ describe('ChapterList (F10)', () => {
         return Promise.resolve(
           jsonResponse(200, {
             chapters: [
-              chap({ id: 'c1', orderIndex: 0, title: 'One' }),
-              chap({ id: 'c2', orderIndex: 1, title: 'Two' }),
+              makeChapterMeta({ id: 'c1', orderIndex: 0, title: 'One' }),
+              makeChapterMeta({ id: 'c2', orderIndex: 1, title: 'Two' }),
             ],
           }),
         );
@@ -202,7 +174,7 @@ describe('ChapterList (F10)', () => {
       if (url.endsWith('/stories/story-1/chapters')) {
         return Promise.resolve(
           jsonResponse(200, {
-            chapters: [chap({ id: 'c1', orderIndex: 0, title: 'One' })],
+            chapters: [makeChapterMeta({ id: 'c1', orderIndex: 0, title: 'One' })],
           }),
         );
       }
@@ -235,8 +207,8 @@ describe('ChapterList (F10)', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         chapters: [
-          chap({ id: 'c1', orderIndex: 0, title: 'A' }),
-          chap({ id: 'c2', orderIndex: 1, title: 'B' }),
+          makeChapterMeta({ id: 'c1', orderIndex: 0, title: 'A' }),
+          makeChapterMeta({ id: 'c2', orderIndex: 1, title: 'B' }),
         ],
       }),
     );
@@ -250,8 +222,8 @@ describe('ChapterList (F10)', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         chapters: [
-          chap({ id: 'c1', orderIndex: 0, wordCount: 2100, title: 'A' }),
-          chap({ id: 'c2', orderIndex: 1, wordCount: 0, title: 'B' }),
+          makeChapterMeta({ id: 'c1', orderIndex: 0, wordCount: 2100, title: 'A' }),
+          makeChapterMeta({ id: 'c2', orderIndex: 1, wordCount: 0, title: 'B' }),
         ],
       }),
     );
@@ -267,7 +239,7 @@ describe('ChapterList (F10)', () => {
       .mockResolvedValueOnce(
         jsonResponse(200, {
           chapter: {
-            ...chap({ id: 'new', orderIndex: 0, title: 'Untitled chapter' }),
+            ...makeChapterMeta({ id: 'new', orderIndex: 0, title: 'Untitled chapter' }),
             bodyJson: null,
             summary: null,
             summaryUpdatedAt: null,
@@ -276,7 +248,7 @@ describe('ChapterList (F10)', () => {
       )
       .mockResolvedValueOnce(
         jsonResponse(200, {
-          chapters: [chap({ id: 'new', orderIndex: 0, title: 'Untitled chapter' })],
+          chapters: [makeChapterMeta({ id: 'new', orderIndex: 0, title: 'Untitled chapter' })],
         }),
       );
 
@@ -294,7 +266,7 @@ describe('ChapterList (F10)', () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/chapters')) {
         return Promise.resolve(
-          jsonResponse(200, { chapters: [chap({ id: 'ch-1', orderIndex: 0 })] }),
+          jsonResponse(200, { chapters: [makeChapterMeta({ id: 'ch-1', orderIndex: 0 })] }),
         );
       }
       return Promise.reject(new Error(`Unexpected fetch: ${url}`));
@@ -320,9 +292,14 @@ describe('ChapterList (F10)', () => {
         return Promise.resolve(
           jsonResponse(200, {
             chapters: [
-              chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false }),
-              chap({ id: 'c2', orderIndex: 1, hasSummary: true, summaryIsStale: false }),
-              chap({ id: 'c3', orderIndex: 2, hasSummary: true, summaryIsStale: true }),
+              makeChapterMeta({
+                id: 'c1',
+                orderIndex: 0,
+                hasSummary: false,
+                summaryIsStale: false,
+              }),
+              makeChapterMeta({ id: 'c2', orderIndex: 1, hasSummary: true, summaryIsStale: false }),
+              makeChapterMeta({ id: 'c3', orderIndex: 2, hasSummary: true, summaryIsStale: true }),
             ],
           }),
         );
@@ -355,7 +332,14 @@ describe('ChapterList (F10)', () => {
       if (url.endsWith('/stories/story-1/chapters')) {
         return Promise.resolve(
           jsonResponse(200, {
-            chapters: [chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false })],
+            chapters: [
+              makeChapterMeta({
+                id: 'c1',
+                orderIndex: 0,
+                hasSummary: false,
+                summaryIsStale: false,
+              }),
+            ],
           }),
         );
       }
@@ -384,7 +368,14 @@ describe('ChapterList (F10)', () => {
       if (url.endsWith('/stories/story-1/chapters')) {
         return Promise.resolve(
           jsonResponse(200, {
-            chapters: [chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false })],
+            chapters: [
+              makeChapterMeta({
+                id: 'c1',
+                orderIndex: 0,
+                hasSummary: false,
+                summaryIsStale: false,
+              }),
+            ],
           }),
         );
       }
@@ -415,8 +406,18 @@ describe('ChapterList (F10)', () => {
         return Promise.resolve(
           jsonResponse(200, {
             chapters: [
-              chap({ id: 'c1', orderIndex: 0, hasSummary: false, summaryIsStale: false }),
-              chap({ id: 'c2', orderIndex: 1, hasSummary: false, summaryIsStale: false }),
+              makeChapterMeta({
+                id: 'c1',
+                orderIndex: 0,
+                hasSummary: false,
+                summaryIsStale: false,
+              }),
+              makeChapterMeta({
+                id: 'c2',
+                orderIndex: 1,
+                hasSummary: false,
+                summaryIsStale: false,
+              }),
             ],
           }),
         );

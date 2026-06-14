@@ -1,48 +1,39 @@
-import type { Character } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
 import { computeReorderedCharacters } from '@/hooks/useCharacters';
-
-function meta(id: string, orderIndex: number): Character {
-  return {
-    id,
-    storyId: 's',
-    name: id,
-    role: null,
-    age: null,
-    appearance: null,
-    voice: null,
-    arc: null,
-    personality: null,
-    backstory: null,
-    relationships: null,
-    color: null,
-    initial: null,
-    orderIndex,
-    createdAt: '2026-04-01T00:00:00Z',
-    updatedAt: '2026-04-01T00:00:00Z',
-  };
-}
+import { makeCharacter } from '../fixtures/character';
 
 describe('Cast reorder — keyboard-shift index math', () => {
   it('moves a row down by 1', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+      makeCharacter({ id: 'c', orderIndex: 2 }),
+    ];
     const next = computeReorderedCharacters(list, 'a', 'b');
     expect(next?.map((c) => c.id)).toEqual(['b', 'a', 'c']);
     expect(next?.map((c) => c.orderIndex)).toEqual([0, 1, 2]);
   });
 
   it('moves a row up by 1', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const list = [
+      makeCharacter({ id: 'a', orderIndex: 0 }),
+      makeCharacter({ id: 'b', orderIndex: 1 }),
+      makeCharacter({ id: 'c', orderIndex: 2 }),
+    ];
     const next = computeReorderedCharacters(list, 'c', 'b');
     expect(next?.map((c) => c.id)).toEqual(['a', 'c', 'b']);
   });
 
   it('returns null when active === over', () => {
-    expect(computeReorderedCharacters([meta('a', 0)], 'a', 'a')).toBeNull();
+    expect(
+      computeReorderedCharacters([makeCharacter({ id: 'a', orderIndex: 0 })], 'a', 'a'),
+    ).toBeNull();
   });
 
   it('returns null when overId is null', () => {
-    expect(computeReorderedCharacters([meta('a', 0)], 'a', null)).toBeNull();
+    expect(
+      computeReorderedCharacters([makeCharacter({ id: 'a', orderIndex: 0 })], 'a', null),
+    ).toBeNull();
   });
 });
 

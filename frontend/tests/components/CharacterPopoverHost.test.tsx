@@ -10,30 +10,9 @@ import {
   type CharacterPopoverHostHandle,
 } from '@/components/CharacterPopoverHost';
 import { charactersQueryKey } from '@/hooks/useCharacters';
+import { makeCharacter } from '../fixtures/character';
 
-function makeCharacter(overrides: Partial<Character> = {}): Character {
-  return {
-    id: 'c1',
-    storyId: 's1',
-    name: 'Alice',
-    role: 'Protagonist',
-    age: '30',
-    appearance: 'Tall',
-    voice: 'Calm',
-    arc: 'Grows up',
-    personality: null,
-    backstory: null,
-    relationships: null,
-    color: null,
-    initial: null,
-    orderIndex: 0,
-    createdAt: '2026-04-01T00:00:00.000Z',
-    updatedAt: '2026-04-24T00:00:00.000Z',
-    ...overrides,
-  };
-}
-
-function withQueryClient(characters: Character[] = [makeCharacter()]): {
+function withQueryClient(characters: Character[] = [makeCharacter({ id: 'c1', name: 'Alice' })]): {
   wrapper: ({ children }: { children: ReactNode }) => JSX.Element;
   client: QueryClient;
 } {

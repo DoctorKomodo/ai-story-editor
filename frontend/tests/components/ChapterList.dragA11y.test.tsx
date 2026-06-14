@@ -1,43 +1,42 @@
-import type { ChapterMeta } from 'story-editor-shared';
 import { describe, expect, it } from 'vitest';
 import { computeReorderedChapters } from '@/hooks/useChapters';
-
-function meta(id: string, orderIndex: number): ChapterMeta {
-  return {
-    id,
-    storyId: 's',
-    title: id,
-    wordCount: 0,
-    orderIndex,
-    status: 'draft',
-    hasSummary: false,
-    summaryIsStale: false,
-    createdAt: '2026-04-01T00:00:00Z',
-    updatedAt: '2026-04-01T00:00:00Z',
-  };
-}
+import { makeChapterMeta } from '../fixtures/chapter';
 
 describe('Chapter reorder — keyboard-shift index math', () => {
   it('moves a row down by 1 (Down arrow → activeId/overId pair)', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const list = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+    ];
     const next = computeReorderedChapters(list, 'a', 'b');
     expect(next?.map((c) => c.id)).toEqual(['b', 'a', 'c']);
     expect(next?.map((c) => c.orderIndex)).toEqual([0, 1, 2]);
   });
 
   it('moves a row up by 1 (Up arrow)', () => {
-    const list = [meta('a', 0), meta('b', 1), meta('c', 2)];
+    const list = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+      makeChapterMeta({ id: 'c', orderIndex: 2 }),
+    ];
     const next = computeReorderedChapters(list, 'c', 'b');
     expect(next?.map((c) => c.id)).toEqual(['a', 'c', 'b']);
   });
 
   it('returns null when active === over (Space-drop on same row)', () => {
-    const list = [meta('a', 0), meta('b', 1)];
+    const list = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+    ];
     expect(computeReorderedChapters(list, 'a', 'a')).toBeNull();
   });
 
   it('returns null when overId is null (Escape cancel before drop)', () => {
-    const list = [meta('a', 0), meta('b', 1)];
+    const list = [
+      makeChapterMeta({ id: 'a', orderIndex: 0 }),
+      makeChapterMeta({ id: 'b', orderIndex: 1 }),
+    ];
     expect(computeReorderedChapters(list, 'a', null)).toBeNull();
   });
 });

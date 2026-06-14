@@ -4,10 +4,10 @@ import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatComposer, type SendArgs } from '@/components/ChatComposer';
-import type { Model } from '@/hooks/useModels';
 import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import { createQueryClient } from '@/lib/queryClient';
 import { type AttachedSelectionValue, useAttachedSelectionStore } from '@/store/attachedSelection';
+import { makeModel } from '../fixtures/model';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -20,22 +20,6 @@ function renderWithQuery(ui: ReactNode, client?: QueryClient): { client: QueryCl
   const qc = client ?? createQueryClient();
   render(<QueryClientProvider client={qc}>{ui}</QueryClientProvider>);
   return { client: qc };
-}
-
-function makeModel(over: Partial<Model> & { id: string }): Model {
-  return {
-    name: over.id,
-    contextLength: 8000,
-    maxCompletionTokens: 4096,
-    supportsReasoning: false,
-    supportsVision: false,
-    supportsWebSearch: false,
-    description: null,
-    pricing: null,
-    defaultTemperature: null,
-    defaultTopP: null,
-    ...over,
-  };
 }
 
 const SAMPLE_ATTACHMENT: AttachedSelectionValue = {

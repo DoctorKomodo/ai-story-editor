@@ -4,6 +4,7 @@ import type { JSX } from 'react';
 import type { Character } from 'story-editor-shared';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CharacterPopover } from '@/components/CharacterPopover';
+import { makeCharacter } from '../fixtures/character';
 
 /**
  * F37 tests.
@@ -17,28 +18,6 @@ afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
 });
-
-function makeCharacter(overrides: Partial<Character> = {}): Character {
-  return {
-    id: 'char-1',
-    storyId: 'story-1',
-    name: 'Elena',
-    role: 'Protagonist',
-    age: '32',
-    appearance: 'Tall, with auburn hair',
-    voice: 'Measured and warm',
-    arc: 'From doubt to conviction',
-    personality: 'Curious',
-    backstory: null,
-    relationships: null,
-    color: null,
-    initial: null,
-    orderIndex: 0,
-    createdAt: '2026-04-01T00:00:00.000Z',
-    updatedAt: '2026-04-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
 
 function makeAnchor(rect?: Partial<DOMRect>): HTMLElement {
   const el = document.createElement('span');

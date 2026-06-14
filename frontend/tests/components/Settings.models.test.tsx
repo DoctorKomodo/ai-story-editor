@@ -19,6 +19,7 @@ import type { Model } from '@/hooks/useModels';
 import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
+import { makeModel } from '../fixtures/model';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -97,78 +98,55 @@ function makeSettings(opts: DefaultSettingsOptions = {}): SettingsState {
 }
 
 // Two test models: m1 has Venice defaults; m2 has Venice defaults too (different).
-const MODEL_M1: Model = {
+const MODEL_M1 = makeModel({
   id: 'm1',
   name: 'Model One',
-  contextLength: 128000,
   maxCompletionTokens: 16000,
-  supportsReasoning: false,
-  supportsVision: false,
   supportsWebSearch: true,
   description: 'Test model 1.',
-  pricing: null,
   defaultTemperature: 0.7,
   defaultTopP: 0.8,
-};
+});
 
-const MODEL_M2: Model = {
+const MODEL_M2 = makeModel({
   id: 'm2',
   name: 'Model Two',
   contextLength: 64000,
   maxCompletionTokens: 8000,
-  supportsReasoning: false,
-  supportsVision: false,
-  supportsWebSearch: false,
   description: 'Test model 2.',
-  pricing: null,
   defaultTemperature: 1.2,
   defaultTopP: 0.95,
-};
+});
 
 // A model with no Venice defaults (falls back to global defaults).
-const MODEL_M3: Model = {
+const MODEL_M3 = makeModel({
   id: 'm3',
   name: 'Model Three',
   contextLength: 32000,
   maxCompletionTokens: 4096,
-  supportsReasoning: false,
-  supportsVision: false,
-  supportsWebSearch: false,
   description: 'Test model 3 — no Venice defaults.',
-  pricing: null,
-  defaultTemperature: null,
-  defaultTopP: null,
-};
+});
 
 // A model that supports reasoning.
-const MODEL_REASONING: Model = {
+const MODEL_REASONING = makeModel({
   id: 'reasoning-model',
   name: 'Reasoning Model',
   contextLength: 200000,
   maxCompletionTokens: 32000,
   supportsReasoning: true,
-  supportsVision: false,
-  supportsWebSearch: false,
   description: 'A model with reasoning support.',
-  pricing: null,
   defaultTemperature: 1.0,
-  defaultTopP: null,
-};
+});
 
 // A plain model (no reasoning).
-const MODEL_PLAIN: Model = {
+const MODEL_PLAIN = makeModel({
   id: 'plain-model',
   name: 'Plain Model',
   contextLength: 64000,
   maxCompletionTokens: 8000,
-  supportsReasoning: false,
-  supportsVision: false,
-  supportsWebSearch: false,
   description: 'A model without reasoning support.',
-  pricing: null,
   defaultTemperature: 0.8,
-  defaultTopP: null,
-};
+});
 
 const TWO_MODELS_BODY = { models: [MODEL_M1, MODEL_M2] };
 const THREE_MODELS_BODY = { models: [MODEL_M1, MODEL_M2, MODEL_M3] };
