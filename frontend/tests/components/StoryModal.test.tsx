@@ -96,7 +96,7 @@ describe('StoryModal (F6)', () => {
     });
 
     const call = fetchMock.mock.calls.find(
-      (c): c is [string, RequestInit] => c[0] === '/api/stories',
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/stories',
     );
     expect(call).toBeDefined();
     if (!call) return;
@@ -167,7 +167,7 @@ describe('StoryModal (F6)', () => {
     });
 
     const call = fetchMock.mock.calls.find(
-      (c): c is [string, RequestInit] => c[0] === '/api/stories/s1',
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/stories/s1',
     );
     expect(call).toBeDefined();
     if (!call) return;

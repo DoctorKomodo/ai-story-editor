@@ -175,7 +175,7 @@ describe('auth pages (F4)', () => {
 
     // The second fetch call is the login.
     const loginCall = fetchMock.mock.calls.find(
-      (c): c is [string, RequestInit] => c[0] === '/api/auth/login',
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/auth/login',
     );
     expect(loginCall).toBeDefined();
     if (!loginCall) return;
@@ -251,7 +251,7 @@ describe('auth pages (F4)', () => {
     expect(screen.getByText(/horse-battery-staple/)).toBeInTheDocument();
 
     const registerCall = fetchMock.mock.calls.find(
-      (c): c is [string, RequestInit] => c[0] === '/api/auth/register',
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/auth/register',
     );
     expect(registerCall).toBeDefined();
     if (!registerCall) return;

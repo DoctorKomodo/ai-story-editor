@@ -89,7 +89,7 @@ describe('reset-password page (F60)', () => {
     });
 
     const resetCall = fetchMock.mock.calls.find(
-      (c): c is [string, RequestInit] => c[0] === '/api/auth/reset-password',
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/auth/reset-password',
     );
     expect(resetCall).toBeDefined();
     if (!resetCall) return;

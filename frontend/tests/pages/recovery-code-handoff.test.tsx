@@ -126,7 +126,7 @@ describe('recovery-code handoff (F59)', () => {
     });
 
     const loginCall = fetchMock.mock.calls.find(
-      (c): c is [string, RequestInit] => c[0] === '/api/auth/login',
+      (c): c is [string, RequestInit] => c[1] != null && c[0] === '/api/auth/login',
     );
     expect(loginCall).toBeDefined();
     if (!loginCall) return;
