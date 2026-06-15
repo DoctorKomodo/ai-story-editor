@@ -87,14 +87,68 @@ You'll need:
 
 - A Linux host (or macOS / Windows with WSL2). Tested on Ubuntu 22.04+ and Debian 12.
 - **Docker Engine 24+** and **Docker Compose v2+** (`docker compose version`).
-- **`git`** to clone the repo.
+- **`git`** only if you build from source (the published-images path below needs only `curl`).
 - **`node` 22+** *only* if you want to run the test suite or `make migrate` from the host. The bundled stack does not require Node on the host.
 - A reverse proxy (nginx, Caddy, Traefik, Cloudflare Tunnel) if you intend to expose the instance to the internet — Inkwell does not ship one.
 - A small amount of memory: the default stack peaks around ~600 MB RAM under typical load (postgres + node backend + nginx-fronted SPA).
 
 Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. The operator's only Venice-related obligation is to back up `APP_ENCRYPTION_KEY`, which wraps those stored user keys (see "Key backup and user recovery" above).
 
-## First-run steps
+## Run from published images (recommended)
+
+The fastest path: run the pre-built images from GitHub Container Registry — no
+source checkout, no local build. You only need two files in a clean directory.
+
+```bash
+# 1. Make a deploy directory and pull down the compose file + env template.
+#    Saving the compose file as `docker-compose.yml` means every command is a
+#    bare `docker compose …` (no -f to remember).
+mkdir inkwell && cd inkwell
+curl -L -o docker-compose.yml \
+  https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/docker-compose.release.yml
+curl -L -o .env \
+  https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/.env.example
+
+# 2. Generate the long-lived secrets and paste them into .env, replacing the
+#    placeholder defaults (see the secret-gen block under "First-run steps").
+#    JWT_SECRET, REFRESH_TOKEN_SECRET, APP_ENCRYPTION_KEY are required.
+
+# 3. Pull the images and start the stack. The backend runs `prisma migrate
+#    deploy` automatically on boot, so the schema is created on its own.
+docker compose pull
+docker compose up -d
+
+# 4. Wait for the app to report healthy (~10s). The published stack exposes
+#    only :3000; the health check goes through the frontend's /api proxy.
+curl -sf http://localhost:3000/api/health
+# {"status":"ok",...}
+
+# 5. Open the UI
+open http://localhost:3000
+```
+
+`INKWELL_VERSION` selects the image tag and defaults to `latest`, so a plain
+`docker compose pull && docker compose up -d` always lands on the newest
+release. Pin a specific version for reproducible deploys:
+
+```bash
+INKWELL_VERSION=0.2.0 docker compose up -d
+```
+
+For testing the bleeding edge, `INKWELL_VERSION=main` pulls the rolling image
+built from the latest `main` commit (published by the image-build workflow; not
+a stable release). `latest` always points at the most recent tagged release.
+
+**Ports:** the published stack publishes **only `:3000`** — the single public
+entry point. The frontend's nginx reverse-proxies `/api/*` to the backend, and
+the backend reaches Postgres, both over the internal compose network, so
+neither `:4000` nor `:5432` is exposed to the host. If you build the frontend
+to call the API on a **separate origin** (`VITE_API_BASE_URL=https://api.example.com/api`),
+route `:4000` through your own reverse proxy instead.
+
+## First-run steps (build from source)
+
+Prefer this only if you're modifying the code or can't pull from GHCR.
 
 ```bash
 # 1. Clone the repo
@@ -138,7 +192,18 @@ VITE_API_URL=https://api.example.com docker compose build frontend
 docker compose up -d frontend
 ```
 
-## Updating
+## Updating (published images)
+
+```bash
+docker compose pull        # fetch the new images (latest, or your pinned INKWELL_VERSION)
+docker compose up -d       # rolling-restart; postgres data persists in pgdata
+```
+
+To move to a newer pinned release, bump `INKWELL_VERSION` in `.env` (or your
+shell) before `pull`. As with the source flow, the backend entrypoint runs
+`prisma migrate deploy` on every boot, so migrations apply automatically.
+
+## Updating (from source)
 
 ```bash
 git pull

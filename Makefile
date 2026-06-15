@@ -5,6 +5,16 @@
 # built image's node_modules replace the (otherwise reused) anonymous volumes.
 COMPOSE_UP_FLAGS ?=
 
+# App version surfaced in the Settings footer. Local builds and the dev server
+# read this from the environment (docker-compose.yml build-arg + the override's
+# env); we tag them `dev-<short-sha>` so a locally built/served frontend is
+# obviously not an official release. A checkout with no git history falls back
+# to `dev-local`. The release workflow injects a clean semver instead — this
+# var is only ever consumed by `docker compose`, so exporting it globally is
+# harmless for targets that don't rebuild the frontend. Override by setting
+# VITE_APP_VERSION in your shell.
+export VITE_APP_VERSION ?= dev-$(shell git rev-parse --short HEAD 2>/dev/null || echo local)
+
 dev:
 	docker compose up -d $(COMPOSE_UP_FLAGS)
 	@echo "Frontend: http://localhost:3000"

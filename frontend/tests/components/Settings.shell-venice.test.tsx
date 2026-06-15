@@ -192,6 +192,8 @@ describe('SettingsModal (F43)', () => {
 
     const hint = await screen.findByTestId('settings-autosave-hint');
     expect(hint).toBeInTheDocument();
+    // App version is surfaced in the footer; unset at test time → "vdev".
+    expect(screen.getByTestId('app-version')).toHaveTextContent(/^v\S+/);
     expect(screen.queryByTestId('settings-cancel')).toBeNull();
     expect(screen.queryByTestId('settings-done')).toBeNull();
   });

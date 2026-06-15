@@ -31,6 +31,7 @@ import {
   useVeniceKeyStatusQuery,
 } from '@/hooks/useVeniceKey';
 import { ApiError } from '@/lib/api';
+import { APP_VERSION } from '@/lib/appVersion';
 import { useErrorStore } from '@/store/errors';
 import type { SettingsTab } from '@/types/settings';
 
@@ -178,6 +179,8 @@ export function SettingsModal({
         leading={
           <span data-testid="settings-autosave-hint">
             Changes save automatically &middot; tap outside or press Esc to close
+            {' · '}
+            <span data-testid="app-version">v{APP_VERSION}</span>
           </span>
         }
       />
