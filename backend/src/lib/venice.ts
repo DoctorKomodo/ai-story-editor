@@ -26,8 +26,13 @@ export function createVeniceClient({ apiKey, endpoint }: VeniceClientOptions): O
   return new OpenAI({
     apiKey,
     baseURL: endpoint && endpoint.length > 0 ? endpoint : DEFAULT_VENICE_BASE_URL,
+    // Rebinds transport to the current globalThis.fetch so tests can stub it
+    // (vi.stubGlobal) and so the SDK doesn't fall back to its bundled node-fetch.
+    // Resolved lazily per-call so stubs stay live across a test's lifetime.
     fetch: ((url: string, init?: RequestInit) =>
       globalThis.fetch(url, init)) as unknown as ClientOptions['fetch'],
+    // Don't let the SDK silently retry 429s — that burns the user's Venice
+    // rate-limit quota and exhausts globalThis.fetch mock stubs in tests.
     maxRetries: 0,
   });
 }

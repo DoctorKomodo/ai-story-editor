@@ -19,7 +19,7 @@ function makePrismaStub(rows: Record<string, VeniceUserRow | null>): {
   findUniqueSpy: ReturnType<typeof vi.fn>;
 } {
   const findUniqueSpy = vi.fn(
-    async (args: { where: { id: string } }): Promise<VeniceUserRow | null> =>
+    async (args: { where: { id: string }; select?: unknown }): Promise<VeniceUserRow | null> =>
       rows[args.where.id] ?? null,
   );
   const client = {
@@ -120,7 +120,10 @@ describe('venice-key.service — getClient (per-user, DEK-keyed)', () => {
     expect(caught).toBeInstanceOf(Error);
     expect(caught).not.toBeInstanceOf(NoVeniceKeyError);
     const stored = storeKey('sk-tamper-victim');
-    const hay = `${(caught as Error).message} ${String(caught)}`;
+    const err = caught as Error;
+    const hay = `${err.message} ${String(caught)} ${JSON.stringify({ message: err.message, name: err.name })}`;
     expect(hay).not.toContain(stored.veniceApiKeyEnc);
+    expect(hay).not.toContain(stored.veniceApiKeyIv);
+    expect(hay).not.toContain(stored.veniceApiKeyAuthTag);
   });
 });
