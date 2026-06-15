@@ -14,7 +14,7 @@ Related files:
 
 1. A stolen database dump, on its own, reveals **only** structural metadata (order indices, word counts, timestamps, foreign-key ids, user IDs, status flags, genre, target word count). No narrative content, no BYOK Venice keys.
 2. A stolen database dump **plus** an env/`.env` file leak reveals **nothing more than the dump alone** — there is no server-held encryption key that wraps Venice keys or content. The env no longer contains an encryption secret that would unlock stored keys.
-3. Narrative content is disclosed only if an attacker additionally compromises the user's **password** (via phishing, keylogger, credential reuse, client-side malware) **or** their one-time **recovery code**. Without one of those two user-held secrets, the server cannot decrypt the user's content — **by design, even for the operator running the box**.
+3. Narrative content is disclosed only if an attacker additionally compromises the user's **password** (via phishing, keylogger, credential reuse, client-side malware) **or** their one-time **recovery code**. Without one of those two user-held secrets, the server cannot decrypt the user's **content or their stored BYOK Venice key** — **by design, even for the operator running the box**.
 4. The BYOK Venice key is now wrapped by the **per-user content DEK** (same envelope as narrative content), so losing a server-side env secret no longer loses Venice keys. Losing both the password and the recovery code for a user loses that user's narrative content **and** their stored Venice key, permanently. These are accepted trade-offs, not bugs.
 
 ## Non-goals

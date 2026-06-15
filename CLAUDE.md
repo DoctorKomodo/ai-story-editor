@@ -218,7 +218,7 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 | API routes | kebab-case nouns | `/api/stories`, `/api/ai/complete` |
 | React components | PascalCase | `CharacterSheet` |
 | React hooks | camelCase, `use` prefix | `useAuth`, `useStory` |
-| Environment vars | SCREAMING_SNAKE_CASE | `APP_ENCRYPTION_KEY` |
+| Environment vars | SCREAMING_SNAKE_CASE | `JWT_SECRET` |
 | Test files | mirror source path + `.test.ts` | `tests/routes/stories.test.ts` |
 
 ---
@@ -235,7 +235,7 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 
 ## Security Review
 
-The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a read-only reviewer tuned to this project's auth / session / key / encryption surface: password hashing, login, JWT issuance + refresh rotation, auth/ownership middleware, helmet / CORS / rate-limit, the AES-256-GCM crypto helper, the BYOK Venice-key path (store/validate/delete + no-leak), the per-user Venice client, the change/reset-password + recovery-code-rotation endpoints (DEK-wrap columns), and the env / encryption-key bootstrap.
+The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a read-only reviewer tuned to this project's auth / session / key / encryption surface: password hashing, login, JWT issuance + refresh rotation, auth/ownership middleware, helmet / CORS / rate-limit, the BYOK Venice-key path (store/validate/delete + no-leak), the per-user Venice client, the change/reset-password + recovery-code-rotation endpoints (DEK-wrap columns), and the env / encryption-key bootstrap.
 
 **`/bd-close-reviewed` auto-dispatches this reviewer** when the branch diff touches that surface (path-matched), and refuses to close on `BLOCK` / `FIX_BEFORE_MERGE`. That is the normal path — you rarely invoke it by hand. Do not bypass a blocking finding with `--override-block` unless explicitly authorised by the user.
 
