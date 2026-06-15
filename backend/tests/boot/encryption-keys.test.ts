@@ -10,6 +10,7 @@ describe('validateEncryptionEnv() — no required encryption env secret', () => 
     const warn = vi.fn();
     validateEncryptionEnv({ env: { APP_ENCRYPTION_KEY: 'leftover' } as NodeJS.ProcessEnv, warn });
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/APP_ENCRYPTION_KEY/));
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 
   it('warns if a stale CONTENT_ENCRYPTION_KEY lingers', () => {
@@ -19,5 +20,6 @@ describe('validateEncryptionEnv() — no required encryption env secret', () => 
       warn,
     });
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/CONTENT_ENCRYPTION_KEY/));
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

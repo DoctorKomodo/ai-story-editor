@@ -19,6 +19,7 @@ export function validateEncryptionEnv(opts: ValidateOptions = {}): void {
         'Remove it from your .env.',
     );
   }
+
   if (env.CONTENT_ENCRYPTION_KEY) {
     warn(
       '[boot] CONTENT_ENCRYPTION_KEY is set but unused. The envelope scheme ' +
