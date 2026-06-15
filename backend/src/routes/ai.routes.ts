@@ -48,7 +48,7 @@ export function createAiRouter() {
   router.use(requireAuth);
 
   // [V1] GET /api/ai/models — list text models the caller's BYOK key can see,
-  // mapped to { id, name, contextLength, supportsReasoning, supportsVision }.
+  // returned as the full `ModelInfo` shape (no projection; see venice.models.service.ts).
   // Cached in-memory for 10 minutes by the models service. A missing key
   // surfaces as NoVeniceKeyError from getVeniceClient, which the global error
   // handler maps to 409 { error: "venice_key_required" }.
