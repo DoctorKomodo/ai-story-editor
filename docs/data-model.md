@@ -1,6 +1,8 @@
 # Data Model
 
-Authoritative reference for the Prisma schema ([backend/prisma/schema.prisma](../backend/prisma/schema.prisma)). Field types match the schema exactly; review this doc whenever the schema changes. Encrypted-at-rest columns described here are the **plaintext columns** that exist today — the ciphertext triples from the E-series will be added additively and documented in [encryption.md](./encryption.md).
+Authoritative reference for the Prisma schema ([backend/prisma/schema.prisma](../backend/prisma/schema.prisma)). Field shapes match the schema; review this doc whenever the schema changes.
+
+**Narrative content is ciphertext-only.** Every narrative text field is stored solely as an AES-256-GCM triple (`<field>Ciphertext` / `<field>Iv` / `<field>AuthTag`) — the plaintext mirror columns were dropped in the E-series. The repo layer is the encrypt-on-write / decrypt-on-read seam (see [repo-boundary.md](./agent-rules/repo-boundary.md)); the envelope model (per-user DEK, two wraps, no server-held KEK for content) lives in [encryption.md](./encryption.md). Below, an encrypted field is shown as one logical row annotated "encrypted triple" rather than enumerating its three columns.
 
 ---
 
@@ -10,6 +12,7 @@ Authoritative reference for the Prisma schema ([backend/prisma/schema.prisma](..
 erDiagram
     User ||--o{ Story : owns
     User ||--o{ RefreshToken : issues
+    User ||--o{ Session : tracks
     Story ||--o{ Chapter : contains
     Story ||--o{ Character : casts
     Story ||--o{ OutlineItem : structures
@@ -18,88 +21,98 @@ erDiagram
 
     User {
         string  id PK
-        string  email UK "nullable — metadata only"
-        string  username UK "3-32 chars, /^[a-z0-9_-]+$/"
-        string  name
-        string  passwordHash
-        json    settingsJson "theme / prose / writing / daily goal / chat params / ai.* (e.g. includeVeniceSystemPrompt)"
-        string  veniceApiKeyEnc "BYOK ciphertext (AES-256-GCM, base64)"
-        string  veniceApiKeyIv "12-byte IV, base64"
-        string  veniceApiKeyAuthTag "GCM tag, base64"
-        string  veniceEndpoint "default https://api.venice.ai/api/v1"
+        string  username UK "login identifier — 3-32 chars, /^[a-z0-9_-]+$/"
+        string  email UK "nullable — optional metadata, NOT the login key"
+        string  name "nullable"
+        string  passwordHash "argon2id"
+        json    settingsJson "nullable JSONB — theme / prose / writing (incl. dailyWordGoal) / chat / ai / prompts"
+        string  veniceApiKey "BYOK — encrypted triple (Enc/Iv/AuthTag), nullable"
+        string  veniceEndpoint "nullable — default https://api.venice.ai/api/v1"
+        string  contentDekPassword "DEK wrap, argon2id(password) — Enc/Iv/AuthTag/Salt, nullable"
+        string  contentDekRecovery "DEK wrap, argon2id(recovery code) — Enc/Iv/AuthTag/Salt, nullable"
         date    createdAt
         date    updatedAt
+    }
+    Session {
+        string  id PK "random sessionId (hex), not a cuid"
+        string  userId FK
+        date    expiresAt
+        date    createdAt
     }
     Story {
         string  id PK
         string  userId FK
-        string  title
-        string  synopsis
-        string  genre
-        string  worldNotes
-        int     targetWords "e.g. 90000 — sidebar progress target"
-        string  systemPrompt "per-story creative-writing system prompt"
+        string  genre "plaintext, nullable"
+        int     targetWords "plaintext, nullable — sidebar progress target"
+        boolean includePreviousChaptersInPrompt "default true"
+        string  title "encrypted triple"
+        string  synopsis "encrypted triple"
+        string  worldNotes "encrypted triple"
         date    createdAt
         date    updatedAt
     }
     Chapter {
         string  id PK
         string  storyId FK
-        string  title
-        string  content "plaintext mirror derived from bodyJson"
-        json    bodyJson "TipTap JSON — canonical"
-        string  status "draft / revised / final"
-        int     orderIndex
-        int     wordCount
+        string  status "plaintext — default draft"
+        int     orderIndex "plaintext"
+        int     wordCount "plaintext — derived from body before encryption"
+        string  title "encrypted triple"
+        string  body "encrypted triple — serialised TipTap JSON tree"
+        json    summaryJson "encrypted triple — structured per-chapter summary"
+        date    summaryJsonUpdatedAt "nullable — staleness vs updatedAt"
         date    createdAt
         date    updatedAt
     }
     Character {
         string  id PK
         string  storyId FK
-        string  name
-        string  role
-        string  age
-        string  appearance
-        string  voice
-        string  arc
-        string  initial "1-char sidebar avatar letter"
-        string  color "avatar background hex"
-        string  physicalDescription
-        string  personality
-        string  backstory
-        string  notes
+        string  initial "plaintext, nullable — sidebar avatar letter"
+        string  color "plaintext, nullable — avatar background hex"
+        int     orderIndex "plaintext"
+        string  name "encrypted triple"
+        string  role "encrypted triple"
+        string  age "encrypted triple"
+        string  appearance "encrypted triple"
+        string  voice "encrypted triple"
+        string  arc "encrypted triple"
+        string  relationships "encrypted triple"
+        string  personality "encrypted triple"
+        string  backstory "encrypted triple"
         date    createdAt
         date    updatedAt
     }
     OutlineItem {
         string  id PK
         string  storyId FK
-        int     order
-        string  title
-        string  sub
-        string  status "done / current / pending"
+        int     order "plaintext"
+        string  status "plaintext"
+        string  title "encrypted triple"
+        string  sub "encrypted triple"
         date    createdAt
         date    updatedAt
     }
     Chat {
         string  id PK
         string  chapterId FK
-        string  title
+        string  kind "plaintext — ask | scene, default ask"
+        string  title "encrypted triple"
         date    createdAt
         date    updatedAt
+        date    lastActivityAt "bumped on every child-message create"
     }
     Message {
         string  id PK
         string  chatId FK
-        string  role "user / assistant / system"
-        json    contentJson "encrypted at rest — [E8]"
-        json    attachmentJson "encrypted — { selectionText, chapterId }"
-        json    citationsJson "encrypted — Citation[] | null — [V26], assistant turns with web search only"
-        string  model
-        int     tokens
-        int     latencyMs
+        string  role "plaintext — user / assistant / system"
+        string  model "plaintext, nullable"
+        int     tokens "plaintext, nullable"
+        int     latencyMs "plaintext, nullable"
+        string  content "encrypted triple — plain string"
+        json    attachmentJson "encrypted triple — { selectionText, chapterId }"
+        json    citationsJson "encrypted triple — Citation[]; null unless the turn produced web-search citations"
         date    createdAt
+        date    updatedAt "nullable — null = never edited; set only by the edit path"
     }
     RefreshToken {
         string  id PK
@@ -110,6 +123,8 @@ erDiagram
     }
 ```
 
+> `Session` holds no DEK — only an in-process map does. The row exists so a restart or cold replica can detect "session expired" and force re-authentication instead of silently failing.
+
 ---
 
 ## Relationships & Cascade Behaviour
@@ -118,6 +133,7 @@ erDiagram
 |---|---|---|---|
 | User → Story | `Story.userId` | `onDelete: Cascade` | Account delete removes all user-owned writing. |
 | User → RefreshToken | `RefreshToken.userId` | `onDelete: Cascade` | Session records vanish with the account. |
+| User → Session | `Session.userId` | `onDelete: Cascade` | DEK-survival rows vanish with the account. |
 | Story → Chapter | `Chapter.storyId` | `onDelete: Cascade` | A story has no meaning without its chapters. |
 | Story → Character | `Character.storyId` | `onDelete: Cascade` | Characters are scoped to a single story. |
 | Story → OutlineItem | `OutlineItem.storyId` | `onDelete: Cascade` | Outline lives inside the story it belongs to. |
@@ -130,12 +146,13 @@ erDiagram
 
 | Table | Index | Purpose |
 |---|---|---|
-| User | `email` unique, `username` unique | Login lookup; uniqueness enforcement. |
+| User | `username` unique, `email` unique | `username` is the login lookup; `email` uniqueness is enforced when present. |
+| Session | `(userId)`, `(expiresAt)` | Per-user lookup + expiry sweeps. |
 | Story | `(userId)` | List-stories-for-user is the hot path. |
-| Chapter | `(storyId)`, `(storyId, orderIndex)` | List chapters; ordered render without a sort. |
-| Character | `(storyId)` | Sidebar cast + prompt-builder fetch. |
-| OutlineItem | `(storyId)`, `(storyId, order)` | Outline sidebar + drag-reorder. |
-| Chat | `(chapterId)` | List chats for the open chapter. |
+| Chapter | `@@unique(storyId, orderIndex)`, `(storyId)` | Ordered render + the race guard on insert (the unique btree also serves the `ORDER BY orderIndex`). |
+| Character | `@@unique(storyId, orderIndex)`, `(storyId)` | Sidebar cast + ordered render; same race guard. |
+| OutlineItem | `@@unique(storyId, order)`, `(storyId)` | Outline sidebar + drag-reorder; same race guard. |
+| Chat | `(chapterId)`, `(chapterId, kind)`, `(chapterId, lastActivityAt)` | List chats for the open chapter, filter by kind, order by recency. |
 | Message | `(chatId)`, `(chatId, createdAt)` | Chronological log render. |
 | RefreshToken | `token` unique, `(userId)` | Cookie lookup + per-user revocation. |
 
@@ -143,21 +160,21 @@ erDiagram
 
 ## Field Conventions
 
-- **IDs** are CUIDs (`String @id @default(cuid())`), never incrementing integers, so they're safe to expose in URLs.
-- **Timestamps** — every narrative model has `createdAt` + `updatedAt`. `Message` is append-only (`createdAt` only).
-- **JSON columns** (`Chapter.bodyJson`, `User.settingsJson`, `Message.contentJson`, `Message.attachmentJson`) are Postgres `JSONB`; Prisma types them as `Prisma.JsonValue` / `Prisma.InputJsonValue`.
-- **Nullable vs required** — narrative prose fields (`synopsis`, `notes`, etc.) are nullable; structural fields (FKs, `orderIndex`, `status` with a default) are required.
-- **Status enums are strings**, not Prisma enums, so the UI can add new states (`Chapter.status`, `OutlineItem.status`, `Message.role`) without a migration.
+- **IDs** are CUIDs (`String @id @default(cuid())`), never incrementing integers, so they're safe to expose in URLs. Exception: `Session.id` is the random hex `sessionId` minted at login (no `cuid()` default).
+- **Timestamps** — every narrative model has `createdAt` + `updatedAt`. `Message.updatedAt` is **nullable** (`null` = never edited; set only by the in-place edit path, deliberately not `@updatedAt`) — `Message` is no longer append-only. `Session` and `RefreshToken` are `createdAt`-only by design.
+- **JSON columns** — only `User.settingsJson` is a live Postgres `JSONB` column. The narrative JSON payloads (TipTap body, chat attachment, citations) are serialised to strings and stored encrypted as ciphertext triples, not as JSONB.
+- **Encrypted columns are nullable** — a full-null triple means the field was stored as `null`; a partial triple is a corruption signal (the repo throws).
+- **Status enums are strings**, not Prisma enums, so the UI can add states without a migration (`Chapter.status`, `OutlineItem.status`, `Chat.kind`, `Message.role`).
 
 ---
 
 ## Derived Fields
 
-- `Chapter.wordCount` — computed from `bodyJson` in backend code before write ([B10]). Never derived at read time; never derived from ciphertext once [E5] lands.
-- `Story` progress (`X / Y words · Z%`) — computed on demand in `GET /api/stories/:id/progress` ([B9]).
+- `Chapter.wordCount` — computed from the decrypted TipTap tree **before** encryption on each write, stored as a plaintext column. Never derived at read time and never derivable from ciphertext.
+- Per-story aggregates (`chapterCount`, `totalWordCount`) — computed on demand in `GET /api/stories` via a single chapter `groupBy`, not stored on `Story`.
 
 ---
 
-## Encryption Surface (Preview — E-series)
+## Encryption at rest
 
-Narrative text columns listed above will gain `*Ciphertext / *Iv / *AuthTag` siblings during the E-series. Plaintext mirrors stay in place during dual-write rollout ([E4]–[E8]) and are dropped in [E11]. `Chapter.content` is intentionally dropped — TipTap JSON decrypted via the chapter repo becomes the sole source of truth. Full column-by-column list and the KEK / DEK model live in [encryption.md](./encryption.md).
+Every narrative text field exists **only** as a ciphertext triple (`<field>Ciphertext` / `<field>Iv` / `<field>AuthTag`); there is no plaintext mirror. The full per-field column list, the per-user DEK envelope model (two argon2id wraps on `User`, no server-held KEK for content), and the recovery-code path live in [encryption.md](./encryption.md). The repo layer (`backend/src/repos/*.repo.ts`) is the only code that reads or writes these columns — every read decrypts, every write encrypts, and the API surface never sees ciphertext ([repo-boundary.md](./agent-rules/repo-boundary.md)). `APP_ENCRYPTION_KEY` protects the BYOK Venice keys only and has no authority over narrative content.
