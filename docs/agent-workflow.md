@@ -353,8 +353,8 @@ they apply at the rule-shape level, not the task level:
    `[V17]` invariant.)
 3. **Auth / session / crypto changes get a security review.**
    Touching `backend/src/services/auth.service.ts`,
-   `backend/src/services/crypto.service.ts`,
    `backend/src/services/content-crypto.service.ts`,
+   `backend/src/services/venice-key.service.ts`,
    `backend/src/middleware/`, or any cookie / cors / helmet / rate-
    limit bootstrap fires `security-reviewer` automatically via
    `/bd-close-reviewed`. The implementer should treat the rules

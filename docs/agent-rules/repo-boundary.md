@@ -85,9 +85,9 @@ When a narrative model adds a new encrypted column:
 
 ## DEK (request-scoped)
 
-The envelope model (per-user DEK, two argon2id wraps, no KEK), the
+The envelope model (per-user DEK, two argon2id wraps, no server-held KEK), the
 request-scoped `WeakMap` unwrap (no module-level caching), and the
-`APP_ENCRYPTION_KEY` / no-`CONTENT_ENCRYPTION_KEY` policy live in
+no-`CONTENT_ENCRYPTION_KEY` policy live in
 **backend.md "Encryption at rest"** (always co-prepended). The repo
 reaches the DEK only through the request-scoped `_narrative.ts` helpers
 (see "Repo shape & helpers").
@@ -180,5 +180,7 @@ ciphertext columns; schema changes need approval) are in **backend.md
 - Logging plaintext narrative content in production sinks.
 - Persisting plaintext narrative content outside the repo layer.
 - Module-level / process-wide caching of unwrapped DEKs.
-- Adding a `CONTENT_ENCRYPTION_KEY` env var (the boot validator
-  warns; the design rejects it).
+- Adding a `CONTENT_ENCRYPTION_KEY` or any new server-held encryption
+  env var without explicit design review (the boot validator warns on
+  `CONTENT_ENCRYPTION_KEY`; adding a different name requires the same
+  threat-model update described in `docs/encryption.md` Revisit #1).

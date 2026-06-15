@@ -6,31 +6,27 @@ This document covers the operator-facing responsibilities for running Inkwell (s
 
 ## Key backup and user recovery (`[E15]`)
 
-Inkwell's encryption-at-rest is split across two secret surfaces. They are **not** interchangeable. Back up both, and communicate the user-facing half clearly to your users.
+Inkwell's encryption-at-rest protects both narrative content and BYOK Venice keys through user-derived secrets only — there is no server-held encryption key. Back up the database, and communicate the user-facing key-management responsibility clearly to your users.
 
-### 1. `APP_ENCRYPTION_KEY` — server-held key (operator's responsibility)
+> **Upgrade note (retiring `APP_ENCRYPTION_KEY`):** If you are upgrading from a version prior to [story-editor-nst], `APP_ENCRYPTION_KEY` is no longer needed and can be removed from your `.env`. After upgrading, each user re-enters their Venice API key once in Settings; the newly stored key is encrypted under their per-user DEK instead.
 
-`APP_ENCRYPTION_KEY` is a single 32-byte key loaded from the environment at backend boot. Its **only** job is to wrap the per-user **BYOK Venice API key** (`User.veniceApiKey*` columns). It is **not** used to wrap narrative content — see the content DEK section below.
+### 1. No server-held encryption key — database is the only secret surface
+
+In the current design there is **no `APP_ENCRYPTION_KEY`** or equivalent server-side encryption env var. Both narrative content and the BYOK Venice API key are protected by the same per-user envelope scheme (below). An attacker who obtains a database dump **and** your `.env` file learns nothing more than from the dump alone — there is no env key that decrypts anything.
 
 **Backup requirements:**
-- Back up `APP_ENCRYPTION_KEY` with **the same rigour as the Postgres database**. Losing the key means every stored BYOK Venice key on the instance becomes permanently unrecoverable, and every user who had a key stored will be prompted to re-enter it.
-- Keep the key **out of Postgres itself** — if a single backup blob carries both the ciphertext and the key, an attacker who gets the backup has full access.
-- Treat the key as an offline credential: sealed note in a safe, a hardware token, a password manager's secure-note field. Not on the same disk as the database.
-- Rotating `APP_ENCRYPTION_KEY` re-wraps all stored Venice keys; losing the old key mid-rotation is a key-loss event.
+- Back up the **Postgres database** (`pgdata` volume). That's the only server-side secret surface.
+- Keep off-site copies away from the machine (see "Off-site copies" below).
 
-**If `APP_ENCRYPTION_KEY` is lost:**
-- All stored Venice keys are gone. Users will be asked to re-enter their Venice key on next use.
-- **All narrative content remains decryptable** on next login — user narrative is protected by a separate envelope scheme (below) that does not involve this key. This is a deliberate design decision from `[E1]` — narrative security must not depend on server-held state.
+### 2. Content DEKs and Venice keys — user-derived secrets (user's responsibility)
 
-### 2. Content DEKs — user-derived keys (user's responsibility)
-
-Each user's narrative content (stories, chapters, characters, outline, chats, messages) is encrypted with a **per-user 32-byte random DEK** that is wrapped **twice**:
+Each user's narrative content (stories, chapters, characters, outline, chats, messages) **and their stored BYOK Venice API key** are encrypted with a **per-user 32-byte random DEK** that is wrapped **twice**:
 - **Password wrap** — argon2id-derived from the user's password.
 - **Recovery-code wrap** — argon2id-derived from a one-time recovery code shown **exactly once** at signup.
 
-The server has **no third wrap**. There is no operator-held master key for narrative content. This is intentional:
+The server has **no third wrap**. There is no operator-held master key for narrative content or Venice keys. This is intentional:
 
-> **Losing both the password and the recovery code for a given user = irrecoverable data loss for that user's narrative content.**
+> **Losing both the password and the recovery code for a given user = irrecoverable data loss for that user's narrative content and their stored Venice API key.**
 
 Neither you nor Anthropic nor any operator can decrypt that user's data when both secrets are gone. By design.
 
@@ -72,12 +68,11 @@ If any step fails on staging, resolve it before the next prod backup cycle. A dr
 
 ### Summary table
 
-| Secret                 | Held by  | Wraps                         | Loss consequence                                           | Recovery path                                          |
-|------------------------|----------|-------------------------------|------------------------------------------------------------|--------------------------------------------------------|
-| `APP_ENCRYPTION_KEY`   | Operator | BYOK Venice API keys          | Stored Venice keys lost; users re-enter on next use        | Backup restore; no user-derived alternative            |
-| Password               | User     | Content DEK (password wrap)   | DEK accessible via recovery code                           | Recovery code → password reset via `[AU16]`           |
-| Recovery code          | User     | Content DEK (recovery wrap)   | DEK accessible via password                                | Rotate via `[AU17]` after login with password          |
-| **Password + recovery code (both)** | User | DEK — no third wrap exists  | **Narrative content for that user is permanently lost.**   | **None by design.** Re-create account from scratch.    |
+| Secret                 | Held by  | Wraps                                    | Loss consequence                                                        | Recovery path                                         |
+|------------------------|----------|------------------------------------------|-------------------------------------------------------------------------|-------------------------------------------------------|
+| Password               | User     | Content DEK (password wrap)              | DEK accessible via recovery code                                        | Recovery code → password reset via `[AU16]`           |
+| Recovery code          | User     | Content DEK (recovery wrap)              | DEK accessible via password                                             | Rotate via `[AU17]` after login with password         |
+| **Password + recovery code (both)** | User | DEK — no third wrap exists  | **Narrative content and stored Venice key for that user are permanently lost.** | **None by design.** Re-create account from scratch.   |
 
 ---
 
@@ -92,7 +87,7 @@ You'll need:
 - A reverse proxy (nginx, Caddy, Traefik, Cloudflare Tunnel) if you intend to expose the instance to the internet — Inkwell does not ship one.
 - A small amount of memory: the default stack peaks around ~600 MB RAM under typical load (postgres + node backend + nginx-fronted SPA).
 
-Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. The operator's only Venice-related obligation is to back up `APP_ENCRYPTION_KEY`, which wraps those stored user keys (see "Key backup and user recovery" above).
+Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. Stored keys are encrypted under the user's own DEK, so the operator has no server-side secret to manage for this.
 
 ## Run from published images (recommended)
 
@@ -111,7 +106,7 @@ curl -L -o .env \
 
 # 2. Generate the long-lived secrets and paste them into .env, replacing the
 #    placeholder defaults (see the secret-gen block under "First-run steps").
-#    JWT_SECRET, REFRESH_TOKEN_SECRET, APP_ENCRYPTION_KEY are required.
+#    JWT_SECRET and REFRESH_TOKEN_SECRET are required.
 
 # 3. Pull the images and start the stack. The backend runs `prisma migrate
 #    deploy` automatically on boot, so the schema is created on its own.
@@ -160,14 +155,13 @@ cp .env.example .env
 
 # 3. Generate the long-lived secrets the backend requires.
 #    JWT_SECRET and REFRESH_TOKEN_SECRET sign access and refresh tokens
-#    respectively; APP_ENCRYPTION_KEY is the AES-256 key that wraps stored
-#    Venice API keys.
+#    respectively. There is no server-held encryption key — Venice keys and
+#    narrative content are both protected by per-user DEKs.
 {
   echo "JWT_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
   echo "REFRESH_TOKEN_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
-  echo "APP_ENCRYPTION_KEY=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
 } >> /tmp/inkwell-secrets.env
-# /tmp/inkwell-secrets.env now contains three KEY=VALUE lines with real
+# /tmp/inkwell-secrets.env now contains two KEY=VALUE lines with real
 # generated secrets — paste them into .env, replacing the placeholder
 # defaults, then delete the temp file.
 
@@ -217,10 +211,7 @@ If the release notes say a migration is destructive (e.g. dropping a plaintext c
 
 ## Backup and restore
 
-Run a regular backup of two things — they are **not** interchangeable:
-
-1. The Postgres database (`pgdata` volume).
-2. `APP_ENCRYPTION_KEY` from your `.env` — see "Key backup and user recovery" above for *why* this is separate.
+Run a regular backup of the Postgres database (`pgdata` volume). That is the only server-side secret surface — there is no separate server-held encryption key to back up.
 
 ### Take a snapshot
 
