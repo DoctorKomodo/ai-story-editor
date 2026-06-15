@@ -4,7 +4,10 @@
 > lane digest) when the plan's touch-set includes the narrative-entity
 > boundary — repos, narrative routes, content-crypto, the prompt
 > service, or migrations on narrative tables (per
-> `docs/agent-rules/index.md`).
+> `docs/agent-rules/index.md`). It is **always co-prepended with
+> `backend.md`** (the narrative boundary is backend-only), so it does
+> **not** restate backend.md's encryption-at-rest / auth rules — only the
+> repo-boundary specifics.
 
 ## The invariant
 
@@ -24,6 +27,31 @@ contract; close the bypass.
 Non-narrative entities (`User`, `RefreshToken`) may be accessed
 directly via Prisma from services.
 
+## Repo shape & helpers
+
+- A repo is a `createXRepo(req, client = defaultPrisma)` factory returning
+  method objects. `resolveUserId(req)` throws if `req.user` is unset.
+- **Encrypt/decrypt only through the `_narrative.ts` helpers**, never raw
+  AES: `writeEncrypted(req, field, value)` on write, `projectDecrypted(req,
+  row, FIELDS)` on read, where `FIELDS` is the shared
+  **`*_ENCRYPTED_FIELD_KEYS`** tuple (the single source of truth for which
+  columns are encrypted). They pull the DEK off the request; a method
+  reached without auth throws `DekNotAvailableError`.
+- **Every read and write is owner-scoped at the data layer** — defense in
+  depth, independent of the ownership middleware. Scope every query by
+  owner: `where: { id, userId }` (Story) or the parent chain
+  (`{ id, story: { userId } }`, … down to Message); creates verify the
+  parent first (`ensureStoryOwned`). Dropping the scope is a cross-tenant
+  leak. Unknown and unowned ids conflate to one error (→ 403) — no
+  enumeration oracle.
+- **The repo returns a `Repo<Entity>` shape, not the wire shape.**
+  `projectDecrypted` strips only the ciphertext triples; the object still
+  carries `Date` timestamps and owner ids (`userId` / `chatId`). The
+  matching `serialize*` helper (`src/lib/serialize.ts`) produces the wire
+  shape — an explicit pick (not spread) that drops owner ids and converts
+  `Date`→ISO — then `respond` validates it. Stripping ciphertext is
+  necessary but not sufficient; `serialize*` is the egress boundary.
+
 ## Encrypt-on-write / decrypt-on-read template
 
 Every narrative column persisted as ciphertext is stored as a
@@ -38,41 +66,47 @@ Every narrative column persisted as ciphertext is stored as a
 When a narrative model adds a new encrypted column:
 
 1. Add the three columns to the Prisma schema with a migration.
-2. **Both** the write path and the read path in the matching repo
+2. Add the field name to the shared **`*_ENCRYPTED_FIELD_KEYS`** tuple —
+   the `FIELDS` list `projectDecrypted` reads. (The key is the column base
+   name, e.g. `body`; the wire field may differ, e.g. `bodyJson`.)
+3. **Both** the write path and the read path in the matching repo
    must be updated **in the same change**. Half-updates produce
    silent data loss or silent decrypt failures the next time the
-   row is read.
-3. The repo's read path strips the three ciphertext columns from
+   row is read. If a read `select`s a ciphertext column, select **all
+   three** triple parts together with the `projectDecrypted` call — a
+   partial select throws `CiphertextMissingError`.
+4. The repo's read path strips the three ciphertext columns from
    the returned object — the API surface sees only the decrypted
    plaintext field.
-4. If the column is computable from another plaintext (e.g.
+5. If the column is computable from another plaintext (e.g.
    `wordCount` from `content`), compute it from **plaintext**
    **before** encryption, persist the plaintext-derived value, and
    never derive it from ciphertext.
 
-## DEK & request-scoped unwrap
+## DEK (request-scoped)
 
-- Each user has a per-user random 32-byte DEK. Two AES-256-GCM
-  wraps live on `User`: one keyed via argon2id from the password,
-  one keyed via argon2id from the one-time recovery code. **No
-  server-held KEK** wraps content.
-- The content-crypto service
-  (`backend/src/services/content-crypto.service.ts`) unwraps DEKs
-  **only into a request-scoped `WeakMap`**. The unwrapped DEK is
-  visible for the lifetime of a single request. **Module-level
-  caching of unwrapped DEKs is a bug.**
-- `APP_ENCRYPTION_KEY` is unrelated to narrative content. It wraps
-  BYOK Venice keys only. There is no `CONTENT_ENCRYPTION_KEY`.
+The envelope model (per-user DEK, two argon2id wraps, no KEK), the
+request-scoped `WeakMap` unwrap (no module-level caching), and the
+`APP_ENCRYPTION_KEY` / no-`CONTENT_ENCRYPTION_KEY` policy live in
+**backend.md "Encryption at rest"** (always co-prepended). The repo
+reaches the DEK only through the request-scoped `_narrative.ts` helpers
+(see "Repo shape & helpers").
 
 ## Ciphertext egress: never
 
-- **Never return ciphertext fields** (`*Ciphertext`, `*Iv`,
-  `*AuthTag`, `contentDekPassword*`, `contentDekRecovery*`,
-  `veniceApiKeyEnc`) from any API endpoint.
-  The repo layer strips them on read; if you see one in a response,
-  that path is bypassing the repo.
+- **Never return narrative ciphertext triples** (`*Ciphertext`, `*Iv`,
+  `*AuthTag`) from any endpoint. The narrative repo strips them on read
+  (`stripCiphertextFields`); a triple in a response means a path bypassed
+  the repo. (The `User` secret columns — `contentDekPassword*`,
+  `contentDekRecovery*`, `veniceApiKeyEnc` — are **not** narrative and the
+  repo never touches them; they're security-reviewer's lane, kept off the
+  wire by the auth / venice-key routes.)
 - **Never log ciphertext** even in dev. It serves no debugging
   purpose and pollutes log sinks.
+- **Never log a caught decrypt/parse exception.** A `ZodError` /
+  `SyntaxError` thrown over a decrypted-but-invalid blob can embed the
+  plaintext in its message — log a static code + entity id only (e.g.
+  `summary_parse_failed chapter=<id>`), never the exception object.
 - **Never persist plaintext narrative content outside the repo
   layer** — no caches, no tmp files, no export intermediates that
   don't delete on error. If a feature genuinely needs persisted
@@ -108,11 +142,10 @@ module scope.
 
 ## Migrations on narrative tables
 
-- Add ciphertext columns in batches when possible (one migration
-  for several at-rest fields beats six migrations).
-- Plan the schema change explicitly — schema changes after the
-  initial migration require approval (CLAUDE.md "When to Stop and
-  Ask").
+The general migration rules (run against real, populated tables; batch
+ciphertext columns; schema changes need approval) are in **backend.md
+"Database access"**. The narrative-specific addition:
+
 - **Existing rows are real** (the app is at/near release). But the
   server has **no DEK at migration time** — it's per-user, unwrapped
   only inside an authed request — so you **cannot** backfill a new
@@ -137,21 +170,6 @@ module scope.
 - The historical `Chapter.content` plaintext mirror from
   `[D4]`/`[D10]` was deliberately dropped in `[E5]`/`[E11]`. The
   decrypted JSON tree (via the repo) is the sole source of truth.
-
-## Verification checklist before opening a PR that touches the boundary
-
-- [ ] Every read path in changed repos goes through `decrypt`.
-- [ ] Every write path goes through `encrypt`.
-- [ ] No `*Ciphertext` / `*Iv` / `*AuthTag` field is included in
-      any API response shape.
-- [ ] The leak test (`[E12]`) was run and passed.
-- [ ] If a column was added: both write **and** read paths in the
-      matching repo were updated in this change, not split across
-      PRs.
-- [ ] No plaintext narrative content was added to any new log
-      sink, telemetry sink, or error reporter.
-- [ ] No `PrismaClient` import was added to a service or route
-      module that previously had none for a narrative table.
 
 ## Forbidden
 
