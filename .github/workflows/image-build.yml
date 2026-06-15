@@ -1,10 +1,13 @@
-name: Image build (main)
+name: Image build & publish (main)
 
-# Validation-only: prove both Dockerfiles still build after a merge to main,
-# WITHOUT publishing anything. The release workflow (release.yml) is the only
-# path that pushes to GHCR. Deliberately scoped to `push: main` so PRs don't
-# pay the Docker-build overhead — a regression surfaces on merge, before a tag
-# is ever cut.
+# Build BOTH images on every push to main and publish them to GHCR under the
+# moving `main` tag (plus an immutable `sha-<short>` pin) so the latest dev
+# build is always pullable for testing:
+#
+#   INKWELL_VERSION=main docker compose pull && docker compose up -d
+#
+# `latest` is deliberately NOT published here — it tracks tagged releases only
+# (see release.yml). PRs don't trigger this, so they pay no Docker overhead.
 on:
   push:
     branches: [main]
@@ -14,42 +17,84 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Read-only: this job builds but never pushes, so no packages: write.
+# packages: write to push to GHCR; contents: read to checkout.
 permissions:
   contents: read
+  packages: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  BACKEND_IMAGE: ghcr.io/doctorkomodo/inkwell-backend
+  FRONTEND_IMAGE: ghcr.io/doctorkomodo/inkwell-frontend
 
 jobs:
   build:
-    name: build images (no push)
+    name: build · push (main)
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v6
 
+      # Short SHA for the frontend version build-arg, so a dev image's footer
+      # reads e.g. main-1a2b3c rather than a full 40-char SHA.
+      - name: Derive short SHA
+        id: sha
+        run: echo "short=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
       - uses: docker/setup-buildx-action@v4
 
-      - name: Build backend image
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Backend image ──────────────────────────────────────────────────────
+      - name: Backend image metadata
+        id: meta-backend
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.BACKEND_IMAGE }}
+          # Moving `main` tag + immutable `sha-<short>` pin. No `latest`.
+          tags: |
+            type=raw,value=main
+            type=sha,format=short
+
+      - name: Build & push backend
         uses: docker/build-push-action@v7
         with:
           context: .
           file: backend/Dockerfile
           target: runner
           platforms: linux/amd64
-          push: false
+          push: true
+          provenance: false
+          tags: ${{ steps.meta-backend.outputs.tags }}
+          labels: ${{ steps.meta-backend.outputs.labels }}
 
-      - name: Build frontend image
+      # ── Frontend image ─────────────────────────────────────────────────────
+      - name: Frontend image metadata
+        id: meta-frontend
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.FRONTEND_IMAGE }}
+          tags: |
+            type=raw,value=main
+            type=sha,format=short
+
+      - name: Build & push frontend
         uses: docker/build-push-action@v7
         with:
           context: .
           file: frontend/Dockerfile
           target: runner
           platforms: linux/amd64
-          push: false
-          # Exercise the version build-arg plumbing too (release.yml passes the
-          # real semver here). The built image is discarded, so the value only
-          # needs to be representative.
+          push: true
+          provenance: false
+          # Dev identity in the Settings footer (release.yml injects the semver).
           build-args: |
-            VITE_APP_VERSION=main-${{ github.sha }}
+            VITE_APP_VERSION=main-${{ steps.sha.outputs.short }}
+          tags: ${{ steps.meta-frontend.outputs.tags }}
+          labels: ${{ steps.meta-frontend.outputs.labels }}

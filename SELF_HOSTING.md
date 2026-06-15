@@ -135,6 +135,10 @@ release. Pin a specific version for reproducible deploys:
 INKWELL_VERSION=0.2.0 docker compose up -d
 ```
 
+For testing the bleeding edge, `INKWELL_VERSION=main` pulls the rolling image
+built from the latest `main` commit (published by the image-build workflow; not
+a stable release). `latest` always points at the most recent tagged release.
+
 **Ports:** the published stack publishes **only `:3000`** — the single public
 entry point. The frontend's nginx reverse-proxies `/api/*` to the backend, and
 the backend reaches Postgres, both over the internal compose network, so
