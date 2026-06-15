@@ -39,8 +39,6 @@ jobs:
     env:
       # Backend test env. These values match .env.test; CI owns its own DB
       # lifecycle (prisma migrate deploy below), so no docker compose needed.
-      # APP_ENCRYPTION_KEY is auto-synthesised by backend/tests/setup.ts when
-      # absent, so we don't set it here.
       DATABASE_URL: postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test
       JWT_SECRET: ci-jwt-secret-do-not-use-in-production
       REFRESH_TOKEN_SECRET: ci-refresh-secret-do-not-use-in-production
@@ -140,9 +138,6 @@ jobs:
         env:
           NODE_ENV: production
         run: |
-          # Synthetic all-zero key: env-validation.ts only checks length (32 bytes).
-          # Not a real key — the runner is ephemeral and it wraps no real Venice keys.
-          export APP_ENCRYPTION_KEY=$(node -p "Buffer.alloc(32, 0).toString('base64')")
           node --enable-source-maps dist/index.js &
           APP_PID=$!
           ok=

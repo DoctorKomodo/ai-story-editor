@@ -12,7 +12,7 @@
 #     https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/docker-compose.release.yml
 #   curl -L -o .env \
 #     https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/.env.example
-#   # edit .env: set JWT_SECRET, REFRESH_TOKEN_SECRET, APP_ENCRYPTION_KEY
+#   # edit .env: set JWT_SECRET, REFRESH_TOKEN_SECRET
 #   docker compose pull
 #   docker compose up -d
 #

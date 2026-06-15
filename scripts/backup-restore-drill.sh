@@ -91,11 +91,6 @@ SENTINEL="DRILL-SENTINEL-${TS}-do-not-occur-by-chance"
 export DRILL_DATABASE_URL="postgresql://storyeditor:storyeditor@postgres:5432/${DRILL_DB}"
 export JWT_SECRET="drill-jwt-${TS}"
 export REFRESH_TOKEN_SECRET="drill-refresh-${TS}"
-# Encryption key for the transient backend. Random per run; the dump-and-
-# restore round trip preserves Venice-key ciphertext too, but this drill
-# doesn't seed any Venice key so it's just here to satisfy boot validation.
-export APP_ENCRYPTION_KEY
-APP_ENCRYPTION_KEY="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
 export FRONTEND_URL="http://localhost:${DRILL_PORT}"
 
 # Network name (compose-default is "<project>_default"). Resolve dynamically
@@ -128,7 +123,6 @@ BACKEND_CID="$(docker run --rm -d \
   -e "DATABASE_URL=${DRILL_DATABASE_URL}" \
   -e JWT_SECRET \
   -e REFRESH_TOKEN_SECRET \
-  -e APP_ENCRYPTION_KEY \
   -e FRONTEND_URL \
   story-editor-backend)"
 
@@ -231,7 +225,6 @@ BACKEND_CID="$(docker run --rm -d \
   -e "DATABASE_URL=${DRILL_DATABASE_URL}" \
   -e JWT_SECRET \
   -e REFRESH_TOKEN_SECRET \
-  -e APP_ENCRYPTION_KEY \
   -e FRONTEND_URL \
   story-editor-backend)"
 

@@ -13,9 +13,8 @@
 #
 # Note: this dumps user data, including the encrypted-at-rest narrative
 # columns and BYOK Venice ciphertext. The dump is *useless* without the
-# corresponding APP_ENCRYPTION_KEY (for Venice keys) and the users' own
-# passwords / recovery codes (for narrative). Treat it as if it were
-# plaintext anyway — see SELF_HOSTING.md key-backup section.
+# users' own passwords / recovery codes (for narrative and BYOK Venice keys).
+# Treat it as if it were plaintext anyway — see SELF_HOSTING.md key-backup section.
 
 set -euo pipefail
 
