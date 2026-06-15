@@ -245,8 +245,6 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
         // they're set to something so the import side-effect doesn't explode.
         JWT_SECRET: process.env.JWT_SECRET ?? 'test-jwt-secret',
         REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET ?? 'test-refresh-secret',
-        APP_ENCRYPTION_KEY:
-          process.env.APP_ENCRYPTION_KEY ?? Buffer.alloc(32, 0xab).toString('base64'),
       },
       encoding: 'utf8',
       // 2 minutes is generous — the seed does ~4× argon2id derivations (~400ms)
