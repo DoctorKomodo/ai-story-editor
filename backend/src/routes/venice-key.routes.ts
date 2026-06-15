@@ -1,6 +1,7 @@
 import { type Request, type Response, Router } from 'express';
 import { ZodError } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
+import { getDekFromRequest } from '../services/content-crypto.service';
 import {
   VeniceKeyCheckError,
   VeniceKeyInvalidError,
@@ -29,7 +30,7 @@ export function createVeniceKeyRouter() {
 
   router.get('/', async (req: Request, res: Response, next) => {
     try {
-      const status = await veniceKeyService.getStatus(req.user!.id);
+      const status = await veniceKeyService.getStatus(getDekFromRequest(req), req.user!.id);
       res.status(200).json(status);
     } catch (err) {
       next(err);
@@ -38,7 +39,7 @@ export function createVeniceKeyRouter() {
 
   router.put('/', async (req: Request, res: Response, next) => {
     try {
-      const status = await veniceKeyService.store(req.user!.id, req.body);
+      const status = await veniceKeyService.store(getDekFromRequest(req), req.user!.id, req.body);
       res.status(200).json({
         status: 'saved',
         lastSix: status.lastSix,

@@ -17,7 +17,6 @@ import { z } from 'zod';
 import { badRequest } from '../lib/bad-request';
 import { respond } from '../lib/respond';
 import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
-import { getVeniceClient } from '../lib/venice';
 import {
   logVeniceErrorDev,
   mapVeniceError,
@@ -31,6 +30,7 @@ import {
   createChapterRepo,
   type RepoChapterUpdateInput,
 } from '../repos/chapter.repo';
+import { getDekFromRequest } from '../services/content-crypto.service';
 import { resolvePrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
@@ -42,6 +42,7 @@ import {
   resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../services/venice-call.service';
+import { veniceKeyService } from '../services/venice-key.service';
 
 // [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
 // After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
@@ -292,7 +293,7 @@ export function createChaptersRouter() {
       }
 
       try {
-        await veniceModelsService.fetchModels(userId);
+        await veniceModelsService.fetchModels(getDekFromRequest(req), userId);
       } catch (err) {
         if (mapVeniceError(err, res, { userId, route: 'chapter-summarise' })) return;
         throw err;
@@ -353,7 +354,7 @@ export function createChaptersRouter() {
         max_completion_tokens: resolved.max_completion_tokens,
       };
 
-      const client = await getVeniceClient(userId);
+      const client = await veniceKeyService.getClient(getDekFromRequest(req), userId);
       let raw: { choices?: Array<{ message?: { content?: string } }> };
       try {
         const completion = await client.chat.completions.create({

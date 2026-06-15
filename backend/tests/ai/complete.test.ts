@@ -289,9 +289,9 @@ describe('POST /api/ai/complete [V5]', () => {
     const accessToken = await registerAndLogin();
 
     // Prime the models cache manually with a stub so we hit the "no BYOK key"
-    // path from getVeniceClient, not from fetchModels. But the handler calls
+    // path from veniceKeyService.getClient, not from fetchModels. But the handler calls
     // fetchModels first — so we need to let the 409 come from that call.
-    // Since there's no key, getVeniceClient inside fetchModels will throw.
+    // Since there's no key, veniceKeyService.getClient inside fetchModels will throw.
 
     const res = await request(app)
       .post('/api/ai/complete')

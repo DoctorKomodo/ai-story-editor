@@ -1,8 +1,10 @@
 import type { PrismaClient } from '@prisma/client';
+import type OpenAI from 'openai';
 import { z } from 'zod';
 import { prisma as defaultPrisma } from '../lib/prisma';
+import { createVeniceClient, NoVeniceKeyError, type VeniceClientOptions } from '../lib/venice';
 import { parseRetryAfter } from '../lib/venice-errors';
-import { decrypt, encrypt } from './crypto.service';
+import { decryptWithDek, encryptWithDek } from './content-crypto.service';
 
 export const DEFAULT_VENICE_ENDPOINT = 'https://api.venice.ai/api/v1';
 
@@ -86,6 +88,7 @@ export type StoreVeniceKeyInput = z.infer<typeof storeVeniceKeyInputSchema>;
 export interface VeniceKeyServiceDeps {
   client?: PrismaClient;
   fetchFn?: typeof fetch;
+  buildClient?: (options: VeniceClientOptions) => OpenAI;
 }
 
 function lastSixOf(apiKey: string): string {
@@ -99,6 +102,7 @@ function resolveEndpoint(endpoint: string | null | undefined): string {
 
 export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
   const client = deps.client ?? defaultPrisma;
+  const buildClient = deps.buildClient ?? createVeniceClient;
 
   async function validateAgainstVenice(apiKey: string, endpoint: string): Promise<void> {
     // Resolve fetch per-call so tests can stub globalThis.fetch after service
@@ -133,7 +137,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     apiKey: string | null; // plaintext, request-scoped
   }
 
-  async function getStatusAndKey(userId: string): Promise<StatusAndKey> {
+  async function getStatusAndKey(dek: Buffer, userId: string): Promise<StatusAndKey> {
     const row = await client.user.findUnique({
       where: { id: userId },
       select: {
@@ -148,7 +152,7 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
       return { hasKey: false, lastSix: null, endpoint: null, apiKey: null };
     }
 
-    const apiKey = decrypt({
+    const apiKey = decryptWithDek(dek, {
       ciphertext: row.veniceApiKeyEnc,
       iv: row.veniceApiKeyIv,
       authTag: row.veniceApiKeyAuthTag,
@@ -162,18 +166,18 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     };
   }
 
-  async function getStatus(userId: string): Promise<VeniceKeyStatus> {
-    const { hasKey, lastSix, endpoint } = await getStatusAndKey(userId);
+  async function getStatus(dek: Buffer, userId: string): Promise<VeniceKeyStatus> {
+    const { hasKey, lastSix, endpoint } = await getStatusAndKey(dek, userId);
     return { hasKey, lastSix, endpoint };
   }
 
-  async function store(userId: string, rawInput: unknown): Promise<VeniceKeyStatus> {
+  async function store(dek: Buffer, userId: string, rawInput: unknown): Promise<VeniceKeyStatus> {
     const input = storeVeniceKeyInputSchema.parse(rawInput);
     const endpoint = resolveEndpoint(input.endpoint);
 
     await validateAgainstVenice(input.apiKey, endpoint);
 
-    const payload = encrypt(input.apiKey);
+    const payload = encryptWithDek(dek, input.apiKey);
 
     await client.user.update({
       where: { id: userId },
@@ -213,8 +217,8 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
   // must show "Not verified" without treating it as a crash. 429 / 5xx surface
   // as typed errors with `upstreamStatus` carried through to the route's error
   // body so the frontend's DevErrorOverlay can render it for triage.
-  async function getAccount(userId: string): Promise<VeniceAccountResult> {
-    const { hasKey, lastSix, endpoint, apiKey } = await getStatusAndKey(userId);
+  async function getAccount(dek: Buffer, userId: string): Promise<VeniceAccountResult> {
+    const { hasKey, lastSix, endpoint, apiKey } = await getStatusAndKey(dek, userId);
 
     if (!hasKey || apiKey === null) {
       return { verified: false, balanceUsd: null, diem: null, endpoint: null, lastSix: null };
@@ -273,7 +277,15 @@ export function createVeniceKeyService(deps: VeniceKeyServiceDeps = {}) {
     };
   }
 
-  return { getStatus, store, remove, validateAgainstVenice, getAccount };
+  async function getClient(dek: Buffer, userId: string): Promise<OpenAI> {
+    const { hasKey, apiKey, endpoint } = await getStatusAndKey(dek, userId);
+    if (!hasKey || apiKey === null) {
+      throw new NoVeniceKeyError();
+    }
+    return buildClient({ apiKey, endpoint });
+  }
+
+  return { getStatus, store, remove, validateAgainstVenice, getAccount, getClient };
 }
 
 export const veniceKeyService = createVeniceKeyService();
