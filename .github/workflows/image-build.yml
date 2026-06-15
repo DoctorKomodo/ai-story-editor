@@ -1,0 +1,55 @@
+name: Image build (main)
+
+# Validation-only: prove both Dockerfiles still build after a merge to main,
+# WITHOUT publishing anything. The release workflow (release.yml) is the only
+# path that pushes to GHCR. Deliberately scoped to `push: main` so PRs don't
+# pay the Docker-build overhead — a regression surfaces on merge, before a tag
+# is ever cut.
+on:
+  push:
+    branches: [main]
+
+# Cancel stale runs when a newer commit lands on main.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only: this job builds but never pushes, so no packages: write.
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    name: build images (no push)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build backend image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: backend/Dockerfile
+          target: runner
+          platforms: linux/amd64
+          push: false
+
+      - name: Build frontend image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: frontend/Dockerfile
+          target: runner
+          platforms: linux/amd64
+          push: false
+          # Exercise the version build-arg plumbing too (release.yml passes the
+          # real semver here). The built image is discarded, so the value only
+          # needs to be representative.
+          build-args: |
+            VITE_APP_VERSION=main-${{ github.sha }}
