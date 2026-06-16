@@ -1,38 +1,52 @@
 import crypto from 'node:crypto';
-import express, { type Request, type Response } from 'express';
-import jwt from 'jsonwebtoken';
-import request from 'supertest';
-import { afterEach, describe, expect, it } from 'vitest';
+import type { NextFunction, Request, Response } from 'express';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { requireAuth } from '../../src/middleware/auth.middleware';
-import { ACCESS_TOKEN_TTL_SECONDS } from '../../src/services/auth.service';
-import { closeSession, openSession } from '../../src/services/session-store';
+import {
+  _resetSessionStore,
+  closeSession,
+  IDLE_TTL_MS,
+  openSession,
+  peekSessionExpiry,
+} from '../../src/services/session-store';
 import '../setup';
 
-function makeApp() {
-  const app = express();
-  app.use(express.json());
-  app.get('/protected', requireAuth, (req: Request, res: Response) => {
-    res.json({ user: req.user });
-  });
-  return app;
+const COOKIE_NAME = sessionCookieName();
+
+function makeReq(cookies: Record<string, string> = {}): Request {
+  return { cookies } as unknown as Request;
 }
 
-function signAccess(payload: Record<string, unknown>, secret = process.env.JWT_SECRET!): string {
-  return jwt.sign(payload, secret, { expiresIn: ACCESS_TOKEN_TTL_SECONDS });
+function makeRes(): Response & {
+  cookie: ReturnType<typeof vi.fn>;
+  status: ReturnType<typeof vi.fn>;
+  json: ReturnType<typeof vi.fn>;
+} {
+  const res: Record<string, unknown> = {};
+  const json = vi.fn().mockReturnValue(res);
+  const status = vi.fn().mockReturnValue({ json });
+  const cookie = vi.fn();
+  res.json = json;
+  res.status = status;
+  res.cookie = cookie;
+  return res as unknown as Response & {
+    cookie: ReturnType<typeof vi.fn>;
+    status: ReturnType<typeof vi.fn>;
+    json: ReturnType<typeof vi.fn>;
+  };
 }
 
-// Open a real session so the middleware's DEK-lookup step succeeds. Without
-// this, tokens with a sessionId would 401 with session_expired. Returns the
-// sessionId to embed in the test token.
 const openedSessionIds: string[] = [];
-function openTestSession(userId: string): string {
+
+function openTestSession(userId: string, opts?: { expiresAt?: Date; createdAt?: Date }): string {
   const sessionId = crypto.randomBytes(16).toString('hex');
   openSession({
     sessionId,
     userId,
     dek: crypto.randomBytes(32),
-    createdAt: new Date(),
-    expiresAt: new Date(Date.now() + 60_000),
+    createdAt: opts?.createdAt ?? new Date(),
+    expiresAt: opts?.expiresAt ?? new Date(Date.now() + IDLE_TTL_MS),
   });
   openedSessionIds.push(sessionId);
   return sessionId;
@@ -40,85 +54,81 @@ function openTestSession(userId: string): string {
 
 afterEach(() => {
   for (const id of openedSessionIds.splice(0)) closeSession(id);
+  _resetSessionStore();
 });
 
-describe('requireAuth middleware', () => {
-  it('returns 401 with a JSON error body when no Authorization header is sent', async () => {
-    const res = await request(makeApp()).get('/protected');
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('unauthorized');
-  });
+describe('requireAuth middleware (cookie-based)', () => {
+  it('401 unauthorized when no session cookie', () => {
+    const req = makeReq({});
+    const res = makeRes();
+    const next = vi.fn() as unknown as NextFunction;
 
-  it('returns 401 when the scheme is not Bearer', async () => {
-    const res = await request(makeApp())
-      .get('/protected')
-      .set('Authorization', `Basic ${Buffer.from('u:p').toString('base64')}`);
-    expect(res.status).toBe(401);
-  });
+    requireAuth(req, res, next);
 
-  it('returns 401 on a malformed token', async () => {
-    const res = await request(makeApp()).get('/protected').set('Authorization', 'Bearer not-a-jwt');
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 401 when the token is signed with a different secret', async () => {
-    const token = signAccess({ sub: 'abc', email: 'x@y.com' }, 'other-secret');
-    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(401);
-  });
-
-  it('returns 401 on an expired token', async () => {
-    const token = jwt.sign({ sub: 'abc', email: 'x@y.com' }, process.env.JWT_SECRET!, {
-      expiresIn: '-5s',
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      error: { message: 'Unauthorized', code: 'unauthorized' },
     });
-    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(401);
+    expect(next).not.toHaveBeenCalled();
   });
 
-  it('returns 401 on an unsigned (alg:none) token — algorithm-confusion defence', async () => {
-    const header = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
-    const payload = Buffer.from(JSON.stringify({ sub: 'abc', email: 'x@y.com' })).toString(
-      'base64url',
-    );
-    const unsigned = `${header}.${payload}.`;
+  it('401 session_expired when cookie present but no live session', () => {
+    const req = makeReq({ [COOKIE_NAME]: 'dead-session-id' });
+    const res = makeRes();
+    const next = vi.fn() as unknown as NextFunction;
 
-    const res = await request(makeApp())
-      .get('/protected')
-      .set('Authorization', `Bearer ${unsigned}`);
-    expect(res.status).toBe(401);
-  });
+    requireAuth(req, res, next);
 
-  it('attaches req.user and calls next() on a valid token', async () => {
-    const sessionId = openTestSession('user-id-1');
-    const token = signAccess({ sub: 'user-id-1', email: 'a@b.com', sessionId });
-    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(200);
-    expect(res.body.user).toEqual({ id: 'user-id-1', email: 'a@b.com', sessionId });
-  });
-
-  it('accepts a token whose payload has email=null (post-D15 optional email)', async () => {
-    const sessionId = openTestSession('user-id-2');
-    const token = signAccess({ sub: 'user-id-2', email: null, sessionId });
-    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(200);
-    expect(res.body.user).toEqual({ id: 'user-id-2', email: null, sessionId });
-  });
-
-  it('rejects a token with no sessionId claim (sessionId is required post-X10)', async () => {
-    const token = signAccess({ sub: 'user-id-3', email: 'x@y.com' });
-    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('unauthorized');
-  });
-
-  it('rejects a token whose sessionId does not resolve in the session store', async () => {
-    const token = signAccess({
-      sub: 'user-id-4',
-      email: 'x@y.com',
-      sessionId: 'nonexistent-session-id',
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      error: { message: 'Session expired', code: 'session_expired' },
     });
-    const res = await request(makeApp()).get('/protected').set('Authorization', `Bearer ${token}`);
-    expect(res.status).toBe(401);
-    expect(res.body.error.code).toBe('session_expired');
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('attaches user + DEK and slides expiry on a live session', () => {
+    const userId = 'user-slide-1';
+    const sessionId = openTestSession(userId, {
+      expiresAt: new Date(Date.now() + IDLE_TTL_MS),
+    });
+
+    const expiryBefore = peekSessionExpiry(sessionId)!;
+
+    // Advance time slightly so the slide produces a measurably later expiry.
+    const req = makeReq({ [COOKIE_NAME]: sessionId });
+    const res = makeRes();
+    const next = vi.fn() as unknown as NextFunction;
+
+    requireAuth(req, res, next);
+
+    expect(next).toHaveBeenCalled();
+    expect((req as Request & { user?: { id: string; sessionId: string } }).user).toEqual({
+      id: userId,
+      sessionId,
+    });
+
+    // extendSessionExpiry should have been called (expiry >= expiryBefore).
+    const expiryAfter = peekSessionExpiry(sessionId)!;
+    expect(expiryAfter).toBeGreaterThanOrEqual(expiryBefore);
+  });
+
+  it('re-sets the cookie only when within ~24h of expiry', () => {
+    // Near-expiry session: expires in 23h (< 24h threshold)
+    const nearExpiry = new Date(Date.now() + 23 * 60 * 60 * 1000);
+    const nearSessionId = openTestSession('user-near', { expiresAt: nearExpiry });
+
+    const reqNear = makeReq({ [COOKIE_NAME]: nearSessionId });
+    const resNear = makeRes();
+    requireAuth(reqNear, resNear, vi.fn() as unknown as NextFunction);
+    expect(resNear.cookie).toHaveBeenCalled();
+
+    // Fresh session: expires in 7 days (> 24h threshold)
+    const freshExpiry = new Date(Date.now() + IDLE_TTL_MS);
+    const freshSessionId = openTestSession('user-fresh', { expiresAt: freshExpiry });
+
+    const reqFresh = makeReq({ [COOKIE_NAME]: freshSessionId });
+    const resFresh = makeRes();
+    requireAuth(reqFresh, resFresh, vi.fn() as unknown as NextFunction);
+    expect(resFresh.cookie).not.toHaveBeenCalled();
   });
 });

@@ -147,6 +147,6 @@ export function _sessionCount(): number {
   return sessions.size;
 }
 
-export function _peekExpiry(sessionId: string): number | null {
+export function peekSessionExpiry(sessionId: string): number | null {
   return sessions.get(sessionId)?.expiresAt ?? null;
 }

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  _peekExpiry,
   _resetSessionStore,
   _sessionCount,
   ABSOLUTE_TTL_MS,
@@ -9,6 +8,7 @@ import {
   extendSessionExpiry,
   getSession,
   openSession,
+  peekSessionExpiry,
 } from '../../src/services/session-store';
 
 function future(ms: number): Date {
@@ -133,7 +133,7 @@ describe('session-store absolute cap + sliding', () => {
       expiresAt: new Date(now + 1000),
     });
     extendSessionExpiry('s1', new Date(now + 40 * 24 * 3600_000));
-    expect(_peekExpiry('s1')).toBe(now + ABSOLUTE_TTL_MS);
+    expect(peekSessionExpiry('s1')).toBe(now + ABSOLUTE_TTL_MS);
     expect(getSession('s1')).not.toBeNull();
   });
 
