@@ -1,16 +1,15 @@
 /**
  * API client for the Inkwell backend.
  *
- * - Attaches `Authorization: Bearer <token>` when an access token is set in memory.
- * - On 401, attempts `POST /auth/refresh` exactly once; if refresh succeeds, retries
- *   the original request once with the new token. If refresh fails, clears the
- *   in-memory token and throws a typed `ApiError`.
- * - Throws `ApiError(status, code?, message)` on non-2xx responses. Parses
- *   `{ error: { message, code } }` bodies when present.
+ * - Session auth via an opaque httpOnly cookie sent automatically by the browser
+ *   because `credentials: 'include'` is set on every request. No JS-held token,
+ *   no Authorization header.
+ * - A 401 is terminal: fire `onUnauthorized` (session store flips to
+ *   unauthenticated and routes to /login), then throw `ApiError(401)`. There is
+ *   no refresh dance.
+ * - Throws `ApiError(status, message, code?, body?)` on non-2xx responses.
+ *   Parses `{ error: { message, code } }` bodies when present.
  * - Resolves with `undefined as T` for 204 responses.
- *
- * The access token is held in a module-level variable so the session store can
- * push updates (`setAccessToken`) without creating a circular import.
  */
 import {
   type Chat,
@@ -28,39 +27,23 @@ function resolveBaseUrl(): string {
   return fromEnv && fromEnv.length > 0 ? fromEnv : DEFAULT_BASE_URL;
 }
 
-let accessToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
-// Module-level dedup sentinel: while a refresh is in flight, all callers
-// await the same promise rather than each issuing their own POST /auth/refresh
-// (which would race against the backend's refresh-cookie rotation).
-let refreshInFlight: Promise<string | null> | null = null;
-
-export function setAccessToken(token: string | null): void {
-  accessToken = token;
-}
-
-export function getAccessToken(): string | null {
-  return accessToken;
-}
 
 /**
- * Register a callback invoked after a failed refresh (i.e. the client has given
- * up and cleared the token). The session store uses this to flip status to
- * `unauthenticated`. Optional — the token itself is cleared regardless.
+ * Register a callback invoked when the server returns 401. The session store
+ * uses this to flip status to `unauthenticated`. Optional — the ApiError is
+ * thrown regardless.
  */
 export function setUnauthorizedHandler(handler: (() => void) | null): void {
   onUnauthorized = handler;
 }
 
 /**
- * Test-only helper. Clears the in-memory access token, the unauthorized
- * handler, and any in-flight refresh promise so tests get a clean module
- * state in `beforeEach` / `afterEach`.
+ * Test-only helper. Clears the unauthorized handler so tests get a clean
+ * module state in `beforeEach` / `afterEach`.
  */
 export function resetApiClientForTests(): void {
-  accessToken = null;
   onUnauthorized = null;
-  refreshInFlight = null;
 }
 
 export interface ApiErrorBody {
@@ -135,10 +118,6 @@ function buildRequestInit(init: ApiRequestInit | undefined): RequestInit {
     }
   }
 
-  if (accessToken && !headers.has('Authorization')) {
-    headers.set('Authorization', `Bearer ${accessToken}`);
-  }
-
   const { body: _ignored, ...rest } = init ?? {};
   void _ignored;
   const requestInit: RequestInit = {
@@ -189,91 +168,21 @@ async function parseSuccessBody<T>(res: Response): Promise<T> {
 }
 
 /**
- * Low-level refresh call. Uses bare `fetch` so it never recurses back through
- * the 401-retry branch. Returns the new access token on success, or null if
- * refresh failed. Exported so `initAuth()` can bootstrap without triggering
- * a redundant 401-retry cycle.
- *
- * Concurrent callers are deduped via `refreshInFlight`: the first caller
- * issues the network request, all subsequent callers await the same promise
- * until it settles. Without this, two simultaneous 401s would each POST
- * /auth/refresh, the backend would rotate the refresh cookie on the first
- * call, and the second's retry would fire with a token the backend has
- * already invalidated.
- */
-export async function refreshAccessToken(): Promise<string | null> {
-  if (refreshInFlight) return refreshInFlight;
-  const run = (async (): Promise<string | null> => {
-    try {
-      const res = await fetch(buildUrl('/auth/refresh'), {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-      });
-      if (!res.ok) return null;
-      const data = (await res.json()) as { accessToken?: string };
-      if (typeof data.accessToken === 'string' && data.accessToken.length > 0) {
-        return data.accessToken;
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  })();
-  refreshInFlight = run;
-  try {
-    return await run;
-  } finally {
-    // Clear only if we're still the in-flight promise — defensive against a
-    // synchronous re-entry by a future caller.
-    if (refreshInFlight === run) refreshInFlight = null;
-  }
-}
-
-/**
  * Core request driver shared by `api<T>()` and `apiStream()`.
  *
- * Handles the 401 → refresh → retry-once flow and throws `ApiError` on any
- * non-2xx response *other than the retried 401*. Success responses are
- * returned raw so streaming callers can consume `res.body`; the JSON helper
- * `api<T>()` wraps this and parses the body.
+ * A 401 is terminal: parse the error body, fire `onUnauthorized`, and throw
+ * `ApiError(401)`. The session cookie rides along automatically; there is no
+ * refresh dance. Success responses are returned raw so streaming callers can
+ * consume `res.body`; the JSON helper `api<T>()` wraps this and parses the body.
  */
 async function doRequest(path: string, init?: ApiRequestInit): Promise<Response> {
-  const url = buildUrl(path);
-  const firstInit = buildRequestInit(init);
-  const firstRes = await fetch(url, firstInit);
-
-  if (firstRes.status !== 401) {
-    if (!firstRes.ok) {
-      const { message, code, body } = await parseErrorBody(firstRes);
-      throw new ApiError(firstRes.status, message, code, body);
-    }
-    return firstRes;
+  const res = await fetch(buildUrl(path), buildRequestInit(init));
+  if (!res.ok) {
+    const { message, code, body } = await parseErrorBody(res);
+    if (res.status === 401 && onUnauthorized) onUnauthorized();
+    throw new ApiError(res.status, message, code, body);
   }
-
-  // 401: try refresh once, then retry original request once.
-  const newToken = await refreshAccessToken();
-  if (newToken === null) {
-    setAccessToken(null);
-    if (onUnauthorized) onUnauthorized();
-    const { message, code, body } = await parseErrorBody(firstRes);
-    throw new ApiError(401, message, code, body);
-  }
-
-  setAccessToken(newToken);
-  const retryInit = buildRequestInit(init);
-  const retryRes = await fetch(url, retryInit);
-
-  if (!retryRes.ok) {
-    const { message, code, body } = await parseErrorBody(retryRes);
-    if (retryRes.status === 401) {
-      setAccessToken(null);
-      if (onUnauthorized) onUnauthorized();
-    }
-    throw new ApiError(retryRes.status, message, code, body);
-  }
-
-  return retryRes;
+  return res;
 }
 
 export async function api<T = unknown>(path: string, init?: ApiRequestInit): Promise<T> {
@@ -282,15 +191,14 @@ export async function api<T = unknown>(path: string, init?: ApiRequestInit): Pro
 }
 
 /**
- * Streaming variant of `api<T>()` used by F15's `/api/ai/complete` call.
+ * Streaming variant of `api<T>()` used by the `/api/ai/complete` call.
  *
- * Builds the request identically (same base URL, same Bearer-token header,
- * same 401 → refresh → retry-once flow, same error parsing for non-2xx
- * non-401 responses) but returns the raw `Response` on success so the
- * caller can consume `res.body` as a `ReadableStream` for SSE parsing.
+ * Builds the request identically (same base URL, same cookie auth, same error
+ * parsing for non-2xx responses, terminal 401) but returns the raw `Response`
+ * on success so the caller can consume `res.body` as a `ReadableStream` for
+ * SSE parsing.
  *
- * Do NOT read the body here — a single `ReadableStream` can only be
- * consumed once.
+ * Do NOT read the body here — a single `ReadableStream` can only be consumed once.
  */
 export async function apiStream(path: string, init?: ApiRequestInit): Promise<Response> {
   return doRequest(path, init);
@@ -299,8 +207,8 @@ export async function apiStream(path: string, init?: ApiRequestInit): Promise<Re
 // ─── Chat API client functions ───────────────────────────────────────────────
 //
 // Thin wrappers over `api()` / `apiStream()` used by SC14+ scene-tab hooks.
-// All auth, 401-retry, and error handling is delegated to `doRequest` via
-// `api()` / `apiStream()` — do not call `fetch` directly here.
+// All auth and error handling is delegated to `doRequest` via `api()` /
+// `apiStream()` — do not call `fetch` directly here.
 
 /**
  * [SC14] GET /api/chapters/:chapterId/chats
