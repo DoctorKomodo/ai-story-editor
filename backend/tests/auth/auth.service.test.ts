@@ -12,12 +12,10 @@ const authService = createAuthService(prisma);
 
 describe('auth.service register()', () => {
   beforeEach(async () => {
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
@@ -114,15 +112,11 @@ describe('auth.service register()', () => {
 describe('auth.service login()', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
     await prisma.user.deleteMany();
   });
 
@@ -149,21 +143,6 @@ describe('auth.service login()', () => {
     expect(session!.dek).toBeInstanceOf(Buffer);
   });
 
-  it('login does not write to Session or RefreshToken DB tables', async () => {
-    await authService.register({
-      name: 'Clean User',
-      username: 'clean-user',
-      password: 'testpass',
-    });
-
-    await authService.login({ username: 'clean-user', password: 'testpass' });
-
-    const sessionCount = await prisma.session.count();
-    const rtCount = await prisma.refreshToken.count();
-    expect(sessionCount).toBe(0);
-    expect(rtCount).toBe(0);
-  });
-
   it('login throws InvalidCredentialsError for wrong password', async () => {
     await authService.register({
       name: 'User',
@@ -185,15 +164,11 @@ describe('auth.service login()', () => {
 describe('auth.service changePassword()', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await prisma.refreshToken.deleteMany();
-    await prisma.session.deleteMany();
     await prisma.user.deleteMany();
   });
 
