@@ -52,6 +52,18 @@ function resolveFrontendOrigins(): string[] {
   return ['http://localhost:3000'];
 }
 
+// Trust proxy: set to the real number of reverse-proxy hops in front of this
+// server. Using a hop count (never `true`) ensures Express accepts
+// X-Forwarded-For only from the expected number of trusted proxies — passing
+// `true` would let any client spoof that header and defeat per-IP rate limits.
+// `0` is a meaningful value (no proxy → use the socket IP, ignore
+// X-Forwarded-For), so distinguish unset from explicit-zero rather than `|| 1`.
+const trustProxyHops =
+  process.env.TRUST_PROXY_HOPS !== undefined && process.env.TRUST_PROXY_HOPS !== ''
+    ? Number(process.env.TRUST_PROXY_HOPS)
+    : 1;
+app.set('trust proxy', trustProxyHops);
+
 app.use(helmet());
 // Function-based origin: only echo Access-Control-Allow-Origin for an exact
 // configured FRONTEND_URL match. Static-string form of cors() would echo the
@@ -75,10 +87,21 @@ app.use(
 // 256kb limit: encrypted narrative-field Zod maxima (worldNotes 50k + others)
 // worst-case in multi-byte UTF-8 exceed Express's default 100kb body limit.
 app.use(express.json({ limit: '256kb' }));
-// cookieParser is NOT applied globally — only `/api/auth/*` uses cookies
-// (refresh-token flow). Scoping it to the auth mount below keeps cookies
-// off every other route and co-locates cookie parsing with the CSRF
-// Origin-check middleware that protects the cookie-authed endpoints.
+// cookieParser is global so every authed route (not just /api/auth) can read
+// the session cookie that requireAuth now expects.
+app.use(cookieParser());
+// Primary CSRF defense — must run before the /api/ai rate limiter so forged
+// requests are rejected before they consume budget.
+app.use('/api', requireAllowedOrigin(allowedOrigins));
+// Prevent shared caches from storing authenticated API responses. The SSE
+// streaming route sets its own Cache-Control and must not be clobbered; all
+// other /api responses get no-store. Inside a /api mount, req.path is
+// mount-relative, so /api/ai/complete → req.path === '/ai/complete'.
+app.use('/api', (req, res, next) => {
+  if (req.path.startsWith('/ai/')) return next();
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+});
 // morgan's dev format is for local debugging only. In production it would log
 // every request URL (including owned resource IDs like /api/stories/:id) to
 // stdout with no gating, which is both noisy and a minor ID-enumeration leak
@@ -97,7 +120,7 @@ app.use(
   }),
 );
 
-app.use('/api/auth', cookieParser(), requireAllowedOrigin(allowedOrigins), createAuthRouter());
+app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/venice-account', createVeniceAccountRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
