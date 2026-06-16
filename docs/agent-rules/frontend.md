@@ -14,11 +14,18 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
 
 ## Authentication & session
 
-- **JWT access token is held in memory** in the Zustand `session`
-  slice. **Never** in `localStorage` or `sessionStorage`.
-- **Refresh token lives in an httpOnly cookie** set by the backend.
-  The frontend never reads it directly. Refresh requests are made
-  with `credentials: 'include'`.
+- Authentication uses an opaque httpOnly **session cookie** set by
+  `POST /auth/login`. The frontend never reads it — the browser sends
+  it automatically on every request via `credentials: 'include'`.
+- **There is no JS-held JWT, no Bearer header, no refresh-token
+  cookie, and no `/auth/refresh` endpoint.** Do not add these.
+- A **401 is terminal**. There is no silent-refresh or retry dance.
+  On any 401 from any API call, `onUnauthorized` fires, client state
+  is reset, and the user is routed to /login. A `session_expired`
+  response code (cookie present, session gone — e.g. after a server
+  restart) shows the "session expired" banner first; `unauthorized`
+  (no cookie) goes straight to /login. Both paths clear the session
+  slice and all per-user stores.
 - The auth identifier is `username` (lowercased, 3–32 chars,
   `/^[a-z0-9_-]+$/`). `User.email` is optional metadata only.
 - **Telemetry / error-reporting buffers must flush on every auth
@@ -80,12 +87,13 @@ clear the mirrored `localStorage` entry — call
 The TanStack Query layer has a rigid house style — match it.
 
 - **All API calls go through `src/lib/api.ts`.** Never call `fetch`
-  directly from a component or hook. The api module owns base URL, the
-  Bearer header, the 401→refresh→retry flow, and the error shape.
+  directly from a component or hook. The api module owns base URL,
+  `credentials: 'include'`, and the error shape. There is no Bearer
+  header — the session cookie is sent automatically.
 - **`api<T>(path, init?)`** resolves to parsed JSON (or `undefined` for a
   204). Pass a plain object as `init.body` and it is **auto-JSON-
   stringified** with `Content-Type: application/json` — never hand-
-  stringify. The auth header and `credentials: 'include'` are added for you.
+  stringify. `credentials: 'include'` is added for you.
 - **Reads validate the response with the shared Zod schema.** The pattern
   is `api<unknown>(path)` then `<schema>.parse(res).<field>` (e.g.
   `storyResponseSchema.parse(raw).story`). The shared schema is the
@@ -96,9 +104,9 @@ The TanStack Query layer has a rigid house style — match it.
   `ApiError(status, message, code?, body?)` exposing `.status`, `.code`,
   and `.body.error.{ code, message, details?.veniceMessage,
   retryAfterSeconds? }`. Every catch / error banner keys off this —
-  including the backend's structured `venice_*` codes. A 401 triggers
-  exactly one refresh + one retry (deduped while in flight); a terminal
-  401 clears the in-memory token and fires the unauthorized handler.
+  including the backend's structured `venice_*` codes. A 401 is
+  terminal: it fires the unauthorized handler and throws — there is no
+  refresh or retry.
 - **Query keys are exported factories**, not inline arrays:
   - single entity → `['<entity>', id]` (`storyQueryKey(id)` →
     `['story', id]`).
@@ -228,7 +236,7 @@ The TanStack Query layer has a rigid house style — match it.
 
 ## Forbidden
 
-- JWT in `localStorage` / `sessionStorage`.
+- JWT, access tokens, or session identifiers in `localStorage` / `sessionStorage`.
 - `fetch` in a component (route everything through `src/lib/api.ts`).
 - Casting fetched data to a type instead of parsing it with the shared
   schema.

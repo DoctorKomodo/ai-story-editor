@@ -218,7 +218,7 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 | API routes | kebab-case nouns | `/api/stories`, `/api/ai/complete` |
 | React components | PascalCase | `CharacterSheet` |
 | React hooks | camelCase, `use` prefix | `useAuth`, `useStory` |
-| Environment vars | SCREAMING_SNAKE_CASE | `JWT_SECRET` |
+| Environment vars | SCREAMING_SNAKE_CASE | `FRONTEND_URL` |
 | Test files | mirror source path + `.test.ts` | `tests/routes/stories.test.ts` |
 
 ---
@@ -235,7 +235,7 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 
 ## Security Review
 
-The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a read-only reviewer tuned to this project's auth / session / key / encryption surface: password hashing, login, JWT issuance + refresh rotation, auth/ownership middleware, helmet / CORS / rate-limit, the BYOK Venice-key path (store/validate/delete + no-leak), the per-user Venice client, the change/reset-password + recovery-code-rotation endpoints (DEK-wrap columns), and the env / encryption-key bootstrap.
+The `security-reviewer` subagent (`.claude/agents/security-reviewer.md`) is a read-only reviewer tuned to this project's auth / session / key / encryption surface: password hashing, login, opaque httpOnly session cookie issuance + revocation, CSRF Origin/Referer check, auth/ownership middleware, helmet / CORS / rate-limit, the BYOK Venice-key path (store/validate/delete + no-leak), the per-user Venice client, the change/reset-password + recovery-code-rotation endpoints (DEK-wrap columns), and the env / encryption-key bootstrap.
 
 **`/bd-close-reviewed` auto-dispatches this reviewer** when the branch diff touches that surface (path-matched), and refuses to close on `BLOCK` / `FIX_BEFORE_MERGE`. That is the normal path — you rarely invoke it by hand. Do not bypass a blocking finding with `--override-block` unless explicitly authorised by the user.
 
@@ -303,7 +303,7 @@ Do not ask for permission to:
 - Prisma's `cascade` delete behaviour must be set on the relation field using `onDelete: Cascade` — it does not cascade by default
 - Venice.ai streaming responses use SSE — use `ReadableStream` on the frontend to consume them, not a standard `fetch().then(res => res.json())`
 - `wordCount` on `Chapter` must be computed from the TipTap JSON tree **before encryption** — you can't derive it from ciphertext. Order: parse JSON → count words → write ciphertext + plaintext wordCount in one repo call.
-- Refresh token rotation: when a refresh token is used, delete the old one and create a new one in the same transaction
+- **Cookie-session auth CSRF posture** — the token-less CSRF defense (SameSite=Lax + global default-deny Origin/Referer check) holds ONLY while: (a) NO state-changing GET routes exist; (b) only `express.json()` is mounted — no urlencoded/multipart parser on mutating routes; (c) NO method-override middleware. If a future route violates any of these three conditions, SameSite=Lax becomes the only remaining defense (documented ~2-minute top-level-navigation-POST hole). Such a route MUST add an explicit CSRF token. `JWT_SECRET` and `REFRESH_TOKEN_SECRET` are **retired** (the boot validator warns if they appear in `.env`). There is no JWT signing secret.
 - Docker hot reload for the backend uses `tsx watch` (the `dev` script is `prisma generate && tsx watch` — see the Prisma-client-drift gotcha below). `tsx` is a backend devDependency — the production image runs the bundled `dist/index.js` via plain `node` and ships no TS runner. The backend `build` script is `tsup`, which inlines `story-editor-shared` into the bundle; there is no `shared/dist` and nothing resolves a `story-editor-shared` specifier at prod runtime
 - **Dev-container Prisma client drift.** The dev compose keeps `node_modules` in anonymous volumes, so a host-side `npx prisma generate` (or a host-run migration) never reaches the *running* container's generated client. After a schema migration this leaves the container on a stale client and every affected write 500s with `Unknown argument …` until it's regenerated — and the close-gate `verify` runs on the **host**, so it won't catch this. Self-healed: the backend `dev` script runs `prisma generate` on every start, and `make migrate` restarts the backend afterward. After any migration, restart the backend (`docker compose restart backend` or `make dev`) to refresh the client; never hand-edit the generated client
 - BYOK Venice key: only `venice-key.service` (store / validate / get — via `content-crypto.service`'s `encryptWithDek`/`decryptWithDek`) and `lib/venice.ts` (per-user client) touch the plaintext key, and only within the lifetime of a single request. Never log it, never echo it, never serialize it to an error object

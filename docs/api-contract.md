@@ -6,10 +6,12 @@ All endpoints are served from the Express backend at `/api`. Content type is `ap
 
 ## Conventions
 
-- **Auth** — unless marked "Public", every endpoint requires the auth middleware and is scoped to `req.user.id`. Protected endpoints expect `Authorization: Bearer <JWT>`. The refresh-token cookie (`refreshToken`, `HttpOnly; SameSite=Lax; Path=/api/auth; Secure` in prod, `Max-Age` = 7 days) is read only by the `/api/auth/*` routes.
+- **Auth** — unless marked "Public", every endpoint requires the auth middleware and is scoped to `req.user.id`. Protected endpoints expect an opaque httpOnly **session cookie** (`__Host-session` in production, `session` in development) sent automatically by the browser (`credentials: 'include'`). There is no access token or `Authorization` header.
+- **401 codes** — two distinct codes: `unauthorized` (no cookie / session unknown to the store) vs `session_expired` (cookie present, but the session was evicted or the server restarted). Both are terminal — there is no automatic refresh. The frontend shows a "session expired" banner on `session_expired` before redirecting to login.
+- **CSRF** — every mutating request (`POST`/`PUT`/`PATCH`/`DELETE`) to any `/api` route must carry an `Origin` header matching the configured `FRONTEND_URL` (or a `Referer` starting with that origin followed by `/`). A mismatch returns `403 { error: { code: "csrf_block" } }`. GET/HEAD/OPTIONS are exempt. Browsers send `Origin` automatically; non-browser clients (curl, scripts) must add it explicitly.
 - **Ownership** — every route referencing a `:storyId`, `:chapterId`, `:characterId`, `:outlineItemId`, `:chatId`, or `:messageId` passes through the ownership middleware. Unknown id and id-owned-by-another-user both collapse to `403 { error: { message, code: "forbidden" } }` (no enumeration oracle). A nested resource owned by the caller but under a different `:storyId` than the URL returns `404 { error: { code: "not_found" } }`.
 - **Validation** — request bodies are Zod-validated; invalid payloads return `400 { error: { message, code: "validation_error", issues } }` (`issues` is a `{ path, message }[]`).
-- **Errors** — the global handler returns `{ error: { message, code } }`, with `err.stack` included only when `NODE_ENV !== 'production'`. Common non-Venice codes: `unauthorized`, `session_expired`, `invalid_credentials`, `invalid_refresh`, `username_unavailable`, `forbidden`, `not_found`, `validation_error`, `account_rate_limited`, `internal_error`. **Venice-specific codes are catalogued in [venice-integration.md](./venice-integration.md#error-catalog).**
+- **Errors** — the global handler returns `{ error: { message, code } }`, with `err.stack` included only when `NODE_ENV !== 'production'`. Common non-Venice codes: `unauthorized`, `session_expired`, `csrf_block`, `invalid_credentials`, `username_unavailable`, `forbidden`, `not_found`, `validation_error`, `account_rate_limited`, `internal_error`. **Venice-specific codes are catalogued in [venice-integration.md](./venice-integration.md#error-catalog).**
 - **Narrative fields** — responses for Story, Chapter, Character, OutlineItem, Chat, Message never include ciphertext columns (`*Ciphertext`/`*Iv`/`*AuthTag`). The repo decrypts and the `serialize*` layer builds the wire shape (also dropping `userId`/`chatId` and converting timestamps to ISO).
 - **Secrets** — `passwordHash` and the `User` at-rest secret columns (DEK wraps, `veniceApiKeyEnc`) are never returned. The decrypted Venice key is never returned — `{ hasKey, lastSix, endpoint }` is the only read surface.
 
@@ -25,22 +27,18 @@ Errors: `409 { code: "username_unavailable" }` (timing-equalised), `400 validati
 
 ### `POST /login` — Public
 Body: `{ "username", "password" }`.
-Response `200`: `{ "user", "accessToken", "accessTokenExpiresAt" }` + sets the refresh cookie.
+Response `200`: `{ "user" }` + sets the session cookie (`__Host-session` in production, `session` in development).
 Errors: `401 { code: "invalid_credentials" }` — identical body + timing for unknown-user vs wrong-password.
 
-### `POST /refresh` — Public (reads cookie)
-Rotates the refresh token in a single transaction. Response `200`: `{ "user", "accessToken", "accessTokenExpiresAt" }` + a new refresh cookie.
-Errors: `401 { code: "invalid_refresh" }` (clears the cookie).
-
-### `POST /logout` — reads cookie
-Deletes the presented refresh-token row and clears the cookie. Response `204`.
+### `POST /logout` — Public (reads cookie)
+Deletes the session from the store and clears the session cookie. Response `204`.
 
 ### `POST /reset-password` — Public (rate-limited per-IP + per-username)
 Body: `{ "username", "recoveryCode", "newPassword" }`. Resets the password using the recovery code (the only path that can re-wrap the DEK without the old password).
 Response `204`. Errors: `401 { code: "invalid_credentials" }` (masks unknown-user vs wrong-code).
 
 ### `POST /change-password` — auth (rate-limited)
-Body: `{ "oldPassword", "newPassword" }`. Re-wraps the password copy of the DEK; narrative ciphertext is untouched. Outstanding refresh tokens are invalidated server-side. Response `204`.
+Body: `{ "oldPassword", "newPassword" }`. Re-wraps the password copy of the DEK; narrative ciphertext is untouched. All other sessions (other devices) are invalidated server-side; the caller's session cookie is refreshed. Response `204` + fresh Set-Cookie.
 
 ### `POST /update-profile` — auth (rate-limited)
 Body: `{ "name" }`. Response `200`: `{ "user" }` (same shape as `GET /me`).
@@ -50,7 +48,7 @@ Body: `{ "password" }`. Re-wraps the recovery copy of the DEK under a fresh code
 Response `200`: `{ "recoveryCode", "warning": "Save this recovery code now — it will not be shown again." }`.
 
 ### `POST /sign-out-everywhere` — auth (rate-limited)
-Revokes all of the user's sessions/refresh tokens. Response `204` + clears the cookie.
+Revokes all of the user's sessions. Response `204` + clears the cookie.
 
 ### `DELETE /delete-account` — auth (rate-limited)
 Body: `{ "password" }`. Cascades all user-owned data. Response `204` + clears the cookie.
