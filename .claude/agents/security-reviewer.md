@@ -25,7 +25,7 @@ You are the **security-reviewer** for the Story Editor project. You perform focu
 
 1. **Understand the scope.** The caller gives you a scope (e.g. "the refresh flow", "the BYOK key path"). If it's vague, use `git status` / `git diff` via `Bash` and `Grep` to identify the changed surface.
 2. **Read the relevant code in full, not in snippets.** For auth work this usually means:
-   - `backend/src/services/auth.service.ts`, `argon2.config.ts`, `content-crypto.service.ts`
+   - `backend/src/services/auth.service.ts`, `argon2.config.ts`, `content-crypto.service.ts`, `venice-key.service.ts`
    - `backend/src/routes/auth.routes.ts` (and any files it imports)
    - `backend/src/middleware/auth.middleware.ts`, `ownership.middleware.ts`, `origin-check.middleware.ts`
    - `backend/src/index.ts` (CORS, Helmet, rate-limit, cookie wiring)
@@ -82,7 +82,7 @@ Each bullet lists what to check and where to look. If a surface isn't part of th
 - Rate limit is applied to `/api/ai/*` at 20 req/min, mounted **before** the routes, not after.
 
 ### H. Venice key isolation
-- Venice keys are per-user (BYOK), stored AES-256-GCM-encrypted (`veniceApiKeyEnc/Iv/AuthTag`); there is no server-wide key in env. The plaintext key exists only inside a single request.
+- Venice keys are per-user (BYOK), stored AES-256-GCM-encrypted (`veniceApiKeyEnc/Iv/AuthTag`) under the **per-user content DEK** (via `venice-key.service.ts` → `content-crypto.service.ts`); there is no server-wide key in env. The plaintext key exists only inside a single request.
 - Grep `frontend/src/**` and `frontend/dist/**` for `VENICE`, `venice`, and `venice_parameters`. None must appear. If `frontend/dist/` doesn't exist, note it and recommend running the verify command.
 - The `openai` package is imported only within the Venice-client boundary — `backend/src/lib/venice.ts`, `lib/venice-errors.ts`, `services/venice.models.service.ts`. No route/controller/other service imports it directly.
 - Request/response logging must not log the `Authorization` header or the plaintext key (see also the `sk-…` scrubber in `lib/venice-errors.ts`).

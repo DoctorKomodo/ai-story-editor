@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import type OpenAI from 'openai';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -5,6 +6,8 @@ import {
   mapModel,
   UnknownModelError,
 } from '../../src/services/venice.models.service';
+
+const DEK = crypto.randomBytes(32);
 
 // Shape of a Venice /v1/models entry. The `openai` SDK types its response as
 // `{ id, object, created, owned_by }`, but Venice tunnels its capabilities +
@@ -122,7 +125,7 @@ describe('venice.models.service [V2]', () => {
         getClient: async () => client,
       });
 
-      const models = await svc.fetchModels('user-1');
+      const models = await svc.fetchModels(DEK, 'user-1');
 
       expect(spy).toHaveBeenCalledTimes(1);
       expect(models).toEqual([
@@ -175,7 +178,7 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([WEB_SEARCH]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.id).toBe('llama-web-search');
       expect(only.supportsWebSearch).toBe(true);
     });
@@ -184,7 +187,7 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([RESPONSE_SCHEMA]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.id).toBe('llama-response-schema');
       expect(only.supportsResponseSchema).toBe(true);
     });
@@ -198,7 +201,7 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([bare]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.id).toBe('bare-text');
       expect(only.name).toBe('bare-text');
       expect(only.contextLength).toBe(0);
@@ -223,7 +226,7 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([halfPriced]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.pricing).toBeNull();
     });
 
@@ -244,7 +247,7 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([bad]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.pricing).toBeNull();
     });
 
@@ -258,7 +261,7 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([blank]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.description).toBeNull();
     });
 
@@ -270,11 +273,11 @@ describe('venice.models.service [V2]', () => {
         now: () => current,
       });
 
-      await svc.fetchModels('user-1');
+      await svc.fetchModels(DEK, 'user-1');
       current += 9 * 60 * 1000; // 9 min later
-      await svc.fetchModels('user-1');
+      await svc.fetchModels(DEK, 'user-1');
       current += 59 * 1000; // 9:59 total
-      await svc.fetchModels('user-1');
+      await svc.fetchModels(DEK, 'user-1');
 
       expect(spy).toHaveBeenCalledTimes(1);
     });
@@ -287,9 +290,9 @@ describe('venice.models.service [V2]', () => {
         now: () => current,
       });
 
-      await svc.fetchModels('user-1');
+      await svc.fetchModels(DEK, 'user-1');
       current += 10 * 60 * 1000 + 1;
-      await svc.fetchModels('user-1');
+      await svc.fetchModels(DEK, 'user-1');
 
       expect(spy).toHaveBeenCalledTimes(2);
     });
@@ -298,8 +301,8 @@ describe('venice.models.service [V2]', () => {
       const { spy, client } = makeListStub([LLAMA]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      await svc.fetchModels('user-a');
-      await svc.fetchModels('user-b');
+      await svc.fetchModels(DEK, 'user-a');
+      await svc.fetchModels(DEK, 'user-b');
 
       expect(spy).toHaveBeenCalledTimes(2);
     });
@@ -310,7 +313,7 @@ describe('venice.models.service [V2]', () => {
       const { client } = makeListStub([LLAMA, QWEN_REASONING]);
       const svc = createVeniceModelsService({ getClient: async () => client });
 
-      await svc.fetchModels('user-1');
+      await svc.fetchModels(DEK, 'user-1');
 
       expect(svc.getModelContextLength('llama-3.3-70b', 'user-1')).toBe(65536);
       expect(svc.getModelContextLength('qwen-qwq-32b', 'user-1')).toBe(32768);
@@ -343,7 +346,7 @@ describe('venice.models.service [V2]', () => {
       };
       const { client } = makeListStub([m]);
       const svc = createVeniceModelsService({ getClient: async () => client });
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.maxCompletionTokens).toBe(8192);
     });
 
@@ -360,7 +363,7 @@ describe('venice.models.service [V2]', () => {
       };
       const { client } = makeListStub([m]);
       const svc = createVeniceModelsService({ getClient: async () => client });
-      const [only] = await svc.fetchModels('user-1');
+      const [only] = await svc.fetchModels(DEK, 'user-1');
       expect(only.maxCompletionTokens).toBe(4096);
       expect(warnSpy).toHaveBeenCalledTimes(1);
       expect(warnSpy.mock.calls[0]?.[0]).toContain('no-cap');
@@ -390,7 +393,7 @@ describe('venice.models.service [V2]', () => {
       };
       const { client } = makeListStub([zero, neg]);
       const svc = createVeniceModelsService({ getClient: async () => client });
-      const models = await svc.fetchModels('user-1');
+      const models = await svc.fetchModels(DEK, 'user-1');
       expect(models[0]?.maxCompletionTokens).toBe(4096);
       expect(models[1]?.maxCompletionTokens).toBe(4096);
       expect(warnSpy).toHaveBeenCalledTimes(2);
@@ -409,7 +412,7 @@ describe('venice.models.service [V2]', () => {
       };
       const { client } = makeListStub([m]);
       const svc = createVeniceModelsService({ getClient: async () => client });
-      await svc.fetchModels('user-1');
+      await svc.fetchModels(DEK, 'user-1');
       expect(svc.getModelMaxCompletionTokens('has-cap-2', 'user-1')).toBe(16384);
       expect(() => svc.getModelMaxCompletionTokens('nope', 'user-1')).toThrow(UnknownModelError);
     });

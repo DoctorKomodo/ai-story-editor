@@ -26,7 +26,6 @@ import {
 import { z } from 'zod';
 import { respond } from '../lib/respond';
 import { serializeChat, serializeMessage } from '../lib/serialize';
-import { getVeniceClient } from '../lib/venice';
 import { projectVeniceCitations } from '../lib/venice-citations';
 import {
   logVeniceErrorDev,
@@ -41,6 +40,7 @@ import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
+import { getDekFromRequest } from '../services/content-crypto.service';
 import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
@@ -52,6 +52,7 @@ import {
   resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../services/venice-call.service';
+import { veniceKeyService } from '../services/venice-key.service';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
@@ -303,7 +304,7 @@ export function createChatMessagesRouter() {
         }
 
         // ── 2. Prime models cache (throws NoVeniceKeyError if no BYOK) ────────
-        await veniceModelsService.fetchModels(userId);
+        await veniceModelsService.fetchModels(getDekFromRequest(req), userId);
         const modelContextLength = veniceModelsService.getModelContextLength(body.modelId, userId);
 
         // ── 3. Load user settings ─────────────────────────────────────────────
@@ -435,7 +436,7 @@ export function createChatMessagesRouter() {
         }
 
         // ── 9b. Get Venice client + enrich params ─────────────────────────────
-        const client = await getVeniceClient(userId);
+        const client = await veniceKeyService.getClient(getDekFromRequest(req), userId);
 
         const modelInfo = veniceModelsService.findModel(body.modelId, userId);
         const venice_parameters = buildVeniceParams({

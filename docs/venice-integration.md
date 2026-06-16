@@ -8,7 +8,7 @@ This doc covers: client construction, the `venice_parameters` we set and why, pr
 
 ## Client Setup
 
-The `openai` client is constructed **per user, per request**. There is no server-wide Venice key; each user supplies their own (BYOK) and it's stored AES-256-GCM encrypted at rest, decrypted only for the lifetime of a request.
+The `openai` client is constructed **per user, per request**. There is no server-wide Venice key; each user supplies their own (BYOK) and it's stored AES-256-GCM encrypted at rest under the **per-user content DEK** (via `venice-key.service.ts` → `content-crypto.service.ts`), decrypted only for the lifetime of a request.
 
 ```ts
 // backend/src/lib/venice.ts

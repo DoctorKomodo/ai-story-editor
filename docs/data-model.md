@@ -26,7 +26,7 @@ erDiagram
         string  name "nullable"
         string  passwordHash "argon2id"
         json    settingsJson "nullable JSONB — theme / prose / writing (incl. dailyWordGoal) / chat / ai / prompts"
-        string  veniceApiKey "BYOK — encrypted triple (Enc/Iv/AuthTag), nullable"
+        string  veniceApiKey "BYOK — AES-256-GCM under the per-user content DEK (Enc/Iv/AuthTag), nullable"
         string  veniceEndpoint "nullable — default https://api.venice.ai/api/v1"
         string  contentDekPassword "DEK wrap, argon2id(password) — Enc/Iv/AuthTag/Salt, nullable"
         string  contentDekRecovery "DEK wrap, argon2id(recovery code) — Enc/Iv/AuthTag/Salt, nullable"
@@ -177,4 +177,4 @@ erDiagram
 
 ## Encryption at rest
 
-Every narrative text field exists **only** as a ciphertext triple (`<field>Ciphertext` / `<field>Iv` / `<field>AuthTag`); there is no plaintext mirror. The full per-field column list, the per-user DEK envelope model (two argon2id wraps on `User`, no server-held KEK for content), and the recovery-code path live in [encryption.md](./encryption.md). The repo layer (`backend/src/repos/*.repo.ts`) is the only code that reads or writes these columns — every read decrypts, every write encrypts, and the API surface never sees ciphertext ([repo-boundary.md](./agent-rules/repo-boundary.md)). `APP_ENCRYPTION_KEY` protects the BYOK Venice keys only and has no authority over narrative content.
+Every narrative text field exists **only** as a ciphertext triple (`<field>Ciphertext` / `<field>Iv` / `<field>AuthTag`); there is no plaintext mirror. The full per-field column list, the per-user DEK envelope model (two argon2id wraps on `User`, no server-held KEK for content), and the recovery-code path live in [encryption.md](./encryption.md). The repo layer (`backend/src/repos/*.repo.ts`) is the only code that reads or writes narrative ciphertext columns — every read decrypts, every write encrypts, and the API surface never sees ciphertext ([repo-boundary.md](./agent-rules/repo-boundary.md)). There is no server-held encryption key: the BYOK Venice key (`User.veniceApiKey*`) is now wrapped by the **per-user content DEK** (via `content-crypto.service.ts` in `venice-key.service.ts`), the same envelope that protects narrative content.

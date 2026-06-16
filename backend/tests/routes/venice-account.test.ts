@@ -15,7 +15,7 @@ import { app, globalErrorHandler } from '../../src/index';
 import { createAuthRouter } from '../../src/routes/auth.routes';
 import { createVeniceAccountRouter } from '../../src/routes/venice-account.routes';
 import { createVeniceKeyRouter } from '../../src/routes/venice-key.routes';
-import * as cryptoService from '../../src/services/crypto.service';
+import * as contentCrypto from '../../src/services/content-crypto.service';
 import { DEFAULT_VENICE_ENDPOINT } from '../../src/services/venice-key.service';
 import { prisma } from '../setup';
 
@@ -354,7 +354,7 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 1, diem: 1 }));
 
-    const decryptSpy = vi.spyOn(cryptoService, 'decrypt');
+    const decryptSpy = vi.spyOn(contentCrypto, 'decryptWithDek');
     const beforeCount = decryptSpy.mock.calls.length;
 
     await request(app)

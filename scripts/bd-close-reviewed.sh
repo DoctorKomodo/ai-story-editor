@@ -135,7 +135,7 @@ case "$PHASE" in
     fired=""
 
     # security-reviewer: auth/crypto/middleware surface
-    if echo "$diff_files" | grep -qE '^backend/src/(routes/auth|services/auth|services/crypto|services/content-crypto|middleware/)'; then
+    if echo "$diff_files" | grep -qE '^backend/src/(routes/auth|services/auth|services/content-crypto|middleware/)'; then
       fired="$fired security-reviewer"
     fi
     if echo "$diff_files" | grep -qE '^backend/src/routes/venice-key\.routes\.ts$'; then

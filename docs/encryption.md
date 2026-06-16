@@ -5,17 +5,17 @@ Design of record for Inkwell's narrative-content encryption. Referenced by every
 Related files:
 - [docs/data-model.md](./data-model.md) — schema; this doc describes what gets encrypted and how.
 - [backend/src/services/argon2.config.ts](../backend/src/services/argon2.config.ts) — single source of truth for argon2id parameters.
-- [backend/src/services/crypto.service.ts](../backend/src/services/crypto.service.ts) — AES-256-GCM primitive.
-- [backend/src/services/content-crypto.service.ts](../backend/src/services/content-crypto.service.ts) — DEK lifecycle (lands in [E3]).
+- [backend/src/services/content-crypto.service.ts](../backend/src/services/content-crypto.service.ts) — DEK lifecycle (lands in [E3]); also the encrypt/decrypt site for the BYOK Venice key (via `encryptWithDek` / `decryptWithDek`).
+- [backend/src/services/venice-key.service.ts](../backend/src/services/venice-key.service.ts) — the single load + decrypt / validate + encrypt site for the BYOK Venice key.
 
 ---
 
 ## Goals
 
 1. A stolen database dump, on its own, reveals **only** structural metadata (order indices, word counts, timestamps, foreign-key ids, user IDs, status flags, genre, target word count). No narrative content, no BYOK Venice keys.
-2. A stolen database **plus** the application host's `APP_ENCRYPTION_KEY` reveals stored BYOK Venice keys but **not** narrative content. Content DEKs are not recoverable from server state alone.
-3. Narrative content is disclosed only if an attacker additionally compromises the user's **password** (via phishing, keylogger, credential reuse, client-side malware) **or** their one-time **recovery code**. Without one of those two user-held secrets, the server cannot decrypt the user's content — **by design, even for the operator running the box**.
-4. Losing `APP_ENCRYPTION_KEY` loses all stored Venice keys. Losing both the password and the recovery code for a user loses that user's narrative content, permanently. These are accepted trade-offs, not bugs.
+2. A stolen database dump **plus** an env/`.env` file leak reveals **nothing more than the dump alone** — there is no server-held encryption key that wraps Venice keys or content. The env no longer contains an encryption secret that would unlock stored keys.
+3. Narrative content is disclosed only if an attacker additionally compromises the user's **password** (via phishing, keylogger, credential reuse, client-side malware) **or** their one-time **recovery code**. Without one of those two user-held secrets, the server cannot decrypt the user's **content or their stored BYOK Venice key** — **by design, even for the operator running the box**.
+4. The BYOK Venice key is now wrapped by the **per-user content DEK** (same envelope as narrative content), so losing a server-side env secret no longer loses Venice keys. Losing both the password and the recovery code for a user loses that user's narrative content **and** their stored Venice key, permanently. These are accepted trade-offs, not bugs.
 
 ## Non-goals
 
@@ -52,7 +52,9 @@ contentDekRecoveryAuthTag  base64  — 16-byte GCM tag for the recovery wrap
 contentDekRecoverySalt     base64  — 16-byte salt used to derive the recovery-wrap key
 ```
 
-**There is no third wrap, and no `contentDekEnc` column that would be wrapped by a server-held KEK.** The app host holds `APP_ENCRYPTION_KEY`, but that key protects **BYOK Venice API keys only** ([AU11]–[AU13]). It has no authority over content. This is the main property that distinguishes "DB dump + env leak" from "DB dump + env leak + user credential compromise" in the threat table.
+**There is no third wrap, and no `contentDekEnc` column that would be wrapped by a server-held KEK.** There is no server-held encryption key for content. This is the main property that distinguishes "DB dump + env leak" from "DB dump + user credential compromise" in the threat table.
+
+**The BYOK Venice key** (`User.veniceApiKey*` columns) is also wrapped by the per-user content DEK — specifically via `content-crypto.service.ts`'s `encryptWithDek` / `decryptWithDek` in `venice-key.service.ts`. It is therefore protected by exactly the same envelope as narrative content: a DB dump alone cannot reveal it; the attacker also needs the user's password or recovery code. A server-side env leak reveals nothing about stored Venice keys.
 
 ---
 
@@ -267,24 +269,24 @@ These must never appear in logs, error objects, telemetry, crash dumps, or HTTP 
 
 | Attacker has... | Structural metadata | BYOK Venice keys | Narrative content | Login as user | Rotate user's recovery code |
 |---|---|---|---|---|---|
-| DB dump only | ✅ revealed | ❌ (wrapped by `APP_ENCRYPTION_KEY`) | ❌ (wrapped by password + recovery code) | ❌ (argon2id hash resistance) | ❌ |
-| DB dump + `APP_ENCRYPTION_KEY` (env leak) | ✅ revealed | ✅ **revealed** | ❌ (wrapped by password + recovery code — no server KEK over content) | ❌ | ❌ |
-| DB dump + user's **password** (phishing etc.) | ✅ revealed | ❌ (still need `APP_ENCRYPTION_KEY`) | ✅ **revealed** (unwrap password wrap) | ✅ | ✅ |
-| DB dump + user's **recovery code** | ✅ revealed | ❌ | ✅ **revealed** (unwrap recovery wrap) | ❌ directly, but ✅ indirectly (call `POST /api/auth/reset-password` to set a new password) | ❌ (reset-password doesn't rotate the recovery wrap) |
-| DB dump + user's password + user's recovery code | ✅ revealed | ❌ | ✅ revealed | ✅ | ✅ |
-| DB dump + `APP_ENCRYPTION_KEY` + user's password | ✅ revealed | ✅ revealed | ✅ revealed | ✅ | ✅ |
-| **Live process memory** of the running backend (RCE, coredump, debugger) while user is logged in | ✅ revealed | ✅ revealed (if the user makes an AI call in that window) | ✅ revealed (DEK sits in the session map; can also read `APP_ENCRYPTION_KEY` from memory) | ✅ (can forge JWTs with the in-memory `JWT_SECRET`) | ✅ |
+| DB dump only | ✅ revealed | ❌ (wrapped by the per-user DEK — same envelope as narrative content) | ❌ (wrapped by password + recovery code) | ❌ (argon2id hash resistance) | ❌ |
+| DB dump + env/`.env` leak (no server encryption key exists) | ✅ revealed | ❌ (no server key wraps Venice keys — env leak adds nothing) | ❌ (no server KEK over content — same as DB dump alone) | ❌ | ❌ |
+| DB dump + user's **password** (phishing etc.) | ✅ revealed | ✅ **revealed** (Venice key is under the per-user DEK, unwrapped via the password wrap) | ✅ **revealed** (unwrap password wrap) | ✅ | ✅ |
+| DB dump + user's **recovery code** | ✅ revealed | ✅ **revealed** (Venice key is under the per-user DEK, unwrapped via the recovery wrap) | ✅ **revealed** (unwrap recovery wrap) | ❌ directly, but ✅ indirectly (call `POST /api/auth/reset-password` to set a new password) | ❌ (reset-password doesn't rotate the recovery wrap) |
+| DB dump + user's password + user's recovery code | ✅ revealed | ✅ revealed | ✅ revealed | ✅ | ✅ |
+| **Live process memory** of the running backend (RCE, coredump, debugger) while user is logged in | ✅ revealed | ✅ revealed (if the user makes an AI call in that window — plaintext key lives in a single request) | ✅ revealed (DEK sits in the session map) | ✅ (can forge JWTs with the in-memory `JWT_SECRET`) | ✅ |
 | Network sniff of the reverse-proxy → backend hop (if that hop is plaintext HTTP) | Via request bodies over time — leaks narrative content being sent in PATCHes, not just metadata | ❌ directly; ✅ when user uploads key via `PUT /api/users/me/venice-key` | ✅ via request/response bodies; but the DEK itself **does not cross the wire** | ✅ (capture a JWT) | ✅ (capture a `POST /api/auth/rotate-recovery-code` body) |
 
 Key cells worth calling out:
 
-- **"DB dump + `APP_ENCRYPTION_KEY`" does not reveal narrative content.** This is the central property. It's what justifies the extra complexity of the double-wrap scheme over the obvious "single server-held KEK" design. If you're tempted to simplify by adding a server-held content KEK, you lose this row.
-- **Live process memory compromise reveals everything.** The DEK of every currently-logged-in user sits in the session map; `APP_ENCRYPTION_KEY` and `JWT_SECRET` are in env. This is the "anyone with root on the box" ceiling. We don't try to defend below it — the user experience is "the operator can see your stuff *while you're using it*, but not when you're logged out, and not from a backup."
+- **"DB dump + env leak" does not reveal the BYOK Venice key or narrative content.** There is no server-held encryption key. The env leak row is now equivalent to the DB-dump-alone row — adding the env to the attacker's haul adds nothing. This is a stronger guarantee than the previous design (where `APP_ENCRYPTION_KEY` in env revealed all stored Venice keys).
+- **"DB dump + user's password" now reveals the Venice key** — because the Venice key is now wrapped by the same per-user DEK as narrative content. This is a deliberate trade-off: the Venice key's protection now matches narrative content's protection exactly. Previously, a password alone was not enough to recover the Venice key (you also needed `APP_ENCRYPTION_KEY`).
+- **Live process memory compromise reveals everything.** The DEK of every currently-logged-in user sits in the session map; `JWT_SECRET` is in env. This is the "anyone with root on the box" ceiling. We don't try to defend below it — the user experience is "the operator can see your stuff *while you're using it*, but not when you're logged out, and not from a backup."
 - **Reverse-proxy → backend plaintext hop leaks narrative content via request bodies** regardless of at-rest scheme, because the frontend is sending plaintext to the backend (`PATCH /api/chapters/:id` with a TipTap JSON body). At-rest encryption doesn't help here; operators must terminate TLS as close to the backend as possible. The DEK itself never traverses the wire, even under this attack. Documented in `SELF_HOSTING.md`.
 
-### What `APP_ENCRYPTION_KEY` actually wraps
+### What `APP_ENCRYPTION_KEY` actually wraps — Removed
 
-Only BYOK Venice API keys, via `User.veniceApiKeyEnc/Iv/AuthTag`. It has no authority over content. Losing it loses stored Venice keys — users must re-enter their keys once on next login. It does **not** render narrative content unrecoverable.
+`APP_ENCRYPTION_KEY` no longer exists. It was removed in [story-editor-nst]. The BYOK Venice key (`User.veniceApiKey*` columns) is now wrapped by the **per-user content DEK** via `content-crypto.service.ts` (`encryptWithDek` / `decryptWithDek`), the same envelope that protects narrative content. There is no server-held encryption key.
 
 ### What happens when the user loses the password
 
@@ -296,7 +298,7 @@ Password still works → the user should log in and call `POST /api/auth/rotate-
 
 ### What happens when the user loses both
 
-**Narrative content for that user is irrecoverable.** The server has no decryption path. This is documented prominently in the signup flow UX and in `SELF_HOSTING.md` ([E15]). Users are strongly advised to store the recovery code out-of-band (printed, password manager, offline USB).
+**Narrative content for that user is irrecoverable — and so is their stored BYOK Venice key.** Both are protected by the same per-user DEK; the server has no decryption path for either. This is documented prominently in the signup flow UX and in `SELF_HOSTING.md` ([E15]). Users are strongly advised to store the recovery code out-of-band (printed, password manager, offline USB).
 
 ---
 
@@ -324,9 +326,9 @@ If the following requirements appear, this design needs to be revisited — don'
 **Why the current design blocks it:** the DEK is unwrappable only from the password or recovery code, neither of which the server has when the user is logged out.
 
 **Migration path:**
-1. Add a third wrap column group on `User`: `contentDekServerEnc/Iv/AuthTag` — AES-GCM ciphertext of the DEK wrapped by a key derived from `APP_ENCRYPTION_KEY` (no salt needed; the env key is already 32 bytes).
+1. Introduce a new server-held env key (e.g. `APP_OFFLINE_KEY` — do **not** reuse the retired `APP_ENCRYPTION_KEY` name). Add a third wrap column group on `User`: `contentDekServerEnc/Iv/AuthTag` — AES-GCM ciphertext of the DEK wrapped by a key derived from `APP_OFFLINE_KEY`.
 2. For every existing user: on their next login, the server holds a plaintext DEK — it rewraps under the server key and writes the third wrap, atomically. Users who never log back in keep only password + recovery wraps (no regression).
-3. Update the threat-model table: the "DB dump + `APP_ENCRYPTION_KEY`" row **now reveals narrative content**. This is the cost.
+3. Update the threat-model table: a new "DB dump + `APP_OFFLINE_KEY` (env leak)" row **now reveals narrative content**. This is the cost.
 4. Document the new capability and its trade-off in this file; update `SELF_HOSTING.md`.
 
 This is a schema migration, not a rotation. It cannot be applied without user consent (effectively): the only way to avoid silently weakening the threat model for existing users is to make the third-wrap column nullable and only populate it for users who opt in or who log in after the change. Decide the default before rolling.
@@ -345,7 +347,7 @@ These are out of scope. Shared-story collaboration in particular would require e
 
 ### 5. Hardware-backed key material (HSM, Secure Enclave, TPM)
 
-Outside the self-hosted single-container target. If we add a managed-hosting tier, revisit — `APP_ENCRYPTION_KEY` is a natural candidate to move behind an HSM, at which point the threat-model rows involving env leak soften considerably.
+Outside the self-hosted single-container target. If we add a managed-hosting tier and re-introduce a server-held encryption key (see Revisit #1), that key is a natural candidate to move behind an HSM, at which point the threat-model rows involving an env leak of that key soften considerably.
 
 ---
 
@@ -358,3 +360,4 @@ The auth and crypto scheme was finalized before the app reached real users, so n
 - **2026-04-22** — Initial document. Option B (server-side session + in-memory DEK cache) chosen. [E1].
 - **2026-04-22** — Noted pre-deployment migration-handling posture: no scaffolded migration branches in AU15/AU16; [X10] tracks revisiting other speculative migration paths.
 - **2026-04-24** — [X10] retired: every speculative legacy branch deleted (bcrypt verify path, needsRehash upgrade, login lazy-wrap, optional sessionId, `_narrative.ts` plaintext fallback, `message.repo` JSON-parse fallback). `bcryptjs` + `@types/bcryptjs` dropped from deps. sessionId is now required on all tokens.
+- **2026-06-15** — [story-editor-nst] `APP_ENCRYPTION_KEY` retired. The BYOK Venice key is now encrypted under the **per-user content DEK** (via `content-crypto.service.ts` `encryptWithDek`/`decryptWithDek` in `venice-key.service.ts`). `crypto.service.ts` (the AES-256-GCM primitive keyed by `APP_ENCRYPTION_KEY`) is deleted. There is no longer a server-held encryption env secret. Goals updated: Goal 2 now reflects that env leak adds nothing beyond the DB dump alone; Goal 4 updated to reflect that losing both password and recovery code now also loses the Venice key. Threat model table updated accordingly — "DB dump + password" and "DB dump + recovery code" rows now show Venice keys as ✅ recoverable with the same credential that recovers narrative content.

@@ -1,7 +1,6 @@
 import { type NextFunction, type Request, type Response, Router } from 'express';
 import { toCharacterPromptInput } from 'story-editor-shared';
 import { z } from 'zod';
-import { getVeniceClient } from '../lib/venice';
 import {
   logVeniceErrorDev,
   mapVeniceError,
@@ -13,6 +12,7 @@ import { validateBody } from '../middleware/validate';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
 import { createStoryRepo } from '../repos/story.repo';
+import { getDekFromRequest } from '../services/content-crypto.service';
 import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
@@ -24,6 +24,7 @@ import {
   resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../services/venice-call.service';
+import { veniceKeyService } from '../services/venice-key.service';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -50,11 +51,11 @@ export function createAiRouter() {
   // [V1] GET /api/ai/models — list text models the caller's BYOK key can see,
   // returned as the full `ModelInfo` shape (no projection; see venice.models.service.ts).
   // Cached in-memory for 10 minutes by the models service. A missing key
-  // surfaces as NoVeniceKeyError from getVeniceClient, which the global error
+  // surfaces as NoVeniceKeyError from veniceKeyService.getClient, which the global error
   // handler maps to 409 { error: "venice_key_required" }.
   router.get('/models', async (req: Request, res: Response, next: NextFunction) => {
     try {
-      const models = await veniceModelsService.fetchModels(req.user!.id);
+      const models = await veniceModelsService.fetchModels(getDekFromRequest(req), req.user!.id);
       res.status(200).json({ models });
     } catch (err) {
       if (mapVeniceError(err, res, { userId: req.user!.id, route: 'ai-models' })) return;
@@ -79,7 +80,7 @@ export function createAiRouter() {
         // without leaking whether the story/chapter exists (per spec: step 6
         // runs "first"). Also throws UnknownModelError when modelId isn't in
         // Venice's list → propagates as 500 (V11 will refine later).
-        await veniceModelsService.fetchModels(userId);
+        await veniceModelsService.fetchModels(getDekFromRequest(req), userId);
         const modelContextLength = veniceModelsService.getModelContextLength(body.modelId, userId);
 
         // ── 3. Load user settings (not a narrative entity — direct prisma ok) ──
@@ -169,7 +170,7 @@ export function createAiRouter() {
         });
 
         // ── 11. Get the Venice client ─────────────────────────────────────────
-        const client = await getVeniceClient(userId);
+        const client = await veniceKeyService.getClient(getDekFromRequest(req), userId);
 
         // ── 12. Call Venice with streaming ────────────────────────────────────
         // [V9] Use .withResponse() so we can read rate-limit headers from the

@@ -25,7 +25,7 @@ You are the **repo-boundary-reviewer** for the Story Editor project. You perform
 1. **Understand the scope.** The caller will give you a scope (e.g. "the repo layer", "the chapter repo changes on this branch", "a narrative-column migration"). If the scope is vague, use `git diff`/`git status` via `Bash` and `Grep` to identify the changed surface.
 2. **Read the relevant code in full, not in snippets.** Usually:
    - All six files in `backend/src/repos/` — `story.repo.ts`, `chapter.repo.ts`, `character.repo.ts`, `outline.repo.ts`, `chat.repo.ts`, `message.repo.ts`, plus any shared helpers in `_narrative.ts`.
-   - `backend/src/services/content-crypto.service.ts` (and `crypto.service.ts` where relevant).
+   - `backend/src/services/content-crypto.service.ts`.
    - `backend/src/routes/{stories,chapters,characters,outline,chat}.routes.ts` and any controllers/services that call into them.
    - `backend/src/services/prompt.service.ts` (reads chapter bodies — must go through the repo).
    - `backend/src/services/venice-call.service.ts`, `venice.models.service.ts`, and `backend/src/lib/venice.ts` if the diff touches the AI path.
@@ -99,7 +99,7 @@ Also check the session-store plumbing (`src/services/session-store.ts`, `src/mid
 Grep `console.*`, `logger.*`, `throw new Error(`, and error-construction sites inside:
 
 - `backend/src/repos/**`
-- `backend/src/services/content-crypto.service.ts`, `crypto.service.ts`, `venice-key.service.ts`, `prompt.service.ts`, `venice-call.service.ts`
+- `backend/src/services/content-crypto.service.ts`, `venice-key.service.ts`, `prompt.service.ts`, `venice-call.service.ts`
 - Any route handler for narrative entities
 
 Flag interpolation of plaintext field names: `${body}`, `${bodyJson}`, `${title}`, `${synopsis}`, `${worldNotes}`, `${systemPrompt}`, `${content}`, Character `${name}`/`${backstory}`/`${notes}`, OutlineItem `${sub}`, Message/Chat bodies, `${password}`, `${recoveryCode}`, `${apiKey}`, the raw Venice key.

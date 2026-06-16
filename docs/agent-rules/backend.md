@@ -200,10 +200,11 @@ Three steps, used by every CRUD route:
   unwraps DEKs **only into a request-scoped `WeakMap`** (keyed by the
   request object, populated by `requireAuth`). Module-level caching of
   unwrapped DEKs is a bug.
-- `APP_ENCRYPTION_KEY` is the only server-held encryption env secret.
-  It wraps **BYOK Venice keys only**. There is no
-  `CONTENT_ENCRYPTION_KEY`, and one must not be reintroduced — the
-  boot validator (`backend/src/boot/env-validation.ts`) warns if it
+- There is **no server-held encryption env secret**. `APP_ENCRYPTION_KEY`
+  has been retired: the BYOK Venice key is now wrapped by the per-user
+  content DEK (via `content-crypto.service.ts` in `venice-key.service.ts`).
+  There is no `CONTENT_ENCRYPTION_KEY`, and one must not be reintroduced —
+  the boot validator (`backend/src/boot/env-validation.ts`) warns if it
   is.
 
 ## Testing (backend lane)
@@ -238,9 +239,9 @@ Three steps, used by every CRUD route:
 
 - Server-wide Venice keys (any environment).
 - Plaintext Venice API keys, plaintext passwords, recovery codes,
-  content DEKs (wrapped or unwrapped), or `APP_ENCRYPTION_KEY` in
-  logs, error messages, response bodies, telemetry, or any other
-  sink — in **all** environments including dev and tests.
+  or content DEKs (wrapped or unwrapped) in logs, error messages,
+  response bodies, telemetry, or any other sink — in **all**
+  environments including dev and tests.
 - Decrypted narrative content in production logs, telemetry, or any
   response other than the owning user's own GET. (Dev-mode logging
   of decrypted content for prompt debugging is intentional and
