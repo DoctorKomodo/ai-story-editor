@@ -1,8 +1,8 @@
 // [B1] Integration tests for GET /api/stories and POST /api/stories.
 //
 // Covers:
-//   - GET /api/stories 401 without Bearer
-//   - POST /api/stories 401 without Bearer
+//   - GET /api/stories 401 without session
+//   - POST /api/stories 401 without session
 //   - POST /api/stories 400 on Zod failure (missing title)
 //   - POST /api/stories 201 returns decrypted narrative, no ciphertext fields
 //   - GET /api/stories returns only caller's stories (owner scoping)
@@ -10,49 +10,62 @@
 //   - GET /api/stories orders by updatedAt desc
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const TEST_ORIGIN = 'http://localhost:3000';
+
+interface TestSession {
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}
+
 async function registerAndLogin(
   username: string,
   password = 'story-route-pw',
   name = 'Story Route User',
-): Promise<string> {
-  await request(app).post('/api/auth/register').send({ name, username, password });
-  const login = await request(app).post('/api/auth/login').send({ username, password });
+): Promise<TestSession> {
+  const agent = request.agent(app);
+  await agent
+    .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
+    .send({ name, username, password });
+  const login = await agent
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
 
 async function resetAll(): Promise<void> {
+  _resetSessionStore();
   await prisma.message.deleteMany();
   await prisma.chat.deleteMany();
   await prisma.outlineItem.deleteMany();
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();
   await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
 }
 
@@ -71,23 +84,26 @@ describe('Stories routes [B1]', () => {
 
   // ── Auth gates ────────────────────────────────────────────────────────────
 
-  it('GET /api/stories returns 401 without Bearer', async () => {
+  it('GET /api/stories returns 401 without session', async () => {
     const res = await request(app).get('/api/stories');
     expect(res.status).toBe(401);
   });
 
-  it('POST /api/stories returns 401 without Bearer', async () => {
-    const res = await request(app).post('/api/stories').send({ title: 'Nope' });
+  it('POST /api/stories returns 401 without session', async () => {
+    const res = await request(app)
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Nope' });
     expect(res.status).toBe(401);
   });
 
   // ── POST validation ──────────────────────────────────────────────────────
 
   it('POST /api/stories returns 400 when title is missing', async () => {
-    const accessToken = await registerAndLogin('stories-zod-user');
-    const res = await request(app)
+    const { agent } = await registerAndLogin('stories-zod-user');
+    const res = await agent
       .post('/api/stories')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ synopsis: 'a tale with no title' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
@@ -95,11 +111,8 @@ describe('Stories routes [B1]', () => {
   });
 
   it('POST /api/stories returns 400 when title is empty', async () => {
-    const accessToken = await registerAndLogin('stories-empty-title-user');
-    const res = await request(app)
-      .post('/api/stories')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({ title: '' });
+    const { agent } = await registerAndLogin('stories-empty-title-user');
+    const res = await agent.post('/api/stories').set('Origin', TEST_ORIGIN).send({ title: '' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
@@ -107,17 +120,14 @@ describe('Stories routes [B1]', () => {
   // ── POST happy path ──────────────────────────────────────────────────────
 
   it('POST /api/stories returns 201 with decrypted fields and no ciphertext', async () => {
-    const accessToken = await registerAndLogin('stories-create-user');
-    const res = await request(app)
-      .post('/api/stories')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({
-        title: 'The First Draft',
-        synopsis: 'A writer meets a deadline.',
-        genre: 'literary',
-        worldNotes: 'Set in a quiet town.',
-        targetWords: 50000,
-      });
+    const { agent } = await registerAndLogin('stories-create-user');
+    const res = await agent.post('/api/stories').set('Origin', TEST_ORIGIN).send({
+      title: 'The First Draft',
+      synopsis: 'A writer meets a deadline.',
+      genre: 'literary',
+      worldNotes: 'Set in a quiet town.',
+      targetWords: 50000,
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.story).toBeDefined();
@@ -139,10 +149,10 @@ describe('Stories routes [B1]', () => {
   });
 
   it('POST /api/stories accepts minimal body (title only)', async () => {
-    const accessToken = await registerAndLogin('stories-minimal-user');
-    const res = await request(app)
+    const { agent } = await registerAndLogin('stories-minimal-user');
+    const res = await agent
       .post('/api/stories')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Just a Title' });
 
     expect(res.status).toBe(201);
@@ -156,17 +166,17 @@ describe('Stories routes [B1]', () => {
   // ── GET: owner scoping ───────────────────────────────────────────────────
 
   it("GET /api/stories returns only the caller's stories", async () => {
-    const tokenA = await registerAndLogin('stories-owner-a');
-    const tokenB = await registerAndLogin('stories-owner-b');
+    const { agent: agentA, sessionId: sessionIdA } = await registerAndLogin('stories-owner-a');
+    const { sessionId: sessionIdB } = await registerAndLogin('stories-owner-b');
 
-    const reqA = makeFakeReq(tokenA);
-    const reqB = makeFakeReq(tokenB);
+    const reqA = makeFakeReq(sessionIdA);
+    const reqB = makeFakeReq(sessionIdB);
 
     await createStoryRepo(reqA).create({ title: 'A-Story-1' });
     await createStoryRepo(reqA).create({ title: 'A-Story-2' });
     await createStoryRepo(reqB).create({ title: 'B-Only-Story' });
 
-    const res = await request(app).get('/api/stories').set('Authorization', `Bearer ${tokenA}`);
+    const res = await agentA.get('/api/stories');
 
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.stories)).toBe(true);
@@ -184,8 +194,8 @@ describe('Stories routes [B1]', () => {
   // ── GET: aggregation ─────────────────────────────────────────────────────
 
   it('GET /api/stories returns chapterCount and totalWordCount aggregated correctly', async () => {
-    const accessToken = await registerAndLogin('stories-agg-user');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('stories-agg-user');
+    const req = makeFakeReq(sessionId);
 
     const storyWithChapters = await createStoryRepo(req).create({
       title: 'Has Chapters',
@@ -215,9 +225,7 @@ describe('Stories routes [B1]', () => {
       wordCount: 75,
     });
 
-    const res = await request(app)
-      .get('/api/stories')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/stories');
 
     expect(res.status).toBe(200);
     expect(res.body.stories).toHaveLength(2);
@@ -236,15 +244,13 @@ describe('Stories routes [B1]', () => {
   // ── PATCH /:id ───────────────────────────────────────────────────────────
 
   it('PATCH /api/stories/:id accepts includePreviousChaptersInPrompt and persists it', async () => {
-    const accessToken = await registerAndLogin('stories-pcs-toggle');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('stories-pcs-toggle');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
-
-    const agent = request.agent(app);
-    agent.set('Authorization', `Bearer ${accessToken}`);
 
     const res = await agent
       .patch(`/api/stories/${story.id as string}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ includePreviousChaptersInPrompt: false });
     expect(res.status).toBe(200);
     expect(res.body.story.includePreviousChaptersInPrompt).toBe(false);
@@ -257,8 +263,8 @@ describe('Stories routes [B1]', () => {
   // ── GET: ordering ────────────────────────────────────────────────────────
 
   it('GET /api/stories orders by updatedAt desc', async () => {
-    const accessToken = await registerAndLogin('stories-order-user');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('stories-order-user');
+    const req = makeFakeReq(sessionId);
 
     const s1 = await createStoryRepo(req).create({ title: 'Oldest' });
     await new Promise((r) => setTimeout(r, 5));
@@ -266,9 +272,7 @@ describe('Stories routes [B1]', () => {
     await new Promise((r) => setTimeout(r, 5));
     const s3 = await createStoryRepo(req).create({ title: 'Newest' });
 
-    const res = await request(app)
-      .get('/api/stories')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/stories');
 
     expect(res.status).toBe(200);
     expect(res.body.stories).toHaveLength(3);

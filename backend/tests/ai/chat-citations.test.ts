@@ -12,14 +12,12 @@
 //   9. Leak sentinel does not appear in raw citationsJsonCiphertext column.
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
@@ -91,32 +89,43 @@ function jsonResponse(status: number, body: unknown): Response {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const res = await request(app)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -141,13 +150,13 @@ async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; ch
 }
 
 async function runPost(
-  accessToken: string,
+  agent: ReturnType<typeof request.agent>,
   chatId: string,
   body: Record<string, unknown>,
 ): Promise<{ status: number; body: string; contentType: string }> {
-  const res = await request(app)
+  const res = await agent
     .post(`/api/chats/${chatId}/messages`)
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
@@ -188,8 +197,6 @@ describe('[V26] Chat web-search citations', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -206,15 +213,13 @@ describe('[V26] Chat web-search citations', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   it('emits citations frame before content and sets Venice web-search params', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -234,7 +239,7 @@ describe('[V26] Chat web-search citations', () => {
       ]),
     );
 
-    const res = await runPost(accessToken, chatId, {
+    const res = await runPost(agent, chatId, {
       content: 'Tell me.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
@@ -271,9 +276,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('empty Venice results → no citations frame, persists null', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -283,7 +288,7 @@ describe('[V26] Chat web-search citations', () => {
       sseStreamResponse([{ venice_search_results: [] }, makeChunk('just text.', 'stop')]),
     );
 
-    const res = await runPost(accessToken, chatId, {
+    const res = await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
@@ -301,9 +306,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('enableWebSearch omitted → no web-search params, no citations frame, null persisted', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -311,7 +316,7 @@ describe('[V26] Chat web-search citations', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Plain reply.', 'stop')]));
 
-    const res = await runPost(accessToken, chatId, {
+    const res = await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
     });
@@ -331,9 +336,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('persisted citations round-trip via GET /api/chats/:chatId/messages', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -357,15 +362,13 @@ describe('[V26] Chat web-search citations', () => {
       ]),
     );
 
-    await runPost(accessToken, chatId, {
+    await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
     });
 
-    const listRes = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const listRes = await agent.get(`/api/chats/${chatId}/messages`);
     expect(listRes.status).toBe(200);
     const messages = listRes.body.messages as Array<Record<string, unknown>>;
     const asst = messages.find((m) => m.role === 'assistant');
@@ -378,9 +381,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('caps citations at 10 items (extras discarded silently)', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -397,7 +400,7 @@ describe('[V26] Chat web-search citations', () => {
       sseStreamResponse([{ venice_search_results: input }, makeChunk('Reply.', 'stop')]),
     );
 
-    const res = await runPost(accessToken, chatId, {
+    const res = await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
@@ -412,9 +415,7 @@ describe('[V26] Chat web-search citations', () => {
     expect((parsed.citations[9] as { title: string }).title).toBe('T9');
 
     // Persisted row round-trips 10 items via GET.
-    const listRes = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const listRes = await agent.get(`/api/chats/${chatId}/messages`);
     const asst = (listRes.body.messages as Array<Record<string, unknown>>).find(
       (m) => m.role === 'assistant',
     );
@@ -422,9 +423,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('projection renames content → snippet and date → publishedAt', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -441,7 +442,7 @@ describe('[V26] Chat web-search citations', () => {
       ]),
     );
 
-    const res = await runPost(accessToken, chatId, {
+    const res = await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
@@ -461,9 +462,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('drops items missing title or url', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -483,7 +484,7 @@ describe('[V26] Chat web-search citations', () => {
       ]),
     );
 
-    const res = await runPost(accessToken, chatId, {
+    const res = await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
@@ -497,9 +498,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('no *Ciphertext / *Iv / *AuthTag keys on GET list response', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -516,15 +517,13 @@ describe('[V26] Chat web-search citations', () => {
       ]),
     );
 
-    await runPost(accessToken, chatId, {
+    await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
     });
 
-    const listRes = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const listRes = await agent.get(`/api/chats/${chatId}/messages`);
     expect(listRes.status).toBe(200);
     const messages = listRes.body.messages as Array<Record<string, unknown>>;
     for (const m of messages) {
@@ -537,9 +536,9 @@ describe('[V26] Chat web-search citations', () => {
   });
 
   it('leak sentinel does not appear in raw citationsJsonCiphertext but does in the decrypted GET', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -561,7 +560,7 @@ describe('[V26] Chat web-search citations', () => {
       ]),
     );
 
-    await runPost(accessToken, chatId, {
+    await runPost(agent, chatId, {
       content: 'Hi.',
       modelId: BASE_MODEL_ID,
       enableWebSearch: true,
@@ -574,9 +573,7 @@ describe('[V26] Chat web-search citations', () => {
     expect(raw!.citationsJsonCiphertext).not.toContain(LEAK_SENTINEL);
 
     // Decrypted GET response must include the sentinel (end-to-end).
-    const listRes = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const listRes = await agent.get(`/api/chats/${chatId}/messages`);
     expect(listRes.status).toBe(200);
     const serialised = JSON.stringify(listRes.body);
     expect(serialised).toContain(LEAK_SENTINEL);

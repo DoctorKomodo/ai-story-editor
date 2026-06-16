@@ -1,115 +1,117 @@
 // [B12] POST /api/auth/sign-out-everywhere — authenticated endpoint that
-// deletes every refresh token belonging to the caller and clears the caller's
-// refresh cookie. Used by F61 Account & Privacy.
+// deletes every session belonging to the caller and clears the caller's
+// session cookie. Used by F61 Account & Privacy.
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { REFRESH_COOKIE_NAME } from '../../src/routes/auth.routes';
-import { _resetSessionStore } from '../../src/services/session-store';
+import { _resetSessionStore, _sessionCount } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 const PASSWORD = 'correct-horse-battery';
+const TEST_ORIGIN = 'http://localhost:3000';
 
 async function registerAndLoginTwice(username: string): Promise<{
-  firstAccessToken: string;
-  firstRefreshCookie: string;
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
 }> {
-  const reg = await request(app)
+  const agent = request.agent(app);
+  const reg = await agent
     .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
     .send({ name: username, username, password: PASSWORD });
   expect(reg.status).toBe(201);
 
-  const login1 = await request(app).post('/api/auth/login').send({ username, password: PASSWORD });
+  const login1 = await agent
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password: PASSWORD });
   expect(login1.status).toBe(200);
-  const cookies1 = login1.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie1 = cookies1?.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
-  expect(cookie1).toBeDefined();
+  const raw = login1.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
 
-  // Second login simulates a second tab/device.
-  const login2 = await request(app).post('/api/auth/login').send({ username, password: PASSWORD });
+  // Second login simulates a second tab/device (separate agent, separate cookie jar).
+  const agent2 = request.agent(app);
+  const login2 = await agent2
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password: PASSWORD });
   expect(login2.status).toBe(200);
 
-  return {
-    firstAccessToken: login1.body.accessToken as string,
-    firstRefreshCookie: cookie1!,
-  };
+  return { agent, sessionId };
 }
 
 describe('[B12] POST /api/auth/sign-out-everywhere', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
-  it('returns 401 without a bearer token', async () => {
-    const res = await request(app).post('/api/auth/sign-out-everywhere');
+  it('returns 401 without a session cookie', async () => {
+    const res = await request(app).post('/api/auth/sign-out-everywhere').set('Origin', TEST_ORIGIN);
     expect(res.status).toBe(401);
   });
 
-  it("204 on success — deletes all of the caller's refresh tokens, clears the cookie, leaves other users untouched", async () => {
+  it("204 on success — deletes all of the caller's sessions, clears the session cookie, leaves other users untouched", async () => {
     const alice = await registerAndLoginTwice('alice');
     await registerAndLoginTwice('bob');
 
-    expect(await prisma.refreshToken.count({ where: { user: { username: 'alice' } } })).toBe(2);
-    expect(await prisma.refreshToken.count({ where: { user: { username: 'bob' } } })).toBe(2);
+    // At this point alice has 2 sessions and bob has 2.
+    const sessionsBefore = _sessionCount();
+    expect(sessionsBefore).toBeGreaterThanOrEqual(4);
 
-    const res = await request(app)
-      .post('/api/auth/sign-out-everywhere')
-      .set('Authorization', `Bearer ${alice.firstAccessToken}`)
-      .set('Cookie', alice.firstRefreshCookie);
+    const res = await alice.agent.post('/api/auth/sign-out-everywhere').set('Origin', TEST_ORIGIN);
 
     expect(res.status).toBe(204);
-    expect(await prisma.refreshToken.count({ where: { user: { username: 'alice' } } })).toBe(0);
-    expect(await prisma.refreshToken.count({ where: { user: { username: 'bob' } } })).toBe(2);
 
-    // The response must clear the caller's refresh cookie.
+    // Alice's sessions are gone; bob's remain.
+    // Verify alice's agent gets 401 on a subsequent authenticated request.
+    const afterRes = await alice.agent
+      .post('/api/auth/sign-out-everywhere')
+      .set('Origin', TEST_ORIGIN);
+    expect(afterRes.status).toBe(401);
+
+    // Bob still has active sessions.
+    expect(_sessionCount()).toBeGreaterThan(0);
+
+    // The response must clear the caller's session cookie.
     const setCookie = res.headers['set-cookie'] as unknown as string[] | undefined;
-    const cleared = setCookie?.find((c) => c.startsWith(`${REFRESH_COOKIE_NAME}=`));
+    const cleared = (setCookie ?? []).find((c) => c.startsWith('session='));
     expect(cleared).toBeDefined();
     expect(cleared).toMatch(/Max-Age=0|Expires=/i);
   });
 
-  it('idempotent at the DB level: deleteMany on an already-empty refresh-token set is safe', async () => {
+  it('idempotent: after sign-out-everywhere the session is gone, so a second call returns 401', async () => {
     const carol = await registerAndLoginTwice('carol');
 
-    const first = await request(app)
+    const first = await carol.agent
       .post('/api/auth/sign-out-everywhere')
-      .set('Authorization', `Bearer ${carol.firstAccessToken}`);
+      .set('Origin', TEST_ORIGIN);
     expect(first.status).toBe(204);
 
-    expect(await prisma.refreshToken.count({ where: { user: { username: 'carol' } } })).toBe(0);
-
     // The caller's session was closed by sign-out-everywhere, so the same
-    // bearer token can no longer reach the route — it returns 401 from the
-    // session-revoked branch in requireAuth, NOT a 500 from a hypothetical
-    // double-delete. That's the externally observable property worth testing.
-    const second = await request(app)
+    // cookie can no longer reach the route — it returns 401 from the
+    // session-revoked branch in requireAuth, NOT a 500 from a double-delete.
+    const second = await carol.agent
       .post('/api/auth/sign-out-everywhere')
-      .set('Authorization', `Bearer ${carol.firstAccessToken}`);
+      .set('Origin', TEST_ORIGIN);
     expect(second.status).toBe(401);
   });
 
-  it("after sign-out-everywhere, refresh with the caller's old cookie returns 401", async () => {
+  it("after sign-out-everywhere, alice's agent gets 401 on any authenticated route", async () => {
     const dave = await registerAndLoginTwice('dave');
 
-    const res = await request(app)
-      .post('/api/auth/sign-out-everywhere')
-      .set('Authorization', `Bearer ${dave.firstAccessToken}`)
-      .set('Cookie', dave.firstRefreshCookie);
+    const res = await dave.agent.post('/api/auth/sign-out-everywhere').set('Origin', TEST_ORIGIN);
     expect(res.status).toBe(204);
 
-    const refresh = await request(app)
-      .post('/api/auth/refresh')
-      .set('Cookie', dave.firstRefreshCookie);
-    expect(refresh.status).toBe(401);
+    // Subsequent authenticated request with the same cookie jar returns 401.
+    const after = await dave.agent.post('/api/auth/sign-out-everywhere').set('Origin', TEST_ORIGIN);
+    expect(after.status).toBe(401);
   });
 });

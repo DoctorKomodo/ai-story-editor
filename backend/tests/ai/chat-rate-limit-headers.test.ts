@@ -15,14 +15,12 @@
 //   x-ratelimit-reset-tokens        -> x-venice-reset-tokens         [V28]
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
@@ -99,32 +97,43 @@ function sseStreamResponse(headers: Record<string, string> = {}): Response {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const res = await request(app)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -148,12 +157,12 @@ async function setupChat(req: Request): Promise<{ chatId: string }> {
 }
 
 async function doChatMessageRequest(
-  accessToken: string,
+  agent: ReturnType<typeof request.agent>,
   chatId: string,
 ): Promise<request.Response> {
-  return request(app)
+  return agent
     .post(`/api/chats/${chatId}/messages`)
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
@@ -178,8 +187,6 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -196,15 +203,13 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   it('[V9] forwards x-ratelimit-remaining-requests and x-ratelimit-remaining-tokens from Venice', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -215,7 +220,7 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
       }),
     );
 
-    const res = await doChatMessageRequest(accessToken, chatId);
+    const res = await doChatMessageRequest(agent, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBe('42');
@@ -223,15 +228,15 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
   });
 
   it('[V9] does not set x-venice-remaining-requests when Venice omitted x-ratelimit-remaining-requests', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse({ 'x-ratelimit-remaining-tokens': '5000' }));
 
-    const res = await doChatMessageRequest(accessToken, chatId);
+    const res = await doChatMessageRequest(agent, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBeUndefined();
@@ -239,15 +244,15 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
   });
 
   it('[V9] does not set either remaining-* header when Venice omitted both', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse({}));
 
-    const res = await doChatMessageRequest(accessToken, chatId);
+    const res = await doChatMessageRequest(agent, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBeUndefined();
@@ -257,9 +262,9 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
   // ── [V28] limit-* and reset-* header forwarding ─────────────────────────────
 
   it('[V28] forwards limit-* and reset-* rate-limit headers from Venice', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -274,7 +279,7 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
       }),
     );
 
-    const res = await doChatMessageRequest(accessToken, chatId);
+    const res = await doChatMessageRequest(agent, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBe('42');
@@ -286,9 +291,9 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
   });
 
   it('[V28] does not set limit-* / reset-* headers when Venice omits them', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -299,7 +304,7 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
       }),
     );
 
-    const res = await doChatMessageRequest(accessToken, chatId);
+    const res = await doChatMessageRequest(agent, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-remaining-requests']).toBe('7');
@@ -311,9 +316,9 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
   });
 
   it('[V28] forwards each limit-* / reset-* header independently when only some are present', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupChat(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -324,7 +329,7 @@ describe('POST /api/chats/:chatId/messages — rate limit header forwarding [V9]
       }),
     );
 
-    const res = await doChatMessageRequest(accessToken, chatId);
+    const res = await doChatMessageRequest(agent, chatId);
 
     expect(res.status).toBe(200);
     expect(res.headers['x-venice-limit-requests']).toBeUndefined();

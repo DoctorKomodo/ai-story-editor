@@ -16,17 +16,22 @@
 //   - DELETE /:chapterId 204, follow-up GET 403
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { prisma as appPrisma } from '../../src/lib/prisma';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
+
+const TEST_ORIGIN = 'http://localhost:3000';
+
+interface TestSession {
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -34,32 +39,40 @@ async function registerAndLogin(
   username: string,
   password = 'chapters-pw',
   name = 'Chapter Route User',
-): Promise<string> {
-  await request(app).post('/api/auth/register').send({ name, username, password });
-  const login = await request(app).post('/api/auth/login').send({ username, password });
+): Promise<TestSession> {
+  const agent = request.agent(app);
+  await agent
+    .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
+    .send({ name, username, password });
+  const login = await agent
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
 
 async function resetAll(): Promise<void> {
+  _resetSessionStore();
   await prisma.message.deleteMany();
   await prisma.chat.deleteMany();
   await prisma.outlineItem.deleteMany();
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();
   await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
 }
 
@@ -106,7 +119,10 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('POST /api/stories/:storyId/chapters returns 401 without Bearer', async () => {
-    const res = await request(app).post(`/api/stories/${FAKE_ID}/chapters`).send({ title: 'Ch 1' });
+    const res = await request(app)
+      .post(`/api/stories/${FAKE_ID}/chapters`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Ch 1' });
     expect(res.status).toBe(401);
   });
 
@@ -118,65 +134,68 @@ describe('Chapter routes [B3]', () => {
   it('PATCH /api/stories/:storyId/chapters/:chapterId returns 401 without Bearer', async () => {
     const res = await request(app)
       .patch(`/api/stories/${FAKE_ID}/chapters/${FAKE_ID}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'nope' });
     expect(res.status).toBe(401);
   });
 
   it('DELETE /api/stories/:storyId/chapters/:chapterId returns 401 without Bearer', async () => {
-    const res = await request(app).delete(`/api/stories/${FAKE_ID}/chapters/${FAKE_ID}`);
+    const res = await request(app)
+      .delete(`/api/stories/${FAKE_ID}/chapters/${FAKE_ID}`)
+      .set('Origin', TEST_ORIGIN);
     expect(res.status).toBe(401);
   });
 
   // ── POST ownership / Zod ──────────────────────────────────────────────────
 
   it('POST returns 403 when :storyId does not belong to the caller', async () => {
-    const tokenA = await registerAndLogin('chapters-owner-a');
-    const tokenB = await registerAndLogin('chapters-owner-b');
-    const reqA = makeFakeReq(tokenA);
+    const { sessionId: sessionIdA } = await registerAndLogin('chapters-owner-a');
+    const { agent: agentB } = await registerAndLogin('chapters-owner-b');
+    const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
 
-    const res = await request(app)
+    const res = await agentB
       .post(`/api/stories/${story.id as string}/chapters`)
-      .set('Authorization', `Bearer ${tokenB}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'hijack' });
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('forbidden');
   });
 
   it('POST returns 400 on empty title', async () => {
-    const accessToken = await registerAndLogin('chapters-empty-title');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-empty-title');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'My Story' });
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/stories/${story.id as string}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: '' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 when an unknown key (wordCount) is passed', async () => {
-    const accessToken = await registerAndLogin('chapters-strict-post');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-strict-post');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict Story' });
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/stories/${story.id as string}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Ch 1', wordCount: 9999 });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('POST returns 400 when an unknown key (orderIndex) is passed', async () => {
-    const accessToken = await registerAndLogin('chapters-strict-order');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-strict-order');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict Story' });
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/stories/${story.id as string}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Ch 1', orderIndex: 7 });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
@@ -185,15 +204,15 @@ describe('Chapter routes [B3]', () => {
   // ── POST happy path: wordCount + orderIndex ───────────────────────────────
 
   it('POST with bodyJson computes wordCount from the tree and auto-assigns orderIndex', async () => {
-    const accessToken = await registerAndLogin('chapters-body');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-body');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Has Chapters' });
     const storyId = story.id as string;
 
     const text1 = 'The quick brown fox jumps over the lazy dog.'; // 9 words
-    const res1 = await request(app)
+    const res1 = await agent
       .post(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Ch 1', bodyJson: paragraphDoc(text1) });
     expect(res1.status).toBe(201);
     expect(res1.body.chapter.title).toBe('Ch 1');
@@ -203,39 +222,39 @@ describe('Chapter routes [B3]', () => {
     assertNoCiphertextKeys(res1.body.chapter);
 
     const text2 = 'Two roads diverged in a wood.'; // 6 words
-    const res2 = await request(app)
+    const res2 = await agent
       .post(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Ch 2', bodyJson: paragraphDoc(text2) });
     expect(res2.status).toBe(201);
     expect(res2.body.chapter.wordCount).toBe(6);
     expect(res2.body.chapter.orderIndex).toBe(1);
 
-    const res3 = await request(app)
+    const res3 = await agent
       .post(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Ch 3', bodyJson: paragraphDoc('Three words here.') });
     expect(res3.status).toBe(201);
     expect(res3.body.chapter.orderIndex).toBe(2);
   });
 
   it('POST without bodyJson sets wordCount to 0 and still auto-assigns orderIndex', async () => {
-    const accessToken = await registerAndLogin('chapters-no-body');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-no-body');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Bare Chapters' });
     const storyId = story.id as string;
 
-    const res1 = await request(app)
+    const res1 = await agent
       .post(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Empty 1' });
     expect(res1.status).toBe(201);
     expect(res1.body.chapter.wordCount).toBe(0);
     expect(res1.body.chapter.orderIndex).toBe(0);
 
-    const res2 = await request(app)
+    const res2 = await agent
       .post(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Empty 2' });
     expect(res2.status).toBe(201);
     expect(res2.body.chapter.wordCount).toBe(0);
@@ -245,8 +264,8 @@ describe('Chapter routes [B3]', () => {
   // ── [D16] POST race: aggregate+insert must retry on unique-constraint P2002
 
   it('POST retries on P2002 when the aggregate returns a stale _max (race simulation)', async () => {
-    const accessToken = await registerAndLogin('chapters-race');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-race');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Racing' });
     const storyId = story.id as string;
 
@@ -273,9 +292,9 @@ describe('Chapter routes [B3]', () => {
     );
 
     try {
-      const res = await request(app)
+      const res = await agent
         .post(`/api/stories/${storyId}/chapters`)
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ title: 'after-race' });
       expect(res.status).toBe(201);
       // After retry, the new chapter lands at slot 2 (seed took 0, racer took 1).
@@ -292,16 +311,16 @@ describe('Chapter routes [B3]', () => {
   it('POST surfaces a non-P2002 error without retrying indefinitely', async () => {
     // Defence-in-depth: the retry loop only catches P2002. Any other error
     // must propagate out of the first attempt unchanged.
-    const accessToken = await registerAndLogin('chapters-nonp2002');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-nonp2002');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Boom' });
     const storyId = story.id as string;
 
     const aggSpy = vi.spyOn(appPrisma.chapter, 'aggregate').mockRejectedValue(new Error('boom'));
     try {
-      const res = await request(app)
+      const res = await agent
         .post(`/api/stories/${storyId}/chapters`)
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ title: 'never-lands' });
       expect(res.status).toBe(500);
       // Exactly one call — no silent retry on non-unique errors.
@@ -314,8 +333,8 @@ describe('Chapter routes [B3]', () => {
   // ── GET /:chapterId ───────────────────────────────────────────────────────
 
   it('GET /:chapterId returns 200 with decrypted fields and body parsed as a tree', async () => {
-    const accessToken = await registerAndLogin('chapters-get-one');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-get-one');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Readable' });
     const storyId = story.id as string;
 
@@ -328,9 +347,7 @@ describe('Chapter routes [B3]', () => {
       wordCount: 2,
     });
 
-    const res = await request(app)
-      .get(`/api/stories/${storyId}/chapters/${created.id as string}`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get(`/api/stories/${storyId}/chapters/${created.id as string}`);
     expect(res.status).toBe(200);
     expect(res.body.chapter.title).toBe('Readable Chapter');
     // Body should come back as a parsed JSON tree, not a string.
@@ -343,8 +360,8 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('GET /:chapterId returns 404 when chapterId is under a different story (path integrity)', async () => {
-    const accessToken = await registerAndLogin('chapters-path-integrity');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-path-integrity');
+    const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
 
@@ -356,18 +373,18 @@ describe('Chapter routes [B3]', () => {
 
     // Request A's chapter under B's story URL. Both owned by the same user,
     // so ownership middleware passes; the handler's storyId guard should 404.
-    const res = await request(app)
-      .get(`/api/stories/${storyB.id as string}/chapters/${chapterA.id as string}`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get(
+      `/api/stories/${storyB.id as string}/chapters/${chapterA.id as string}`,
+    );
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   it('GET /:chapterId returns 403 when chapter belongs to another user', async () => {
-    const tokenA = await registerAndLogin('chapters-xuser-a');
-    const tokenB = await registerAndLogin('chapters-xuser-b');
+    const { sessionId: sessionIdA } = await registerAndLogin('chapters-xuser-a');
+    const { agent: agentB } = await registerAndLogin('chapters-xuser-b');
 
-    const reqA = makeFakeReq(tokenA);
+    const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
     const chapter = await createChapterRepo(reqA).create({
       storyId: story.id as string,
@@ -375,17 +392,17 @@ describe('Chapter routes [B3]', () => {
       orderIndex: 0,
     });
 
-    const res = await request(app)
-      .get(`/api/stories/${story.id as string}/chapters/${chapter.id as string}`)
-      .set('Authorization', `Bearer ${tokenB}`);
+    const res = await agentB.get(
+      `/api/stories/${story.id as string}/chapters/${chapter.id as string}`,
+    );
     expect(res.status).toBe(403);
   });
 
   // ── GET list ──────────────────────────────────────────────────────────────
 
   it('GET list returns 200 sorted by orderIndex asc with no ciphertext', async () => {
-    const accessToken = await registerAndLogin('chapters-list');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-list');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Ordered' });
     const storyId = story.id as string;
 
@@ -394,9 +411,7 @@ describe('Chapter routes [B3]', () => {
     await createChapterRepo(req).create({ storyId, title: 'Third', orderIndex: 2 });
     await createChapterRepo(req).create({ storyId, title: 'First', orderIndex: 0 });
 
-    const res = await request(app)
-      .get(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get(`/api/stories/${storyId}/chapters`);
     expect(res.status).toBe(200);
     expect(Array.isArray(res.body.chapters)).toBe(true);
     expect(res.body.chapters).toHaveLength(3);
@@ -415,22 +430,20 @@ describe('Chapter routes [B3]', () => {
   });
 
   it("GET list returns 403 when storyId is not the caller's", async () => {
-    const tokenA = await registerAndLogin('chapters-list-a');
-    const tokenB = await registerAndLogin('chapters-list-b');
-    const reqA = makeFakeReq(tokenA);
+    const { sessionId: sessionIdA } = await registerAndLogin('chapters-list-a');
+    const { agent: agentB } = await registerAndLogin('chapters-list-b');
+    const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A' });
 
-    const res = await request(app)
-      .get(`/api/stories/${story.id as string}/chapters`)
-      .set('Authorization', `Bearer ${tokenB}`);
+    const res = await agentB.get(`/api/stories/${story.id as string}/chapters`);
     expect(res.status).toBe(403);
   });
 
   // ── PATCH /:chapterId ─────────────────────────────────────────────────────
 
   it('PATCH title-only does not touch body; bodyJson recomputes wordCount', async () => {
-    const accessToken = await registerAndLogin('chapters-patch');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-patch');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Patchable' });
     const storyId = story.id as string;
 
@@ -445,9 +458,9 @@ describe('Chapter routes [B3]', () => {
     const chapterId = created.id as string;
 
     // Title-only patch — body and wordCount should remain unchanged.
-    const r1 = await request(app)
+    const r1 = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'New Title' });
     expect(r1.status).toBe(200);
     expect(r1.body.chapter.title).toBe('New Title');
@@ -459,9 +472,9 @@ describe('Chapter routes [B3]', () => {
 
     // bodyJson patch — wordCount recomputed from the new tree.
     const newTree = paragraphDoc('four five six seven eight'); // 5 words
-    const r2 = await request(app)
+    const r2 = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: newTree });
     expect(r2.status).toBe(200);
     expect(r2.body.chapter.wordCount).toBe(5);
@@ -469,8 +482,8 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('PATCH with bodyJson: null clears the body and sets wordCount to 0', async () => {
-    const accessToken = await registerAndLogin('chapters-patch-null-body');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-patch-null-body');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Clearable' });
     const storyId = story.id as string;
 
@@ -484,17 +497,15 @@ describe('Chapter routes [B3]', () => {
     });
     const chapterId = created.id as string;
 
-    const r = await request(app)
+    const r = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: null });
     expect(r.status).toBe(200);
     expect(r.body.chapter.wordCount).toBe(0);
     expect(r.body.chapter.bodyJson).toBeNull();
 
-    const follow = await request(app)
-      .get(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const follow = await agent.get(`/api/stories/${storyId}/chapters/${chapterId}`);
     expect(follow.status).toBe(200);
     expect(follow.body.chapter.wordCount).toBe(0);
     expect(follow.body.chapter.bodyJson).toBeNull();
@@ -511,8 +522,8 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('PATCH returns 400 on an unknown key', async () => {
-    const accessToken = await registerAndLogin('chapters-patch-strict');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-patch-strict');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
     const storyId = story.id as string;
     const created = await createChapterRepo(req).create({
@@ -521,17 +532,17 @@ describe('Chapter routes [B3]', () => {
       orderIndex: 0,
     });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${created.id as string}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'ok', wordCount: 9999 });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('PATCH returns 400 on unknown key (foo)', async () => {
-    const accessToken = await registerAndLogin('chapters-patch-strict-foo');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-patch-strict-foo');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
     const storyId = story.id as string;
     const created = await createChapterRepo(req).create({
@@ -540,9 +551,9 @@ describe('Chapter routes [B3]', () => {
       orderIndex: 0,
     });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${created.id as string}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'ok', foo: 'bar' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
@@ -551,8 +562,8 @@ describe('Chapter routes [B3]', () => {
   // ── DELETE /:chapterId ────────────────────────────────────────────────────
 
   it('DELETE /:chapterId returns 204 and follow-up GET is 403', async () => {
-    const accessToken = await registerAndLogin('chapters-delete');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-delete');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Doomed Parent' });
     const storyId = story.id as string;
     const created = await createChapterRepo(req).create({
@@ -562,22 +573,20 @@ describe('Chapter routes [B3]', () => {
     });
     const chapterId = created.id as string;
 
-    const del = await request(app)
+    const del = await agent
       .delete(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`);
+      .set('Origin', TEST_ORIGIN);
     expect(del.status).toBe(204);
     expect(del.body).toEqual({});
 
-    const get = await request(app)
-      .get(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const get = await agent.get(`/api/stories/${storyId}/chapters/${chapterId}`);
     // Ownership middleware conflates missing with not-owned → 403.
     expect(get.status).toBe(403);
   });
 
   it('DELETE /:chapterId reassigns sequential orderIndex 0..N-1 on the remaining list', async () => {
-    const accessToken = await registerAndLogin('chapters-delete-reseq');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chapters-delete-reseq');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Reseq' });
     const storyId = story.id as string;
     const a = await createChapterRepo(req).create({ storyId, title: 'a', orderIndex: 0 });
@@ -586,24 +595,20 @@ describe('Chapter routes [B3]', () => {
     const d = await createChapterRepo(req).create({ storyId, title: 'd', orderIndex: 3 });
 
     // Sanity-check the seed.
-    const before = await request(app)
-      .get(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const before = await agent.get(`/api/stories/${storyId}/chapters`);
     expect(before.status).toBe(200);
     expect(
       (before.body.chapters as Array<{ id: string; orderIndex: number }>).map((c) => c.orderIndex),
     ).toEqual([0, 1, 2, 3]);
 
     // Delete the middle row.
-    const del = await request(app)
+    const del = await agent
       .delete(`/api/stories/${storyId}/chapters/${b.id as string}`)
-      .set('Authorization', `Bearer ${accessToken}`);
+      .set('Origin', TEST_ORIGIN);
     expect(del.status).toBe(204);
 
     // Remaining list must be sequential 0..N-1, with `b` gone.
-    const after = await request(app)
-      .get(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const after = await agent.get(`/api/stories/${storyId}/chapters`);
     expect(after.status).toBe(200);
     const remaining = after.body.chapters as Array<{ id: string; orderIndex: number }>;
     expect(remaining).toHaveLength(3);

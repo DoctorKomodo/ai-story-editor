@@ -57,42 +57,36 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
   });
 
   it('returns 404 for a nonexistent chat', async () => {
-    const accessToken = await registerAndLogin('chat-msg-u1');
-    const res = await request(app)
-      .get('/api/chats/does-not-exist/messages')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const { agent } = await registerAndLogin('chat-msg-u1');
+    const res = await agent.get('/api/chats/does-not-exist/messages');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   it("returns 404 for another user's chat", async () => {
-    const ownerToken = await registerAndLogin('chat-msg-owner');
-    const ownerReq = makeFakeReq(ownerToken);
+    const { sessionId: ownerSessionId } = await registerAndLogin('chat-msg-owner');
+    const ownerReq = makeFakeReq(ownerSessionId);
     const { chatId } = await setupStoryChapterChat(ownerReq);
 
-    const intruderToken = await registerAndLogin('chat-msg-intruder');
-    const res = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${intruderToken}`);
+    const { agent: intruderAgent } = await registerAndLogin('chat-msg-intruder');
+    const res = await intruderAgent.get(`/api/chats/${chatId}/messages`);
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   it('returns 200 with empty messages array for a new chat', async () => {
-    const accessToken = await registerAndLogin('chat-msg-u2');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chat-msg-u2');
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupStoryChapterChat(req);
 
-    const res = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get(`/api/chats/${chatId}/messages`);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ messages: [] });
   });
 
   it('returns decrypted messages ordered by createdAt asc with contract-shaped fields', async () => {
-    const accessToken = await registerAndLogin('chat-msg-u3');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chat-msg-u3');
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupStoryChapterChat(req);
     const messageRepo = createMessageRepo(req);
 
@@ -116,9 +110,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
       latencyMs: 1234,
     });
 
-    const res = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get(`/api/chats/${chatId}/messages`);
     expect(res.status).toBe(200);
     const messages = res.body.messages as Array<Record<string, unknown>>;
     expect(messages).toHaveLength(2);
@@ -152,8 +144,8 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
   });
 
   it('returns 500 when repo row has null content (egress schema rejects it)', async () => {
-    const accessToken = await registerAndLogin('chat-msg-u4');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('chat-msg-u4');
+    const req = makeFakeReq(sessionId);
     const { chatId } = await setupStoryChapterChat(req);
 
     // Raw Prisma: messageRepo.create always encrypts content on write — only a
@@ -162,9 +154,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
       data: { chatId, role: 'user' },
     });
 
-    const res = await request(app)
-      .get(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get(`/api/chats/${chatId}/messages`);
     expect(res.status).toBe(500);
     // `error.stack` is only populated when NODE_ENV !== 'production' (test env).
     expect(res.body.error.stack).toBeDefined();

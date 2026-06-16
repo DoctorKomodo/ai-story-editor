@@ -3,8 +3,6 @@ import { PrismaClient } from '@prisma/client';
 import { afterAll } from 'vitest';
 
 process.env.NODE_ENV ??= 'test';
-process.env.JWT_SECRET ??= 'test-jwt-secret';
-process.env.REFRESH_TOKEN_SECRET ??= 'test-refresh-secret';
 
 // Prisma auto-loads backend/.env, which points at the dev DB. We ignore that
 // here and unconditionally pin to the test DB — the test suite must never

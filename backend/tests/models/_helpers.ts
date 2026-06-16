@@ -26,10 +26,7 @@ export async function createChatRow(chapterId: string) {
 }
 
 export async function resetNarrativeTables(): Promise<void> {
-  // Narrative entities cascade from Story, so wiping users is enough; but we
-  // also clear Session + RefreshToken because setup tests may have left rows.
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
+  // Narrative entities cascade from Story, so wiping users is enough.
   await prisma.user.deleteMany();
 }
 
