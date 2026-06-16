@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import type { PrismaClient, User } from '@prisma/client';
 import { Prisma } from '@prisma/client';
 import * as argon2 from 'argon2';
-import jwt, { type SignOptions } from 'jsonwebtoken';
 import { z } from 'zod';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { ARGON2_PARAMS } from './argon2.config';
@@ -15,16 +14,7 @@ import {
   unwrapDekWithRecoveryCode,
   wrapDek,
 } from './content-crypto.service';
-import {
-  closeSession,
-  closeSessionsForUser,
-  extendSessionExpiry,
-  getSession,
-  openSession,
-} from './session-store';
-
-export const ACCESS_TOKEN_TTL_SECONDS = 15 * 60;
-export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+import { closeSession, closeSessionsForUser, IDLE_TTL_MS, openSession } from './session-store';
 
 // Lazy dummy argon2id hash the login() path compares against when the username
 // is unknown. Computed once on first use (not at module load) so cold-starting
@@ -138,30 +128,10 @@ export interface RegisterResult {
   recoveryCode: string;
 }
 
+// sessionId is an internal field consumed by the auth route to set the cookie.
+// It is NOT included in the wire response body — the route returns only { user }.
 export interface LoginResult {
   user: PublicUser;
-  accessToken: string;
-  accessTokenExpiresAt: Date;
-  refreshToken: string;
-  refreshTokenExpiresAt: Date;
-}
-
-export interface AccessTokenPayload {
-  sub: string;
-  email: string | null;
-  username?: string;
-  // [E3] session id — the middleware uses this to look up the unwrapped DEK
-  // from the session store. Required on every server-issued token; tokens
-  // without it are rejected.
-  sessionId: string;
-}
-
-export interface RefreshTokenPayload {
-  sub: string;
-  jti: string;
-  type: 'refresh';
-  // [E3] session id — binds this refresh token to the DEK-holding session
-  // in session-store. Refresh reuses the same sessionId; logout destroys it.
   sessionId: string;
 }
 
@@ -182,13 +152,6 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
-export class InvalidRefreshTokenError extends Error {
-  constructor() {
-    super('Invalid refresh token');
-    this.name = 'InvalidRefreshTokenError';
-  }
-}
-
 function toPublicUser(user: User): PublicUser {
   return {
     id: user.id,
@@ -198,38 +161,6 @@ function toPublicUser(user: User): PublicUser {
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };
-}
-
-function getRequiredEnv(name: string): string {
-  const value = process.env[name];
-  if (!value) {
-    throw new Error(
-      `Missing required environment variable: ${name}. Set it in the backend .env before calling auth.service.`,
-    );
-  }
-  return value;
-}
-
-function signAccessToken(user: User, sessionId: string): string {
-  const payload: AccessTokenPayload = {
-    sub: user.id,
-    email: user.email,
-    username: user.username,
-    sessionId,
-  };
-  const options: SignOptions = { expiresIn: ACCESS_TOKEN_TTL_SECONDS };
-  return jwt.sign(payload, getRequiredEnv('JWT_SECRET'), options);
-}
-
-function signRefreshToken(user: User, sessionId: string): string {
-  const payload: RefreshTokenPayload = {
-    sub: user.id,
-    jti: crypto.randomBytes(16).toString('hex'),
-    type: 'refresh',
-    sessionId,
-  };
-  const options: SignOptions = { expiresIn: REFRESH_TOKEN_TTL_SECONDS };
-  return jwt.sign(payload, getRequiredEnv('REFRESH_TOKEN_SECRET'), options);
 }
 
 export function createAuthService(client: PrismaClient = defaultPrisma) {
@@ -294,203 +225,43 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
     // row, not a legacy shape, so let unwrapDekWithPassword throw.
     const dek = await unwrapDekWithPassword(user, input.password);
 
-    const now = Date.now();
-    const accessTokenExpiresAt = new Date(now + ACCESS_TOKEN_TTL_SECONDS * 1000);
-    const refreshTokenExpiresAt = new Date(now + REFRESH_TOKEN_TTL_SECONDS * 1000);
-
-    // Persist the session row + refresh token FIRST; only then expose the
-    // DEK in-memory. A write failure leaves no orphaned map entry consuming
-    // a slot against the session-store cap.
     const sessionId = crypto.randomBytes(32).toString('hex');
-    const accessToken = signAccessToken(user, sessionId);
-    const refreshToken = signRefreshToken(user, sessionId);
-
-    await client.$transaction([
-      client.session.create({
-        data: { id: sessionId, userId: user.id, expiresAt: refreshTokenExpiresAt },
-      }),
-      client.refreshToken.create({
-        data: {
-          token: refreshToken,
-          userId: user.id,
-          expiresAt: refreshTokenExpiresAt,
-        },
-      }),
-    ]);
-
+    const now = Date.now();
     openSession({
       sessionId,
       userId: user.id,
       dek,
-      createdAt: new Date(),
-      expiresAt: refreshTokenExpiresAt,
+      createdAt: new Date(now),
+      expiresAt: new Date(now + IDLE_TTL_MS),
     });
 
-    return {
-      user: toPublicUser(user),
-      accessToken,
-      accessTokenExpiresAt,
-      refreshToken,
-      refreshTokenExpiresAt,
-    };
+    return { user: toPublicUser(user), sessionId };
   }
 
-  async function refresh(rawToken: unknown): Promise<LoginResult> {
-    if (typeof rawToken !== 'string' || rawToken.length === 0) {
-      throw new InvalidRefreshTokenError();
-    }
-
-    // 1) Signature + expiry check via JWT. We don't trust the payload beyond
-    //    shape — DB lookup is the canonical validation.
-    let payload: RefreshTokenPayload;
-    try {
-      const decoded = jwt.verify(rawToken, getRequiredEnv('REFRESH_TOKEN_SECRET'), {
-        algorithms: ['HS256'],
-      });
-      if (
-        typeof decoded !== 'object' ||
-        decoded === null ||
-        (decoded as RefreshTokenPayload).type !== 'refresh' ||
-        typeof (decoded as RefreshTokenPayload).sub !== 'string' ||
-        typeof (decoded as RefreshTokenPayload).sessionId !== 'string'
-      ) {
-        throw new InvalidRefreshTokenError();
-      }
-      payload = decoded as RefreshTokenPayload;
-    } catch (err) {
-      if (err instanceof InvalidRefreshTokenError) throw err;
-      throw new InvalidRefreshTokenError();
-    }
-
-    // 2) DB lookup — must be present and unexpired.
-    const stored = await client.refreshToken.findUnique({ where: { token: rawToken } });
-    if (!stored || stored.userId !== payload.sub || stored.expiresAt.getTime() <= Date.now()) {
-      throw new InvalidRefreshTokenError();
-    }
-
-    const user = await client.user.findUnique({ where: { id: stored.userId } });
-    if (!user) {
-      // Orphaned token — clean it up and refuse.
-      await client.refreshToken.deleteMany({ where: { token: rawToken } });
-      throw new InvalidRefreshTokenError();
-    }
-
-    // 3) [E3] The session must still exist in-memory. If the process
-    //    restarted or the session was evicted, the DEK is gone and the user
-    //    must re-authenticate with their password. Signal this the same way
-    //    as any other invalid refresh — 401 + clear cookie — so the frontend
-    //    routes to /login and prompts for the password again.
-    const sessionId = payload.sessionId;
-    const session = getSession(sessionId);
-    if (!session || session.userId !== user.id) {
-      // Session lost; clean the orphaned refresh token and session row.
-      await Promise.all([
-        client.refreshToken.deleteMany({ where: { id: stored.id } }),
-        client.session.deleteMany({ where: { id: sessionId } }),
-      ]);
-      throw new InvalidRefreshTokenError();
-    }
-
-    // 4) Atomic rotation: delete the old refresh row + create the new row in
-    //    one tx. Any subsequent reuse of the old token will miss the DB lookup
-    //    above. The sessionId stays the same — refresh extends a session, it
-    //    doesn't open a new one.
-    const newRefreshToken = signRefreshToken(user, sessionId);
-    const now = Date.now();
-    const refreshTokenExpiresAt = new Date(now + REFRESH_TOKEN_TTL_SECONDS * 1000);
-
-    try {
-      await client.$transaction([
-        client.refreshToken.delete({ where: { id: stored.id } }),
-        client.refreshToken.create({
-          data: {
-            token: newRefreshToken,
-            userId: user.id,
-            expiresAt: refreshTokenExpiresAt,
-          },
-        }),
-      ]);
-    } catch (err) {
-      // Concurrent refresh: a sibling call already rotated this token. The
-      // delete step throws P2025 (record-not-found). Surface as an ordinary
-      // invalid-refresh so the route clears the cookie and the client is
-      // routed to /login, matching the single-use semantics of refresh.
-      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
-        throw new InvalidRefreshTokenError();
-      }
-      throw err;
-    }
-
-    await client.session.updateMany({
-      where: { id: sessionId },
-      data: { expiresAt: refreshTokenExpiresAt },
-    });
-    extendSessionExpiry(sessionId, refreshTokenExpiresAt);
-
-    const accessToken = signAccessToken(user, sessionId);
-    const accessTokenExpiresAt = new Date(now + ACCESS_TOKEN_TTL_SECONDS * 1000);
-
-    return {
-      user: toPublicUser(user),
-      accessToken,
-      accessTokenExpiresAt,
-      refreshToken: newRefreshToken,
-      refreshTokenExpiresAt,
-    };
-  }
-
-  async function logout(rawToken: unknown): Promise<void> {
-    // Logout is best-effort: any parse / verify failure is swallowed because
-    // the user is going away anyway. What we DO care about is tearing down
-    // server-side state — the refresh-token row, the session row, and the
-    // in-memory DEK cache — so a lost / stolen cookie can't be replayed after
-    // the user clicks "log out".
-    if (typeof rawToken !== 'string' || rawToken.length === 0) return;
-    let payload: RefreshTokenPayload | null = null;
-    try {
-      const decoded = jwt.verify(rawToken, getRequiredEnv('REFRESH_TOKEN_SECRET'), {
-        algorithms: ['HS256'],
-      });
-      if (
-        typeof decoded === 'object' &&
-        decoded !== null &&
-        (decoded as RefreshTokenPayload).type === 'refresh' &&
-        typeof (decoded as RefreshTokenPayload).sub === 'string' &&
-        typeof (decoded as RefreshTokenPayload).sessionId === 'string'
-      ) {
-        payload = decoded as RefreshTokenPayload;
-      }
-    } catch {
-      // Ignore — we'll still delete any row matching the raw token below.
-    }
-
-    await client.refreshToken.deleteMany({ where: { token: rawToken } });
-    if (payload?.sessionId) {
-      closeSession(payload.sessionId);
-      await client.session.deleteMany({ where: { id: payload.sessionId } });
-    }
+  // Logout is best-effort: a missing or already-evicted sessionId is a no-op.
+  // What matters is tearing down the in-memory DEK so a lost cookie can't be
+  // replayed after the user clicks "log out".
+  async function logout(sessionId: string): Promise<void> {
+    closeSession(sessionId);
   }
 
   async function logoutAllSessionsForUser(userId: string): Promise<void> {
-    // Used by password-change / password-reset ([AU15] / [AU16]).
     closeSessionsForUser(userId);
-    await Promise.all([
-      client.refreshToken.deleteMany({ where: { userId } }),
-      client.session.deleteMany({ where: { userId } }),
-    ]);
   }
 
   // [AU15] Authenticated password change. Rewraps the content DEK under the
   // new password — narrative ciphertext is untouched. Invalidates all
-  // sessions + refresh tokens so any other logged-in device is forced
-  // through /login again (where it will re-derive the wrap key from the
-  // new password). The recovery wrap is intentionally not rotated here;
-  // rotating the recovery code is a separate, explicit user action ([AU17]).
+  // in-memory sessions so any other logged-in device is forced through /login
+  // again (where it will re-derive the wrap key from the new password).
+  // Returns a fresh sessionId for the caller so the route can re-set the
+  // cookie — the DEK is the same plaintext bytes before and after rewrap.
+  // The recovery wrap is intentionally not rotated here; rotating the recovery
+  // code is a separate, explicit user action ([AU17]).
   async function changePassword(input: {
     userId: string;
     oldPassword: string;
     newPassword: string;
-  }): Promise<void> {
+  }): Promise<string> {
     const user = await client.user.findUnique({ where: { id: input.userId } });
     if (!user) throw new InvalidCredentialsError();
 
@@ -504,35 +275,39 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
       wrapDek(dek, input.newPassword),
     ]);
 
-    await client.$transaction([
-      client.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash: newHash,
-          contentDekPasswordEnc: newWrap.ciphertext,
-          contentDekPasswordIv: newWrap.iv,
-          contentDekPasswordAuthTag: newWrap.authTag,
-          contentDekPasswordSalt: newWrap.salt,
-        },
-      }),
-      client.refreshToken.deleteMany({ where: { userId: user.id } }),
-      client.session.deleteMany({ where: { userId: user.id } }),
-    ]);
+    await client.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: newHash,
+        contentDekPasswordEnc: newWrap.ciphertext,
+        contentDekPasswordIv: newWrap.iv,
+        contentDekPasswordAuthTag: newWrap.authTag,
+        contentDekPasswordSalt: newWrap.salt,
+      },
+    });
 
-    // In-memory session map eviction is separate from the DB write — a
-    // stale in-memory entry on another request thread would let an already
-    // authenticated request keep its DEK for up to one more hop. Do this
-    // after the DB tx commits so we never evict in-memory state that the
-    // DB still claims is valid.
+    // Re-mint ordering is load-bearing: evict ALL sessions (including the
+    // caller's) BEFORE opening the fresh one. Opening first would cause the
+    // subsequent eviction to immediately nuke the just-minted session.
     closeSessionsForUser(user.id);
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    const now = Date.now();
+    openSession({
+      sessionId,
+      userId: user.id,
+      dek,
+      createdAt: new Date(now),
+      expiresAt: new Date(now + IDLE_TTL_MS),
+    });
+    return sessionId;
   }
 
   // [AU17] Authenticated recovery-code rotation. The DEK is unwrapped with
   // the user's current password and then re-wrapped under a freshly-generated
   // recovery code. The old recovery code becomes unusable the instant the
   // DB write commits. Password wrap, password hash, narrative ciphertext, and
-  // all active refresh tokens / sessions are intentionally untouched — the
-  // user is already authenticated and does not need to re-log-in.
+  // all active sessions are intentionally untouched — the user is already
+  // authenticated and does not need to re-log-in.
   async function rotateRecoveryCode(input: { userId: string; password: string }): Promise<string> {
     const user = await client.user.findUnique({ where: { id: input.userId } });
     if (!user) throw new InvalidCredentialsError();
@@ -589,63 +364,43 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
       wrapDek(dek, input.newPassword),
     ]);
 
-    await client.$transaction([
-      client.user.update({
-        where: { id: user.id },
-        data: {
-          passwordHash: newHash,
-          contentDekPasswordEnc: newWrap.ciphertext,
-          contentDekPasswordIv: newWrap.iv,
-          contentDekPasswordAuthTag: newWrap.authTag,
-          contentDekPasswordSalt: newWrap.salt,
-        },
-      }),
-      client.refreshToken.deleteMany({ where: { userId: user.id } }),
-      client.session.deleteMany({ where: { userId: user.id } }),
-    ]);
+    await client.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: newHash,
+        contentDekPasswordEnc: newWrap.ciphertext,
+        contentDekPasswordIv: newWrap.iv,
+        contentDekPasswordAuthTag: newWrap.authTag,
+        contentDekPasswordSalt: newWrap.salt,
+      },
+    });
 
     closeSessionsForUser(user.id);
   }
 
-  // [B12] Sign out everywhere — wipes every refresh token, every Session row,
-  // and every in-memory session entry for the caller. Mirrors the cleanup
-  // pattern used by logoutAllSessionsForUser / changePassword / resetPassword
-  // so the Session table doesn't accumulate ghost rows. Idempotent on empty
-  // sets.
+  // [B12] Sign out everywhere — evicts every in-memory session for the caller.
+  // Idempotent on an empty set.
   async function signOutEverywhere(input: { userId: string }): Promise<void> {
-    await client.$transaction([
-      client.refreshToken.deleteMany({ where: { userId: input.userId } }),
-      client.session.deleteMany({ where: { userId: input.userId } }),
-    ]);
     closeSessionsForUser(input.userId);
   }
 
   // [X3] Delete account — re-verifies the password (timing-equalised against
   // the unknown-user path the same way login() does), then deletes the user
-  // row inside a single transaction. Schema cascade drops Story → Chapter →
-  // Chat → Message and Story → Character / OutlineItem along with the user's
-  // refresh tokens and sessions; the explicit deleteMany lines below are
-  // redundant under the current schema but keep the transaction
-  // self-documenting and survive a future schema change that drops cascade.
+  // row. Schema cascade drops Story → Chapter → Chat → Message and
+  // Story → Character / OutlineItem along with the user record.
   async function deleteAccount(input: { userId: string; password: string }): Promise<void> {
     const user = await client.user.findUnique({ where: { id: input.userId } });
 
     // Equalise wrong-password vs. unknown-user wall-clock time. Unknown-user
-    // shouldn't normally happen on an authenticated route — the access token
-    // wouldn't validate — but if it does (e.g. a token issued for a since-
-    // deleted user is still in its 15-minute window) we don't want to leak
-    // that via timing.
+    // shouldn't normally happen on an authenticated route — the session
+    // wouldn't validate — but if it does we don't want to leak that via timing.
     const hashForVerify = user?.passwordHash ?? (await getDummyPasswordHash());
     const ok = await verifyPassword(hashForVerify, input.password);
     if (!user || !ok) {
       throw new InvalidCredentialsError();
     }
 
-    await client.$transaction([
-      client.refreshToken.deleteMany({ where: { userId: user.id } }),
-      client.session.deleteMany({ where: { userId: user.id } }),
-      client.user.delete({ where: { id: user.id } }),
-    ]);
+    await client.user.delete({ where: { id: user.id } });
 
     closeSessionsForUser(user.id);
   }
@@ -663,7 +418,6 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
   return {
     register,
     login,
-    refresh,
     logout,
     logoutAllSessionsForUser,
     changePassword,
