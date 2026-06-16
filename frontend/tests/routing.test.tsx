@@ -1,7 +1,6 @@
 import { act, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { setAccessToken } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
 import { useSessionStore } from '@/store/session';
@@ -25,13 +24,11 @@ describe('routing', () => {
   beforeEach(() => {
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
-    setAccessToken(null);
     useSessionStore.setState({ user: null, status: 'idle' });
   });
 
   afterEach(() => {
     vi.unstubAllGlobals();
-    setAccessToken(null);
     // Wrap in act(): vitest runs afterEach hooks in reverse registration order,
     // so this fires before setup.ts's cleanup() unmounts; otherwise the state
     // change notifies still-mounted subscribers outside act.
@@ -53,21 +50,13 @@ describe('routing', () => {
 
   it('authenticated session lands on / (dashboard)', async () => {
     // Pre-seed the store as authenticated so RequireAuth admits us immediately.
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
-    // initAuth will still try to refresh — return a successful refresh + /me
-    // so state stays authenticated after bootstrap. The dashboard also fires
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' });
+    // initAuth probes /auth/me to confirm the session; return a 200 so the
+    // store stays authenticated after bootstrap. The dashboard also fires
     // a GET /api/stories on mount, so mock every call via mockImplementation
     // rather than a brittle ordered queue.
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.endsWith('/auth/refresh')) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ accessToken: 'tok-1' }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-      }
       if (url.endsWith('/auth/me')) {
         return Promise.resolve(
           new Response(JSON.stringify({ user: { id: 'u1', username: 'alice', name: 'Alice' } }), {
@@ -95,19 +84,11 @@ describe('routing', () => {
   });
 
   it('authenticated session can load /stories/:id (editor)', async () => {
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
-    // Router-based fetch mock: initAuth's refresh + /me keep the session
-    // authenticated; EditorPage then fetches the story to render its title.
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' });
+    // Router-based fetch mock: initAuth probes /auth/me to confirm the session;
+    // EditorPage then fetches the story to render its title.
     fetchMock.mockImplementation((input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.endsWith('/auth/refresh')) {
-        return Promise.resolve(
-          new Response(JSON.stringify({ accessToken: 'tok-1' }), {
-            status: 200,
-            headers: { 'Content-Type': 'application/json' },
-          }),
-        );
-      }
       if (url.endsWith('/auth/me')) {
         return Promise.resolve(
           new Response(JSON.stringify({ user: { id: 'u1', username: 'alice', name: 'Alice' } }), {

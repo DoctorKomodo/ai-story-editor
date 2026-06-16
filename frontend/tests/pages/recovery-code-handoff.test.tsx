@@ -98,8 +98,6 @@ describe('recovery-code handoff (F59)', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         user: { id: 'u2', username: 'bob', name: 'bob' },
-        accessToken: 'tok-2',
-        accessTokenExpiresAt: new Date(Date.now() + 60_000).toISOString(),
       }),
     );
 

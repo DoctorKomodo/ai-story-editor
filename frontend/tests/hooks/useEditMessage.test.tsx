@@ -3,7 +3,7 @@ import { act, renderHook } from '@testing-library/react';
 import type { JSX, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { chatMessagesQueryKey, chatsBaseQueryKey, useEditMessageMutation } from '@/hooks/useChat';
-import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetApiClientForTests } from '@/lib/api';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 function jsonResponse(status: number, body: unknown): Response {
@@ -22,7 +22,6 @@ describe('useEditMessageMutation', () => {
   let fetchMock: FetchMock;
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

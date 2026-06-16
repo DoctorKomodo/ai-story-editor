@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAICompletion } from '@/hooks/useAICompletion';
-import { ApiError, resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { ApiError, resetApiClientForTests } from '@/lib/api';
 import { parseAiSseStream } from '@/lib/sse';
 import { useErrorStore } from '@/store/errors';
 
@@ -94,7 +94,6 @@ describe('F15 · useAICompletion hook', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-x');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

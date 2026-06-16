@@ -5,7 +5,7 @@ import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { CastTab } from '@/components/CastTab';
 import { useCharactersQuery } from '@/hooks/useCharacters';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
@@ -62,7 +62,6 @@ describe('CastTab — delete', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     setUnauthorizedHandler(() => useSessionStore.getState().clearSession());
     useSessionStore.setState({
       user: { id: 'u1', username: 'alice', name: 'Alice' },

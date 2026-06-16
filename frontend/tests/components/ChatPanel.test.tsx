@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChatPanel } from '@/components/ChatPanel';
 import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 
@@ -66,7 +66,6 @@ describe('ChatPanel (F38)', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('test-token');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });

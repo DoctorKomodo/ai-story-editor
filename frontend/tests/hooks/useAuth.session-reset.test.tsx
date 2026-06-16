@@ -85,7 +85,6 @@ describe('useAuth — session reset on auth transition (story-editor-7lo)', () =
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         user: { id: 'B', username: 'b', name: 'User B' },
-        accessToken: 'tok-b',
       }),
     );
 
@@ -108,7 +107,7 @@ describe('useAuth — session reset on auth transition (story-editor-7lo)', () =
 
   it('logout() clears cache and stores after the request resolves', async () => {
     // Start with user A authenticated and state seeded.
-    useSessionStore.getState().setSession({ id: 'A', username: 'a', name: 'User A' }, 'tok-a');
+    useSessionStore.getState().setSession({ id: 'A', username: 'a', name: 'User A' });
     qc.setQueryData(['stories', 'list'], [{ id: 'story-A1' }]);
     useAttachedSelectionStore.setState({
       attachedSelection: {
@@ -131,7 +130,7 @@ describe('useAuth — session reset on auth transition (story-editor-7lo)', () =
   });
 
   it('logout() still clears cache and stores even if the API call fails', async () => {
-    useSessionStore.getState().setSession({ id: 'A', username: 'a', name: 'User A' }, 'tok-a');
+    useSessionStore.getState().setSession({ id: 'A', username: 'a', name: 'User A' });
     qc.setQueryData(['stories', 'list'], [{ id: 'story-A1' }]);
 
     fetchMock.mockRejectedValueOnce(new TypeError('network down'));
