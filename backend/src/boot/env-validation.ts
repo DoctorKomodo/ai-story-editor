@@ -27,4 +27,18 @@ export function validateEncryptionEnv(opts: ValidateOptions = {}): void {
         'Remove it from your .env to avoid confusion.',
     );
   }
+
+  if (env.JWT_SECRET) {
+    warn(
+      '[boot] JWT_SECRET is set but no longer used. The app moved to opaque ' +
+        'httpOnly session cookies — no token signing. Remove it from your .env.',
+    );
+  }
+
+  if (env.REFRESH_TOKEN_SECRET) {
+    warn(
+      '[boot] REFRESH_TOKEN_SECRET is set but no longer used. The app moved to ' +
+        'opaque httpOnly session cookies — no token signing. Remove it from your .env.',
+    );
+  }
 }
