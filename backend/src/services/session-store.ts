@@ -11,12 +11,16 @@
 // middleware copies from this store. content-crypto never reads this store
 // directly.
 
-const MAX_SESSIONS = 10_000;
+export const IDLE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+export const ABSOLUTE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+const MAX_SESSIONS = Number(process.env.SESSION_STORE_MAX) || 10_000;
 const SWEEP_INTERVAL_MS = 60_000;
 
 interface SessionEntry {
   userId: string;
   dek: Buffer;
+  createdAt: number;
   expiresAt: number;
   lastAccessedAt: number;
 }
@@ -46,24 +50,46 @@ function evictOldest(): void {
       oldestId = id;
     }
   }
-  if (oldestId !== null) sessions.delete(oldestId);
+  if (oldestId !== null) {
+    const entry = sessions.get(oldestId)!;
+    // Warn only when evicting a session that hasn't expired yet — that means
+    // cap pressure is forcing live users out.
+    if (entry.expiresAt > Date.now()) {
+      console.warn(
+        '[session-store] evicting a live session under cap pressure; consider raising SESSION_STORE_MAX',
+      );
+    }
+    sessions.delete(oldestId);
+  }
 }
 
 export interface OpenSessionInput {
   sessionId: string;
   userId: string;
   dek: Buffer;
+  createdAt: Date;
   expiresAt: Date;
 }
 
-export function openSession({ sessionId, userId, dek, expiresAt }: OpenSessionInput): void {
+export function openSession({
+  sessionId,
+  userId,
+  dek,
+  createdAt,
+  expiresAt,
+}: OpenSessionInput): void {
   ensureSweeper();
   if (!sessions.has(sessionId) && sessions.size >= MAX_SESSIONS) {
-    evictOldest();
+    // Sweep expired entries first; only force-evict a live one if still full.
+    sweep();
+    if (sessions.size >= MAX_SESSIONS) {
+      evictOldest();
+    }
   }
   sessions.set(sessionId, {
     userId,
     dek,
+    createdAt: createdAt.getTime(),
     expiresAt: expiresAt.getTime(),
     lastAccessedAt: Date.now(),
   });
@@ -103,7 +129,8 @@ export function closeSessionsForUser(userId: string): number {
 export function extendSessionExpiry(sessionId: string, expiresAt: Date): void {
   const entry = sessions.get(sessionId);
   if (!entry) return;
-  entry.expiresAt = expiresAt.getTime();
+  const cap = entry.createdAt + ABSOLUTE_TTL_MS;
+  entry.expiresAt = Math.min(expiresAt.getTime(), cap);
   entry.lastAccessedAt = Date.now();
 }
 
@@ -118,4 +145,8 @@ export function _resetSessionStore(): void {
 
 export function _sessionCount(): number {
   return sessions.size;
+}
+
+export function _peekExpiry(sessionId: string): number | null {
+  return sessions.get(sessionId)?.expiresAt ?? null;
 }

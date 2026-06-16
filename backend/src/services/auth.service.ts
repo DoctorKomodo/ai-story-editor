@@ -318,7 +318,13 @@ export function createAuthService(client: PrismaClient = defaultPrisma) {
       }),
     ]);
 
-    openSession({ sessionId, userId: user.id, dek, expiresAt: refreshTokenExpiresAt });
+    openSession({
+      sessionId,
+      userId: user.id,
+      dek,
+      createdAt: new Date(),
+      expiresAt: refreshTokenExpiresAt,
+    });
 
     return {
       user: toPublicUser(user),

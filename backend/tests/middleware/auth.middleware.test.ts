@@ -31,6 +31,7 @@ function openTestSession(userId: string): string {
     sessionId,
     userId,
     dek: crypto.randomBytes(32),
+    createdAt: new Date(),
     expiresAt: new Date(Date.now() + 60_000),
   });
   openedSessionIds.push(sessionId);
