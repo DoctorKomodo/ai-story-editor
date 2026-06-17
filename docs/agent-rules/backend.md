@@ -112,7 +112,7 @@ Three steps, used by every CRUD route:
   repo layer**. Controllers, services, and routes never call Prisma
   directly for these models. The repo layer encrypts on write,
   decrypts on read; bypassing it leaks ciphertext or skips encryption.
-- **Non-narrative entities** (`User`, `RefreshToken`) may be accessed
+- **Non-narrative entities** (`User`) may be accessed
   directly via Prisma from services.
 - **No raw SQL** outside migration files.
 - Foreign key fields **must have indexes**.

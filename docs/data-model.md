@@ -11,8 +11,6 @@ Authoritative reference for the Prisma schema ([backend/prisma/schema.prisma](..
 ```mermaid
 erDiagram
     User ||--o{ Story : owns
-    User ||--o{ RefreshToken : issues
-    User ||--o{ Session : tracks
     Story ||--o{ Chapter : contains
     Story ||--o{ Character : casts
     Story ||--o{ OutlineItem : structures
@@ -32,12 +30,6 @@ erDiagram
         string  contentDekRecovery "DEK wrap, argon2id(recovery code) — Enc/Iv/AuthTag/Salt, nullable"
         date    createdAt
         date    updatedAt
-    }
-    Session {
-        string  id PK "random sessionId (hex), not a cuid"
-        string  userId FK
-        date    expiresAt
-        date    createdAt
     }
     Story {
         string  id PK
@@ -114,16 +106,9 @@ erDiagram
         date    createdAt
         date    updatedAt "nullable — null = never edited; set only by the edit path"
     }
-    RefreshToken {
-        string  id PK
-        string  userId FK
-        string  token UK
-        date    expiresAt
-        date    createdAt
-    }
 ```
 
-> `Session` holds no DEK — only an in-process map does. The row exists so a restart or cold replica can detect "session expired" and force re-authentication instead of silently failing.
+> Sessions are in-memory only — there is no `Session` DB table. See [encryption.md](./encryption.md) for the session-store design.
 
 ---
 
@@ -132,8 +117,6 @@ erDiagram
 | Parent → Child | FK | Cascade | Rationale |
 |---|---|---|---|
 | User → Story | `Story.userId` | `onDelete: Cascade` | Account delete removes all user-owned writing. |
-| User → RefreshToken | `RefreshToken.userId` | `onDelete: Cascade` | Session records vanish with the account. |
-| User → Session | `Session.userId` | `onDelete: Cascade` | DEK-survival rows vanish with the account. |
 | Story → Chapter | `Chapter.storyId` | `onDelete: Cascade` | A story has no meaning without its chapters. |
 | Story → Character | `Character.storyId` | `onDelete: Cascade` | Characters are scoped to a single story. |
 | Story → OutlineItem | `OutlineItem.storyId` | `onDelete: Cascade` | Outline lives inside the story it belongs to. |
@@ -147,21 +130,19 @@ erDiagram
 | Table | Index | Purpose |
 |---|---|---|
 | User | `username` unique, `email` unique | `username` is the login lookup; `email` uniqueness is enforced when present. |
-| Session | `(userId)`, `(expiresAt)` | Per-user lookup + expiry sweeps. |
 | Story | `(userId)` | List-stories-for-user is the hot path. |
 | Chapter | `@@unique(storyId, orderIndex)`, `(storyId)` | Ordered render + the race guard on insert (the unique btree also serves the `ORDER BY orderIndex`). |
 | Character | `@@unique(storyId, orderIndex)`, `(storyId)` | Sidebar cast + ordered render; same race guard. |
 | OutlineItem | `@@unique(storyId, order)`, `(storyId)` | Outline sidebar + drag-reorder; same race guard. |
 | Chat | `(chapterId)`, `(chapterId, kind)`, `(chapterId, lastActivityAt)` | List chats for the open chapter, filter by kind, order by recency. |
 | Message | `(chatId)`, `(chatId, createdAt)` | Chronological log render. |
-| RefreshToken | `token` unique, `(userId)` | Cookie lookup + per-user revocation. |
 
 ---
 
 ## Field Conventions
 
-- **IDs** are CUIDs (`String @id @default(cuid())`), never incrementing integers, so they're safe to expose in URLs. Exception: `Session.id` is the random hex `sessionId` minted at login (no `cuid()` default).
-- **Timestamps** — every narrative model has `createdAt` + `updatedAt`. `Message.updatedAt` is **nullable** (`null` = never edited; set only by the in-place edit path, deliberately not `@updatedAt`) — `Message` is no longer append-only. `Session` and `RefreshToken` are `createdAt`-only by design.
+- **IDs** are CUIDs (`String @id @default(cuid())`), never incrementing integers, so they're safe to expose in URLs.
+- **Timestamps** — every narrative model has `createdAt` + `updatedAt`. `Message.updatedAt` is **nullable** (`null` = never edited; set only by the in-place edit path, deliberately not `@updatedAt`) — `Message` is no longer append-only.
 - **JSON columns** — only `User.settingsJson` is a live Postgres `JSONB` column. The narrative JSON payloads (TipTap body, chat attachment, citations) are serialised to strings and stored encrypted as ciphertext triples, not as JSONB.
 - **Encrypted columns are nullable** — a full-null triple means the field was stored as `null`; a partial triple is a corruption signal (the repo throws).
 - **Status enums are strings**, not Prisma enums, so the UI can add states without a migration (`Chapter.status`, `OutlineItem.status`, `Chat.kind`, `Message.role`).

@@ -158,7 +158,7 @@ Closed work from the original bring-up letters lives in immutable `docs/done/don
 *Frontend implementation rules live in `docs/agent-rules/frontend.md` (read by implementer + code-quality-reviewer at dispatch time via `/bd-execute`).*
 
 ### Database
-*Database / repo-layer rules live in `docs/agent-rules/backend.md` (general database rules) and `docs/agent-rules/repo-boundary.md` (narrative-entity boundary, encrypt-on-write / decrypt-on-read template). Every model has `createdAt`; most have `updatedAt`. `Message` carries a nullable `updatedAt` (`null` = never edited; set only by the in-place edit path `message.repo.update`) — it is no longer append-only. `Session` and `RefreshToken` are `createdAt`-only by design. The app is at/near release, so **schema changes must preserve and migrate existing data** — the migration rules live in `backend.md` / `repo-boundary.md` and the gate is in "When to Stop and Ask" below.*
+*Database / repo-layer rules live in `docs/agent-rules/backend.md` (general database rules) and `docs/agent-rules/repo-boundary.md` (narrative-entity boundary, encrypt-on-write / decrypt-on-read template). Every model has `createdAt`; most have `updatedAt`. `Message` carries a nullable `updatedAt` (`null` = never edited; set only by the in-place edit path `message.repo.update`) — it is no longer append-only. The app is at/near release, so **schema changes must preserve and migrate existing data** — the migration rules live in `backend.md` / `repo-boundary.md` and the gate is in "When to Stop and Ask" below.*
 
 ### AI Integration
 *AI integration rules (per-user Venice client, prompt service, context budget, `venice_parameters`) live in `docs/agent-rules/backend.md`.*

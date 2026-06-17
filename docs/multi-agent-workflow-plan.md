@@ -109,7 +109,7 @@ Files under `docs/agent-rules/`:
   docs-MCP-before-muscle-memory for fast-moving libraries.
 - `frontend.md` — API only via `src/lib/api.ts`, Zustand for client
   / TanStack Query for server / no other stores, tokens-only from
-  `frontend/src/index.css` (lint:design enforces), JWT in memory,
+  `frontend/src/index.css` (lint:design enforces), session cookie (httpOnly),
   Storybook-first, selection-bubble `preventDefault`, keyboard
   shortcut contract, peer `*.stories.tsx` for new components,
   TanStack Query keys `[entity, id]`, hooks `use<Entity>(id)`,
