@@ -51,9 +51,10 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     await resetAll();
   });
 
-  it('returns 401 without Bearer', async () => {
+  it('returns 401 when unauthenticated', async () => {
     const res = await request(app).get('/api/chats/anything/messages');
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   it('returns 404 for a nonexistent chat', async () => {

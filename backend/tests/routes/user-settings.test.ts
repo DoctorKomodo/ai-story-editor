@@ -56,17 +56,19 @@ describe('User settings routes [B11]', () => {
 
   // ── Auth gates ────────────────────────────────────────────────────────────
 
-  it('GET /api/users/me/settings returns 401 without Bearer', async () => {
+  it('GET /api/users/me/settings returns 401 when unauthenticated', async () => {
     const res = await request(app).get('/api/users/me/settings');
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('PATCH /api/users/me/settings returns 401 without Bearer', async () => {
+  it('PATCH /api/users/me/settings returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
       .send({ theme: 'dark' });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   // ── GET defaults ──────────────────────────────────────────────────────────

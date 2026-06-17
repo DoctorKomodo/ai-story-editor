@@ -84,37 +84,42 @@ describe('Character routes [B5]', () => {
 
   // ── Auth gates ────────────────────────────────────────────────────────────
 
-  it('GET list returns 401 without Bearer', async () => {
+  it('GET list returns 401 when unauthenticated', async () => {
     const res = await request(app).get(`/api/stories/${FAKE_ID}/characters`);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('POST returns 401 without Bearer', async () => {
+  it('POST returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .post(`/api/stories/${FAKE_ID}/characters`)
       .set('Origin', TEST_ORIGIN)
       .send({ name: 'Alice' });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('GET /:characterId returns 401 without Bearer', async () => {
+  it('GET /:characterId returns 401 when unauthenticated', async () => {
     const res = await request(app).get(`/api/stories/${FAKE_ID}/characters/${FAKE_ID}`);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('PATCH /:characterId returns 401 without Bearer', async () => {
+  it('PATCH /:characterId returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .patch(`/api/stories/${FAKE_ID}/characters/${FAKE_ID}`)
       .set('Origin', TEST_ORIGIN)
       .send({ name: 'No' });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('DELETE /:characterId returns 401 without Bearer', async () => {
+  it('DELETE /:characterId returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .delete(`/api/stories/${FAKE_ID}/characters/${FAKE_ID}`)
       .set('Origin', TEST_ORIGIN);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   // ── POST ownership / Zod ──────────────────────────────────────────────────

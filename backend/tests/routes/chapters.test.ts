@@ -114,37 +114,42 @@ describe('Chapter routes [B3]', () => {
 
   // ── Auth gates ────────────────────────────────────────────────────────────
 
-  it('GET /api/stories/:storyId/chapters returns 401 without Bearer', async () => {
+  it('GET /api/stories/:storyId/chapters returns 401 when unauthenticated', async () => {
     const res = await request(app).get(`/api/stories/${FAKE_ID}/chapters`);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('POST /api/stories/:storyId/chapters returns 401 without Bearer', async () => {
+  it('POST /api/stories/:storyId/chapters returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .post(`/api/stories/${FAKE_ID}/chapters`)
       .set('Origin', TEST_ORIGIN)
       .send({ title: 'Ch 1' });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('GET /api/stories/:storyId/chapters/:chapterId returns 401 without Bearer', async () => {
+  it('GET /api/stories/:storyId/chapters/:chapterId returns 401 when unauthenticated', async () => {
     const res = await request(app).get(`/api/stories/${FAKE_ID}/chapters/${FAKE_ID}`);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('PATCH /api/stories/:storyId/chapters/:chapterId returns 401 without Bearer', async () => {
+  it('PATCH /api/stories/:storyId/chapters/:chapterId returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .patch(`/api/stories/${FAKE_ID}/chapters/${FAKE_ID}`)
       .set('Origin', TEST_ORIGIN)
       .send({ title: 'nope' });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('DELETE /api/stories/:storyId/chapters/:chapterId returns 401 without Bearer', async () => {
+  it('DELETE /api/stories/:storyId/chapters/:chapterId returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .delete(`/api/stories/${FAKE_ID}/chapters/${FAKE_ID}`)
       .set('Origin', TEST_ORIGIN);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   // ── POST ownership / Zod ──────────────────────────────────────────────────

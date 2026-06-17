@@ -136,45 +136,51 @@ describe('Outline routes [B8]', () => {
 
   // ── Auth gates ────────────────────────────────────────────────────────────
 
-  it('GET list returns 401 without Bearer', async () => {
+  it('GET list returns 401 when unauthenticated', async () => {
     const res = await request(app).get(`/api/stories/${FAKE_ID}/outline`);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('POST returns 401 without Bearer', async () => {
+  it('POST returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .post(`/api/stories/${FAKE_ID}/outline`)
       .set('Origin', TEST_ORIGIN)
       .send({ title: 'X', status: 'queued' });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('PATCH /reorder returns 401 without Bearer', async () => {
+  it('PATCH /reorder returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .patch(`/api/stories/${FAKE_ID}/outline/reorder`)
       .set('Origin', TEST_ORIGIN)
       .send({ items: [{ id: FAKE_ID, order: 0 }] });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('GET /:outlineId returns 401 without Bearer', async () => {
+  it('GET /:outlineId returns 401 when unauthenticated', async () => {
     const res = await request(app).get(`/api/stories/${FAKE_ID}/outline/${FAKE_ID}`);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('PATCH /:outlineId returns 401 without Bearer', async () => {
+  it('PATCH /:outlineId returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .patch(`/api/stories/${FAKE_ID}/outline/${FAKE_ID}`)
       .set('Origin', TEST_ORIGIN)
       .send({ title: 'X' });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
-  it('DELETE /:outlineId returns 401 without Bearer', async () => {
+  it('DELETE /:outlineId returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .delete(`/api/stories/${FAKE_ID}/outline/${FAKE_ID}`)
       .set('Origin', TEST_ORIGIN);
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   // ── POST ownership / Zod ──────────────────────────────────────────────────

@@ -49,12 +49,13 @@ describe('[AU15] POST /api/auth/change-password', () => {
     await prisma.user.deleteMany();
   });
 
-  it('returns 401 without a bearer token', async () => {
+  it('returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .post('/api/auth/change-password')
       .set('Origin', TEST_ORIGIN)
       .send({ oldPassword: PASSWORD, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   it('returns 400 on missing or malformed body', async () => {

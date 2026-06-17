@@ -117,12 +117,13 @@ describe('Chapter reorder route [B4]', () => {
     await resetAll();
   });
 
-  it('returns 401 without Bearer', async () => {
+  it('returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .patch(`/api/stories/${FAKE_ID}/chapters/reorder`)
       .set('Origin', TEST_ORIGIN)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: 0 }] });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   it('returns 403 when :storyId belongs to another user', async () => {
