@@ -5,6 +5,7 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import {
   InvalidRecoveryCodeError,
   unwrapDekWithPassword,
@@ -38,7 +39,7 @@ async function registerAndLogin(): Promise<{
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
   const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
   expect(cookie).toBeDefined();
   return { agent, recoveryCode, userId: login.body.user.id as string };
 }

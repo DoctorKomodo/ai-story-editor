@@ -21,6 +21,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { prisma as appPrisma } from '../../src/lib/prisma';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
@@ -52,7 +53,7 @@ async function registerAndLogin(
     .send({ username, password });
   expect(login.status).toBe(200);
   const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
   expect(cookie).toBeDefined();
   const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
   return { agent, sessionId };

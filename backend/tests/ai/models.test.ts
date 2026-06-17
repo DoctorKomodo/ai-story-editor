@@ -1,6 +1,7 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
@@ -25,7 +26,7 @@ async function registerAndLogin(): Promise<{
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
   const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
   expect(cookie).toBeDefined();
   const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
   return { agent, sessionId };

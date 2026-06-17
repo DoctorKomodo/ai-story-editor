@@ -4,6 +4,7 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { _resetSessionStore, _sessionCount } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
@@ -27,7 +28,7 @@ async function registerAndLoginTwice(username: string): Promise<{
     .send({ username, password: PASSWORD });
   expect(login1.status).toBe(200);
   const raw = login1.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
   expect(cookie).toBeDefined();
   const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
 
@@ -82,7 +83,7 @@ describe('[B12] POST /api/auth/sign-out-everywhere', () => {
 
     // The response must clear the caller's session cookie.
     const setCookie = res.headers['set-cookie'] as unknown as string[] | undefined;
-    const cleared = (setCookie ?? []).find((c) => c.startsWith('session='));
+    const cleared = (setCookie ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
     expect(cleared).toBeDefined();
     expect(cleared).toMatch(/Max-Age=0|Expires=/i);
   });

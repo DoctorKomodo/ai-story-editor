@@ -17,6 +17,7 @@ import type { Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
@@ -115,7 +116,7 @@ async function registerAndLogin(): Promise<{
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
   const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
   expect(cookie).toBeDefined();
   const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
   return { agent, sessionId };

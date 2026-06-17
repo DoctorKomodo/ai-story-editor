@@ -9,6 +9,7 @@ import express from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { requireAuth } from '../../src/middleware/auth.middleware';
 import {
   decryptForRequest,
@@ -73,7 +74,7 @@ describe('[E3] session / DEK end-to-end via httpOnly cookie auth', () => {
     expect(login.status).toBe(200);
 
     const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-    const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+    const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
     expect(cookie).toBeDefined();
     const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
 
@@ -112,7 +113,7 @@ describe('[E3] session / DEK end-to-end via httpOnly cookie auth', () => {
       .send({ username: 'other-dek-user', password: PASSWORD });
     expect(loginB.status).toBe(200);
     const rawB = loginB.headers['set-cookie'] as unknown as string[] | undefined;
-    const cookieB = (rawB ?? []).find((c) => c.startsWith('session='));
+    const cookieB = (rawB ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
     expect(cookieB).toBeDefined();
     const sessionIdB = decodeURIComponent(cookieB!.split(';')[0].split('=')[1]);
 

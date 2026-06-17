@@ -1,5 +1,6 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 
 vi.mock('argon2', async (importOriginal) => {
   const actual = await importOriginal<typeof import('argon2')>();
@@ -48,7 +49,7 @@ describe('[AU10] POST /api/auth/login — username-based supersede', () => {
     expect(res.body.user.username).toBe(USERNAME);
 
     const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
-    const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+    const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
     expect(cookie).toBeDefined();
     expect(cookie!.toLowerCase()).toContain('httponly');
     expect(cookie!.toLowerCase()).toContain('samesite=lax');
@@ -77,7 +78,7 @@ describe('[AU10] POST /api/auth/login — username-based supersede', () => {
     expect(res.body.user.username).toBe(USERNAME);
     expect(typeof res.body.user.id).toBe('string');
     const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
-    const cookie = (raw ?? []).find((c) => c.startsWith('session='));
+    const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
     expect(cookie).toBeDefined();
   });
 
@@ -180,10 +181,10 @@ describe('[AU10] POST /api/auth/login — username-based supersede', () => {
     expect(second.status).toBe(200);
     const firstCookie = (
       (first.headers['set-cookie'] as unknown as string[] | undefined) ?? []
-    ).find((c) => c.startsWith('session='));
+    ).find((c) => c.startsWith(`${sessionCookieName()}=`));
     const secondCookie = (
       (second.headers['set-cookie'] as unknown as string[] | undefined) ?? []
-    ).find((c) => c.startsWith('session='));
+    ).find((c) => c.startsWith(`${sessionCookieName()}=`));
     expect(firstCookie).toBeDefined();
     expect(secondCookie).toBeDefined();
     expect(firstCookie).not.toBe(secondCookie);
