@@ -160,6 +160,7 @@ describe('session-store absolute cap + sliding', () => {
       expiresAt: new Date(Date.now() + 1000), // future, but beyond the absolute cap
     });
     // No extendSessionExpiry call — the cap must be enforced at write time.
+    expect(peekSessionExpiry('cap-open')).toBe(past + ABSOLUTE_TTL_MS);
     expect(getSession('cap-open')).toBeNull();
   });
 });
