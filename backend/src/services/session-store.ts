@@ -90,7 +90,7 @@ export function openSession({
     userId,
     dek,
     createdAt: createdAt.getTime(),
-    expiresAt: expiresAt.getTime(),
+    expiresAt: Math.min(expiresAt.getTime(), createdAt.getTime() + ABSOLUTE_TTL_MS),
     lastAccessedAt: Date.now(),
   });
 }

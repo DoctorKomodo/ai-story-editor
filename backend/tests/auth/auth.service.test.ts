@@ -132,9 +132,7 @@ describe('auth.service login()', () => {
     expect(result.user).toEqual(expect.objectContaining({ username: 'session-user' }));
     expect(typeof result.sessionId).toBe('string');
     expect(result.sessionId.length).toBeGreaterThan(0);
-    // No JWT fields in the result
-    expect(result).not.toHaveProperty('accessToken');
-    expect(result).not.toHaveProperty('refreshToken');
+    expect(Object.keys(result).sort()).toEqual(['sessionId', 'user']);
 
     // A live session must exist in the in-memory store
     const session = getSession(result.sessionId);

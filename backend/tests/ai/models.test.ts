@@ -110,6 +110,7 @@ describe('GET /api/ai/models [V1]', () => {
     const res = await agent.get('/api/ai/models');
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('venice_key_required');
+    expect(res.headers['cache-control']).toBe('no-store');
     // Nothing hit Venice for models.
     expect(fetchSpy).not.toHaveBeenCalled();
   });

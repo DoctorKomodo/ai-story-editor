@@ -93,12 +93,12 @@ app.use(cookieParser());
 // Primary CSRF defense — must run before the /api/ai rate limiter so forged
 // requests are rejected before they consume budget.
 app.use('/api', requireAllowedOrigin(allowedOrigins));
-// Prevent shared caches from storing authenticated API responses. The SSE
-// streaming route sets its own Cache-Control and must not be clobbered; all
-// other /api responses get no-store. Inside a /api mount, req.path is
-// mount-relative, so /api/ai/complete → req.path === '/ai/complete'.
+// Prevent shared caches from storing authenticated API responses. Only the SSE
+// streaming endpoint is exempt — it sets its own Cache-Control headers and must
+// not be clobbered. All other /api responses get no-store. Inside the /api
+// mount, req.path is mount-relative, so /api/ai/complete → '/ai/complete'.
 app.use('/api', (req, res, next) => {
-  if (req.path.startsWith('/ai/')) return next();
+  if (req.path === '/ai/complete') return next();
   res.setHeader('Cache-Control', 'no-store');
   next();
 });

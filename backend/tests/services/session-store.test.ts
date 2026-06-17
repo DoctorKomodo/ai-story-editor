@@ -149,4 +149,17 @@ describe('session-store absolute cap + sliding', () => {
     extendSessionExpiry('s2', new Date(Date.now() + 7 * 24 * 3600_000));
     expect(getSession('s2')).toBeNull(); // clamp pinned expiry to past+30d (< now) → expired
   });
+
+  it('openSession self-enforces the absolute cap — getSession returns null without any extendSessionExpiry call', () => {
+    const past = Date.now() - 31 * 24 * 3600_000; // created 31 days ago
+    openSession({
+      sessionId: 'cap-open',
+      userId: 'u-cap',
+      dek,
+      createdAt: new Date(past),
+      expiresAt: new Date(Date.now() + 1000), // future, but beyond the absolute cap
+    });
+    // No extendSessionExpiry call — the cap must be enforced at write time.
+    expect(getSession('cap-open')).toBeNull();
+  });
 });
