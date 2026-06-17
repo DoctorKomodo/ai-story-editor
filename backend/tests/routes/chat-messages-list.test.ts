@@ -1,7 +1,7 @@
 // [V21] Integration tests for GET /api/chats/:chatId/messages.
 //
 // Covers:
-//   - 401 without Bearer
+//   - 401 when unauthenticated
 //   - 404 for nonexistent chat
 //   - 404 for unowned chat (scoped via chapter→story→user)
 //   - 200 empty { messages: [] } for an owned chat with no messages

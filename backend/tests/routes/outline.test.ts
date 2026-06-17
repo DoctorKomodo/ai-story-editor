@@ -2,7 +2,7 @@
 // /api/stories/:storyId/outline.
 //
 // Covers:
-//   - All endpoints 401 without Bearer
+//   - All endpoints 401 when unauthenticated
 //   - POST 403 when :storyId is not the caller's story
 //   - POST 400 on Zod failures (empty title, missing status, unknown key)
 //   - POST 201 with decrypted title/sub; auto-assigned order (0 then 1)

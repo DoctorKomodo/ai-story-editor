@@ -1,7 +1,7 @@
 // [B11] Integration tests for GET /api/users/me/settings and PATCH /api/users/me/settings.
 //
 // Covers:
-//   - 401 on GET / PATCH without Bearer
+//   - 401 on GET / PATCH when unauthenticated
 //   - GET returns full defaults for a new user
 //   - PATCH with partial settings stores + returns merged result
 //   - PATCH theme: 'dark' then GET returns dark + every other default

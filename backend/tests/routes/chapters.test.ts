@@ -1,7 +1,7 @@
 // [B3] Integration tests for chapter CRUD under /api/stories/:storyId/chapters.
 //
 // Covers:
-//   - All endpoints 401 without Bearer
+//   - All endpoints 401 when unauthenticated
 //   - POST 403 when :storyId is not the caller's story
 //   - POST 400 when body fails Zod (unknown key, empty title, wordCount passed)
 //   - POST 201 with bodyJson — wordCount derived from the TipTap tree,
