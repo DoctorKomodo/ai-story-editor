@@ -124,6 +124,7 @@ describe('GET /api/ai/models [V1]', () => {
     const res = await agent.get('/api/ai/models');
 
     expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body).toEqual({
       models: [
         {
