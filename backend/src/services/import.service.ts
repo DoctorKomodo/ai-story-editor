@@ -28,6 +28,8 @@ export async function runImport(req: Request, file: ImportFile): Promise<ImportR
       const characterRepo = createCharacterRepo(req, txc);
       const outlineRepo = createOutlineRepo(req, txc);
       const chatRepo = createChatRepo(req, txc);
+      // No txc: messages go through createWithin(tx, …), which takes the tx client
+      // explicitly (create() self-transacts and must not be used inside the outer tx).
       const messageRepo = createMessageRepo(req);
 
       for (const s of file.stories) {

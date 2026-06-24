@@ -39,6 +39,7 @@ const importLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false,
   keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? 'unknown'),
+  skipFailedRequests: false,
 });
 
 export function createImportRouter(): Router {

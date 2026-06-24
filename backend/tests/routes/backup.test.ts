@@ -252,4 +252,29 @@ describe('POST /api/users/me/import', () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it('rate-limiter fires 429 on the 6th import request within the window', async () => {
+    // Fresh user → isolated rate-limit bucket (keyed on user id); won't
+    // interfere with other import tests that use different usernames.
+    const agent = await registerAndLogin('ratelimit-user');
+    const minimalPayload = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [],
+    };
+    // Limit is 5; the 6th request in the same 60s window must be 429.
+    for (let i = 0; i < 5; i++) {
+      const res = await agent
+        .post('/api/users/me/import')
+        .set('Origin', TEST_ORIGIN)
+        .send(minimalPayload);
+      expect(res.status).toBe(200);
+    }
+    const sixth = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send(minimalPayload);
+    expect(sixth.status).toBe(429);
+  });
 });

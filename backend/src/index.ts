@@ -85,9 +85,18 @@ app.use(
     credentials: true,
   }),
 );
+// Primary CSRF defense — Origin/Referer header check only (reads no body, no
+// cookies), so it is safe to run before the body parsers. Must run here so a
+// cross-origin / Origin-less POST cannot even reach the 25mb import parser
+// (prevents unauthenticated body-buffer DoS 100× the global 256kb cap). Also
+// runs before the /api/ai rate limiter so forged requests are rejected before
+// they consume budget.
+app.use('/api', requireAllowedOrigin(allowedOrigins));
 // Whole-account import carries every chapter/chat/message at once. The path-scoped
-// 25mb parser must run BEFORE the global 256kb parser so it sets req._body first
-// (the global parser then skips). Still JSON-only — cookie CSRF posture holds.
+// 25mb parser must run AFTER the CSRF check above but BEFORE the global 256kb
+// parser: it sets req._body first so the global parser skips this path (the
+// global parser would 413 any body >256kb if it ran first). Still JSON-only —
+// cookie CSRF posture holds.
 app.use('/api/users/me/import', express.json({ limit: '25mb' }));
 // 256kb limit: encrypted narrative-field Zod maxima (worldNotes 50k + others)
 // worst-case in multi-byte UTF-8 exceed Express's default 100kb body limit.
@@ -95,9 +104,6 @@ app.use(express.json({ limit: '256kb' }));
 // cookieParser is global so every authed route (not just /api/auth) can read
 // the session cookie that requireAuth now expects.
 app.use(cookieParser());
-// Primary CSRF defense — must run before the /api/ai rate limiter so forged
-// requests are rejected before they consume budget.
-app.use('/api', requireAllowedOrigin(allowedOrigins));
 // Prevent shared caches from storing authenticated API responses. Only the SSE
 // streaming endpoint is exempt — it sets its own Cache-Control headers and must
 // not be clobbered. All other /api responses get no-store. Inside the /api
