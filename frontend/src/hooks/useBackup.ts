@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { ImportFile, ImportResult } from 'story-editor-shared';
+import { importResultSchema } from 'story-editor-shared';
 import { api, fetchExportBlob } from '@/lib/api';
 
 export function triggerDownload(blob: Blob, filename: string): void {
@@ -29,7 +30,10 @@ export function useExportBackup(): { download: () => Promise<void>; isPending: b
 export function useImportBackup() {
   const qc = useQueryClient();
   return useMutation<ImportResult, Error, ImportFile>({
-    mutationFn: (file) => api<ImportResult>('/users/me/import', { method: 'POST', body: file }),
+    mutationFn: async (file) => {
+      const raw = await api<unknown>('/users/me/import', { method: 'POST', body: file });
+      return importResultSchema.parse(raw);
+    },
     onSuccess: () => {
       void qc.invalidateQueries();
     },

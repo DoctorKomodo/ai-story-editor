@@ -209,8 +209,9 @@ export async function apiStream(path: string, init?: ApiRequestInit): Promise<Re
 export async function fetchExportBlob(): Promise<{ blob: Blob; filename: string }> {
   const res = await fetch(buildUrl('/users/me/export'), { credentials: 'include' });
   if (!res.ok) {
+    const { message, code, body } = await parseErrorBody(res);
     if (res.status === 401) onUnauthorized?.();
-    throw new ApiError(res.status, 'Export failed');
+    throw new ApiError(res.status, message, code, body);
   }
   const cd = res.headers.get('Content-Disposition') ?? '';
   const match = cd.match(/filename="([^"]+)"/);
