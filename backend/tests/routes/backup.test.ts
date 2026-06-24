@@ -68,3 +68,122 @@ describe('GET /api/users/me/export', () => {
     expect(res.body.stories[0].chapters[0].bodyJson.content[0].content[0].text).toBe('hello world');
   });
 });
+
+describe('POST /api/users/me/import', () => {
+  beforeEach(resetAll);
+  afterEach(resetAll);
+
+  it('401s without a session', async () => {
+    const res = await request(app).post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({});
+    expect(res.status).toBe(401);
+  });
+
+  it('replace-all: wipes existing content and recreates from the file (round-trip parity)', async () => {
+    const agent = await registerAndLogin('import-user');
+    const story = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Original', worldNotes: 'lore-A' });
+    await agent
+      .post(`/api/stories/${story.body.story.id}/chapters`)
+      .set('Origin', TEST_ORIGIN)
+      .send({
+        title: 'Ch1',
+        bodyJson: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alpha beta' }] }],
+        },
+      });
+    const firstExport = (await agent.get('/api/users/me/export')).body;
+
+    await agent.post('/api/stories').set('Origin', TEST_ORIGIN).send({ title: 'TO BE DELETED' });
+
+    const imp = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send(firstExport);
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.stories).toBe(1);
+    expect(imp.body.imported.chapters).toBe(1);
+
+    const secondExport = (await agent.get('/api/users/me/export')).body;
+    expect(secondExport.stories.map((s: { title: string }) => s.title)).toEqual(['Original']);
+    expect(secondExport.stories[0].worldNotes).toBe('lore-A');
+    expect({ ...secondExport, exportedAt: 0 }).toEqual({ ...firstExport, exportedAt: 0 });
+  });
+
+  it('re-sequences orderIndex/order from a gappy file', async () => {
+    const agent = await registerAndLogin('seq-user');
+    const file = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          title: 'S',
+          chapters: [
+            {
+              title: 'B',
+              status: 'draft',
+              orderIndex: 7,
+              bodyJson: { type: 'doc', content: [] },
+              summary: null,
+              chats: [],
+            },
+            {
+              title: 'A',
+              status: 'draft',
+              orderIndex: 2,
+              bodyJson: { type: 'doc', content: [] },
+              summary: null,
+              chats: [],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send(file);
+    expect(imp.status).toBe(200);
+    const out = (await agent.get('/api/users/me/export')).body;
+    expect(
+      out.stories[0].chapters.map((c: { title: string; orderIndex: number }) => [
+        c.title,
+        c.orderIndex,
+      ]),
+    ).toEqual([
+      ['A', 0],
+      ['B', 1],
+    ]);
+  });
+
+  it('round-trips includePreviousChaptersInPrompt = false', async () => {
+    const agent = await registerAndLogin('flag-user');
+    const story = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Flagged' });
+    await agent
+      .patch(`/api/stories/${story.body.story.id}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ includePreviousChaptersInPrompt: false });
+    const exp = (await agent.get('/api/users/me/export')).body;
+    expect(exp.stories[0].includePreviousChaptersInPrompt).toBe(false);
+
+    await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send(exp);
+    const exp2 = (await agent.get('/api/users/me/export')).body;
+    expect(exp2.stories[0].includePreviousChaptersInPrompt).toBe(false);
+  });
+
+  it('rejects an unknown formatVersion with 400', async () => {
+    const agent = await registerAndLogin('badver-user');
+    const res = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({
+      formatVersion: 99,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [],
+    });
+    expect(res.status).toBe(400);
+  });
+});

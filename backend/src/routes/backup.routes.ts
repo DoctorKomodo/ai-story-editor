@@ -1,10 +1,13 @@
 import type { Request, Response } from 'express';
 import { Router } from 'express';
-import { exportSchema } from 'story-editor-shared';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+import { exportSchema, importResultSchema, importSchema } from 'story-editor-shared';
 import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
 import { requireAuth } from '../middleware/auth.middleware';
+import { validateBody } from '../middleware/validate';
 import { buildExport } from '../services/export.service';
+import { runImport } from '../services/import.service';
 
 function yyyymmdd(d: Date): string {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
@@ -27,5 +30,27 @@ export function createExportRouter(): Router {
       next(err);
     }
   });
+  return router;
+}
+
+const importLimiter = rateLimit({
+  windowMs: 60_000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false,
+  keyGenerator: (req) => req.user?.id ?? ipKeyGenerator(req.ip ?? 'unknown'),
+});
+
+export function createImportRouter(): Router {
+  const router = Router();
+  router.use(requireAuth);
+  router.use(importLimiter);
+  router.post(
+    '/',
+    validateBody(importSchema, async (body, req, res) => {
+      const result = await runImport(req, body);
+      return respond(importResultSchema, res, result);
+    }),
+  );
   return router;
 }

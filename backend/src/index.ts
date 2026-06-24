@@ -11,7 +11,7 @@ import { requireAllowedOrigin } from './middleware/origin-check.middleware';
 import { createAiRouter } from './routes/ai.routes';
 import { createAiDefaultsRouter } from './routes/ai-defaults.routes';
 import { createAuthRouter } from './routes/auth.routes';
-import { createExportRouter } from './routes/backup.routes';
+import { createExportRouter, createImportRouter } from './routes/backup.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
 import {
@@ -85,6 +85,10 @@ app.use(
     credentials: true,
   }),
 );
+// Whole-account import carries every chapter/chat/message at once. The path-scoped
+// 25mb parser must run BEFORE the global 256kb parser so it sets req._body first
+// (the global parser then skips). Still JSON-only — cookie CSRF posture holds.
+app.use('/api/users/me/import', express.json({ limit: '25mb' }));
 // 256kb limit: encrypted narrative-field Zod maxima (worldNotes 50k + others)
 // worst-case in multi-byte UTF-8 exceed Express's default 100kb body limit.
 app.use(express.json({ limit: '256kb' }));
@@ -126,6 +130,7 @@ app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/venice-account', createVeniceAccountRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
 app.use('/api/users/me/export', createExportRouter());
+app.use('/api/users/me/import', createImportRouter());
 app.use('/api/ai', createAiRouter());
 app.use('/api/ai', createAiDefaultsRouter());
 app.use('/api/stories', createStoriesRouter());
