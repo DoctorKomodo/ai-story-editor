@@ -3,7 +3,7 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ZodError, z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
-import { sessionCookieName, sessionCookieOptions } from '../lib/session-cookie';
+import { clearSessionCookie, sessionCookieName, setSessionCookie } from '../lib/session-cookie';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
   authService,
@@ -161,7 +161,7 @@ export function createAuthRouter() {
   router.post('/login', loginIpLimiter(), async (req, res, next) => {
     try {
       const { user, sessionId } = await authService.login(req.body);
-      res.cookie(sessionCookieName(), sessionId, sessionCookieOptions());
+      setSessionCookie(res, sessionId);
       res.status(200).json({ user });
     } catch (err) {
       if (err instanceof ZodError) {
@@ -182,7 +182,7 @@ export function createAuthRouter() {
     try {
       const sessionId = req.cookies?.[sessionCookieName()] as string | undefined;
       if (sessionId) await authService.logout(sessionId);
-      res.clearCookie(sessionCookieName(), { ...sessionCookieOptions(), maxAge: 0 });
+      clearSessionCookie(res);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -236,7 +236,7 @@ export function createAuthRouter() {
       });
       // changePassword re-mints the caller's session and evicts all other devices.
       // Re-set the cookie with the fresh sessionId so the caller stays logged in.
-      res.cookie(sessionCookieName(), sessionId, sessionCookieOptions());
+      setSessionCookie(res, sessionId);
       res.status(204).send();
     } catch (err) {
       if (err instanceof ZodError) {
@@ -292,7 +292,7 @@ export function createAuthRouter() {
           return;
         }
         await authService.signOutEverywhere({ userId: authed.id });
-        res.clearCookie(sessionCookieName(), { ...sessionCookieOptions(), maxAge: 0 });
+        clearSessionCookie(res);
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -354,7 +354,7 @@ export function createAuthRouter() {
       // Clear the caller's session cookie. The user row is gone, but a
       // browser holding the cookie would otherwise send it on the next
       // authenticated request, hitting a 401 with no Set-Cookie to clear it.
-      res.clearCookie(sessionCookieName(), { ...sessionCookieOptions(), maxAge: 0 });
+      clearSessionCookie(res);
       res.status(204).send();
     } catch (err) {
       if (err instanceof ZodError) {

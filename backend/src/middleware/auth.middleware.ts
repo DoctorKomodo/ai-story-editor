@@ -1,5 +1,5 @@
 import type { NextFunction, Request, Response } from 'express';
-import { sessionCookieName, sessionCookieOptions } from '../lib/session-cookie';
+import { sessionCookieName, setSessionCookie } from '../lib/session-cookie';
 import { attachDekToRequest } from '../services/content-crypto.service';
 import {
   extendSessionExpiry,
@@ -61,7 +61,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     preSlideExpiry - now < COOKIE_REFRESH_THRESHOLD_MS &&
     postSlideExpiry !== null
   ) {
-    res.cookie(name, sessionId, sessionCookieOptions(Math.max(0, postSlideExpiry - now)));
+    setSessionCookie(res, sessionId, Math.max(0, postSlideExpiry - now));
   }
 
   next();
