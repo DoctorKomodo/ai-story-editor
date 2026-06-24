@@ -3,7 +3,7 @@
 // Covers:
 //   - POST /api/chapters/:chapterId/chats — create, 201, decrypted title
 //   - GET  /api/chapters/:chapterId/chats — list sorted by lastActivityAt desc, createdAt desc
-//   - Auth gates on all three endpoints (401 without Bearer)
+//   - Auth gates on all three endpoints (401 without session cookie)
 //   - Ownership gates (404 when chapter/chat not owned)
 //   - POST /api/chats/:chatId/messages — SSE streams, both messages persisted
 //   - tokens + latencyMs captured on assistant message
@@ -14,14 +14,13 @@
 
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
@@ -102,32 +101,43 @@ function jsonResponse(status: number, body: unknown): Response {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const res = await request(app)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -164,8 +174,6 @@ describe('Chat persistence [V15]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -182,21 +190,19 @@ describe('Chat persistence [V15]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   // ── Create chat ─────────────────────────────────────────────────────────────
 
   it('POST /api/chapters/:chapterId/chats returns 201 with decrypted title', async () => {
-    const accessToken = await registerAndLogin();
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/chapters/${chapterId}/chats`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ title: 'My Chat' });
 
     expect(res.status).toBe(201);
@@ -206,13 +212,13 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('POST /api/chapters/:chapterId/chats returns 201 with null title when omitted', async () => {
-    const accessToken = await registerAndLogin();
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/chapters/${chapterId}/chats`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({});
 
     expect(res.status).toBe(201);
@@ -221,13 +227,13 @@ describe('Chat persistence [V15]', () => {
 
   // [V20] strict schema — unknown keys on CreateChatBody are rejected.
   it('POST /api/chapters/:chapterId/chats returns 400 validation_error on unknown keys', async () => {
-    const accessToken = await registerAndLogin();
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/chapters/${chapterId}/chats`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ title: 'ok', extraneous: 'nope' });
 
     expect(res.status).toBe(400);
@@ -235,17 +241,20 @@ describe('Chat persistence [V15]', () => {
     expect(Array.isArray(res.body.error.issues)).toBe(true);
   });
 
-  it('POST /api/chapters/:chapterId/chats returns 401 without Bearer', async () => {
-    const res = await request(app).post('/api/chapters/some-id/chats').send({ title: 'x' });
+  it('POST /api/chapters/:chapterId/chats returns 401 without session cookie', async () => {
+    const res = await request(app)
+      .post('/api/chapters/some-id/chats')
+      .set('Origin', 'http://localhost:3000')
+      .send({ title: 'x' });
     expect(res.status).toBe(401);
   });
 
   it('POST /api/chapters/:chapterId/chats returns 404 for unowned chapter', async () => {
-    const accessToken = await registerAndLogin();
+    const { agent } = await registerAndLogin();
 
-    const res = await request(app)
+    const res = await agent
       .post('/api/chapters/nonexistent-chapter/chats')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ title: 'x' });
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
@@ -254,8 +263,8 @@ describe('Chat persistence [V15]', () => {
   // ── List chats ──────────────────────────────────────────────────────────────
 
   it('GET /api/chapters/:chapterId/chats returns chats sorted by lastActivityAt desc, createdAt desc', async () => {
-    const accessToken = await registerAndLogin();
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
 
     // Create two dormant chats (no messages). lastActivityAt === createdAt for
@@ -266,9 +275,7 @@ describe('Chat persistence [V15]', () => {
     await new Promise((r) => setTimeout(r, 20));
     await createChatRepo(req).create({ chapterId, title: 'Second Chat' });
 
-    const res = await request(app)
-      .get(`/api/chapters/${chapterId}/chats`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get(`/api/chapters/${chapterId}/chats`);
 
     expect(res.status).toBe(200);
     expect(res.body.chats).toHaveLength(2);
@@ -279,35 +286,34 @@ describe('Chat persistence [V15]', () => {
     expect(typeof res.body.chats[0].messageCount).toBe('number');
   });
 
-  it('GET /api/chapters/:chapterId/chats returns 401 without Bearer', async () => {
+  it('GET /api/chapters/:chapterId/chats returns 401 without session cookie', async () => {
     const res = await request(app).get('/api/chapters/some-id/chats');
     expect(res.status).toBe(401);
   });
 
   it('GET /api/chapters/:chapterId/chats returns 404 for unowned chapter', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
-      .get('/api/chapters/nonexistent-chapter/chats')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const { agent } = await registerAndLogin();
+    const res = await agent.get('/api/chapters/nonexistent-chapter/chats');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   // ── Post message — SSE streaming ────────────────────────────────────────────
 
-  it('POST /api/chats/:chatId/messages returns 401 without Bearer', async () => {
+  it('POST /api/chats/:chatId/messages returns 401 without session cookie', async () => {
     const res = await request(app)
       .post('/api/chats/some-chat/messages')
+      .set('Origin', 'http://localhost:3000')
       .send({ content: 'hi', modelId: BASE_MODEL_ID });
     expect(res.status).toBe(401);
   });
 
   // [V20] strict schema — unknown top-level key on sendMessageBodySchema.
   it('POST /api/chats/:chatId/messages returns 400 validation_error on unknown top-level key', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
+    const { agent } = await registerAndLogin();
+    const res = await agent
       .post('/api/chats/some-chat/messages')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ content: 'hi', modelId: BASE_MODEL_ID, stray: 'nope' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
@@ -315,10 +321,10 @@ describe('Chat persistence [V15]', () => {
 
   // [V20] strict schema — unknown key inside nested `attachment`.
   it('POST /api/chats/:chatId/messages returns 400 validation_error on unknown attachment key', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
+    const { agent } = await registerAndLogin();
+    const res = await agent
       .post('/api/chats/some-chat/messages')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({
         content: 'hi',
         modelId: BASE_MODEL_ID,
@@ -329,23 +335,23 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('POST /api/chats/:chatId/messages returns 404 for unowned chat', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
+    const { agent } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
     // Prime models cache
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
 
-    const res = await request(app)
+    const res = await agent
       .post('/api/chats/nonexistent-chat/messages')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ content: 'hi', modelId: BASE_MODEL_ID });
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   it('streams SSE, persists user + assistant messages with tokens and latencyMs', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
 
     const chat = await createChatRepo(req).create({ chapterId, title: null });
@@ -363,9 +369,9 @@ describe('Chat persistence [V15]', () => {
       ]),
     );
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -405,16 +411,16 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('returns 409 and persists NO messages when user has no BYOK key', async () => {
-    const accessToken = await registerAndLogin();
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
 
     // No storeKey call — user has no BYOK.
-    const res = await request(app)
+    const res = await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ content: 'Hi.', modelId: BASE_MODEL_ID });
 
     expect(res.status).toBe(409);
@@ -426,9 +432,9 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('persists user message but NOT assistant message on post-persist Venice rate-limit error', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -463,9 +469,9 @@ describe('Chat persistence [V15]', () => {
       }),
     );
 
-    const res = await request(app)
+    const res = await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -492,9 +498,9 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('ciphertext check: sentinel does not appear in raw contentCiphertext', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -502,9 +508,9 @@ describe('Chat persistence [V15]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Assistant reply.', 'stop')]));
 
-    await request(app)
+    await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -525,9 +531,9 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('history included on subsequent message', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
@@ -535,9 +541,9 @@ describe('Chat persistence [V15]', () => {
     // First message
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('First reply.', 'stop')]));
-    await request(app)
+    await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -551,9 +557,9 @@ describe('Chat persistence [V15]', () => {
     // Second message
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Second reply.', 'stop')]));
-    await request(app)
+    await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -596,17 +602,17 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('max_completion_tokens: per-model override under model cap → override wins (X28)', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
 
     // User sets 1234 override; model caps at 4096 → expect 1234 (override wins).
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: {
         settingsJson: {
           chat: { model: null, overrides: { [BASE_MODEL_ID]: { maxTokens: 1234 } } },
@@ -617,9 +623,9 @@ describe('Chat persistence [V15]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
 
-    await request(app)
+    await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -640,17 +646,17 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('max_completion_tokens: per-model override above model cap → model cap wins (X28)', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
 
     // User sets 16000 override; model caps at 4096 → expect 4096 (model cap wins).
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: {
         settingsJson: {
           chat: { model: null, overrides: { [BASE_MODEL_ID]: { maxTokens: 16_000 } } },
@@ -661,9 +667,9 @@ describe('Chat persistence [V15]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
 
-    await request(app)
+    await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -684,17 +690,17 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('passes resolved temperature and top_p from per-model override to Venice (X28)', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
     const chat = await createChatRepo(req).create({ chapterId, title: null });
     const chatId = chat.id as string;
 
     // Set a per-model override for temperature and topP on BASE_MODEL_ID.
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: {
         settingsJson: {
           chat: {
@@ -708,9 +714,9 @@ describe('Chat persistence [V15]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
 
-    await request(app)
+    await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -732,9 +738,9 @@ describe('Chat persistence [V15]', () => {
   });
 
   it('[V23] sends prompt_cache_key at top level, not inside venice_parameters', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { chapterId } = await setupStoryAndChapter(req);
 
     const chat = await createChatRepo(req).create({ chapterId, title: null });
@@ -743,9 +749,9 @@ describe('Chat persistence [V15]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Reply.', 'stop')]));
 
-    await request(app)
+    await agent
       .post(`/api/chats/${chatId}/messages`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';

@@ -1,23 +1,28 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { _resetSessionStore } from '../../src/services/session-store';
 import { DEFAULT_VENICE_ENDPOINT } from '../../src/services/venice-key.service';
 import { prisma } from '../setup';
 
+const TEST_ORIGIN = 'http://localhost:3000';
 const NAME = 'BYOK User';
 const USERNAME = 'byok-user';
 const PASSWORD = 'byok-password';
 const VALID_KEY = 'sk-venice-abcdefghijklmnopqrstuvwxy-ZLAST6';
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<ReturnType<typeof request.agent>> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const loginRes = await request(app)
+  const loginRes = await agent
     .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
     .send({ username: USERNAME, password: PASSWORD });
   expect(loginRes.status).toBe(200);
-  return loginRes.body.accessToken as string;
+  return agent;
 }
 
 function mockFetchResponse(status: number, body: unknown = {}): Response {
@@ -32,7 +37,7 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
 
     fetchSpy = vi.fn();
@@ -41,51 +46,50 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
   });
 
   describe('authentication', () => {
-    it('GET /api/users/me/venice-key returns 401 without a Bearer token', async () => {
+    it('GET /api/users/me/venice-key returns 401 without a session', async () => {
       const res = await request(app).get('/api/users/me/venice-key');
       expect(res.status).toBe(401);
     });
 
-    it('PUT /api/users/me/venice-key returns 401 without a Bearer token', async () => {
-      const res = await request(app).put('/api/users/me/venice-key').send({ apiKey: VALID_KEY });
+    it('PUT /api/users/me/venice-key returns 401 without a session', async () => {
+      const res = await request(app)
+        .put('/api/users/me/venice-key')
+        .set('Origin', TEST_ORIGIN)
+        .send({ apiKey: VALID_KEY });
       expect(res.status).toBe(401);
     });
 
-    it('DELETE /api/users/me/venice-key returns 401 without a Bearer token', async () => {
-      const res = await request(app).delete('/api/users/me/venice-key');
+    it('DELETE /api/users/me/venice-key returns 401 without a session', async () => {
+      const res = await request(app).delete('/api/users/me/venice-key').set('Origin', TEST_ORIGIN);
       expect(res.status).toBe(401);
     });
   });
 
   describe('GET — returns only { hasKey, lastSix, endpoint } and never the key', () => {
     it('returns { hasKey: false } when no key is stored', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
 
-      const res = await request(app)
-        .get('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`);
+      const res = await agent.get('/api/users/me/venice-key');
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ hasKey: false, lastSix: null, endpoint: null });
     });
 
     it('returns { hasKey: true, lastSix, endpoint } after storing, and never returns the key', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
-      await request(app)
+      await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY });
 
-      const res = await request(app)
-        .get('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`);
+      const res = await agent.get('/api/users/me/venice-key');
 
       expect(res.status).toBe(200);
       expect(res.body.hasKey).toBe(true);
@@ -103,12 +107,12 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   describe('PUT — validates key against Venice before storing', () => {
     it('calls Venice GET /models with the Bearer key and stores on 200', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
-      const res = await request(app)
+      const res = await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY });
 
       expect(res.status).toBe(200);
@@ -131,13 +135,13 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('accepts a custom endpoint override, uses it for validation, and stores it', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
       const customEndpoint = 'https://proxy.example.com/venice/v1';
-      const res = await request(app)
+      const res = await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY, endpoint: customEndpoint });
 
       expect(res.status).toBe(200);
@@ -148,12 +152,12 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 400 { error.code: "venice_key_invalid" } on a 401 from Venice and does NOT store', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(401, { error: 'invalid' }));
 
-      const res = await request(app)
+      const res = await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY });
 
       expect(res.status).toBe(400);
@@ -166,12 +170,12 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 502 when Venice is unreachable', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
       fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-      const res = await request(app)
+      const res = await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY });
 
       expect(res.status).toBe(502);
@@ -179,11 +183,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 400 on empty apiKey', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
 
-      const res = await request(app)
+      const res = await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: '   ' });
 
       expect(res.status).toBe(400);
@@ -192,11 +196,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 400 on malformed endpoint URL', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
 
-      const res = await request(app)
+      const res = await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY, endpoint: 'not-a-url' });
 
       expect(res.status).toBe(400);
@@ -206,17 +210,15 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   describe('DELETE — nulls all BYOK columns', () => {
     it('returns { status: "removed" } and clears all four BYOK columns', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
-      await request(app)
+      await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY, endpoint: 'https://proxy.example.com/venice/v1' });
 
-      const res = await request(app)
-        .delete('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`);
+      const res = await agent.delete('/api/users/me/venice-key').set('Origin', TEST_ORIGIN);
 
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ status: 'removed' });
@@ -229,22 +231,20 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('is idempotent — DELETE with no stored key still returns 200', async () => {
-      const accessToken = await registerAndLogin();
-      const res = await request(app)
-        .delete('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`);
+      const agent = await registerAndLogin();
+      const res = await agent.delete('/api/users/me/venice-key').set('Origin', TEST_ORIGIN);
       expect(res.status).toBe(200);
     });
   });
 
   describe('key leakage through endpoints', () => {
     it('encrypted ciphertext in the DB is unrelated to the plaintext key', async () => {
-      const accessToken = await registerAndLogin();
+      const agent = await registerAndLogin();
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
-      await request(app)
+      await agent
         .put('/api/users/me/venice-key')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', TEST_ORIGIN)
         .send({ apiKey: VALID_KEY });
 
       const row = await prisma.user.findFirst({ where: { username: USERNAME } });

@@ -45,6 +45,10 @@ services:
       # the compose network so same-origin /api calls from the browser are
       # forwarded to backend:4000 without CORS.
       VITE_DEV_PROXY_TARGET: http://backend:4000
+      # Surface the version in the live dev server too (the dev stage runs
+      # `vite dev`, not a build, so it reads VITE_* from the environment).
+      # The Makefile exports `dev-<short-sha>`; falls back to `dev`.
+      VITE_APP_VERSION: ${VITE_APP_VERSION:-dev}
     volumes:
       # Bind-mount the source for hot reload. ./shared is mounted too so that
       # editing a shared Zod schema hot-reloads the frontend — it reads

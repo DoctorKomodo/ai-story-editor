@@ -9,7 +9,7 @@ import {
   computeReorderedChapters,
   useReorderChaptersMutation,
 } from '@/hooks/useChapters';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 import { makeChapterMeta } from '../fixtures/chapter';
@@ -83,7 +83,6 @@ describe('useReorderChaptersMutation', () => {
       user: { id: 'u1', username: 'alice', name: 'Alice' },
       status: 'authenticated',
     });
-    setAccessToken('test-token');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

@@ -1,4 +1,3 @@
-import jwt from 'jsonwebtoken';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('argon2', async (importOriginal) => {
@@ -11,14 +10,8 @@ vi.mock('argon2', async (importOriginal) => {
 });
 
 import * as argon2 from 'argon2';
-import {
-  ACCESS_TOKEN_TTL_SECONDS,
-  type AccessTokenPayload,
-  createAuthService,
-  InvalidCredentialsError,
-  REFRESH_TOKEN_TTL_SECONDS,
-  type RefreshTokenPayload,
-} from '../../src/services/auth.service';
+import { createAuthService, InvalidCredentialsError } from '../../src/services/auth.service';
+import { _resetSessionStore, _sessionCount } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 const authService = createAuthService(prisma);
@@ -33,92 +26,33 @@ async function registerDefault(): Promise<void> {
 
 describe('auth.service login()', () => {
   beforeEach(async () => {
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
   });
 
-  it('returns a public user plus access + refresh tokens on valid credentials', async () => {
+  it('returns a public user and a sessionId on valid credentials', async () => {
     await registerDefault();
 
     const result = await authService.login({ username: USERNAME, password: PASSWORD });
 
     expect(result.user.username).toBe(USERNAME);
     expect(result.user).not.toHaveProperty('passwordHash');
-    expect(typeof result.accessToken).toBe('string');
-    expect(result.accessToken.length).toBeGreaterThan(10);
-    expect(typeof result.refreshToken).toBe('string');
-    expect(result.refreshToken.length).toBeGreaterThan(10);
+    expect(typeof result.sessionId).toBe('string');
+    expect(result.sessionId.length).toBeGreaterThan(10);
   });
 
-  it('signs an access token with JWT_SECRET that contains the user id and expires in ~15 minutes', async () => {
-    await registerDefault();
-    const result = await authService.login({ username: USERNAME, password: PASSWORD });
-
-    const decoded = jwt.verify(
-      result.accessToken,
-      process.env.JWT_SECRET!,
-    ) as AccessTokenPayload & { iat: number; exp: number };
-
-    expect(decoded.sub).toBe(result.user.id);
-    expect(decoded.username).toBe(USERNAME);
-    expect(decoded.exp - decoded.iat).toBe(ACCESS_TOKEN_TTL_SECONDS);
-
-    // accessTokenExpiresAt reported by the service lines up with the JWT exp
-    // within a second (accounts for elapsed time during the call).
-    const reportedExp = Math.floor(result.accessTokenExpiresAt.getTime() / 1000);
-    expect(Math.abs(reportedExp - decoded.exp)).toBeLessThanOrEqual(2);
-  });
-
-  it('signs a refresh token with REFRESH_TOKEN_SECRET, marks it type=refresh, and uses a random jti', async () => {
-    await registerDefault();
-
-    const a = await authService.login({ username: USERNAME, password: PASSWORD });
-    const b = await authService.login({ username: USERNAME, password: PASSWORD });
-
-    const payloadA = jwt.verify(
-      a.refreshToken,
-      process.env.REFRESH_TOKEN_SECRET!,
-    ) as RefreshTokenPayload & { iat: number; exp: number };
-    const payloadB = jwt.verify(
-      b.refreshToken,
-      process.env.REFRESH_TOKEN_SECRET!,
-    ) as RefreshTokenPayload & { iat: number; exp: number };
-
-    expect(payloadA.type).toBe('refresh');
-    expect(payloadB.type).toBe('refresh');
-    expect(payloadA.sub).toBe(a.user.id);
-    expect(payloadA.jti).not.toBe(payloadB.jti);
-    expect(payloadA.exp - payloadA.iat).toBe(REFRESH_TOKEN_TTL_SECONDS);
-  });
-
-  it('persists the refresh token in the RefreshToken table with a ~7 day expiry', async () => {
-    await registerDefault();
-    const result = await authService.login({ username: USERNAME, password: PASSWORD });
-
-    const stored = await prisma.refreshToken.findUnique({
-      where: { token: result.refreshToken },
-    });
-    expect(stored).not.toBeNull();
-    expect(stored!.userId).toBe(result.user.id);
-
-    const sevenDaysMs = REFRESH_TOKEN_TTL_SECONDS * 1000;
-    const delta = Math.abs(stored!.expiresAt.getTime() - (Date.now() + sevenDaysMs));
-    expect(delta).toBeLessThanOrEqual(5_000);
-  });
-
-  it('never rejects the refresh token as a duplicate — each login issues a fresh row', async () => {
+  it('each login creates a distinct session in the in-memory store', async () => {
     await registerDefault();
     await authService.login({ username: USERNAME, password: PASSWORD });
     await authService.login({ username: USERNAME, password: PASSWORD });
 
-    const count = await prisma.refreshToken.count();
-    expect(count).toBe(2);
+    expect(_sessionCount()).toBe(2);
   });
 
   it('normalises the username (trim + lowercase) before lookup', async () => {
@@ -138,16 +72,12 @@ describe('auth.service login()', () => {
     await expect(
       authService.login({ username: USERNAME, password: 'totally-wrong' }),
     ).rejects.toBeInstanceOf(InvalidCredentialsError);
-
-    expect(await prisma.refreshToken.count()).toBe(0);
   });
 
   it('throws InvalidCredentialsError when the username is not registered', async () => {
     await expect(
       authService.login({ username: 'nobody', password: PASSWORD }),
     ).rejects.toBeInstanceOf(InvalidCredentialsError);
-
-    expect(await prisma.refreshToken.count()).toBe(0);
   });
 
   it('uses the same error message for "unknown username" and "wrong password" (no enumeration)', async () => {

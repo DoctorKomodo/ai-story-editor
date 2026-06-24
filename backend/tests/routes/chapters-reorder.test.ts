@@ -1,7 +1,7 @@
 // [B4] Integration tests for PATCH /api/stories/:storyId/chapters/reorder.
 //
 // Covers:
-//   - 401 without Bearer
+//   - 401 without session cookie
 //   - 403 when :storyId is another user's
 //   - 400 on Zod failures (empty array, missing orderIndex, negative orderIndex, unknown key)
 //   - 400 on duplicate id in payload
@@ -12,16 +12,22 @@
 //   - 204 for partial reorder (subset of chapters); non-included keep their orderIndex
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
+
+const TEST_ORIGIN = 'http://localhost:3000';
+
+interface TestSession {
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -29,32 +35,40 @@ async function registerAndLogin(
   username: string,
   password = 'reorder-pw',
   name = 'Reorder User',
-): Promise<string> {
-  await request(app).post('/api/auth/register').send({ name, username, password });
-  const login = await request(app).post('/api/auth/login').send({ username, password });
+): Promise<TestSession> {
+  const agent = request.agent(app);
+  await agent
+    .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
+    .send({ name, username, password });
+  const login = await agent
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
 
 async function resetAll(): Promise<void> {
+  _resetSessionStore();
   await prisma.message.deleteMany();
   await prisma.chat.deleteMany();
   await prisma.outlineItem.deleteMany();
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();
   await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
 }
 
@@ -67,10 +81,10 @@ interface CreatedChapter {
 }
 
 async function createThreeChapters(
-  accessToken: string,
+  sessionId: string,
   storyId: string,
 ): Promise<{ A: CreatedChapter; B: CreatedChapter; C: CreatedChapter }> {
-  const req = makeFakeReq(accessToken);
+  const req = makeFakeReq(sessionId);
   const repo = createChapterRepo(req);
   const A = (await repo.create({
     storyId,
@@ -103,100 +117,102 @@ describe('Chapter reorder route [B4]', () => {
     await resetAll();
   });
 
-  it('returns 401 without Bearer', async () => {
+  it('returns 401 when unauthenticated', async () => {
     const res = await request(app)
       .patch(`/api/stories/${FAKE_ID}/chapters/reorder`)
+      .set('Origin', TEST_ORIGIN)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: 0 }] });
     expect(res.status).toBe(401);
+    expect(res.body.error.code).toBe('unauthorized');
   });
 
   it('returns 403 when :storyId belongs to another user', async () => {
-    const tokenA = await registerAndLogin('reorder-owner-a');
-    const tokenB = await registerAndLogin('reorder-owner-b');
-    const reqA = makeFakeReq(tokenA);
+    const { sessionId: sessionIdA } = await registerAndLogin('reorder-owner-a');
+    const { agent: agentB } = await registerAndLogin('reorder-owner-b');
+    const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
 
-    const res = await request(app)
+    const res = await agentB
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${tokenB}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: 0 }] });
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('forbidden');
   });
 
   it('returns 400 when chapters array is empty', async () => {
-    const accessToken = await registerAndLogin('reorder-empty');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-empty');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ chapters: [] });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 when an entry is missing orderIndex', async () => {
-    const accessToken = await registerAndLogin('reorder-missing-order');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-missing-order');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ chapters: [{ id: FAKE_ID }] });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on a negative orderIndex', async () => {
-    const accessToken = await registerAndLogin('reorder-neg');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-neg');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: -1 }] });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on an unknown root key', async () => {
-    const accessToken = await registerAndLogin('reorder-unknown-root');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-unknown-root');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: 0 }], foo: 'bar' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 on an unknown key inside a chapter entry', async () => {
-    const accessToken = await registerAndLogin('reorder-unknown-entry');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-unknown-entry');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ chapters: [{ id: FAKE_ID, orderIndex: 0, extra: 'nope' }] });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('returns 400 when chapters array exceeds max length', async () => {
-    const accessToken = await registerAndLogin('reorder-too-many');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-too-many');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${story.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: Array.from({ length: 501 }, (_, i) => ({ id: `x${i}`, orderIndex: i })),
       });
@@ -205,15 +221,15 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 on duplicate id in payload', async () => {
-    const accessToken = await registerAndLogin('reorder-dup-id');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-dup-id');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Dup' });
     const storyId = story.id as string;
-    const { A } = await createThreeChapters(accessToken, storyId);
+    const { A } = await createThreeChapters(sessionId, storyId);
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: [
           { id: A.id, orderIndex: 0 },
@@ -229,15 +245,15 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 on duplicate orderIndex in payload', async () => {
-    const accessToken = await registerAndLogin('reorder-dup-order');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-dup-order');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Dup Order' });
     const storyId = story.id as string;
-    const { A, B } = await createThreeChapters(accessToken, storyId);
+    const { A, B } = await createThreeChapters(sessionId, storyId);
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: [
           { id: A.id, orderIndex: 1 },
@@ -253,8 +269,8 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 403 when an id belongs to a different story (same user)', async () => {
-    const accessToken = await registerAndLogin('reorder-cross-story');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-cross-story');
+    const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
 
@@ -273,9 +289,9 @@ describe('Chapter reorder route [B4]', () => {
     });
 
     // Submit story B's chapter to story A's reorder endpoint.
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyA.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: [
           { id: chA.id as string, orderIndex: 1 },
@@ -287,10 +303,10 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 403 when an id belongs to another user', async () => {
-    const tokenA = await registerAndLogin('reorder-xuser-a');
-    const tokenB = await registerAndLogin('reorder-xuser-b');
-    const reqA = makeFakeReq(tokenA);
-    const reqB = makeFakeReq(tokenB);
+    const { agent: agentA, sessionId: sessionIdA } = await registerAndLogin('reorder-xuser-a');
+    const { sessionId: sessionIdB } = await registerAndLogin('reorder-xuser-b');
+    const reqA = makeFakeReq(sessionIdA);
+    const reqB = makeFakeReq(sessionIdB);
 
     const storyA = await createStoryRepo(reqA).create({ title: "A's story" });
     const storyB = await createStoryRepo(reqB).create({ title: "B's story" });
@@ -302,9 +318,9 @@ describe('Chapter reorder route [B4]', () => {
     });
 
     // Caller A tries to reorder B's chapter under A's story.
-    const res = await request(app)
+    const res = await agentA
       .patch(`/api/stories/${storyA.id as string}/chapters/reorder`)
-      .set('Authorization', `Bearer ${tokenA}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: [{ id: chB.id as string, orderIndex: 0 }],
       });
@@ -313,16 +329,16 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 204 on success and reorders 3 chapters', async () => {
-    const accessToken = await registerAndLogin('reorder-happy');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-happy');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Happy' });
     const storyId = story.id as string;
-    const { A, B, C } = await createThreeChapters(accessToken, storyId);
+    const { A, B, C } = await createThreeChapters(sessionId, storyId);
 
     // [A=0, B=1, C=2]  →  [A=2, B=0, C=1]
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: [
           { id: A.id, orderIndex: 2 },
@@ -333,9 +349,7 @@ describe('Chapter reorder route [B4]', () => {
     expect(res.status).toBe(204);
     expect(res.body).toEqual({});
 
-    const list = await request(app)
-      .get(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const list = await agent.get(`/api/stories/${storyId}/chapters`);
     expect(list.status).toBe(200);
     const titles = list.body.chapters.map((c: { title: string }) => c.title);
     expect(titles).toEqual(['B', 'C', 'A']);
@@ -351,8 +365,8 @@ describe('Chapter reorder route [B4]', () => {
   // under @@unique([storyId, orderIndex]) raises P2002 mid-transaction as
   // soon as the first UPDATE tries to set A.orderIndex=1 (still held by B).
   it('handles a direct two-chapter swap without tripping the unique constraint [D16]', async () => {
-    const accessToken = await registerAndLogin('reorder-swap-d16');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-swap-d16');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Swap' });
     const storyId = story.id as string;
 
@@ -364,9 +378,9 @@ describe('Chapter reorder route [B4]', () => {
       id: string;
     };
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: [
           { id: A.id, orderIndex: 1 },
@@ -375,9 +389,7 @@ describe('Chapter reorder route [B4]', () => {
       });
     expect(res.status).toBe(204);
 
-    const list = await request(app)
-      .get(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const list = await agent.get(`/api/stories/${storyId}/chapters`);
     const byId = new Map<string, number>(
       list.body.chapters.map((c: { id: string; orderIndex: number }) => [c.id, c.orderIndex]),
     );
@@ -386,16 +398,16 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 204 for a partial reorder — non-included chapter keeps its orderIndex', async () => {
-    const accessToken = await registerAndLogin('reorder-partial');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('reorder-partial');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Partial' });
     const storyId = story.id as string;
-    const { A, B, C } = await createThreeChapters(accessToken, storyId);
+    const { A, B, C } = await createThreeChapters(sessionId, storyId);
 
     // Swap A and B; leave C alone.
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/reorder`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({
         chapters: [
           { id: A.id, orderIndex: 1 },
@@ -404,9 +416,7 @@ describe('Chapter reorder route [B4]', () => {
       });
     expect(res.status).toBe(204);
 
-    const list = await request(app)
-      .get(`/api/stories/${storyId}/chapters`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const list = await agent.get(`/api/stories/${storyId}/chapters`);
     expect(list.status).toBe(200);
     const byId = new Map<string, number>(
       list.body.chapters.map((c: { id: string; orderIndex: number }) => [c.id, c.orderIndex]),

@@ -34,12 +34,15 @@ describe('requireAllowedOrigin middleware', () => {
     });
   });
 
-  it('allows POST when neither Origin nor Referer is present (non-browser client)', async () => {
-    // Supertest doesn't set Origin by default — this is the path taken by
-    // every test in the existing auth suite, which is why `requireAuth` +
-    // cookie flows keep working after adding the middleware.
+  it('blocks POST when neither Origin nor Referer is present (default-deny)', async () => {
+    // Per OWASP CSRF Cheat Sheet: if neither Origin nor Referer is present on a
+    // state-changing request, block it. Real browsers always send Origin on
+    // POST/PUT/PATCH/DELETE; non-browser automation must now supply it explicitly.
     const res = await supertest(makeApp()).post('/protected').send({});
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({
+      error: { message: 'Origin not allowed', code: 'csrf_block' },
+    });
   });
 
   it('allows POST when Referer matches allowedOrigin prefix + /', async () => {

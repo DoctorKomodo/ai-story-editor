@@ -14,8 +14,8 @@
 ## Mapping
 
 > **`general.md` is part of every match.** It carries cross-cutting
-> rules (TS strict, comments policy, YAGNI, no data-migration
-> branches, dependency policy, secrets, library-version awareness)
+> rules (TS strict, comments policy, YAGNI, dependency policy,
+> secrets, library-version awareness)
 > that apply regardless of lane. Listed explicitly on every row so
 > the union mechanism stays uniform — no special-case "always
 > prepend" logic in the bridge skill.
@@ -31,12 +31,16 @@
 | `backend/src/routes/chat.routes.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
 | `backend/src/services/content-crypto.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
 | `backend/src/services/prompt.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
-| `backend/src/services/ai.service.ts` | `general.md` + `backend.md` + `repo-boundary.md` |
+| `backend/src/lib/serialize.ts` | `general.md` + `backend.md` + `repo-boundary.md` *(narrative wire-shape boundary)* |
 | `backend/prisma/schema.prisma` | `general.md` + `backend.md` + `repo-boundary.md` *(narrative tables present)* |
 | `backend/prisma/migrations/**` | `general.md` + `backend.md` + `repo-boundary.md` *(if migration touches narrative columns; otherwise drop `repo-boundary.md`)* |
+| `backend/prisma/scripts/**` | `general.md` + `backend.md` + `repo-boundary.md` *(drop `repo-boundary.md` unless the script touches narrative tables)* |
+| `backend/scripts/**` | `general.md` + `backend.md` *(+ `repo-boundary.md` if the script touches narrative tables)* |
+| `scripts/**` | `general.md` *(+ `backend.md` for backend TS; + `repo-boundary.md` if it touches narrative tables)* |
 | `backend/tests/**` | `general.md` + `backend.md` |
 | `frontend/src/**` | `general.md` + `frontend.md` |
 | `frontend/tests/**` | `general.md` + `frontend.md` |
+| `frontend/scripts/**` | `general.md` + `frontend.md` *(design-token tooling — e.g. `lint-design.mjs`)* |
 | `tests/e2e/**` | `general.md` + `frontend.md` *(E2E sits at the frontend integration boundary)* |
 | `shared/src/**` | `general.md` *(shared schemas are library-only and authoritative for the wire format; consumer-lane digests still apply for the consumer-side touch-set entries in cross-boundary plans)* |
 | `shared/tests/**` | `general.md` |
@@ -54,17 +58,20 @@ That's the expected steady state for cross-boundary features.
 
 ## Narrative-adjacency hint for migrations
 
-A migration is **narrative-adjacent** when it:
+A migration is **narrative-adjacent** (→ add `repo-boundary.md`) when it:
 
 - Creates / alters / drops a column on `Story`, `Chapter`,
   `Character`, `OutlineItem`, `Chat`, or `Message`.
-- Adds / removes a `*Ciphertext` / `*Iv` / `*AuthTag` triple.
-- Touches `User.contentDekPassword*` or `User.contentDekRecovery*`
-  (the DEK wraps).
+- Adds / removes a `*Ciphertext` / `*Iv` / `*AuthTag` triple on one of
+  those six narrative models.
 
-For other migrations (e.g. `RefreshToken` schema, `User.username`
-metadata fields), `repo-boundary.md` is not required —
-`backend.md` alone suffices.
+The `User` DEK-wrap columns (`contentDekPassword*` /
+`contentDekRecovery*`) and the BYOK Venice-key columns (`veniceApiKeyEnc`
+…) are **not** narrative — they're `backend.md` "Encryption at rest"
+territory (and `security-reviewer`'s surface), not `repo-boundary.md`.
+For these, and for other non-narrative migrations (`User`
+auth/profile fields like `username` / `email`), `backend.md` alone
+suffices.
 
 ## What's NOT in this index
 

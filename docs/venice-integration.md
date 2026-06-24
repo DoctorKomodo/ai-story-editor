@@ -1,209 +1,199 @@
 # Venice.ai Integration
 
-Venice is OpenAI API-compatible. We talk to it via the `openai` npm package pointed at Venice's base URL. Venice-specific behaviour (reasoning-token stripping, web search, prompt cache key, etc.) is carried in the `venice_parameters` object passed through the SDK's request body.
+Venice is OpenAI API-compatible. We talk to it via the `openai` npm package pointed at Venice's base URL. Venice-specific behaviour (reasoning-token stripping, web search, etc.) is carried in the `venice_parameters` object passed through the SDK's request body; a few other knobs (`prompt_cache_key`, `max_completion_tokens`) are top-level chat-completion fields.
 
-This doc covers: client construction, the `venice_parameters` we set and why, prompt construction, dynamic context budgeting, SSE streaming, reasoning-model handling, prompt caching, rate-limit + balance header use, and error mapping.
+This doc covers: client construction, the `venice_parameters` we set and why, prompt construction, dynamic context budgeting, SSE streaming, reasoning-model handling, prompt caching, rate-limit + balance header use, web-search citations, and error mapping.
 
 ---
 
 ## Client Setup
 
-The `openai` client is constructed **per user, per request** — [V17] supersedes the singleton sketched in [A4]. There is no server-wide Venice key ([AU13]); each user supplies their own via [AU12] (BYOK) and it's stored AES-256-GCM encrypted at rest.
+The `openai` client is constructed **per user, per request**. There is no server-wide Venice key; each user supplies their own (BYOK) and it's stored AES-256-GCM encrypted at rest under the **per-user content DEK** (via `venice-key.service.ts` → `content-crypto.service.ts`), decrypted only for the lifetime of a request.
 
 ```ts
-// backend/src/services/venice.client.service.ts — [V17]
+// backend/src/lib/venice.ts
 import OpenAI from 'openai';
-import { getUserVeniceKey } from '../services/byok.service';
 
 export class NoVeniceKeyError extends Error {}
 
+const DEFAULT_VENICE_BASE_URL = 'https://api.venice.ai/api/v1';
+
 export async function getVeniceClient(userId: string): Promise<OpenAI> {
-  const stored = await getUserVeniceKey(userId); // decrypts via [AU11]
-  if (!stored) throw new NoVeniceKeyError('venice_key_required');
+  const stored = await getDecryptedVeniceKey(userId); // via venice-key.service
+  if (!stored) throw new NoVeniceKeyError();
   return new OpenAI({
     apiKey: stored.apiKey,
-    baseURL: stored.endpoint ?? 'https://api.venice.ai/api/v1',
+    baseURL: stored.endpoint ?? DEFAULT_VENICE_BASE_URL,
   });
 }
 ```
 
-Never cache the `OpenAI` instance across users — one account's key must never serve another's request. [A4]'s `backend/src/lib/venice.ts` now re-exports `NoVeniceKeyError` and the per-user client factory; no other file imports `openai` directly.
+`getVeniceClient` is the only path to Venice — there is no singleton. A missing key throws `NoVeniceKeyError`, which the global error handler maps to HTTP **409** `{ error: { code: "venice_key_required" } }`. Never cache the `OpenAI` instance across users — one account's key must never serve another's request. `backend/src/lib/venice.ts` is the canonical home; `lib/venice-errors.ts` and `services/venice.models.service.ts` are the only other modules that import `openai`.
 
 ---
 
 ## `venice_parameters` We Set
 
-Venice-specific behaviour passed under `body.venice_parameters`:
+Venice-specific behaviour passed under `body.venice_parameters` (assembled by `buildVeniceParams` in `venice-call.service.ts`):
 
-| Parameter | Value | When | Task |
-|---|---|---|---|
-| `include_venice_system_prompt` | `userSettings.ai.includeVeniceSystemPrompt ?? true` | Every call | [V4] — user-configurable via Settings → Venice. |
-| `strip_thinking_response` | `true` | Selected model has `supportsReasoning: true` | [V6] — avoid leaking chain-of-thought tokens into the final text. |
-| `enable_web_search` | `"auto"` | Caller opts in via `enableWebSearch: true` — **chat POST only** ([V26]); never on `/api/ai/complete` ([X11]) | [V7] — research hook for world-building. |
-| `enable_web_citations` | `true` | Same as above | [V7] — keep citations for fact claims. |
-| `include_search_results_in_stream` | `true` | Chat POST only, when `enableWebSearch: true` | [V26] — projected and delivered as a one-shot `event: citations` SSE frame. |
-| `prompt_cache_key` | `sha256(storyId + modelId)` | Always, on every `/api/ai/complete` call | [V8] — route same-story requests to the same backend for cache-hit uplift. |
+| Parameter | Value | When |
+|---|---|---|
+| `include_venice_system_prompt` | `userSettings.ai.includeVeniceSystemPrompt ?? true` | Every call |
+| `strip_thinking_response` | `true` | Selected model has `supportsReasoning: true` — avoid leaking chain-of-thought tokens into the final text |
+| `enable_web_search` | `"auto"` | Caller opts in via `enableWebSearch: true` — **chat POST only**; never on `/api/ai/complete` |
+| `enable_web_citations` | `true` | Same as above |
+| `include_search_results_in_stream` | `true` | Chat POST only, when `enableWebSearch: true` — delivered as a one-shot `event: citations` SSE frame |
 
-All five flags pass through the `openai` SDK via `body.venice_parameters`. Tests pin each invariant ([V4] / [V6] / [V7] / [V8] test files in `tests/ai/` + `tests/services/`).
+`prompt_cache_key` is **not** a `venice_parameter` — it's a top-level chat-completion field (see Prompt Caching).
 
-**`include_venice_system_prompt` is additive, not exclusive.** Inkwell's own system message (the default creative-writing prompt, or the per-story `Story.systemPrompt` override from [V13]) is sent as a `system` message on every call. The Venice flag only controls whether Venice additionally prepends its built-in creative-writing guidance on top. The `/api/ai/complete` route reads `req.user.settingsJson.ai.includeVeniceSystemPrompt` (default `true` if missing) and passes it to the prompt builder as an explicit boolean — the builder never hardcodes the value.
+**`include_venice_system_prompt` is additive, not exclusive.** Inkwell's own system message (the default creative-writing prompt, or the user's `system` prompt override in `User.settingsJson.prompts.system`) is sent as a `system` message on every call. The Venice flag only controls whether Venice *additionally* prepends its built-in creative-writing guidance on top. The AI route reads `req.user.settingsJson.ai.includeVeniceSystemPrompt` (default `true` if missing) and passes it to the prompt builder as an explicit boolean — the builder never hardcodes the value.
 
 ---
 
 ## Prompt Construction — `src/services/prompt.service.ts`
 
-Inputs: `action`, `selectedText`, `chapterContent`, `characters[]`, `worldNotes`, `modelContextLength`, optional per-story `systemPrompt`.
+Inputs: `action`, `selectedText`, `chapterContent`, `characters[]`, `worldNotes`, optional previous-chapter summaries, `modelContextLength`, `modelMaxCompletionTokens`, and `userPrompts` (the user-level prompt overrides, including the `system` override).
 
-Shape:
+Shape — everything stable across turns goes in the `system` message; the `user` message carries only this turn's input (the canonical single-path `buildPrompt`):
 
-1. **System message** — per-story `Story.systemPrompt` if non-null ([V13]); otherwise the default creative-writing prompt.
-2. **Story context block** — `genre`, `worldNotes`, and a **condensed** character list (`{ name, role, key traits }`). Character context + `worldNotes` are never truncated ([V3]).
-3. **Chapter context** — the current chapter's decrypted prose, truncated from the top (oldest content first) when over-budget.
-4. **Action prompt** — the per-action template ([V12] / [V14]) invoking Continue / Rewrite / Describe / Expand / Summarise / Ask / Freeform over `selectedText`.
+1. **System message** — the user's `system` override (`resolvePrompt(userPrompts, 'system')`) if set, otherwise the default creative-writing prompt (`DEFAULT_SYSTEM_PROMPT`); followed by world-notes, character context, the chapter, and the per-action task template.
+2. **Character context** — the **full** character field set (`name`, `role`, `age`, `appearance`, `personality`, `voice`, `backstory`, `arc`, `relationships`), not a condensed subset. Character context and `worldNotes` are **never truncated**.
+3. **Chapter context** — the current chapter's decrypted prose, truncated from the **top** (oldest content first) when over-budget.
+4. **User message** — the per-action payload built by `buildUserPayload` over `selectedText` / the user's instruction.
 
-The prompt builder never sees ciphertext — chapter bodies are decrypted via the chapter repo ([E9]) before entering the builder, and plaintext lives only for the request's lifetime.
+The prompt builder never sees ciphertext — chapter bodies are decrypted via the chapter repo before entering the builder, and plaintext lives only for the request's lifetime.
 
-### AI Actions ([V12] + [V14])
+### AI actions
 
-- **Continue** — continues from where the selection (or cursor context) ends, matching the established style. ~80 words for `⌥+Enter` cursor-continue.
-- **Rewrite** — rewrites the selected passage with different phrasing, preserving meaning.
+`PromptAction` = `continue` / `rephrase` / `expand` / `summarise` / `rewrite` / `describe` / `scene` / `ask`:
+
+- **Continue** — continues from where the selection (or cursor context) ends, matching the established style (`⌥+Enter` cursor-continue).
+- **Rephrase / Rewrite** — restate the selected passage with different phrasing, preserving meaning (both collapse onto the `rewrite` override key).
 - **Describe** — adds sensory description around the selection.
-- **Expand** — adds depth/detail to the selected passage. Rendered inline as the AI result card ([F34]).
+- **Expand** — adds depth/detail to the selected passage (rendered inline as the AI result card).
 - **Summarise** — condenses the selected text.
-- **Ask** — routes the selection into the chat panel as an attachment ([F41]).
-- **Freeform** — passes the user's custom instruction as the direct prompt.
+- **Scene** — the scene composer; the user's free-text `freeformInstruction` is the user-turn message, rendered against the `scene` task template.
+- **Ask** — routes the selection into the chat panel as an attachment.
 
-Each action has a system prompt that instructs the model to return **only** the content with no preamble or markdown wrapper.
+`/api/ai/complete` accepts only `continue` / `rephrase` / `expand` / `summarise` / `rewrite` / `describe`; `ask` and `scene` are chat-surface actions. Each action's task template instructs the model to return **only** the content with no preamble or markdown wrapper.
 
 ---
 
 ## Prompt resolution
 
-The prompt builder (`backend/src/services/prompt.service.ts`) resolves
-each prompt slot via `resolvePrompt(userPrompts, key)`:
+Each per-action task template is resolved via `resolvePrompt(userPrompts, key)` and goes into the **system** message:
 
 1. If `userPrompts[key]` is a non-empty trimmed string → use the override.
 2. Otherwise → use `DEFAULT_PROMPTS[key]`.
 
-Overridable keys (six): `system`, `continue`, `rewrite`, `expand`,
-`summarise`, `describe`. The `'rephrase'` action is collapsed onto the
-`'rewrite'` override key (both surfaces share one user-level override).
+User-overridable keys (nine): `system`, `continue`, `rewrite`, `expand`, `summarise`, `summariseChapter`, `describe`, `scene`, `ask`. The `rephrase` action collapses onto the `rewrite` key (both share one override). All nine have a `DEFAULT_PROMPTS` template and are persisted in `User.settingsJson.prompts` (nine `string | null` fields, `.strict()`-validated); the Settings → Prompts tab is the sole authoring surface, and there are no per-story overrides.
 
-The selection text is auto-appended as `\n\nSelection: «…»` *after* the
-resolved task block — users edit the instruction line only, never the
-selection injection.
-
-`freeform` and `ask` are not template-driven (the user-typed text *is*
-the prompt) and do not consult `userPrompts`.
-
-User overrides are stored in `User.settingsJson.prompts` (six
-`string | null` fields). The Settings → Prompts tab is the sole
-authoring surface; per-story overrides were removed in [X29].
+`scene` and `ask` are template-driven like the rest — their task template still resolves through `resolvePrompt` — but they *additionally* take a free-text `freeformInstruction` as the **user-turn** message (the other actions use the selection as the user-turn payload).
 
 ---
 
-## Dynamic Context Budgeting ([V2] + [V3])
+## Dynamic Context Budgeting
 
-**Token counts are never hardcoded.** The prompt builder always consults the current model's `context_length`:
+**Token counts are never hardcoded.** The prompt budget is computed from the selected model's `context_length`, the response allowance, and a fixed safety margin — not a fixed-percentage reserve:
 
 ```
-budgetForPrompt = modelContextLength - reserveForResponse (20% of context_length, rounded down)
+budgetForPrompt = modelContextLength - maxCompletionTokens - SAFETY_MARGIN_TOKENS   // 512
 ```
 
-The context length comes from the cached `GET /v1/models` call (`venice.models.service.ts` — [V2]), refreshed every 10 minutes.
+`modelContextLength` and the model's max-completion cap come from the cached `GET /v1/models` call (`venice.models.service.ts`), refreshed every 10 minutes.
 
 If the composed prompt exceeds `budgetForPrompt`:
 - **Truncate** `chapterContent` from the **top** (oldest prose removed first) until the budget is met.
 - **Never truncate** the system prompt, character context, or `worldNotes`.
-- If the remaining content still can't fit, surface `413 { code: "context_overflow" }`.
-
-Tests exercise every branch ([T5]): character context present, `worldNotes` present, `include_venice_system_prompt` reflects the caller-supplied setting (default `true`) independent of action type, model, and `Story.systemPrompt`, truncation direction, budget respects `context_length`.
 
 ---
 
 ## Streaming (SSE)
 
-Venice speaks standard OpenAI SSE when `stream: true` is set. We pass the stream through to the client without buffering:
+Venice speaks standard OpenAI SSE when `stream: true` is set. `/api/ai/complete` and the chat POST pass the stream through to the client without buffering. The route uses `.withResponse()` so it can read rate-limit headers off the HTTP response before the body streams, forwards each chunk as a `data:` frame, and terminates with `data: [DONE]`:
 
 ```ts
-// /api/ai/complete — [V5]
-const completion = await client.chat.completions.create({
-  model: modelId,
-  messages,
-  stream: true,
-  body: { venice_parameters: { ... } },
-});
+// /api/ai/complete (simplified)
+const { data: stream, response } = await client.chat.completions
+  .create({ model, messages, stream: true, max_completion_tokens, prompt_cache_key, venice_parameters })
+  .withResponse();
 
+res.status(200);
 res.setHeader('Content-Type', 'text/event-stream');
-res.setHeader('Cache-Control', 'no-cache');
-res.setHeader('Connection', 'keep-alive');
-for await (const chunk of completion) {
+res.setHeader('Cache-Control', 'no-cache, no-transform');
+// (forward Venice rate-limit headers, then flushHeaders())
+for await (const chunk of stream) {
   res.write(`data: ${JSON.stringify(chunk)}\n\n`);
 }
 res.write('data: [DONE]\n\n');
 res.end();
 ```
 
-The frontend reads the stream with `ReadableStream` / `TextDecoder` (not `fetch().then(res => res.json())`) and renders tokens into the editor or chat bubble as they arrive ([F15] / [F34] / [F39]).
+**Once headers are flushed, errors can't use the global error handler** — a mid-stream failure is written as a terminal SSE error frame via `mapVeniceErrorToSse` (then `res.end()`), never `next(err)`. The route also aborts the upstream Venice stream on `req.on('close')`. The frontend reads the stream with a `ReadableStream` reader (not `fetch().then(res => res.json())`) and renders tokens as they arrive.
 
 ---
 
-## Reasoning Model Handling ([V6])
+## Chapter summarisation (structured, non-streaming)
 
-Venice tags some models (e.g. `…-reasoning`) with `supportsReasoning: true`. When such a model is selected:
+Chapter summarisation (`chapters.routes.ts`) is the one Venice call that is **not** SSE. It requests **structured output** — `response_format: { type: 'json_schema', json_schema: { schema: chapterSummaryJsonSchema(), strict: true } }` — and awaits the full completion, then validates the JSON against `chapterSummarySchema`. Its system message is assembled directly as `resolvePrompt(userPrompts, 'system') + resolvePrompt(userPrompts, 'summariseChapter')` (not via `buildPrompt`), it sets `prompt_cache_key` from `chapterId`, and it honours the same per-model reasoning toggle. The resulting summaries are what the prompt service feeds back as previous-chapter context on later `/api/ai/complete` calls, gated by `Story.includePreviousChaptersInPrompt`.
+
+---
+
+## Reasoning Model Handling
+
+Venice tags some models with `supportsReasoning: true` (read from `model_spec.capabilities.supportsReasoning` on `/v1/models`). For a reasoning-capable model:
 
 - `venice_parameters.strip_thinking_response = true` — drops chain-of-thought tokens before the final delta arrives.
-- The frontend's thinking-dots placeholder stays on-screen until the first non-thinking token, then switches to streaming render ([F34]).
+- The frontend's thinking-dots placeholder stays on-screen until the first non-thinking token, then switches to streaming render.
+- **Per-model reasoning toggle.** Users can disable reasoning for a specific model via `settings.chat.overrides[modelId].reasoning = false`. `resolveReasoningEnabled` (`venice-call.service.ts`) returns `false` only in that case (reasoning stays on by default); the route then sends the top-level `reasoning: { enabled: false }` field on the chat-completion call.
 
-Non-reasoning models never set this flag; the test in `tests/ai/reasoning.test.ts` pins both branches.
+Non-reasoning models never set `strip_thinking_response` and ignore the toggle. (Venice also exposes `disable_thinking` and `reasoning.effort` for finer control — we don't use those.)
 
 ---
 
-## Prompt Caching ([V8])
+## Prompt Caching
 
-Every `/api/ai/complete` request sets:
+`prompt_cache_key` is a **top-level** chat-completion body field (sibling of `model` / `messages` / `stream`), **not** nested under `venice_parameters`. Every AI call sets it:
 
 ```
-venice_parameters.prompt_cache_key = sha256(`${storyId}:${modelId}`).slice(0, 32)
+prompt_cache_key = sha256(`${contextId}:${modelId}`).slice(0, 32)
 ```
 
-The hash is **deterministic per (storyId, modelId) pair**: same story + same model → same Venice backend → higher cache-hit rate → lower latency and lower cost for the user. Truncating to 32 hex characters keeps the key compact in Venice's telemetry without sacrificing uniqueness (2^128 collision space is sufficient).
+The context id is `storyId` for `/api/ai/complete`, `chatId` for chat/scene messages, and `chapterId` for chapter summarisation. The key is deterministic per `(contextId, modelId)` pair: same context + same model → same Venice backend → higher cache-hit rate → lower latency and cost.
 
 Key properties:
-- **Server-side only** — computed in `ai.routes.ts`, never accepted from the client.
-- **Content-blind** — the key is derived from IDs, not from plaintext content. Leaking the cache key reveals only that two requests targeted the same story with the same model.
-- **Always set** — `prompt_cache_key` is present on every `/api/ai/complete` call regardless of action type, model, or web-search flag.
-- **Not stored** — recomputed freshly on each request; no persistence needed.
+- **Server-side only** — computed in the route, never accepted from the client.
+- **Content-blind** — derived from IDs, not plaintext. Leaking it reveals only that two requests targeted the same context with the same model.
+- **Always set** — present on every call regardless of action, model, or web-search flag.
+- **Not stored** — recomputed per request.
 
 ---
 
 ## Rate Limit + Balance Headers
 
-### Rate limit ([V9])
+### Rate limit
 
-After each Venice call we read:
-- `x-ratelimit-remaining-requests`
-- `x-ratelimit-remaining-tokens`
+After each Venice call we read the rate-limit headers off the response and forward them to the frontend (renamed `x-ratelimit-*` → `x-venice-*`), each only when Venice actually sent it:
 
-…and forward them to the frontend as:
-- `x-venice-remaining-requests`
-- `x-venice-remaining-tokens`
+- `x-venice-remaining-requests` / `x-venice-remaining-tokens`
+- `x-venice-limit-requests` / `x-venice-limit-tokens`
+- `x-venice-reset-requests` / `x-venice-reset-tokens`
 
-The editor's usage indicator ([F16]) reads those headers after each AI call.
+The editor's usage indicator reads these after each AI call to show "X / Y remaining until HH:MM" without a second round-trip.
 
-### Balance ([V10])
+### Balance
 
-`GET /api/users/me/venice-account` ([X32]) makes a lightweight Venice call to `GET /api_keys/rate_limits` and reads `data.balances.{USD,DIEM}` from the JSON body. Returns `{ verified, balanceUsd, diem, endpoint, lastSix }`. The frontend shows these in the user menu (header pill via `useVeniceAccountQuery`) and settings → Venice tab. Per-user rate-limited at 30 req/min. **Note:** the legacy `/api/ai/balance` endpoint was removed; it read non-existent `x-venice-balance-*` headers off `/v1/models` and always returned null balances.
+`GET /api/users/me/venice-account` makes a lightweight Venice call to `GET /api_keys/rate_limits` and reads `data.balances.{USD,DIEM}` from the JSON body. Returns `{ verified, balanceUsd, diem, endpoint, lastSix }`. The frontend shows these in the user menu (header pill via `useVeniceAccountQuery`) and the Settings → Venice tab. Per-user rate-limited at 30 req/min.
 
 ---
 
-## Citations ([V26])
+## Citations
 
-When the chat POST sets `enableWebSearch: true`, the backend enables three Venice params together — `enable_web_search: 'auto'`, `enable_web_citations: true`, and `include_search_results_in_stream: true`. The third flag causes Venice to emit a non-standard **first chunk** carrying a `venice_search_results` array before the usual OpenAI-shaped content chunks start arriving.
+When the chat POST sets `enableWebSearch: true`, the backend enables three Venice params together — `enable_web_search: 'auto'`, `enable_web_citations: true`, and `include_search_results_in_stream: true`. The third causes Venice to emit a non-standard **first chunk** carrying a `venice_search_results` array before the usual content chunks.
 
-**Web search is chat-only ([X11]).** The inline `/api/ai/complete` surface (selection-bubble rewrite / expand / describe / continue) does **not** accept `enableWebSearch` and never sets the web-search params. Decision rationale: citation delivery (the `event: citations` frame and the persisted `citationsJson`) is wired only into the chat panel ([V26]); on the inline surface there is no UI to render sources, so enabling web search there would charge the user's Venice key for grounding whose citations are silently dropped. Of the three options considered — (a) off for inline, (b) keep on as a silent grounding nudge, (c) extend the citations UI to the inline card — we chose **(a)**: the field was removed from the `/api/ai/complete` request schema. Re-introducing inline web search requires first building a sources UI for the inline result card (option c).
+**Web search is chat-only.** The inline `/api/ai/complete` surface (selection-bubble rewrite / expand / describe / continue) does **not** accept `enableWebSearch` and never sets the web-search params: citation delivery (the `event: citations` frame and the persisted `citationsJson`) is wired only into the chat panel, so enabling web search on the inline surface would charge the user's Venice key for grounding whose citations are silently dropped. Re-introducing inline web search requires first building a sources UI for the inline result card.
 
-Delivery-mode choice: we picked `include_search_results_in_stream` over `return_search_results_as_documents` because the latter surfaces results as an OpenAI-compatible tool call (`venice_web_search_documents`), which would require tool-declaration plumbing on every AI route. In-stream delivery is a strict drop-in: the existing SSE passthrough loop intercepts the first chunk, projects it, emits one `event: citations` SSE frame, and forwards zero raw `venice_search_results` bytes to the client.
+We use `include_search_results_in_stream` rather than `return_search_results_as_documents` (which surfaces results as an OpenAI-compatible `venice_web_search_documents` tool call requiring tool-declaration plumbing). In-stream delivery is a drop-in: the SSE passthrough loop intercepts the first chunk, projects it, emits one `event: citations` frame, and forwards zero raw `venice_search_results` bytes to the client.
 
 **Projection** (`backend/src/lib/venice-citations.ts`):
 
@@ -211,14 +201,14 @@ Delivery-mode choice: we picked `include_search_results_in_stream` over `return_
 interface Citation {
   title: string;
   url: string;
-  snippet: string;           // renamed from Venice's `content`
+  snippet: string;            // renamed from Venice's `content`
   publishedAt: string | null; // renamed from Venice's `date`
 }
 ```
 
-- `content → snippet` — avoids collision with the dropped `Chapter.content` mirror and makes "this is a short preview, not the full page" explicit.
-- `date → publishedAt` — `| null` type prevents frontend from assuming presence.
-- Items missing `title` or `url` are dropped silently. Hard cap of 10 items; extras discarded silently.
+- `content → snippet` — makes "short preview, not the full page" explicit.
+- `date → publishedAt` — `| null` prevents the frontend assuming presence.
+- Items missing `title` or `url` are dropped silently. Hard cap of 10 items.
 
 **SSE wire format:**
 
@@ -235,122 +225,44 @@ data: {"id":"chatcmpl-...","choices":[{"delta":{"content":"Thick fog..."}, ...}]
 data: [DONE]
 ```
 
-The `event: citations` frame is emitted at most once per turn, before the first content frame. If Venice returns no search results (or web search was off), the frame is skipped and the consumer sees only content frames.
+The `event: citations` frame is emitted at most once per turn, before the first content frame. If Venice returns no results (or web search was off), it's skipped.
 
 **Null vs empty persistence:**
 
-- `citationsJson === null` — web search was off, OR on but Venice returned no valid results. The persisted `citationsJsonCiphertext` triple is all-null.
-- `citationsJson: [{…}]` (1–10 items) — the normal non-empty case; persisted encrypted via the repo layer.
-- `citationsJson === []` is explicitly **not** used. Projection either yields ≥1 valid citation (array) or 0 (null).
+- `citationsJson === null` — web search off, or on but no valid results. The persisted `citationsJsonCiphertext` triple is all-null.
+- `citationsJson: [{…}]` (1–10 items) — persisted encrypted via the repo layer.
+- `citationsJson === []` is explicitly **not** used — projection yields ≥1 valid citation (array) or 0 (null).
 
-Citations ride the same AES-256-GCM wrap as other narrative content; the encryption leak test ([E12]) scans the `Message.citationsJsonCiphertext` column for narrative sentinels.
-
-URL sanitisation is intentionally **not** done server-side — the frontend (task `[F50]`) MUST render URLs via `<a href={url} target="_blank" rel="noopener noreferrer">` and must never render `snippet` as HTML.
+Citations ride the same AES-256-GCM wrap as other narrative content; the encryption leak test scans `Message.citationsJsonCiphertext` for narrative sentinels. URL sanitisation is intentionally **not** done server-side — the frontend MUST render URLs via `<a href={url} target="_blank" rel="noopener noreferrer">` and must never render `snippet` as HTML.
 
 ---
 
 ## Error catalog
 
-All Venice-related error responses share the shape `{ error: { code, message, retryAfterSeconds?, details?: { veniceMessage? } } }`. `code` is stable and machine-readable; `message` is user-facing; `retryAfterSeconds` is present when known; `details.veniceMessage` is the sanitised raw text Venice returned, when Venice supplied one. In the table below, "absent" means the field is not serialised into the response body at all; "`null`" means the field is serialised with a `null` value.
+All Venice-related error responses share the shape `{ error: { code, message, retryAfterSeconds?, details?: { veniceMessage? } } }`. `code` is stable and machine-readable; `message` is user-facing; `retryAfterSeconds` is present when known; `details.veniceMessage` is the sanitised raw text Venice returned, when present. "absent" = the field is not serialised into the body; "`null`" = serialised with a `null` value.
 
-| HTTP | `code` | When emitted | `retryAfterSeconds` | `details.veniceMessage` | User-facing rendering |
-|---|---|---|---|---|---|
-| 409 | `venice_key_required` | User has no BYOK key stored; emitted by `NoVeniceKeyError` branch before any Venice call | absent | absent | "Open Settings" link to the BYOK panel + friendly headline |
-| 400 | `venice_key_invalid` | Venice returns 401 (stored key was rejected) | absent | passes through when present | "Open Settings" link + headline |
-| 429 | `venice_rate_limited` | Venice returns 429 | parsed from `Retry-After` / `x-ratelimit-reset-*`; `null` when unparseable | passes through when present | Live countdown ("Try again in 23s") + Retry button |
-| 402 | `venice_insufficient_balance` | Venice returns 402 INSUFFICIENT_BALANCE | `null` (field present, always null) | passes through when present | "Top up at venice.ai →" external link |
-| 502 | `venice_unavailable` | Venice returns 502/503/504 | absent | passes through when present | Retry button only |
-| 400/404/422/502 | `venice_error` | Forwarded Venice 400/404/422; fallback for unexpected non-2xx and transport / connection failures | absent | passes through when present | Retry button only |
+| HTTP | `code` | When emitted | `retryAfterSeconds` | User-facing rendering |
+|---|---|---|---|---|
+| 409 | `venice_key_required` | User has no BYOK key stored; emitted by the `NoVeniceKeyError` branch before any Venice call | absent | "Open Settings" link to the BYOK panel |
+| 400 | `venice_key_invalid` | Venice returns 401 (stored key rejected) | absent | "Open Settings" link |
+| 429 | `venice_rate_limited` | Venice returns 429 | parsed from `Retry-After`, falling back to `x-ratelimit-reset-*`; `null` when unparseable | live countdown + Retry |
+| 402 | `venice_insufficient_balance` | Venice returns 402 | `null` (present, always null) | "Top up at venice.ai →" link |
+| 502 | `venice_unavailable` | Venice returns 502/503/504 | absent | Retry only |
+| 400/404/422/502 | `venice_error` | Forwarded Venice 400/404/422; fallback for unexpected non-2xx and transport failures | absent | Retry only |
 
-Every successful Venice call emits one `[venice.params]` log line (success-side; from the X34 work). Every Venice error path emits one `[venice.error]` log line via `mapVeniceError` / `mapVeniceErrorToSse`. Shape:
+`details.veniceMessage` passes through (sanitised) on every row except `venice_key_required`. Error mapping lives in `mapVeniceError` / `mapVeniceErrorToSse` (`backend/src/lib/venice-errors.ts`), which branch on the `openai` SDK's `APIError` subclasses. Every Venice error path emits one `[venice.error]` log line:
 
 ```json
-{
-  "route": "ai-models" | "ai-complete" | "chat",
-  "userId": "...",
-  "code": "venice_rate_limited",
-  "upstreamStatus": 429,
-  "retryAfterSeconds": 23,
-  "veniceMessage": "...",
-  "streaming": false
-}
+{ "route": "ai-complete", "userId": "...", "code": "venice_rate_limited",
+  "upstreamStatus": 429, "retryAfterSeconds": 23, "veniceMessage": "...", "streaming": false }
 ```
 
-**Never** pass raw Venice error bodies, stack traces, or the user's API key to the frontend. The BYOK key must not appear in any log line, error object, or telemetry payload ([AU13]). The mapper scrubs `sk-`-prefixed token fragments from `details.veniceMessage` and the `veniceMessage` log field via `SK_KEY_RE`.
-
-The frontend's `VeniceErrorBanner` component reads these codes and renders the per-code affordances above. See `frontend/src/components/VeniceErrorBanner.tsx`.
+**Never** pass raw Venice error bodies, stack traces, or the user's API key to the frontend. The BYOK key must not appear in any log line, error object, or telemetry payload. The mapper scrubs `sk-`-prefixed token fragments from `details.veniceMessage` and the `veniceMessage` log field via `SK_KEY_RE`. The frontend's `VeniceErrorBanner` reads these codes and renders the per-code affordances.
 
 ---
 
 ## References
 
 - Venice API docs: https://docs.venice.ai
-- OpenAI SDK: https://github.com/openai/openai-node (we use `^4.77.0`)
-- BYOK + key storage: [encryption.md](./encryption.md) (forthcoming, [E1])
-
-## 2026-04 Venice API audit
-
-This is the [V22] read-only compliance audit of the Story Editor Venice integration against Venice's current public API docs. Run date: 2026-04-23. Sources: Context7 library `/websites/venice_ai` (high-reputation, benchmark 86.2), pulling from `docs.venice.ai/api-reference/*`, `docs.venice.ai/api-reference/endpoint/chat/completions`, `docs.venice.ai/api-reference/endpoint/models/list`, `docs.venice.ai/api-reference/error-codes`, `docs.venice.ai/api-reference/api-spec`, `docs.venice.ai/overview/guides/*`. No WebFetch fallback was needed.
-
-### Compliance findings
-
-**1. Base URL — MATCHES**
-- Our side: `DEFAULT_VENICE_BASE_URL = 'https://api.venice.ai/api/v1'` at `backend/src/lib/venice.ts:15`, passed to the OpenAI SDK as `baseURL` at `backend/src/lib/venice.ts:36`.
-- Venice: "base_url=`https://api.venice.ai/api/v1`" (docs.venice.ai/overview/getting-started, docs.venice.ai/api-reference/endpoint/chat/completions → `POST /v1/chat/completions`).
-
-**2. Chat completions request shape — MATCHES**
-- Our fields: `model`, `messages`, `stream`, `max_tokens`, `stream_options: { include_usage: true }`, `venice_parameters` (`backend/src/routes/ai.routes.ts:218–224`, `backend/src/routes/chat.routes.ts:339–347`).
-- Venice: all five are in the documented request body for `POST /v1/chat/completions`. Note: `max_tokens` is flagged "deprecated in favor of max_completion_tokens" in Venice's spec — still accepted, but a future candidate to migrate. `stream_options.include_usage` is documented as "Whether to include usage information in the stream."
-- MINOR — `max_tokens` is being phased out in favor of `max_completion_tokens`. Not broken today, but worth tracking.
-
-**3. `venice_parameters` field names — MOSTLY MATCHES, one drift**
-
-| Key we send | Type we send | Venice-documented type | Verdict |
-|---|---|---|---|
-| `include_venice_system_prompt` | boolean | boolean (default `true`) | MATCHES |
-| `strip_thinking_response` | boolean (true on reasoning models) | boolean (default `false`) | MATCHES |
-| `enable_web_search` | string `'auto'` | string enum `off` / `on` / `auto` (default `off`) | MATCHES |
-| `enable_web_citations` | boolean `true` | boolean (default `false`) | MATCHES |
-| `prompt_cache_key` | string (32-hex hash) | string | MATCHES — but lives at **top level**, not inside `venice_parameters` |
-
-- DRIFT — `prompt_cache_key` is nested inside `venice_parameters` in both `backend/src/routes/ai.routes.ts:204` and `backend/src/routes/chat.routes.ts:333`. Venice documents `prompt_cache_key` as a **top-level** chat-completion body parameter ("When supplied, this field may be used to optimize conversation routing to improve cache performance and thus reduce latency" — docs.venice.ai/api-reference/endpoint/chat/completions → Chat Completion Parameters). It does not appear in the `venice_parameters` object schema on docs.venice.ai/api-reference. Placing it there means Venice almost certainly ignores it — cache hits are silently not happening. Severity: degrades latency/caching; does not break correctness.
-
-**4. SSE format — MATCHES**
-- Our side: we iterate `for await (const chunk of stream)` from the OpenAI SDK, read `chunk.choices[0]?.delta?.content` (`backend/src/routes/chat.routes.ts:398`), and terminate with `data: [DONE]\n\n` (`backend/src/routes/ai.routes.ts:278`, `backend/src/routes/chat.routes.ts:427`).
-- Venice: "Use `data === '[DONE]' continue` … `chunk.choices?.[0]?.delta?.content`" (docs.venice.ai/overview/guides/tee-e2ee-models JS + Python examples). Terminator and shape confirmed.
-
-**5. Reasoning models / `strip_thinking_response` — MATCHES**
-- Our side: `veniceModelsService.findModel(body.modelId)` reads `supportsReasoning` from `model_spec.capabilities.supportsReasoning` (`backend/src/services/venice.models.service.ts:55`) and we set `strip_thinking_response: true` when true (`backend/src/routes/ai.routes.ts:193–195`, `backend/src/routes/chat.routes.ts:329–331`).
-- Venice: "You can discover a model's capabilities, including whether it supports reasoning … by querying the `/v1/models` endpoint. The response will include fields like `supportsReasoning`" (docs.venice.ai/overview/guides/reasoning-models). Example response shows `model_spec.capabilities.supportsReasoning: false`.
-- Note: Venice has since added `disable_thinking` and `reasoning.effort` / `reasoning_effort` parameters for finer-grained control — we don't use them, which is fine for now but a future enrichment opportunity.
-
-**6. Web search / citations response shape — GAP (read-only, not parsed)**
-- Our side: we set `enable_web_search: 'auto'` + `enable_web_citations: true` on request for the **chat POST only** (`backend/src/routes/chat.routes.ts`); the inline `/api/ai/complete` route never sets them ([X11]). On the chat path we parse citations out of the first chunk (`backend/src/lib/venice-citations.ts`) and persist `citationsJson`; content chunks are passed through verbatim as SSE frames.
-- Venice: documents `include_search_results_in_stream` (experimental — emits search results as the first chunk) and `return_search_results_as_documents` (surfaces results as an OpenAI-compatible tool call named `venice_web_search_documents`). We don't set either, so Venice's behavior defaults to inlining citations in the model's text output.
-- Verdict: not broken — but the frontend can't render a citations sidebar until the backend chooses one of the two modes and parses it. Flag as a gap rather than drift.
-
-**7. Models endpoint (`model_spec.availableContextTokens` + `capabilities`) — MATCHES**
-- Our side: `mapModel()` reads `raw.model_spec.availableContextTokens` (number) and `raw.model_spec.capabilities.{supportsReasoning, supportsVision}` (`backend/src/services/venice.models.service.ts:52–57`), and filters to `raw.type === 'text'` (line 93).
-- Venice (verbatim from docs.venice.ai/api-reference/endpoint/models/list example response): top-level `type: "text"`, `model_spec.availableContextTokens: 131072`, `model_spec.capabilities.supportsReasoning: false`, `model_spec.capabilities.supportsVision: false`. Field paths confirmed unchanged.
-- **[X27] Description and pricing.** `model_spec.description` (string) is mapped to `ModelInfo.description`, with empty / whitespace-only strings normalised to `null`. `model_spec.pricing.input.usd` and `model_spec.pricing.output.usd` (USD per 1M tokens) are mapped to `ModelInfo.pricing.{inputUsdPerMTok, outputUsdPerMTok}`. If either side is missing or non-numeric, the whole `pricing` object becomes `null` — we never render half-pricing. The DEM column from Venice (`pricing.{input,output}.diem`) is intentionally not consumed.
-
-**8. Rate-limit headers — MATCHES**
-- Our side: we forward `x-ratelimit-remaining-requests` and `x-ratelimit-remaining-tokens` (`backend/src/routes/ai.routes.ts:241–248`, `backend/src/routes/chat.routes.ts:364–371`), and read `data.balances.{USD,DIEM}` from `/api_keys/rate_limits` for `/api/users/me/venice-account` (`backend/src/services/venice-key.service.ts:getAccount`).
-- Venice: all four headers are documented verbatim on docs.venice.ai/api-reference → "Rate Limiting Information" and "Account Balance Information".
-- Note: Venice also publishes `x-ratelimit-limit-{requests,tokens}` and `x-ratelimit-reset-{requests,tokens}` — we don't forward these. Not drift; just an opportunity for a richer frontend usage display.
-
-**9. Error mapping — PARTIAL DRIFT**
-- Our side: `mapVeniceError` / `mapVeniceErrorToSse` in `backend/src/lib/venice-errors.ts:64–154`. We branch on `APIError` subclasses (`AuthenticationError` → 400 `venice_key_invalid`; `RateLimitError` → 429 `venice_rate_limited`; 502/503/504 → 502 `venice_unavailable`; default → 502 `venice_error`). We extract `retry-after` from SDK `err.headers`.
-- Venice: the documented error body shape is `{ error: string, details?: object }` (DetailedError, docs.venice.ai/api-reference/endpoint/video/queue) OR a StandardError `{ error: string, code: string }` shape referenced from the chat completions error table (docs.venice.ai/api-reference/endpoint/chat/completions). 401 error codes are `AUTHENTICATION_FAILED`, `AUTHENTICATION_FAILED_INACTIVE_KEY`, `INVALID_API_KEY`; 402 is `INSUFFICIENT_BALANCE`; 429 is `RATE_LIMIT_EXCEEDED`.
-- Drift points:
-  - DRIFT — we do **not** handle 402 `INSUFFICIENT_BALANCE` distinctly. The OpenAI SDK will surface 402 as a generic `APIError` with `status: 402`, which our `mapVeniceError` falls through to the "unexpected status" branch and returns 502 `venice_error`. That's wrong: 402 is actionable by the user ("top up credits"), and should surface as a distinct code. Severity: user-facing — users will see "Venice returned an unexpected error" when they've run out of credits.
-  - MINOR — the `retry-after` header is referenced in Venice's 429 guidance (docs.venice.ai/overview/guides/image-editing: "checking the `Retry-After` header"), but Venice's chat/completions rate-limit headers are `x-ratelimit-reset-{requests,tokens}` (delta-seconds for tokens, unix-ts for requests). If Venice does not set `Retry-After` on 429s from `/v1/chat/completions`, `parseRetryAfter` will return `null` and the frontend never gets a concrete retry hint. Worth probing against a live 429 (L-series) to confirm which header Venice actually sets.
-
-### Gap list
-
-- ❌ `[V23]` move `prompt_cache_key` out of `venice_parameters` into the top-level chat-completion body — currently buried at `backend/src/routes/ai.routes.ts:204` and `backend/src/routes/chat.routes.ts:333`, which almost certainly means Venice ignores it and we are paying for cold prompts on every call.
-- ⚠ `[V24]` handle 402 `INSUFFICIENT_BALANCE` in `backend/src/lib/venice-errors.ts` — map to a distinct `venice_insufficient_balance` code with a user-facing message pointing at `venice.ai/settings/api`, so the frontend can render a "Top up credits" CTA rather than a generic "unexpected error".
-- ⚠ `[V25]` migrate `max_tokens` → `max_completion_tokens` — `max_tokens` is documented as deprecated; bump the field name in `buildPrompt`'s return shape and the two `chat.completions.create` call sites.
-- ✓ `[V26]` citations delivery mode decided and wired — `include_search_results_in_stream: true` on the chat POST (per-turn opt-in via `enableWebSearch`), projected to `Citation` shape (`content → snippet`, `date → publishedAt`), delivered on a one-shot `event: citations` SSE frame, persisted encrypted on `Message.citationsJsonCiphertext`. Design in `docs/superpowers/specs/2026-04-23-v26-chat-citations-design.md`; see § Citations above. Frontend rendering is queued as `[F50]`; `/api/ai/complete` decision is deferred to `[X11]`.
-- ⚠ `[V27]` verify `retry-after` header presence on Venice 429s — if Venice sends `x-ratelimit-reset-tokens` instead of / in addition to `Retry-After`, extend `parseRetryAfter` in `backend/src/lib/venice-errors.ts:27–45` to fall back to the `x-ratelimit-reset-*` headers.
-- ⚠ `[V28]` (low priority) surface `x-ratelimit-limit-{requests,tokens}` and `x-ratelimit-reset-{requests,tokens}` alongside the remaining-* headers we already forward, so the frontend can compute "X / Y remaining until HH:MM" without a second round-trip.
+- OpenAI SDK: https://github.com/openai/openai-node (we use `^6.40.0`)
+- BYOK + key storage: [encryption.md](./encryption.md)

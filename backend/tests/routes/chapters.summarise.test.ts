@@ -1,6 +1,5 @@
-import request from 'supertest';
+import type request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
@@ -14,6 +13,7 @@ import {
   resetAll,
   storeKey,
   stubVeniceFetch,
+  TEST_ORIGIN,
 } from './_chat-test-helpers';
 
 const MODEL_LIST_BODY_REASONING = {
@@ -41,8 +41,8 @@ async function setup(
   username: string,
   body: string | null = 'A sentence of prose.',
 ): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; storyId: string }> {
-  const accessToken = await registerAndLogin(username);
-  const req = makeFakeReq(accessToken);
+  const { agent, sessionId } = await registerAndLogin(username);
+  const req = makeFakeReq(sessionId);
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
   const chapter = await createChapterRepo(req).create({
     storyId: story.id as string,
@@ -57,8 +57,6 @@ async function setup(
     orderIndex: 0,
     wordCount: body ? body.split(/\s+/).length : 0,
   });
-  const agent = request.agent(app);
-  agent.set('Authorization', `Bearer ${accessToken}`);
   return { agent, chapterId: chapter.id as string, storyId: story.id as string };
 }
 
@@ -98,6 +96,7 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
     const callsAfterSetup = fetchSpy.mock.calls.length;
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('empty_chapter');
@@ -111,6 +110,7 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY_NO_SCHEMA));
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('model_unsupported_for_summarisation');
@@ -134,6 +134,7 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
     );
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
     expect(res.body.summary).toEqual({ events: 'A.', stateAtEnd: 'B.', openThreads: 'C?' });
@@ -150,6 +151,7 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
     );
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(502);
     expect(res.body.error.code).toBe('summary_parse_failed');
@@ -178,6 +180,7 @@ describe('summarise honors model settings + sends persona', () => {
 
     await agent
       .patch('/api/users/me/settings')
+      .set('Origin', TEST_ORIGIN)
       .send({ chat: { overrides: { [MODEL_ID]: { temperature: 0.42 } } } });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -195,6 +198,7 @@ describe('summarise honors model settings + sends persona', () => {
 
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
 
@@ -243,6 +247,7 @@ describe('summarise honors model settings + sends persona', () => {
 
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
 
@@ -267,6 +272,7 @@ describe('summarise honors model settings + sends persona', () => {
 
     const settingsRes = await agent
       .patch('/api/users/me/settings')
+      .set('Origin', TEST_ORIGIN)
       .send({ chat: { overrides: { [MODEL_ID]: { reasoning: false } } } });
     expect(settingsRes.status).toBe(200);
 
@@ -285,6 +291,7 @@ describe('summarise honors model settings + sends persona', () => {
 
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
 
@@ -305,7 +312,10 @@ describe('summarise honors model settings + sends persona', () => {
     const { agent, chapterId, storyId } = await setup('sum-orch-3');
     await storeKey(agent, fetchSpy);
 
-    await agent.patch('/api/users/me/settings').send({ ai: { includeVeniceSystemPrompt: false } });
+    await agent
+      .patch('/api/users/me/settings')
+      .set('Origin', TEST_ORIGIN)
+      .send({ ai: { includeVeniceSystemPrompt: false } });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
@@ -322,6 +332,7 @@ describe('summarise honors model settings + sends persona', () => {
 
     const res = await agent
       .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
 

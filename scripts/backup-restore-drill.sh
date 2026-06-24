@@ -39,6 +39,9 @@ cleanup() {
   if [[ -n "${DRILL_BACKUP:-}" && -f "$DRILL_BACKUP" ]]; then
     rm -f "$DRILL_BACKUP"
   fi
+  if [[ -n "${COOKIE_JAR:-}" && -f "$COOKIE_JAR" ]]; then
+    rm -f "$COOKIE_JAR"
+  fi
   set -e
 }
 trap cleanup EXIT
@@ -84,19 +87,14 @@ DRILL_USERNAME="drill_user_${TS}"
 DRILL_PASSWORD="drill-pw-${TS}-correct-horse-battery-staple"
 SENTINEL="DRILL-SENTINEL-${TS}-do-not-occur-by-chance"
 
-# Per-run secrets for the transient backend. All exported (not just set) so
-# `docker run -e VAR` picks them up from this script's environment rather
-# than being passed on argv (where they'd be visible in `ps auxe` for the
-# lifetime of the docker CLI invocation).
+# Per-run env for the transient backend. Exported so `docker run -e VAR`
+# picks them up from this script's environment rather than argv (where
+# they'd be visible in `ps auxe` for the lifetime of the docker CLI call).
 export DRILL_DATABASE_URL="postgresql://storyeditor:storyeditor@postgres:5432/${DRILL_DB}"
-export JWT_SECRET="drill-jwt-${TS}"
-export REFRESH_TOKEN_SECRET="drill-refresh-${TS}"
-# Encryption key for the transient backend. Random per run; the dump-and-
-# restore round trip preserves Venice-key ciphertext too, but this drill
-# doesn't seed any Venice key so it's just here to satisfy boot validation.
-export APP_ENCRYPTION_KEY
-APP_ENCRYPTION_KEY="$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
 export FRONTEND_URL="http://localhost:${DRILL_PORT}"
+
+# Curl cookie jar — holds the session cookie between authed requests.
+COOKIE_JAR="$(mktemp)"
 
 # Network name (compose-default is "<project>_default"). Resolve dynamically
 # from the running postgres container so we don't hard-code the project name.
@@ -126,9 +124,7 @@ BACKEND_CID="$(docker run --rm -d \
   --network "$NETWORK" \
   -p "${DRILL_PORT}:4000" \
   -e "DATABASE_URL=${DRILL_DATABASE_URL}" \
-  -e JWT_SECRET \
-  -e REFRESH_TOKEN_SECRET \
-  -e APP_ENCRYPTION_KEY \
+  -e NODE_ENV=development \
   -e FRONTEND_URL \
   story-editor-backend)"
 
@@ -154,6 +150,7 @@ API="http://localhost:${DRILL_PORT}/api"
 log "registering test user"
 REG_RESPONSE="$(curl -sf -X POST "$API/auth/register" \
   -H 'Content-Type: application/json' \
+  -H "Origin: ${FRONTEND_URL}" \
   -d "$(jq -n --arg u "$DRILL_USERNAME" --arg p "$DRILL_PASSWORD" --arg n "Drill User" \
         '{name:$n, username:$u, password:$p}')")"
 
@@ -161,29 +158,31 @@ RECOVERY_CODE="$(echo "$REG_RESPONSE" | jq -r '.recoveryCode')"
 [[ "$RECOVERY_CODE" != "null" && -n "$RECOVERY_CODE" ]] || {
   log "register response missing 'recoveryCode' field (schema drift?)"; exit 1; }
 
-# Register doesn't return an accessToken — log in to get one.
-log "logging in (post-register) to get access token"
+# Register doesn't auto-login — log in to obtain the session cookie.
+log "logging in (post-register)"
 LOGIN_RESPONSE="$(curl -sf -X POST "$API/auth/login" \
   -H 'Content-Type: application/json' \
+  -H "Origin: ${FRONTEND_URL}" \
+  -c "$COOKIE_JAR" \
   -d "$(jq -n --arg u "$DRILL_USERNAME" --arg p "$DRILL_PASSWORD" \
         '{username:$u, password:$p}')")"
-ACCESS_TOKEN="$(echo "$LOGIN_RESPONSE" | jq -r '.accessToken')"
-[[ -n "$ACCESS_TOKEN" && "$ACCESS_TOKEN" != "null" ]] || {
-  log "post-register login response missing 'accessToken' field (schema drift?)"; exit 1; }
-
-auth_h() { echo "Authorization: Bearer $ACCESS_TOKEN"; }
+USER_ID="$(echo "$LOGIN_RESPONSE" | jq -r '.user.id')"
+[[ -n "$USER_ID" && "$USER_ID" != "null" ]] || {
+  log "post-register login response missing 'user.id' field (schema drift?)"; exit 1; }
 
 log "creating story"
 STORY_ID="$(curl -sf -X POST "$API/stories" \
   -H 'Content-Type: application/json' \
-  -H "$(auth_h)" \
+  -H "Origin: ${FRONTEND_URL}" \
+  -b "$COOKIE_JAR" \
   -d '{"title":"Drill story"}' | jq -r '.story.id')"
 [[ -n "$STORY_ID" && "$STORY_ID" != "null" ]] || { log "story create failed"; exit 1; }
 
 log "creating chapter with sentinel"
 CHAPTER_ID="$(curl -sf -X POST "$API/stories/${STORY_ID}/chapters" \
   -H 'Content-Type: application/json' \
-  -H "$(auth_h)" \
+  -H "Origin: ${FRONTEND_URL}" \
+  -b "$COOKIE_JAR" \
   -d "$(jq -n --arg s "$SENTINEL" \
         '{title:"Drill chapter",
           bodyJson:{type:"doc",content:[{type:"paragraph",content:[{type:"text",text:$s}]}]}}'
@@ -191,8 +190,9 @@ CHAPTER_ID="$(curl -sf -X POST "$API/stories/${STORY_ID}/chapters" \
 [[ -n "$CHAPTER_ID" && "$CHAPTER_ID" != "null" ]] || { log "chapter create failed"; exit 1; }
 
 # Sanity: the chapter we just created decrypts before backup.
-PRE_BODY="$(curl -sf "$API/stories/${STORY_ID}/chapters/${CHAPTER_ID}" -H "$(auth_h)" \
-  | jq -r '.chapter.body.content[0].content[0].text')"
+PRE_BODY="$(curl -sf "$API/stories/${STORY_ID}/chapters/${CHAPTER_ID}" \
+  -b "$COOKIE_JAR" \
+  | jq -r '.chapter.bodyJson.content[0].content[0].text')"
 if [[ "$PRE_BODY" != "$SENTINEL" ]]; then
   log "pre-backup chapter body did not match sentinel ($PRE_BODY)"
   exit 1
@@ -229,9 +229,7 @@ BACKEND_CID="$(docker run --rm -d \
   --network "$NETWORK" \
   -p "${DRILL_PORT}:4000" \
   -e "DATABASE_URL=${DRILL_DATABASE_URL}" \
-  -e JWT_SECRET \
-  -e REFRESH_TOKEN_SECRET \
-  -e APP_ENCRYPTION_KEY \
+  -e NODE_ENV=development \
   -e FRONTEND_URL \
   story-editor-backend)"
 
@@ -252,16 +250,19 @@ done
 log "logging in as $DRILL_USERNAME"
 LOGIN_RESPONSE="$(curl -sf -X POST "$API/auth/login" \
   -H 'Content-Type: application/json' \
+  -H "Origin: ${FRONTEND_URL}" \
+  -c "$COOKIE_JAR" \
   -d "$(jq -n --arg u "$DRILL_USERNAME" --arg p "$DRILL_PASSWORD" \
         '{username:$u, password:$p}')")"
-ACCESS_TOKEN="$(echo "$LOGIN_RESPONSE" | jq -r '.accessToken')"
-[[ -n "$ACCESS_TOKEN" && "$ACCESS_TOKEN" != "null" ]] || {
-  log "post-restore login response missing 'accessToken' field (schema drift?)"; exit 1; }
+USER_ID="$(echo "$LOGIN_RESPONSE" | jq -r '.user.id')"
+[[ -n "$USER_ID" && "$USER_ID" != "null" ]] || {
+  log "post-restore login response missing 'user.id' field (schema drift or auth failure)"; exit 1; }
 log "login OK — DEK was unwrappable with the original password after restore"
 
 log "fetching chapter $CHAPTER_ID"
-POST_BODY="$(curl -sf "$API/stories/${STORY_ID}/chapters/${CHAPTER_ID}" -H "$(auth_h)" \
-  | jq -r '.chapter.body.content[0].content[0].text')"
+POST_BODY="$(curl -sf "$API/stories/${STORY_ID}/chapters/${CHAPTER_ID}" \
+  -b "$COOKIE_JAR" \
+  | jq -r '.chapter.bodyJson.content[0].content[0].text')"
 
 if [[ "$POST_BODY" != "$SENTINEL" ]]; then
   log "FAIL: post-restore chapter body did not match sentinel"

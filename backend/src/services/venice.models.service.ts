@@ -8,7 +8,7 @@
 // narrower public `ModelInfo` shape.
 
 import type OpenAI from 'openai';
-import { getVeniceClient } from '../lib/venice';
+import { veniceKeyService } from './venice-key.service';
 
 export interface ModelPricing {
   inputUsdPerMTok: number;
@@ -124,7 +124,7 @@ export function mapModel(raw: VeniceRawModel): ModelInfo {
 }
 
 export interface VeniceModelsServiceDeps {
-  getClient?: (userId: string) => Promise<OpenAI>;
+  getClient?: (dek: Buffer, userId: string) => Promise<OpenAI>;
   now?: () => number;
 }
 
@@ -134,20 +134,20 @@ interface CacheEntry {
 }
 
 export function createVeniceModelsService(deps: VeniceModelsServiceDeps = {}) {
-  const getClient = deps.getClient ?? getVeniceClient;
+  const getClient = deps.getClient ?? veniceKeyService.getClient;
   const now = deps.now ?? Date.now;
 
   // Per-user cache: different users may use different endpoints, and each
   // endpoint may expose a different model list.
   const byUser = new Map<string, CacheEntry>();
 
-  async function fetchModels(userId: string): Promise<ModelInfo[]> {
+  async function fetchModels(dek: Buffer, userId: string): Promise<ModelInfo[]> {
     const hit = byUser.get(userId);
     if (hit && now() - hit.fetchedAt < TTL_MS) {
       return hit.models;
     }
 
-    const client = await getClient(userId);
+    const client = await getClient(dek, userId);
     // Venice's extensions aren't typed in the openai SDK — the SDK exposes
     // only { id, object, created, owned_by }. Cast through unknown to pick
     // up `type` and `model_spec`.

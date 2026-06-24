@@ -2,9 +2,8 @@
 // and GET /api/chapters/:chapterId/chats (kind filter).
 // [SC5] Integration test for POST /api/chats/:chatId/messages kind=scene routing.
 
-import request from 'supertest';
+import type request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
@@ -21,15 +20,16 @@ import {
   sseStreamResponse,
   storeKey,
   stubVeniceFetch,
+  TEST_ORIGIN,
 } from './_chat-test-helpers';
 
-// Returns a supertest agent (with auth header set), a chapterId, and the raw
-// accessToken (for constructing repo instances in tests that need them).
+// Returns a supertest agent (with session cookie set), a chapterId, and the
+// sessionId (for constructing repo instances in tests that need them).
 async function setup(
   username: string,
-): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; accessToken: string }> {
-  const accessToken = await registerAndLogin(username);
-  const req = makeFakeReq(accessToken);
+): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; sessionId: string }> {
+  const { agent, sessionId } = await registerAndLogin(username);
+  const req = makeFakeReq(sessionId);
 
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
   const storyId = story.id as string;
@@ -42,10 +42,7 @@ async function setup(
   });
   const chapterId = chapter.id as string;
 
-  const agent = request.agent(app);
-  agent.set('Authorization', `Bearer ${accessToken}`);
-
-  return { agent, chapterId, accessToken };
+  return { agent, chapterId, sessionId };
 }
 
 // ─── Suite ────────────────────────────────────────────────────────────────────
@@ -65,6 +62,7 @@ describe('POST /api/chapters/:chapterId/chats — kind', () => {
     const { agent, chapterId } = await setup('chat-kind-scene-u1');
     const res = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 's1', kind: 'scene' })
       .expect(201);
     expect(res.body.chat.kind).toBe('scene');
@@ -78,6 +76,7 @@ describe('POST /api/chapters/:chapterId/chats — kind', () => {
     const { agent, chapterId } = await setup('chat-kind-ask-u2');
     const res = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'a1' })
       .expect(201);
     expect(res.body.chat.kind).toBe('ask');
@@ -91,6 +90,7 @@ describe('POST /api/chapters/:chapterId/chats — kind', () => {
     const { agent, chapterId } = await setup('chat-kind-bogus-u3');
     await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'x', kind: 'bogus' })
       .expect(400);
   });
@@ -109,8 +109,14 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
 
   it('returns only kind=scene rows when ?kind=scene', async () => {
     const { agent, chapterId } = await setup('chat-filter-scene-u4');
-    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
-    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 's', kind: 'scene' });
+    await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'a', kind: 'ask' });
+    await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 's', kind: 'scene' });
 
     const res = await agent
       .get(`/api/chapters/${chapterId}/chats`)
@@ -127,8 +133,14 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
   // [D1] ?kind=ask filter
   it('returns only kind=ask rows when ?kind=ask', async () => {
     const { agent, chapterId } = await setup('chat-filter-ask-u6');
-    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
-    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 's', kind: 'scene' });
+    await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'a', kind: 'ask' });
+    await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 's', kind: 'scene' });
 
     const res = await agent
       .get(`/api/chapters/${chapterId}/chats`)
@@ -150,8 +162,14 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
 
   it('returns both kinds when ?kind is omitted', async () => {
     const { agent, chapterId } = await setup('chat-filter-all-u5');
-    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
-    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 's', kind: 'scene' });
+    await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'a', kind: 'ask' });
+    await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 's', kind: 'scene' });
 
     const res = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
     expect(res.body.chats).toHaveLength(2);
@@ -171,7 +189,10 @@ describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
   // the SessionPicker "X ago" label has its recency source.
   it('response chats each carry a lastActivityAt string field', async () => {
     const { agent, chapterId } = await setup('chat-lastactivity-u8');
-    await agent.post(`/api/chapters/${chapterId}/chats`).send({ title: 'a', kind: 'ask' });
+    await agent
+      .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'a', kind: 'ask' });
 
     const res = await agent.get(`/api/chapters/${chapterId}/chats`).expect(200);
     expect(res.body.chats).toHaveLength(1);
@@ -191,6 +212,7 @@ async function sendMessage(
 ): Promise<number> {
   const res = await agent
     .post(`/api/chats/${chatId}/messages`)
+    .set('Origin', TEST_ORIGIN)
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
@@ -223,6 +245,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 's', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
@@ -272,12 +295,14 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 's', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
     // No prior messages — retry has nothing to base on.
     await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .send({ retry: true, modelId: MODEL_ID })
       .expect(400);
   });
@@ -289,6 +314,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 's', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
@@ -319,10 +345,12 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
     await storeKey(agent, fetchSpy);
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 's', kind: 'scene' });
     const chatId = created.body.chat.id as string;
     await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .send({ retry: true, content: 'extra', modelId: MODEL_ID })
       .expect(400);
   });
@@ -335,6 +363,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'case-c', kind: 'ask' });
     const chatId = created.body.chat.id as string;
 
@@ -371,12 +400,12 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
   });
 
   it('[9ph] retry on ask preserves chapter context (regression)', async () => {
-    const { agent, accessToken, chapterId } = await setup('k1r-9ph-regression');
+    const { agent, sessionId, chapterId } = await setup('k1r-9ph-regression');
     const fetchSpy = stubVeniceFetch();
     await storeKey(agent, fetchSpy);
 
     // Chapter must have content for the test to be meaningful.
-    const req = makeFakeReq(accessToken);
+    const req = makeFakeReq(sessionId);
     await createChapterRepo(req).update(chapterId, {
       bodyJson: {
         type: 'doc',
@@ -397,6 +426,7 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'q', kind: 'ask' });
     const chatId = created.body.chat.id as string;
 
@@ -441,18 +471,19 @@ describe('POST /api/chats/:chatId/messages — retry flag', () => {
 
   // [ai-surfaces-v1] Case B: retry with no trailing assistant (mid-stream error scenario).
   it('on retry with no trailing assistant, generates cleanly with no deletions (case B)', async () => {
-    const { agent, chapterId, accessToken } = await setup('sc6-retry-caseB');
+    const { agent, chapterId, sessionId } = await setup('sc6-retry-caseB');
     const fetchSpy = stubVeniceFetch();
     await storeKey(agent, fetchSpy);
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'case-b', kind: 'ask' });
     const chatId = created.body.chat.id as string;
 
     // Seed only a user message via the repo layer — no assistant is ever created,
     // modelling a mid-stream error where the server died before persisting the reply.
-    const messageRepo = createMessageRepo(makeFakeReq(accessToken));
+    const messageRepo = createMessageRepo(makeFakeReq(sessionId));
     await messageRepo.create({ chatId, role: 'user', content: 'hello' });
 
     // Confirm we are at user-only state.
@@ -509,10 +540,15 @@ describe('PATCH /api/chats/:id', () => {
     const { agent, chapterId } = await setup('sc7-patch-u1');
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'old', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
-    const res = await agent.patch(`/api/chats/${chatId}`).send({ title: 'new title' }).expect(200);
+    const res = await agent
+      .patch(`/api/chats/${chatId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'new title' })
+      .expect(200);
     expect(res.body.chat.title).toBe('new title');
     expect(res.body.chat).not.toHaveProperty('messageCount');
     expect(typeof res.body.chat.createdAt).toBe('string');
@@ -522,31 +558,46 @@ describe('PATCH /api/chats/:id', () => {
 
   it('returns 404 for unknown id', async () => {
     const { agent } = await setup('sc7-patch-u2');
-    await agent.patch('/api/chats/cl000notreal').send({ title: 'x' }).expect(404);
+    await agent
+      .patch('/api/chats/cl000notreal')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'x' })
+      .expect(404);
   });
 
   it('returns 404 for chat owned by another user', async () => {
     const { agent: agentA, chapterId } = await setup('sc7-patch-u3');
     const created = await agentA
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'a', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
     const { agent: agentB } = await setupAsDifferentUser('sc7-patch-u4');
-    await agentB.patch(`/api/chats/${chatId}`).send({ title: 'hijack' }).expect(404);
+    await agentB
+      .patch(`/api/chats/${chatId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'hijack' })
+      .expect(404);
   });
 
   it('rejects invalid bodies', async () => {
     const { agent, chapterId } = await setup('sc7-patch-u5');
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'a', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
-    await agent.patch(`/api/chats/${chatId}`).send({ title: '' }).expect(400);
-    await agent.patch(`/api/chats/${chatId}`).send({}).expect(400);
     await agent
       .patch(`/api/chats/${chatId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: '' })
+      .expect(400);
+    await agent.patch(`/api/chats/${chatId}`).set('Origin', TEST_ORIGIN).send({}).expect(400);
+    await agent
+      .patch(`/api/chats/${chatId}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'a'.repeat(201) })
       .expect(400);
   });
@@ -556,10 +607,15 @@ describe('PATCH /api/chats/:id', () => {
     const { agent, chapterId } = await setup('sc7-patch-u6');
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'a', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
-    await agent.patch(`/api/chats/${chatId}`).send({ title: 'valid', extra: 'field' }).expect(400);
+    await agent
+      .patch(`/api/chats/${chatId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'valid', extra: 'field' })
+      .expect(400);
   });
 
   // [D2] 200-char boundary: title of exactly 200 chars must succeed
@@ -567,11 +623,13 @@ describe('PATCH /api/chats/:id', () => {
     const { agent, chapterId } = await setup('sc7-patch-u7');
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'a', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
     const res = await agent
       .patch(`/api/chats/${chatId}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'b'.repeat(200) })
       .expect(200);
     expect(res.body.chat.title).toBe('b'.repeat(200));
@@ -603,6 +661,7 @@ describe('DELETE /api/chats/:id', () => {
     await storeKey(agent, fetchSpy);
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 's', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
@@ -610,25 +669,26 @@ describe('DELETE /api/chats/:id', () => {
     queueSseResponse(fetchSpy, 'Assistant reply.');
     await sendMessage(agent, chatId, { content: 'd', modelId: MODEL_ID });
 
-    await agent.delete(`/api/chats/${chatId}`).expect(204);
+    await agent.delete(`/api/chats/${chatId}`).set('Origin', TEST_ORIGIN).expect(204);
 
     await agent.get(`/api/chats/${chatId}/messages`).expect(404);
   });
 
   it('returns 404 for unknown id', async () => {
     const { agent } = await setup('sc8-delete-u2');
-    await agent.delete('/api/chats/cl000notreal').expect(404);
+    await agent.delete('/api/chats/cl000notreal').set('Origin', TEST_ORIGIN).expect(404);
   });
 
   it('returns 404 for chat owned by another user', async () => {
     const { agent: agentA, chapterId } = await setup('sc8-delete-u3');
     const created = await agentA
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'a', kind: 'scene' });
     const chatId = created.body.chat.id as string;
 
     const { agent: agentB } = await setupAsDifferentUser('sc8-delete-u4');
-    await agentB.delete(`/api/chats/${chatId}`).expect(404);
+    await agentB.delete(`/api/chats/${chatId}`).set('Origin', TEST_ORIGIN).expect(404);
   });
 });
 
@@ -654,6 +714,7 @@ describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 's1', kind: 'scene' })
       .expect(201);
     const chatId = created.body.chat.id as string;
@@ -672,6 +733,7 @@ describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
 
     const res = await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -718,12 +780,12 @@ async function setupTwoChaptersWithChat(
   opts?: { toggleOff?: boolean },
 ): Promise<{
   agent: ReturnType<typeof request.agent>;
-  accessToken: string;
+  sessionId: string;
   chatId: string;
   fetchSpy: ReturnType<typeof vi.fn>;
 }> {
-  const accessToken = await registerAndLogin(username);
-  const req = makeFakeReq(accessToken);
+  const { agent, sessionId } = await registerAndLogin(username);
+  const req = makeFakeReq(sessionId);
 
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
   const storyId = story.id as string;
@@ -757,19 +819,17 @@ async function setupTwoChaptersWithChat(
     },
   });
 
-  const agent = request.agent(app);
-  agent.set('Authorization', `Bearer ${accessToken}`);
-
   const fetchSpy = stubVeniceFetch();
   await storeKey(agent, fetchSpy);
 
   const chatRes = await agent
     .post(`/api/chapters/${ch1.id as string}/chats`)
+    .set('Origin', TEST_ORIGIN)
     .send({ title: 'pcs-test', kind: 'ask' })
     .expect(201);
   const chatId = chatRes.body.chat.id as string;
 
-  return { agent, accessToken, chatId, fetchSpy };
+  return { agent, sessionId, chatId, fetchSpy };
 }
 
 describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries', () => {
@@ -801,6 +861,7 @@ describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries'
 
     await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -840,6 +901,7 @@ describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries'
 
     await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -882,6 +944,7 @@ async function setupTwoTurnChat(
 
   const created = await agent
     .post(`/api/chapters/${chapterId}/chats`)
+    .set('Origin', TEST_ORIGIN)
     .send({ title: 'resend-test', kind });
   const chatId = created.body.chat.id as string;
 
@@ -973,6 +1036,7 @@ describe('POST resend via fromMessageId', () => {
 
     const res = await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID, fromMessageId: a1Id });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('resend_invalid_state');
@@ -983,6 +1047,7 @@ describe('POST resend via fromMessageId', () => {
 
     const res = await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID, fromMessageId: 'does-not-exist' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('resend_invalid_state');
@@ -995,6 +1060,7 @@ describe('POST resend via fromMessageId', () => {
       await storeKey(base.agent, fetchSpy);
       const created = await base.agent
         .post(`/api/chapters/${base.chapterId}/chats`)
+        .set('Origin', TEST_ORIGIN)
         .send({ title: 'main-chat', kind: 'ask' });
       return {
         agent: base.agent,
@@ -1007,6 +1073,7 @@ describe('POST resend via fromMessageId', () => {
     // Create a SECOND chat for the same user.
     const otherCreated = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'other-chat', kind: 'ask' });
     const otherChatId = otherCreated.body.chat.id as string;
 
@@ -1026,6 +1093,7 @@ describe('POST resend via fromMessageId', () => {
     // Attempt to use that message ID against the FIRST (empty) chat.
     const res = await agent
       .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID, fromMessageId: otherChatUserMsgId });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('resend_invalid_state');
@@ -1089,6 +1157,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
 
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'edit-test', kind: 'ask' });
     const chatId = created.body.chat.id as string;
 
@@ -1118,6 +1187,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
 
     const res = await agent
       .patch(`/api/chats/${chatId}/messages/${userMessageId}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ content: 'edited text' });
 
     expect(res.status).toBe(200);
@@ -1134,6 +1204,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
     // Capture a known chapter ID and build a chat.
     const created = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'act-test', kind: 'ask' });
     const chatId = created.body.chat.id as string;
 
@@ -1158,6 +1229,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
 
     await agent
       .patch(`/api/chats/${chatId}/messages/${userMessageId}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ content: 'edited' })
       .expect(200);
 
@@ -1174,6 +1246,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
 
     const res = await agent
       .patch(`/api/chats/${chatId}/messages/${assistantMessageId}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ content: 'nope' });
     expect(res.status).toBe(404);
   });
@@ -1183,6 +1256,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
 
     const res = await agent
       .patch(`/api/chats/${chatId}/messages/does-not-exist`)
+      .set('Origin', TEST_ORIGIN)
       .send({ content: 'x' });
     expect(res.status).toBe(404);
   });
@@ -1192,6 +1266,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
 
     const res = await agent
       .patch('/api/chats/does-not-exist/messages/also-not-real')
+      .set('Origin', TEST_ORIGIN)
       .send({ content: 'x' });
     expect(res.status).toBe(404);
   });
@@ -1206,6 +1281,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
     // Create chatA with a user message.
     const createdA = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'chat-a', kind: 'ask' });
     const chatAId = createdA.body.chat.id as string;
     queueSseResponse(fetchSpy, 'Chat A assistant reply.');
@@ -1215,6 +1291,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
     // Models cache is already warm after chatA's send — only queue the stream.
     const createdB = await agent
       .post(`/api/chapters/${chapterId}/chats`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'chat-b', kind: 'ask' });
     const chatBId = createdB.body.chat.id as string;
     fetchSpy.mockResolvedValueOnce(
@@ -1242,6 +1319,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
     // PATCH chatA URL with chatB's message ID — must be 404 because chatId doesn't match.
     const res = await agent
       .patch(`/api/chats/${chatAId}/messages/${chatBUserMessageId}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ content: 'cross-chat edit attempt' });
     expect(res.status).toBe(404);
 
@@ -1258,6 +1336,7 @@ describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
 
     const res = await agent
       .patch(`/api/chats/${chatId}/messages/${userMessageId}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ content: '' });
     expect(res.status).toBe(400);
   });

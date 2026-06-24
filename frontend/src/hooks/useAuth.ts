@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect } from 'react';
-import { api, refreshAccessToken, setAccessToken } from '@/lib/api';
+import { api } from '@/lib/api';
 import { resetClientState, swapSession } from '@/lib/sessionReset';
 import { type SessionUser, useSessionStore } from '@/store/session';
 
@@ -17,7 +17,6 @@ export interface RegisterCredentials {
 
 interface LoginResponse {
   user: SessionUser;
-  accessToken: string;
 }
 
 interface RegisterResponse {
@@ -50,38 +49,22 @@ export interface UseAuthResult {
 }
 
 /**
- * Attempt to bootstrap an authenticated session from the httpOnly refresh
- * cookie. Called once at app load. On success, the access token is in the
- * store and the user record is populated. On failure, status becomes
- * `unauthenticated`.
+ * Probe `/auth/me` to bootstrap an authenticated session from the httpOnly
+ * session cookie. Called once at app load. On 200, populates the session
+ * store. On 401 (no cookie / expired) or any other error, clears it.
  *
- * `signal` lets `useInitAuth` cancel the side-effects on unmount: if the
- * signal aborts after a step resolves but before we mutate the store, we
- * bail without touching session state.
+ * `signal` lets `useInitAuth` cancel side-effects on unmount: if the signal
+ * aborts after a step resolves but before we mutate the store, we bail
+ * without touching session state.
  */
 export async function initAuth(signal?: AbortSignal): Promise<void> {
   const { setStatus, setSession, clearSession } = useSessionStore.getState();
   if (signal?.aborted) return;
   setStatus('loading');
   try {
-    // Use the bare refresh helper so a 401 here doesn't re-enter the
-    // api-client's 401-retry loop (which would itself call /auth/refresh).
-    const newToken = await refreshAccessToken();
+    const me = await api<MeResponse>('/auth/me'); // cookie rides along
     if (signal?.aborted) return;
-    if (!newToken) {
-      clearSession();
-      return;
-    }
-    // Push the token into the api-client BEFORE issuing /auth/me so any
-    // concurrent api() call during this window picks up the bearer instead
-    // of firing unauthenticated and triggering its own refresh cycle. Abort
-    // gate goes immediately before the mutation so a post-refresh abort
-    // doesn't leave the module-level token out of sync with the store.
-    if (signal?.aborted) return;
-    setAccessToken(newToken);
-    const me = await api<MeResponse>('/auth/me');
-    if (signal?.aborted) return;
-    setSession(me.user, newToken);
+    setSession(me.user);
   } catch {
     if (signal?.aborted) return;
     clearSession();
@@ -103,7 +86,7 @@ export function useAuth(): UseAuthResult {
       // swapSession does cancelQueries → clear → reset stores → setSession
       // atomically. The ordering invariant (reset before setSession) is
       // unreachable from this call site.
-      await swapSession(queryClient, res.user, res.accessToken);
+      await swapSession(queryClient, res.user);
       return res.user;
     },
     [queryClient],
@@ -115,9 +98,9 @@ export function useAuth(): UseAuthResult {
         method: 'POST',
         body: { name, username, password },
       });
-      // Intentionally do NOT call setSession — the backend has not issued an
-      // access token or refresh cookie yet. The page must show the recovery
-      // code, get acknowledgement, then call login() with the same creds.
+      // Intentionally do NOT call setSession — the backend has not issued a
+      // session cookie yet. The page must show the recovery code, get
+      // acknowledgement, then call login() with the same creds.
       return { user: res.user, recoveryCode: res.recoveryCode };
     },
     [],

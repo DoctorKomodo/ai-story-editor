@@ -14,11 +14,18 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
 
 ## Authentication & session
 
-- **JWT access token is held in memory** in the Zustand `session`
-  slice. **Never** in `localStorage` or `sessionStorage`.
-- **Refresh token lives in an httpOnly cookie** set by the backend.
-  The frontend never reads it directly. Refresh requests are made
-  with `credentials: 'include'`.
+- Authentication uses an opaque httpOnly **session cookie** set by
+  `POST /auth/login`. The frontend never reads it — the browser sends
+  it automatically on every request via `credentials: 'include'`.
+- **There is no JS-held JWT, no Bearer header, no refresh-token
+  cookie, and no `/auth/refresh` endpoint.** Do not add these.
+- A **401 is terminal**. There is no silent-refresh or retry dance.
+  On any 401 from any API call, `onUnauthorized` fires, client state
+  is reset, and the user is routed to /login. A `session_expired`
+  response code (cookie present, session gone — e.g. after a server
+  restart) shows the "session expired" banner first; `unauthorized`
+  (no cookie) goes straight to /login. Both paths clear the session
+  slice and all per-user stores.
 - The auth identifier is `username` (lowercased, 3–32 chars,
   `/^[a-z0-9_-]+$/`). `User.email` is optional metadata only.
 - **Telemetry / error-reporting buffers must flush on every auth
@@ -32,30 +39,35 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
 
 ## State management
 
-- **Zustand for client / UI state** (`session`, `activeStoryId`,
-  `activeChapterId`, `sidebarTab`, `selection`, `inlineAIResult`,
-  `attachedSelection`, `model`, `params`, `tweaks`).
-- **TanStack Query for server state** (`stories`, `story(id)`,
-  `chapter(id)`, `characters(storyId)`, `outline(storyId)`,
-  `chats(chapterId)`).
+- **Zustand for client / UI state** — e.g. `session`, `activeChapter`,
+  `sidebarTab`, `ui` (layout mode), `selection`, `inlineAIResult`,
+  `attachedSelection`, `chatDraft`, `composerDraft`, `selectedCharacter`,
+  `errors`. (Model / params / theme / prose settings are **server** state
+  via `useUserSettings`, not a Zustand store.)
+- **TanStack Query for server state** — stories, chapters, characters,
+  outline, chats + messages, user-settings, venice account / key status,
+  AI models, default prompts. Query-key + hook + mutation conventions live
+  under "Data fetching & mutations".
 - **No other stores.** No Redux, no MobX, no React Context for app
   data. (Context is fine for inert tree-wide things like theme or
   router primitives.)
-- **TanStack Query keys: `[entity, id]`** for single entities,
-  `[entity, 'list', filters?]` for lists. Hooks named
-  `use<Entity>(id)`.
+- **Store shape:** `create<T>()` over an `initialState`, with a `reset()`
+  that restores it. A domain `clear()` is a separate action — `clear` is a
+  UI gesture (e.g. dismiss the current selection); `reset` is the
+  account-switch lifecycle hook (next section). Don't conflate them.
 
 ## Per-user state must reset on auth transition
 
 Any new Zustand store under `frontend/src/store/*.ts` that holds
 plaintext content, IDs referencing user-owned rows, or any state that
-should not survive a session swap must be added to `resetClientState`
-in `frontend/src/lib/sessionReset.ts` AND to the `PER_USER_STORES`
-allowlist in `frontend/tests/lib/sessionReset.test.ts`.
+should not survive a session swap must be added to `PER_USER_STORES` in
+`frontend/src/lib/sessionReset.ts` AND to the `PER_USER_STORES`
+allowlist in `frontend/tests/lib/sessionReset.test.ts`. The reset helper
+has zero shape knowledge — it just calls each store's `reset()`.
 
-UI-only stores (theme, layout, sidebar tab) go on the `UI_ONLY_STORES`
-allowlist instead. The enumeration test fails on unclassified stores —
-pick one explicitly.
+UI-only stores (layout, sidebar tab, settings modal) go on the
+`UI_ONLY_STORES` allowlist instead. The enumeration test fails on
+unclassified stores — pick one explicitly.
 
 Every auth-transition site must reset before flipping the session slice:
 - `useAuth.login` → `swapSession(qc, user, token)` (atomic).
@@ -64,25 +76,79 @@ Every auth-transition site must reset before flipping the session slice:
 - `useDeleteAccountMutation.onSuccess` → same shape.
 - `handleUnauthorizedAccess` (terminal-401, non-React) → `void resetClientStateUsingRegistered();` then the existing setState.
 
-If you add a store that uses Zustand's `persist` middleware,
-`setState({ ...initial })` does NOT clear the mirrored `localStorage`
-entry — call `useFooStore.persist.clearStorage()` from
-`resetClientState` in addition.
+`resetClientState` aborts in-flight streams, cancels + clears the query
+cache, then resets every `PER_USER_STORES` entry — in that order. If you
+add a store that uses Zustand's `persist` middleware, `reset()` does NOT
+clear the mirrored `localStorage` entry — call
+`useFooStore.persist.clearStorage()` from `resetClientState` too.
 
-## API access
+## Data fetching & mutations
+
+The TanStack Query layer has a rigid house style — match it.
 
 - **All API calls go through `src/lib/api.ts`.** Never call `fetch`
   directly from a component or hook. The api module owns base URL,
-  auth headers, refresh-token retry, and error shape.
-- Components contain **no business logic** — use hooks in
-  `src/hooks/`. Components render and dispatch; hooks orchestrate.
+  `credentials: 'include'`, and the error shape. There is no Bearer
+  header — the session cookie is sent automatically.
+- **`api<T>(path, init?)`** resolves to parsed JSON (or `undefined` for a
+  204). Pass a plain object as `init.body` and it is **auto-JSON-
+  stringified** with `Content-Type: application/json` — never hand-
+  stringify. `credentials: 'include'` is added for you.
+- **Reads validate the response with the shared Zod schema.** The pattern
+  is `api<unknown>(path)` then `<schema>.parse(res).<field>` (e.g.
+  `storyResponseSchema.parse(raw).story`). The shared schema is the
+  wire-contract gate — the mirror of the backend's `respond()`. **Parse
+  fetched data; don't cast it.** (That parse is also why query hooks don't
+  need a generic `T` — the parse yields the type.)
+- **`ApiError` is the thrown error contract.** A non-2xx throws
+  `ApiError(status, message, code?, body?)` exposing `.status`, `.code`,
+  and `.body.error.{ code, message, details?.veniceMessage,
+  retryAfterSeconds? }`. Every catch / error banner keys off this —
+  including the backend's structured `venice_*` codes. A 401 is
+  terminal: it fires the unauthorized handler and throws — there is no
+  refresh or retry.
+- **Query keys are exported factories**, not inline arrays:
+  - single entity → `['<entity>', id]` (`storyQueryKey(id)` →
+    `['story', id]`).
+  - list → `['<plural>']` or `['<plural>', parentId]` (`storiesQueryKey`
+    → `['stories']`; `chaptersQueryKey(storyId)` → `['chapters',
+    storyId]`). **There is no `'list'` segment.**
+  - sub-resource nested under a parent → append the child segment(s)
+    (`chatsQueryKey(chapterId, kind)` → `['chapter', chapterId, 'chats',
+    kind]`; `chatMessagesQueryKey(chatId)` → `['chat', chatId,
+    'messages']`). Register individual queries with the **full** key, but
+    **invalidate with the prefix** (`chatsBaseQueryKey(chapterId)` →
+    `['chapter', chapterId, 'chats']`) so TanStack's prefix-match sweeps
+    every variant (e.g. both `kind`s).
+- **Hook names:** `use<Entity>Query` / `use<Plural>Query(parentId?)` for
+  reads, `use<Verb><Entity>Mutation` for writes (`useStoryQuery`,
+  `useChaptersQuery`, `useCreateChapterMutation`).
+- **Mutations that shouldn't wait for the round-trip use the
+  optimistic-rollback pattern:** `onMutate` (`cancelQueries` → snapshot via
+  `getQueryData` → optimistic `setQueryData` → return the snapshot as
+  context) / `onError` (restore from context) / `onSettled`
+  (`invalidateQueries` so the server's truth wins) / `onSuccess` (targeted
+  `setQueryData`). Plain create/update mutations may just
+  `invalidateQueries` in `onSuccess`.
+- **List caches are metadata-only; the single-entity query owns the heavy
+  field.** The chapters list holds `ChapterMeta` (no `bodyJson`); the
+  single-chapter query is the sole authority for the body. On update, write
+  the stripped meta to the list cache **and** the full entity to the
+  per-entity cache; on delete, **evict** the per-entity cache
+  (`removeQueries`) so a stale hit can't resurrect deleted content.
+- **`QueryClient` defaults** (`src/lib/queryClient.ts`): `staleTime` 30s,
+  one retry but **never on 401** (api.ts already did the refresh dance),
+  `refetchOnWindowFocus: false`, mutations don't retry.
+- Components contain **no business logic** — hooks in `src/hooks/`
+  orchestrate; components render and dispatch.
 
 ## Styling & design tokens
 
 - **TailwindCSS for layout + utilities.**
 - **Theme-level design tokens** (colours, typography, spacing,
   radii, shadows) live as CSS custom properties in `src/index.css`.
-  Tailwind references them via `theme.extend`.
+  Tailwind v4 exposes them via the CSS-first `@theme` block in that file
+  (not a `tailwind.config` `theme.extend`).
 - **Themes** (`paper` default, `sepia`, `dark`) switch via
   `data-theme` on `<html>`.
 - **No inline styles.** No per-component CSS files.
@@ -123,14 +189,26 @@ entry — call `useFooStore.persist.clearStorage()` from
 
 ## Streaming AI responses
 
-- Venice streams come back as **SSE**. Consume them with a
-  `ReadableStream` reader on the response, **not**
-  `fetch(...).then(r => r.json())` — JSON-parsing the stream
-  body will fail.
-- Streaming endpoints live under `/api/ai/*` and are routable only
-  after V5+ ships. If you're touching `[F33]`–`[F42]`-class UI
-  (selection bubble, inline result, chat panel, model picker),
-  confirm V5+ is alive locally.
+- Streaming endpoints live under `/api/ai/*` (inline AI result card,
+  chat/scene send, continue-writing). Consume them via `apiStream()`
+  (`src/lib/api.ts`) + the SSE reader in `src/lib/sse.ts` /
+  `streamingAI.ts` — **never** `fetch(...).then(r => r.json())`, which
+  fails on an SSE body.
+- **Register every stream's `AbortController` with `streamRegistry`**
+  (`registerStream()`). `resetClientState` calls `abortAllStreams()` first
+  on any auth transition; an unregistered stream keeps writing chunks into a
+  store that has just been reset under the next session.
+
+## Errors & banners
+
+- A caught `ApiError` is surfaced one of two ways: pushed to the `errors`
+  store (`useErrorStore.push({ severity, source, code, message,
+  httpStatus })`, capped at 50) for toast display, or rendered as an inline
+  / Venice banner. `extractVeniceMessage(err.body)`
+  (`src/lib/veniceError.ts`) pulls the human-readable Venice detail from
+  `body.error.details.veniceMessage`. Branch on `err.code` (the `venice_*`
+  / `validation_error` codes) for user-facing copy rather than echoing
+  `err.message` raw.
 
 ## Testing (frontend lane)
 
@@ -145,23 +223,25 @@ entry — call `useFooStore.persist.clearStorage()` from
 - Storybook stories double as visual fixtures and as the QA target
   for component-level regression — when you add a component, add a
   peer `*.stories.tsx`.
-
-## TypeScript discipline (frontend lane)
-
-- **Use generic `T` parameters on TanStack Query hooks** rather than
-  casting fetched data. (General principle — strict mode, no `any`,
-  prefer `unknown` + narrowing — lives in `general.md`.)
+- Pure logic that's hard to drive under jsdom (drag reorder, optimistic
+  cache math) is factored into exported pure helpers (`arrayMove`,
+  `computeReorderedChapters`, …) and unit-tested directly. Follow that when
+  adding similar logic.
 
 ## Library-version awareness (frontend lane)
 
-- Fast-moving libraries in this lane: TipTap, Vite, Tailwind,
-  TanStack Query, Zustand. (General principle — prefer Context7 MCP
-  `query-docs` over muscle-memory — lives in `general.md`.)
+- Fast-movers to version-check before pinning: TipTap, Vite, Tailwind,
+  TanStack Query, Zustand. (The Context7-over-muscle-memory principle and
+  the dependency policy live in `general.md`.)
 
 ## Forbidden
 
-- JWT in `localStorage` / `sessionStorage`.
+- JWT, access tokens, or session identifiers in `localStorage` / `sessionStorage`.
 - `fetch` in a component (route everything through `src/lib/api.ts`).
+- Casting fetched data to a type instead of parsing it with the shared
+  schema.
+- A streaming call whose `AbortController` isn't registered with
+  `streamRegistry`.
 - Inline styles or per-component CSS files.
 - Raw hex / `rgb()` / `hsl()` for colour values that should be
   themeable (use tokens; `lint:design` will fail otherwise).

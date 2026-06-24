@@ -109,7 +109,7 @@ Files under `docs/agent-rules/`:
   docs-MCP-before-muscle-memory for fast-moving libraries.
 - `frontend.md` — API only via `src/lib/api.ts`, Zustand for client
   / TanStack Query for server / no other stores, tokens-only from
-  `frontend/src/index.css` (lint:design enforces), JWT in memory,
+  `frontend/src/index.css` (lint:design enforces), session cookie (httpOnly),
   Storybook-first, selection-bubble `preventDefault`, keyboard
   shortcut contract, peer `*.stories.tsx` for new components,
   TanStack Query keys `[entity, id]`, hooks `use<Entity>(id)`,
@@ -400,7 +400,7 @@ Restructuring, not one-line edits. Explicit decision per section:
 - Security Review (gate documentation pointing to surface reviewer)
 - Repo-Boundary Review (gate documentation pointing to surface reviewer)
 - Known Gotchas (cross-lane warnings)
-- Architecture Rules — General (cross-lane: error responses, no server-wide Venice key, APP_ENCRYPTION_KEY policy, no data-migration branches, dependency-version policy)
+- Architecture Rules — General (cross-lane: error responses, no server-wide Venice key, APP_ENCRYPTION_KEY policy, dependency-version policy)
 
 **Cross-reference (replace deleted prose with one-liner):**
 Each removed Architecture Rules subsection becomes a one-line pointer:

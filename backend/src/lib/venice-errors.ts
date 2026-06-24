@@ -278,8 +278,8 @@ export function mapVeniceError(err: unknown, res: Response, ctx: VeniceErrorCont
 // content is NOT scrubbed, by design.
 //
 // Absolute rules (all environments): no plaintext Venice keys (scrubbed),
-// no passwords / recovery codes / DEKs / APP_ENCRYPTION_KEY (none of these
-// are in the Venice exchange to begin with).
+// no passwords / recovery codes / DEKs (none of these are in the Venice
+// exchange to begin with).
 
 const MAX_UPSTREAM_BODY = 8 * 1024;
 const MAX_VENICE_PARAMS = 2 * 1024;

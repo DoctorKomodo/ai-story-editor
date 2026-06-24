@@ -6,31 +6,27 @@ This document covers the operator-facing responsibilities for running Inkwell (s
 
 ## Key backup and user recovery (`[E15]`)
 
-Inkwell's encryption-at-rest is split across two secret surfaces. They are **not** interchangeable. Back up both, and communicate the user-facing half clearly to your users.
+Inkwell's encryption-at-rest protects both narrative content and BYOK Venice keys through user-derived secrets only — there is no server-held encryption key. Back up the database, and communicate the user-facing key-management responsibility clearly to your users.
 
-### 1. `APP_ENCRYPTION_KEY` — server-held key (operator's responsibility)
+> **Upgrade note (retiring `APP_ENCRYPTION_KEY`):** If you are upgrading from a version prior to [story-editor-nst], `APP_ENCRYPTION_KEY` is no longer needed and can be removed from your `.env`. After upgrading, each user re-enters their Venice API key once in Settings; the newly stored key is encrypted under their per-user DEK instead.
 
-`APP_ENCRYPTION_KEY` is a single 32-byte key loaded from the environment at backend boot. Its **only** job is to wrap the per-user **BYOK Venice API key** (`User.veniceApiKey*` columns). It is **not** used to wrap narrative content — see the content DEK section below.
+### 1. No server-held encryption key — database is the only secret surface
+
+In the current design there is **no `APP_ENCRYPTION_KEY`** or equivalent server-side encryption env var. Both narrative content and the BYOK Venice API key are protected by the same per-user envelope scheme (below). An attacker who obtains a database dump **and** your `.env` file learns nothing more than from the dump alone — there is no env key that decrypts anything.
 
 **Backup requirements:**
-- Back up `APP_ENCRYPTION_KEY` with **the same rigour as the Postgres database**. Losing the key means every stored BYOK Venice key on the instance becomes permanently unrecoverable, and every user who had a key stored will be prompted to re-enter it.
-- Keep the key **out of Postgres itself** — if a single backup blob carries both the ciphertext and the key, an attacker who gets the backup has full access.
-- Treat the key as an offline credential: sealed note in a safe, a hardware token, a password manager's secure-note field. Not on the same disk as the database.
-- Rotating `APP_ENCRYPTION_KEY` re-wraps all stored Venice keys; losing the old key mid-rotation is a key-loss event.
+- Back up the **Postgres database** (`pgdata` volume). That's the only server-side secret surface.
+- Keep off-site copies away from the machine (see "Off-site copies" below).
 
-**If `APP_ENCRYPTION_KEY` is lost:**
-- All stored Venice keys are gone. Users will be asked to re-enter their Venice key on next use.
-- **All narrative content remains decryptable** on next login — user narrative is protected by a separate envelope scheme (below) that does not involve this key. This is a deliberate design decision from `[E1]` — narrative security must not depend on server-held state.
+### 2. Content DEKs and Venice keys — user-derived secrets (user's responsibility)
 
-### 2. Content DEKs — user-derived keys (user's responsibility)
-
-Each user's narrative content (stories, chapters, characters, outline, chats, messages) is encrypted with a **per-user 32-byte random DEK** that is wrapped **twice**:
+Each user's narrative content (stories, chapters, characters, outline, chats, messages) **and their stored BYOK Venice API key** are encrypted with a **per-user 32-byte random DEK** that is wrapped **twice**:
 - **Password wrap** — argon2id-derived from the user's password.
 - **Recovery-code wrap** — argon2id-derived from a one-time recovery code shown **exactly once** at signup.
 
-The server has **no third wrap**. There is no operator-held master key for narrative content. This is intentional:
+The server has **no third wrap**. There is no operator-held master key for narrative content or Venice keys. This is intentional:
 
-> **Losing both the password and the recovery code for a given user = irrecoverable data loss for that user's narrative content.**
+> **Losing both the password and the recovery code for a given user = irrecoverable data loss for that user's narrative content and their stored Venice API key.**
 
 Neither you nor Anthropic nor any operator can decrypt that user's data when both secrets are gone. By design.
 
@@ -72,12 +68,11 @@ If any step fails on staging, resolve it before the next prod backup cycle. A dr
 
 ### Summary table
 
-| Secret                 | Held by  | Wraps                         | Loss consequence                                           | Recovery path                                          |
-|------------------------|----------|-------------------------------|------------------------------------------------------------|--------------------------------------------------------|
-| `APP_ENCRYPTION_KEY`   | Operator | BYOK Venice API keys          | Stored Venice keys lost; users re-enter on next use        | Backup restore; no user-derived alternative            |
-| Password               | User     | Content DEK (password wrap)   | DEK accessible via recovery code                           | Recovery code → password reset via `[AU16]`           |
-| Recovery code          | User     | Content DEK (recovery wrap)   | DEK accessible via password                                | Rotate via `[AU17]` after login with password          |
-| **Password + recovery code (both)** | User | DEK — no third wrap exists  | **Narrative content for that user is permanently lost.**   | **None by design.** Re-create account from scratch.    |
+| Secret                 | Held by  | Wraps                                    | Loss consequence                                                        | Recovery path                                         |
+|------------------------|----------|------------------------------------------|-------------------------------------------------------------------------|-------------------------------------------------------|
+| Password               | User     | Content DEK (password wrap)              | DEK accessible via recovery code                                        | Recovery code → password reset via `[AU16]`           |
+| Recovery code          | User     | Content DEK (recovery wrap)              | DEK accessible via password                                             | Rotate via `[AU17]` after login with password         |
+| **Password + recovery code (both)** | User | DEK — no third wrap exists  | **Narrative content and stored Venice key for that user are permanently lost.** | **None by design.** Re-create account from scratch.   |
 
 ---
 
@@ -87,45 +82,93 @@ You'll need:
 
 - A Linux host (or macOS / Windows with WSL2). Tested on Ubuntu 22.04+ and Debian 12.
 - **Docker Engine 24+** and **Docker Compose v2+** (`docker compose version`).
-- **`git`** to clone the repo.
+- **`git`** only if you build from source (the published-images path below needs only `curl`).
 - **`node` 22+** *only* if you want to run the test suite or `make migrate` from the host. The bundled stack does not require Node on the host.
 - A reverse proxy (nginx, Caddy, Traefik, Cloudflare Tunnel) if you intend to expose the instance to the internet — Inkwell does not ship one.
 - A small amount of memory: the default stack peaks around ~600 MB RAM under typical load (postgres + node backend + nginx-fronted SPA).
 
-Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. The operator's only Venice-related obligation is to back up `APP_ENCRYPTION_KEY`, which wraps those stored user keys (see "Key backup and user recovery" above).
+> **TLS is mandatory in production.** Authentication uses an opaque httpOnly session cookie. In production mode (`NODE_ENV=production`) the cookie is `__Host-session` with `Secure=true`, which browsers will only send over HTTPS. Running in production mode over plain HTTP = cookie never sent = users cannot authenticate. Terminate TLS at your reverse proxy and pass the request through to the backend.
 
-## First-run steps
+Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. Stored keys are encrypted under the user's own DEK, so the operator has no server-side secret to manage for this.
+
+## Run from published images (recommended)
+
+The fastest path: run the pre-built images from GitHub Container Registry — no
+source checkout, no local build. You only need two files in a clean directory.
+
+```bash
+# 1. Make a deploy directory and pull down the compose file + env template.
+#    Saving the compose file as `docker-compose.yml` means every command is a
+#    bare `docker compose …` (no -f to remember).
+mkdir inkwell && cd inkwell
+curl -L -o docker-compose.yml \
+  https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/docker-compose.release.yml
+curl -L -o .env \
+  https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/.env.example
+
+# 2. Edit .env: set FRONTEND_URL to your public HTTPS origin, and set
+#    TRUST_PROXY_HOPS to match your reverse-proxy hop count (default 1).
+#    No long-lived signing secrets are required — session auth uses the
+#    in-memory session store; there are no JWT_SECRET / REFRESH_TOKEN_SECRET.
+
+# 3. Pull the images and start the stack. The backend runs `prisma migrate
+#    deploy` automatically on boot, so the schema is created on its own.
+docker compose pull
+docker compose up -d
+
+# 4. Wait for the app to report healthy (~10s). The published stack exposes
+#    only :3000; the health check goes through the frontend's /api proxy.
+curl -sf http://localhost:3000/api/health
+# {"status":"ok",...}
+
+# 5. Open the UI
+open http://localhost:3000
+```
+
+`INKWELL_VERSION` selects the image tag and defaults to `latest`, so a plain
+`docker compose pull && docker compose up -d` always lands on the newest
+release. Pin a specific version for reproducible deploys:
+
+```bash
+INKWELL_VERSION=0.2.0 docker compose up -d
+```
+
+For testing the bleeding edge, `INKWELL_VERSION=main` pulls the rolling image
+built from the latest `main` commit (published by the image-build workflow; not
+a stable release). `latest` always points at the most recent tagged release.
+
+**Ports:** the published stack publishes **only `:3000`** — the single public
+entry point. The frontend's nginx reverse-proxies `/api/*` to the backend, and
+the backend reaches Postgres, both over the internal compose network, so
+neither `:4000` nor `:5432` is exposed to the host. If you build the frontend
+to call the API on a **separate origin** (`VITE_API_BASE_URL=https://api.example.com/api`),
+route `:4000` through your own reverse proxy instead.
+
+## First-run steps (build from source)
+
+Prefer this only if you're modifying the code or can't pull from GHCR.
 
 ```bash
 # 1. Clone the repo
 git clone https://github.com/<your-fork>/story-editor.git
 cd story-editor
 
-# 2. Create your .env from the template
+# 2. Create your .env from the template and set FRONTEND_URL to your public
+#    HTTPS origin. Adjust TRUST_PROXY_HOPS if your topology has more than
+#    one proxy hop between the internet and the backend container (default 1).
+#    There is no server-held encryption key and no JWT signing secret to
+#    generate — authentication is handled via the in-memory session store.
 cp .env.example .env
 
-# 3. Generate the long-lived secrets the backend requires.
-#    JWT_SECRET and REFRESH_TOKEN_SECRET sign access and refresh tokens
-#    respectively; APP_ENCRYPTION_KEY is the AES-256 key that wraps stored
-#    Venice API keys.
-{
-  echo "JWT_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
-  echo "REFRESH_TOKEN_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
-  echo "APP_ENCRYPTION_KEY=$(node -e "console.log(require('node:crypto').randomBytes(32).toString('base64'))")"
-} >> /tmp/inkwell-secrets.env
-# /tmp/inkwell-secrets.env now contains three KEY=VALUE lines with real
-# generated secrets — paste them into .env, replacing the placeholder
-# defaults, then delete the temp file.
-
-# 4. Bring up the stack — backend runs `prisma migrate deploy` automatically
+# 3. Bring up the stack — backend runs `prisma migrate deploy` automatically
 #    on first boot, so the schema is created on its own.
 docker compose up -d
 
-# 5. Wait for /api/health to return 200 (~10s)
+# 4. Wait for /api/health to return 200 (~10s)
 curl -sf http://localhost:4000/api/health
 # {"status":"ok",...}
 
-# 6. Open the UI
+# 5. Open the UI
 open http://localhost:3000
 ```
 
@@ -138,7 +181,18 @@ VITE_API_URL=https://api.example.com docker compose build frontend
 docker compose up -d frontend
 ```
 
-## Updating
+## Updating (published images)
+
+```bash
+docker compose pull        # fetch the new images (latest, or your pinned INKWELL_VERSION)
+docker compose up -d       # rolling-restart; postgres data persists in pgdata
+```
+
+To move to a newer pinned release, bump `INKWELL_VERSION` in `.env` (or your
+shell) before `pull`. As with the source flow, the backend entrypoint runs
+`prisma migrate deploy` on every boot, so migrations apply automatically.
+
+## Updating (from source)
 
 ```bash
 git pull
@@ -152,10 +206,7 @@ If the release notes say a migration is destructive (e.g. dropping a plaintext c
 
 ## Backup and restore
 
-Run a regular backup of two things — they are **not** interchangeable:
-
-1. The Postgres database (`pgdata` volume).
-2. `APP_ENCRYPTION_KEY` from your `.env` — see "Key backup and user recovery" above for *why* this is separate.
+Run a regular backup of the Postgres database (`pgdata` volume). That is the only server-side secret surface — there is no separate server-held encryption key to back up.
 
 ### Take a snapshot
 
@@ -190,6 +241,22 @@ After restore, every user's narrative content is decryptable as before *only if*
 0 3 * * *  cd /opt/inkwell && bash scripts/backup-db.sh
 30 3 * * * find /opt/inkwell/backups -name '*.sql.gz' -mtime +30 -delete
 ```
+
+## Environment variables
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DATABASE_URL` | *(required)* | Postgres connection string. |
+| `FRONTEND_URL` | `http://localhost:3000` | Public HTTPS origin of the frontend. Used for CORS and the global CSRF Origin/Referer check on all `/api` routes. Must be the real public origin in production (a mismatch → `403 csrf_block` on every mutation). Comma-separate multiple values for multi-origin dev setups. |
+| `PORT` | `4000` | Port the backend Express server binds to. |
+| `TRUST_PROXY_HOPS` | `1` | Number of trusted reverse-proxy hops in front of the backend. Must match your actual topology. Set to `0` if the backend is exposed directly (no proxy). **Never** set to `true` or a value that trusts all hops — that lets clients spoof `X-Forwarded-For` and defeat rate limits. |
+| `SESSION_STORE_MAX` | `10000` | Maximum number of concurrent in-memory sessions. If you see `"evicting a live session under cap pressure"` in logs, users are being silently logged out — raise this value. |
+
+**Removed variables:** `JWT_SECRET` and `REFRESH_TOKEN_SECRET` are gone as of the cookie-session auth cutover. The boot validator warns if they linger in `.env` and ignores them. There is no server-held signing secret for session auth.
+
+**Non-browser clients** (curl, scripts, server-to-server calls): every mutating request (`POST`/`PUT`/`PATCH`/`DELETE`) to any `/api` endpoint must include an `Origin` header matching the configured `FRONTEND_URL`. Browsers set this automatically; automation must add it explicitly or the request is rejected with `403 csrf_block`.
+
+---
 
 ## Port layout (`[I6]` stub)
 

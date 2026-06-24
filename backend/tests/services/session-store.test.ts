@@ -1,12 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   _resetSessionStore,
   _sessionCount,
+  ABSOLUTE_TTL_MS,
   closeSession,
   closeSessionsForUser,
   extendSessionExpiry,
   getSession,
   openSession,
+  peekSessionExpiry,
 } from '../../src/services/session-store';
 
 function future(ms: number): Date {
@@ -20,7 +22,13 @@ describe('session-store', () => {
 
   it('openSession + getSession returns the DEK', () => {
     const dek = Buffer.alloc(32, 0x11);
-    openSession({ sessionId: 's1', userId: 'u1', dek, expiresAt: future(60_000) });
+    openSession({
+      sessionId: 's1',
+      userId: 'u1',
+      dek,
+      createdAt: new Date(),
+      expiresAt: future(60_000),
+    });
     const got = getSession('s1');
     expect(got).not.toBeNull();
     expect(got!.userId).toBe('u1');
@@ -36,6 +44,7 @@ describe('session-store', () => {
       sessionId: 's1',
       userId: 'u1',
       dek: Buffer.alloc(32, 0x22),
+      createdAt: new Date(),
       expiresAt: new Date(Date.now() - 1),
     });
     expect(getSession('s1')).toBeNull();
@@ -47,12 +56,14 @@ describe('session-store', () => {
       sessionId: 's1',
       userId: 'u1',
       dek: Buffer.alloc(32),
+      createdAt: new Date(),
       expiresAt: future(60_000),
     });
     openSession({
       sessionId: 's2',
       userId: 'u2',
       dek: Buffer.alloc(32),
+      createdAt: new Date(),
       expiresAt: future(60_000),
     });
     closeSession('s1');
@@ -61,9 +72,27 @@ describe('session-store', () => {
   });
 
   it('closeSessionsForUser removes all sessions for a user, returns count', () => {
-    openSession({ sessionId: 'a', userId: 'u1', dek: Buffer.alloc(32), expiresAt: future(60_000) });
-    openSession({ sessionId: 'b', userId: 'u1', dek: Buffer.alloc(32), expiresAt: future(60_000) });
-    openSession({ sessionId: 'c', userId: 'u2', dek: Buffer.alloc(32), expiresAt: future(60_000) });
+    openSession({
+      sessionId: 'a',
+      userId: 'u1',
+      dek: Buffer.alloc(32),
+      createdAt: new Date(),
+      expiresAt: future(60_000),
+    });
+    openSession({
+      sessionId: 'b',
+      userId: 'u1',
+      dek: Buffer.alloc(32),
+      createdAt: new Date(),
+      expiresAt: future(60_000),
+    });
+    openSession({
+      sessionId: 'c',
+      userId: 'u2',
+      dek: Buffer.alloc(32),
+      createdAt: new Date(),
+      expiresAt: future(60_000),
+    });
     const n = closeSessionsForUser('u1');
     expect(n).toBe(2);
     expect(getSession('a')).toBeNull();
@@ -77,6 +106,7 @@ describe('session-store', () => {
       sessionId: 's1',
       userId: 'u1',
       dek: Buffer.alloc(32),
+      createdAt: new Date(),
       expiresAt: originalExpiry,
     });
     extendSessionExpiry('s1', future(60_000));
@@ -85,5 +115,52 @@ describe('session-store', () => {
     // because extendSessionExpiry bumped it.
     const still = getSession('s1');
     expect(still).not.toBeNull();
+  });
+});
+
+describe('session-store absolute cap + sliding', () => {
+  const dek = Buffer.alloc(32, 7);
+
+  beforeEach(() => _resetSessionStore());
+
+  it('slides idle expiry up to the absolute cap, then refuses to extend past it', () => {
+    const now = Date.now();
+    openSession({
+      sessionId: 's1',
+      userId: 'u1',
+      dek,
+      createdAt: new Date(now),
+      expiresAt: new Date(now + 1000),
+    });
+    extendSessionExpiry('s1', new Date(now + 40 * 24 * 3600_000));
+    expect(peekSessionExpiry('s1')).toBe(now + ABSOLUTE_TTL_MS);
+    expect(getSession('s1')).not.toBeNull();
+  });
+
+  it('expires a session once now passes createdAt + ABSOLUTE_TTL even if recently extended', () => {
+    const past = Date.now() - 31 * 24 * 3600_000; // created 31 days ago
+    openSession({
+      sessionId: 's2',
+      userId: 'u1',
+      dek,
+      createdAt: new Date(past),
+      expiresAt: new Date(Date.now() + 1000),
+    });
+    extendSessionExpiry('s2', new Date(Date.now() + 7 * 24 * 3600_000));
+    expect(getSession('s2')).toBeNull(); // clamp pinned expiry to past+30d (< now) → expired
+  });
+
+  it('openSession self-enforces the absolute cap — getSession returns null without any extendSessionExpiry call', () => {
+    const past = Date.now() - 31 * 24 * 3600_000; // created 31 days ago
+    openSession({
+      sessionId: 'cap-open',
+      userId: 'u-cap',
+      dek,
+      createdAt: new Date(past),
+      expiresAt: new Date(Date.now() + 1000), // future, but beyond the absolute cap
+    });
+    // No extendSessionExpiry call — the cap must be enforced at write time.
+    expect(peekSessionExpiry('cap-open')).toBe(past + ABSOLUTE_TTL_MS);
+    expect(getSession('cap-open')).toBeNull();
   });
 });

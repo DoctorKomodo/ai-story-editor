@@ -79,13 +79,9 @@ export async function resetClientState(queryClient: QueryClient): Promise<void> 
  * setSession in order, so call sites can't reorder them. The fused helper
  * makes the ordering foot-gun unreachable.
  */
-export async function swapSession(
-  queryClient: QueryClient,
-  user: SessionUser,
-  accessToken: string,
-): Promise<void> {
+export async function swapSession(queryClient: QueryClient, user: SessionUser): Promise<void> {
   await resetClientState(queryClient);
-  useSessionStore.getState().setSession(user, accessToken);
+  useSessionStore.getState().setSession(user);
 }
 
 // ─── Non-React-context registration ──────────────────────────────────────────

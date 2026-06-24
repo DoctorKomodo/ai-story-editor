@@ -7,7 +7,7 @@ import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 
@@ -91,7 +91,6 @@ describe('SettingsModal (F43)', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });
@@ -192,6 +191,8 @@ describe('SettingsModal (F43)', () => {
 
     const hint = await screen.findByTestId('settings-autosave-hint');
     expect(hint).toBeInTheDocument();
+    // App version is surfaced in the footer; unset at test time → "vdev".
+    expect(screen.getByTestId('app-version')).toHaveTextContent(/^v\S+/);
     expect(screen.queryByTestId('settings-cancel')).toBeNull();
     expect(screen.queryByTestId('settings-done')).toBeNull();
   });

@@ -10,6 +10,7 @@
 import { type Request, type Response, Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { requireAuth } from '../middleware/auth.middleware';
+import { getDekFromRequest } from '../services/content-crypto.service';
 import {
   VeniceAccountRateLimitedError,
   VeniceAccountUnavailableError,
@@ -55,7 +56,7 @@ export function createVeniceAccountRouter(options: VeniceAccountRouterOptions = 
     async (req: Request, res: Response, next) => {
       const userId = req.user!.id;
       try {
-        const result = await veniceKeyService.getAccount(userId);
+        const result = await veniceKeyService.getAccount(getDekFromRequest(req), userId);
         res.status(200).json(result);
       } catch (err) {
         if (err instanceof VeniceAccountRateLimitedError) {

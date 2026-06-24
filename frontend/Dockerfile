@@ -51,6 +51,15 @@ COPY --chown=node:node . .
 ARG VITE_API_BASE_URL=
 ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
 
+# App version baked into the SPA bundle and shown in the Settings footer.
+# The release workflow (.github/workflows/release.yml) passes the clean semver
+# derived from the git tag (e.g. --build-arg VITE_APP_VERSION=0.2.0). Any build
+# that omits it — a plain `docker build`, or a local `make rebuild-frontend`
+# without the Makefile's dev-sha export — defaults to `dev`, so a non-release
+# image never masquerades as an official version.
+ARG VITE_APP_VERSION=dev
+ENV VITE_APP_VERSION=${VITE_APP_VERSION}
+
 RUN npm -w story-editor-frontend run build
 
 # ---- dev (used by docker-compose.override.yml) ---------------------------

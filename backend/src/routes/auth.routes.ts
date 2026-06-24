@@ -3,29 +3,14 @@ import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { ZodError, z } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
 import { prisma } from '../lib/prisma';
+import { clearSessionCookie, sessionCookieName, setSessionCookie } from '../lib/session-cookie';
 import { requireAuth } from '../middleware/auth.middleware';
 import {
   authService,
   InvalidCredentialsError,
-  InvalidRefreshTokenError,
   nameSchema,
-  REFRESH_TOKEN_TTL_SECONDS,
   UsernameUnavailableError,
 } from '../services/auth.service';
-
-export const REFRESH_COOKIE_NAME = 'refreshToken';
-
-function refreshCookieOptions() {
-  return {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
-    // Scope the cookie to the auth endpoints that actually use it. Narrower
-    // than '/' so the refresh token doesn't ride on every /api/ai/* request.
-    path: '/api/auth',
-    maxAge: REFRESH_TOKEN_TTL_SECONDS * 1000,
-  };
-}
 
 function minPasswordLength(): number {
   return process.env.NODE_ENV === 'production' ? 8 : 4;
@@ -138,6 +123,20 @@ function resetPasswordUsernameLimiter() {
   });
 }
 
+function loginIpLimiter() {
+  return rateLimit({
+    windowMs: 60_000,
+    limit: IS_TEST_ENV ? 10_000 : 20,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    keyGenerator: (req) => ipKeyGenerator(req.ip ?? 'unknown-ip'),
+    // Failed logins (wrong-password 401s) MUST consume from the pool — that's
+    // the brute-force surface this limiter exists to bound. Explicit rather
+    // than relying on the library default, matching SENSITIVE_AUTH_LIMIT_OPTIONS.
+    skipFailedRequests: false,
+  });
+}
+
 export function createAuthRouter() {
   const router = Router();
 
@@ -163,15 +162,11 @@ export function createAuthRouter() {
     }
   });
 
-  router.post('/login', async (req, res, next) => {
+  router.post('/login', loginIpLimiter(), async (req, res, next) => {
     try {
-      const result = await authService.login(req.body);
-      res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, refreshCookieOptions());
-      res.status(200).json({
-        user: result.user,
-        accessToken: result.accessToken,
-        accessTokenExpiresAt: result.accessTokenExpiresAt.toISOString(),
-      });
+      const { user, sessionId } = await authService.login(req.body);
+      setSessionCookie(res, sessionId);
+      res.status(200).json({ user });
     } catch (err) {
       if (err instanceof ZodError) {
         badRequestFromZod(res, err);
@@ -187,39 +182,11 @@ export function createAuthRouter() {
     }
   });
 
-  router.post('/refresh', async (req: Request, res: Response, next) => {
-    try {
-      const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
-      if (!token) {
-        res
-          .status(401)
-          .json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
-        return;
-      }
-      const result = await authService.refresh(token);
-      res.cookie(REFRESH_COOKIE_NAME, result.refreshToken, refreshCookieOptions());
-      res.status(200).json({
-        user: result.user,
-        accessToken: result.accessToken,
-        accessTokenExpiresAt: result.accessTokenExpiresAt.toISOString(),
-      });
-    } catch (err) {
-      if (err instanceof InvalidRefreshTokenError) {
-        res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
-        res
-          .status(401)
-          .json({ error: { message: 'Invalid refresh token', code: 'invalid_refresh' } });
-        return;
-      }
-      next(err);
-    }
-  });
-
   router.post('/logout', async (req: Request, res: Response, next) => {
     try {
-      const token = req.cookies?.[REFRESH_COOKIE_NAME] as string | undefined;
-      if (token) await authService.logout(token);
-      res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
+      const sessionId = req.cookies?.[sessionCookieName()] as string | undefined;
+      if (sessionId) await authService.logout(sessionId);
+      clearSessionCookie(res);
       res.status(204).send();
     } catch (err) {
       next(err);
@@ -266,14 +233,14 @@ export function createAuthRouter() {
         return;
       }
       const parsed = buildChangePasswordSchema().parse(req.body);
-      await authService.changePassword({
+      const sessionId = await authService.changePassword({
         userId: authed.id,
         oldPassword: parsed.oldPassword,
         newPassword: parsed.newPassword,
       });
-      // 204 — caller stays authenticated on this request's access token
-      // until it expires, but all refresh tokens (including this one's)
-      // have been invalidated server-side so the next refresh will fail.
+      // changePassword re-mints the caller's session and evicts all other devices.
+      // Re-set the cookie with the fresh sessionId so the caller stays logged in.
+      setSessionCookie(res, sessionId);
       res.status(204).send();
     } catch (err) {
       if (err instanceof ZodError) {
@@ -314,8 +281,8 @@ export function createAuthRouter() {
     }
   });
 
-  // [B12] Sign out everywhere — revokes every refresh token belonging to the
-  // caller and clears the caller's refresh cookie. Used by F61 Account &
+  // [B12] Sign out everywhere — ends every active session belonging to the
+  // caller and clears the caller's session cookie. Used by F61 Account &
   // Privacy → "Sign out everywhere".
   router.post(
     '/sign-out-everywhere',
@@ -329,7 +296,7 @@ export function createAuthRouter() {
           return;
         }
         await authService.signOutEverywhere({ userId: authed.id });
-        res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
+        clearSessionCookie(res);
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -374,8 +341,8 @@ export function createAuthRouter() {
   );
 
   // [X3] Delete account — re-verifies the password, deletes the user (cascading
-  // to all narrative entities, refresh tokens, sessions, DEK wraps), and clears
-  // the caller's refresh cookie.
+  // to all narrative entities, sessions, DEK wraps), and clears the caller's
+  // session cookie.
   router.delete('/delete-account', requireAuth, deleteAccountLimiter, async (req, res, next) => {
     try {
       const authed = req.user;
@@ -388,11 +355,10 @@ export function createAuthRouter() {
         userId: authed.id,
         password: parsed.password,
       });
-      // Clear the caller's refresh cookie. The user row is gone, but a
-      // browser that holds the cookie locally would otherwise send it on
-      // the next /api/auth/refresh call, where it would 401 with no
-      // Set-Cookie clearing it.
-      res.clearCookie(REFRESH_COOKIE_NAME, { ...refreshCookieOptions(), maxAge: 0 });
+      // Clear the caller's session cookie. The user row is gone, but a
+      // browser holding the cookie would otherwise send it on the next
+      // authenticated request, hitting a 401 with no Set-Cookie to clear it.
+      clearSessionCookie(res);
       res.status(204).send();
     } catch (err) {
       if (err instanceof ZodError) {

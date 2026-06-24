@@ -36,25 +36,7 @@ model User {
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
-  stories       Story[]
-  refreshTokens RefreshToken[]
-  sessions      Session[]
-}
-
-// Session rows for Option B DEK-survival (see docs/encryption.md). The DEK
-// itself is NOT stored here — only the in-process map holds it. The row
-// exists so a cold replica or restart can detect "session expired" and force
-// re-authentication instead of silently 500-ing.
-model Session {
-  id        String   @id
-  userId    String
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([expiresAt])
+  stories Story[]
 }
 
 model Story {
@@ -264,14 +246,3 @@ model Message {
   @@index([chatId, createdAt])
 }
 
-model RefreshToken {
-  id        String   @id @default(cuid())
-  token     String   @unique
-  expiresAt DateTime
-  createdAt DateTime @default(now())
-
-  userId String
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-}

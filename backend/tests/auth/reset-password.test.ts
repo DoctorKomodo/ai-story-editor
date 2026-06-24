@@ -16,10 +16,12 @@ const NAME = 'Reset User';
 const USERNAME = 'reset-user';
 const PASSWORD = 'correct-horse-battery';
 const NEW_PASSWORD = 'new-horse-battery-staple';
+const TEST_ORIGIN = 'http://localhost:3000';
 
 async function registerAndCaptureRecovery(): Promise<string> {
   const res = await request(app)
     .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
   expect(res.status).toBe(201);
   expect(typeof res.body.recoveryCode).toBe('string');
@@ -29,38 +31,42 @@ async function registerAndCaptureRecovery(): Promise<string> {
 describe('[AU16] POST /api/auth/reset-password', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   it('returns 400 on missing or malformed body', async () => {
-    const empty = await request(app).post('/api/auth/reset-password').send({});
+    const empty = await request(app)
+      .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
+      .send({});
     expect(empty.status).toBe(400);
 
     await registerAndCaptureRecovery();
     const shortPw = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME, recoveryCode: 'anything', newPassword: 'a' });
     expect(shortPw.status).toBe(400);
   });
 
   it('returns 401 for an unknown username AND for a wrong recovery code with identical body', async () => {
     await registerAndCaptureRecovery();
-    const unknownUser = await request(app).post('/api/auth/reset-password').send({
-      username: 'does-not-exist',
-      recoveryCode: 'WRONG-CODE-HERE',
-      newPassword: NEW_PASSWORD,
-    });
+    const unknownUser = await request(app)
+      .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
+      .send({
+        username: 'does-not-exist',
+        recoveryCode: 'WRONG-CODE-HERE',
+        newPassword: NEW_PASSWORD,
+      });
     const wrongCode = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME, recoveryCode: 'WRONG-CODE-HERE', newPassword: NEW_PASSWORD });
 
     expect(unknownUser.status).toBe(401);
@@ -76,6 +82,7 @@ describe('[AU16] POST /api/auth/reset-password', () => {
 
     const res = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME, recoveryCode, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(204);
 
@@ -97,6 +104,7 @@ describe('[AU16] POST /api/auth/reset-password', () => {
 
     const res = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME, recoveryCode, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(204);
 
@@ -107,29 +115,39 @@ describe('[AU16] POST /api/auth/reset-password', () => {
     expect(after.contentDekRecoverySalt).toBe(before.contentDekRecoverySalt);
   });
 
-  it('deletes all refresh tokens and sessions for the user', async () => {
+  it('invalidates all active sessions after reset', async () => {
     const recoveryCode = await registerAndCaptureRecovery();
-    await request(app).post('/api/auth/login').send({ username: USERNAME, password: PASSWORD });
-    await request(app).post('/api/auth/login').send({ username: USERNAME, password: PASSWORD });
 
-    const user = await prisma.user.findUniqueOrThrow({ where: { username: USERNAME } });
-    expect(await prisma.refreshToken.count({ where: { userId: user.id } })).toBeGreaterThanOrEqual(
-      2,
-    );
+    const agent1 = request.agent(app);
+    await agent1
+      .post('/api/auth/login')
+      .set('Origin', TEST_ORIGIN)
+      .send({ username: USERNAME, password: PASSWORD });
+
+    const agent2 = request.agent(app);
+    await agent2
+      .post('/api/auth/login')
+      .set('Origin', TEST_ORIGIN)
+      .send({ username: USERNAME, password: PASSWORD });
 
     const res = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME, recoveryCode, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(204);
 
-    expect(await prisma.refreshToken.count({ where: { userId: user.id } })).toBe(0);
-    expect(await prisma.session.count({ where: { userId: user.id } })).toBe(0);
+    // Old sessions are no longer valid after the password reset.
+    const r1 = await agent1.get('/api/stories');
+    expect(r1.status).toBe(401);
+    const r2 = await agent2.get('/api/stories');
+    expect(r2.status).toBe(401);
   });
 
   it('empty / idempotent response body — neither password nor recovery code is echoed', async () => {
     const recoveryCode = await registerAndCaptureRecovery();
     const res = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME, recoveryCode, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(204);
     expect(res.text).not.toContain(NEW_PASSWORD);
@@ -140,6 +158,7 @@ describe('[AU16] POST /api/auth/reset-password', () => {
     const recoveryCode = await registerAndCaptureRecovery();
     const res = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME.toUpperCase(), recoveryCode, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(204);
   });
@@ -158,6 +177,7 @@ describe('[AU16] POST /api/auth/reset-password', () => {
 
     const res = await request(app)
       .post('/api/auth/reset-password')
+      .set('Origin', TEST_ORIGIN)
       .send({ username: USERNAME, recoveryCode, newPassword: NEW_PASSWORD });
     expect(res.status).toBe(204);
 
@@ -178,6 +198,7 @@ describe('[AU16] POST /api/auth/reset-password', () => {
       const u = `timing-known-${i}`;
       await request(app)
         .post('/api/auth/register')
+        .set('Origin', TEST_ORIGIN)
         .send({ name: 'T', username: u, password: PASSWORD });
       knownUsernames.push(u);
     }
@@ -186,6 +207,7 @@ describe('[AU16] POST /api/auth/reset-password', () => {
       const start = process.hrtime.bigint();
       const res = await request(app)
         .post('/api/auth/reset-password')
+        .set('Origin', TEST_ORIGIN)
         .send({ username, recoveryCode: 'DEFINITELY-NOT-THE-CODE', newPassword: NEW_PASSWORD });
       const end = process.hrtime.bigint();
       // A 429 would short-circuit well before argon2id runs and silently

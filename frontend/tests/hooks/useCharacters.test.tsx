@@ -12,7 +12,7 @@ import {
   useReorderCharactersMutation,
 } from '@/hooks/useCharacters';
 import * as apiModule from '@/lib/api';
-import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetApiClientForTests } from '@/lib/api';
 import { makeCharacter } from '../fixtures/character';
 
 describe('computeReorderedCharacters', () => {
@@ -91,7 +91,6 @@ let fetchMock: ReturnType<typeof vi.fn>;
 describe('useReorderCharactersMutation', () => {
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -142,7 +141,6 @@ describe('useReorderCharactersMutation', () => {
 describe('useDeleteCharacterMutation — optimistic reassign', () => {
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

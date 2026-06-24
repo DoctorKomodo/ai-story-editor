@@ -11,7 +11,7 @@ import {
   useDeleteChapterMutation,
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
-import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetApiClientForTests } from '@/lib/api';
 import { makeChapter, makeChapterMeta } from '../fixtures/chapter';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -34,7 +34,6 @@ describe('useChapterQuery', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -108,7 +107,6 @@ describe('useUpdateChapterMutation', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -215,7 +213,6 @@ describe('useDeleteChapterMutation', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

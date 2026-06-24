@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import type { JSX, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { initAuth, useAuth } from '@/hooks/useAuth';
-import { getAccessToken, resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { useSessionStore } from '@/store/session';
 
 type FetchMock = ReturnType<typeof vi.fn>;
@@ -63,7 +63,6 @@ describe('useAuth', () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         user: { id: 'u1', username: 'alice', name: 'Alice' },
-        accessToken: 'tok-1',
       }),
     );
 
@@ -82,12 +81,11 @@ describe('useAuth', () => {
       expect(result.current.user).toEqual({ id: 'u1', username: 'alice', name: 'Alice' });
       expect(result.current.status).toBe('authenticated');
     });
-    expect(getAccessToken()).toBe('tok-1');
   });
 
   it('register() calls POST /api/auth/register and returns { user, recoveryCode } WITHOUT populating the session', async () => {
-    // The backend does not issue an access token or refresh cookie on
-    // register; the page is responsible for the post-ack login. See [F59].
+    // The backend does not issue a session cookie on register; the page is
+    // responsible for the post-ack login. See [F59].
     fetchMock.mockResolvedValueOnce(
       jsonResponse(201, {
         user: { id: 'u2', username: 'bob', name: 'Display Name' },
@@ -125,13 +123,11 @@ describe('useAuth', () => {
     // Crucially: the session is NOT populated by register(). The recovery-code
     // interstitial gates the post-ack login.
     expect(result.current.user).toBeNull();
-    expect(getAccessToken()).toBeNull();
   });
 
   it('logout() calls POST /api/auth/logout and clears the session', async () => {
     // Start authenticated.
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
-    expect(getAccessToken()).toBe('tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' });
 
     fetchMock.mockResolvedValueOnce(emptyResponse(204));
 
@@ -148,11 +144,10 @@ describe('useAuth', () => {
       expect(result.current.user).toBeNull();
       expect(result.current.status).toBe('unauthenticated');
     });
-    expect(getAccessToken()).toBeNull();
   });
 
   it('logout() clears the session even if the network call fails', async () => {
-    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' }, 'tok-1');
+    useSessionStore.getState().setSession({ id: 'u1', username: 'alice', name: 'Alice' });
     fetchMock.mockRejectedValueOnce(new TypeError('network down'));
 
     const { result } = renderHook(() => useAuth(), { wrapper: makeWrapper(queryClient) });
@@ -163,31 +158,21 @@ describe('useAuth', () => {
     await waitFor(() => {
       expect(result.current.user).toBeNull();
     });
-    expect(getAccessToken()).toBeNull();
   });
 
-  it('initAuth() attempts POST /api/auth/refresh on app load', async () => {
-    fetchMock
-      .mockResolvedValueOnce(jsonResponse(200, { accessToken: 'refreshed-tok' }))
-      .mockResolvedValueOnce(
-        jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
-      );
+  it('initAuth() calls GET /api/auth/me on app load', async () => {
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
+    );
 
     await act(async () => {
       await initAuth();
     });
 
-    expect(fetchMock.mock.calls.length).toBeGreaterThanOrEqual(1);
-    const [refreshUrl, refreshInit] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(refreshUrl).toBe('/api/auth/refresh');
-    expect(refreshInit.method).toBe('POST');
-
-    // /auth/me must carry the freshly-refreshed bearer — the api client
-    // attaches it automatically because setAccessToken ran before /auth/me.
-    const [meUrl, meInit] = fetchMock.mock.calls[1] as [string, RequestInit];
-    expect(meUrl).toBe('/api/auth/me');
-    const meHeaders = new Headers(meInit.headers);
-    expect(meHeaders.get('Authorization')).toBe('Bearer refreshed-tok');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/me');
+    expect(init.method).toBeUndefined(); // GET (default)
 
     await waitFor(() => {
       expect(useSessionStore.getState().status).toBe('authenticated');
@@ -197,49 +182,46 @@ describe('useAuth', () => {
       username: 'alice',
       name: 'Alice',
     });
-    expect(getAccessToken()).toBe('refreshed-tok');
   });
 
-  it('initAuth() sets status=unauthenticated when refresh fails', async () => {
+  it('initAuth() sets status=unauthenticated when /auth/me returns 401', async () => {
     fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: { message: 'no session' } }));
 
     await act(async () => {
       await initAuth();
     });
 
-    // Exactly one fetch call — the bare refresh. No redundant retry loop.
+    // Exactly one fetch call — the /auth/me probe. No refresh dance.
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [refreshUrl] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(refreshUrl).toBe('/api/auth/refresh');
+    const [url] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe('/api/auth/me');
 
     expect(useSessionStore.getState().status).toBe('unauthenticated');
     expect(useSessionStore.getState().user).toBeNull();
-    expect(getAccessToken()).toBeNull();
   });
 
   it('initAuth() does not mutate the store after the abort signal fires', async () => {
-    // Slow refresh — gives us a window to abort before /auth/me runs.
-    let resolveRefresh!: (value: Response) => void;
+    // Slow /auth/me — gives us a window to abort before setSession runs.
+    let resolveMe!: (value: Response) => void;
     fetchMock.mockImplementationOnce(
       () =>
         new Promise<Response>((resolve) => {
-          resolveRefresh = resolve;
+          resolveMe = resolve;
         }),
     );
 
     const controller = new AbortController();
     const initPromise = initAuth(controller.signal);
-    // Abort BEFORE refresh resolves.
+    // Abort BEFORE /auth/me resolves.
     controller.abort();
-    resolveRefresh(jsonResponse(200, { accessToken: 'late-tok' }));
+    resolveMe(jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }));
     await initPromise;
 
     // Status was set to 'loading' synchronously before the abort check on the
     // first await — but no further mutations should land. Specifically, user
-    // must remain null and the access token must NOT be set.
+    // must remain null.
     expect(useSessionStore.getState().user).toBeNull();
-    expect(getAccessToken()).toBeNull();
-    // Only the refresh fetch fired — /auth/me must not have been called.
+    // Only the /auth/me fetch fired.
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from 'vitest';
-import { useSessionStore } from '@/store/session';
+import { handleUnauthorizedAccess, useSessionStore } from '@/store/session';
 
 afterEach(() => {
   useSessionStore.getState().clearSession();
@@ -44,5 +44,50 @@ describe('useSessionStore.clearSession', () => {
     useSessionStore.getState().clearSession({ expired: false });
 
     expect(useSessionStore.getState().sessionExpired).toBe(false);
+  });
+});
+
+describe('handleUnauthorizedAccess', () => {
+  it('does NOT set sessionExpired when status is not authenticated (login-401 guard)', () => {
+    useSessionStore.setState({
+      user: null,
+      status: 'unauthenticated',
+      sessionExpired: false,
+    });
+
+    handleUnauthorizedAccess();
+
+    expect(useSessionStore.getState().sessionExpired).toBe(false);
+    expect(useSessionStore.getState().status).toBe('unauthenticated');
+  });
+
+  it('does NOT set sessionExpired when status is idle', () => {
+    useSessionStore.setState({ user: null, status: 'idle', sessionExpired: false });
+
+    handleUnauthorizedAccess();
+
+    expect(useSessionStore.getState().sessionExpired).toBe(false);
+  });
+
+  it('does NOT set sessionExpired when status is loading (cold-boot /auth/me guard)', () => {
+    useSessionStore.setState({ user: null, status: 'loading', sessionExpired: false });
+
+    handleUnauthorizedAccess();
+
+    expect(useSessionStore.getState().sessionExpired).toBe(false);
+  });
+
+  it('sets sessionExpired and clears session when status is authenticated (mid-session 401)', () => {
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+      sessionExpired: false,
+    });
+
+    handleUnauthorizedAccess();
+
+    expect(useSessionStore.getState().sessionExpired).toBe(true);
+    expect(useSessionStore.getState().user).toBeNull();
+    expect(useSessionStore.getState().status).toBe('unauthenticated');
   });
 });
