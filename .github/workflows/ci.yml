@@ -40,8 +40,6 @@ jobs:
       # Backend test env. These values match .env.test; CI owns its own DB
       # lifecycle (prisma migrate deploy below), so no docker compose needed.
       DATABASE_URL: postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test
-      JWT_SECRET: ci-jwt-secret-do-not-use-in-production
-      REFRESH_TOKEN_SECRET: ci-refresh-secret-do-not-use-in-production
       FRONTEND_URL: http://localhost:3000
       PORT: 4001
       NODE_ENV: test
