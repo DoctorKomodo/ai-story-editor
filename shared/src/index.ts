@@ -126,3 +126,10 @@ export {
   storySchema,
   storyUpdateSchema,
 } from './schemas/story';
+export type { ExportFile, ImportFile, ImportResult } from './schemas/transfer';
+export {
+  EXPORT_FORMAT_VERSION,
+  exportSchema,
+  importResultSchema,
+  importSchema,
+} from './schemas/transfer';
