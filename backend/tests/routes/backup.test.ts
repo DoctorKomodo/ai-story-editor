@@ -176,6 +176,72 @@ describe('POST /api/users/me/import', () => {
     expect(exp2.stories[0].includePreviousChaptersInPrompt).toBe(false);
   });
 
+  it('round-trips a chapter summary and a chat with a message', async () => {
+    const agent = await registerAndLogin('summary-chat-user');
+
+    const summaryPayload = {
+      events: 'The hero crosses the threshold.',
+      stateAtEnd: 'Hero is alone at the gate.',
+      openThreads: 'The gatekeeper left a riddle.',
+    };
+
+    const file = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          title: 'Summary Story',
+          chapters: [
+            {
+              title: 'Ch1',
+              status: 'draft',
+              orderIndex: 0,
+              bodyJson: {
+                type: 'doc',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'chapter body' }] }],
+              },
+              summary: summaryPayload,
+              chats: [
+                {
+                  title: 'Ask chat',
+                  kind: 'ask',
+                  messages: [
+                    {
+                      role: 'user',
+                      content: 'hello from chat',
+                      attachmentJson: null,
+                      citationsJson: null,
+                      model: null,
+                      tokens: null,
+                      latencyMs: null,
+                      createdAt: '2026-06-24T12:00:00.000Z',
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send(file);
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.chats).toBe(1);
+    expect(imp.body.imported.messages).toBe(1);
+
+    const exp = (await agent.get('/api/users/me/export')).body;
+    const ch = exp.stories[0].chapters[0];
+    expect(ch.summary).toEqual(summaryPayload);
+    expect(ch.chats).toHaveLength(1);
+    expect(ch.chats[0].messages).toHaveLength(1);
+    expect(ch.chats[0].messages[0].content).toBe('hello from chat');
+    expect(ch.chats[0].messages[0].role).toBe('user');
+  });
+
   it('rejects an unknown formatVersion with 400', async () => {
     const agent = await registerAndLogin('badver-user');
     const res = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({

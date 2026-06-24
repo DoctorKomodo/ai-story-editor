@@ -35,7 +35,7 @@ export async function buildExport(req: Request): Promise<ExportFile> {
             role: m.role,
             content: m.content,
             attachmentJson: m.attachmentJson ?? null,
-            citationsJson: m.citationsJson ?? null,
+            citationsJson: m.citationsJson?.length ? m.citationsJson : null,
             model: m.model ?? null,
             tokens: m.tokens ?? null,
             latencyMs: m.latencyMs ?? null,

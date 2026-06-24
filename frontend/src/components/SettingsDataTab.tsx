@@ -16,6 +16,7 @@ export function SettingsDataTab(): JSX.Element {
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     setParseError(null);
     setStaged(null);
+    setPhrase('');
     const f = e.target.files?.[0];
     if (!f) return;
     try {
