@@ -82,7 +82,7 @@ export async function buildExport(req: Request): Promise<ExportFile> {
       genre: s.genre ?? undefined,
       worldNotes: s.worldNotes ?? undefined,
       targetWords: s.targetWords ?? undefined,
-      includePreviousChaptersInPrompt: s.includePreviousChaptersInPrompt ?? undefined,
+      includePreviousChaptersInPrompt: s.includePreviousChaptersInPrompt,
       chapters,
       characters,
       outlineItems,
