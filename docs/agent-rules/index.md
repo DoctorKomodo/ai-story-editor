@@ -69,7 +69,7 @@ The `User` DEK-wrap columns (`contentDekPassword*` /
 `contentDekRecovery*`) and the BYOK Venice-key columns (`veniceApiKeyEnc`
 …) are **not** narrative — they're `backend.md` "Encryption at rest"
 territory (and `security-reviewer`'s surface), not `repo-boundary.md`.
-For these, and for other non-narrative migrations (`RefreshToken`, `User`
+For these, and for other non-narrative migrations (`User`
 auth/profile fields like `username` / `email`), `backend.md` alone
 suffices.
 

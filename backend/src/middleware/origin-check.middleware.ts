@@ -1,27 +1,29 @@
 import type { NextFunction, Request, Response } from 'express';
 
 /**
- * CSRF defense for cookie-authenticated endpoints.
+ * Primary CSRF defense for all cookie-authenticated API routes.
  *
- * Design context: the only cookie-authed endpoints in this app are
- * `POST /api/auth/refresh` and `POST /api/auth/logout`. All other
- * authenticated routes use `Authorization: Bearer <jwt>`, which a
- * cross-origin attacker cannot set — so they're naturally CSRF-safe.
+ * Every mutating request (POST / PUT / PATCH / DELETE) must carry either a
+ * matching `Origin` header or a `Referer` that starts with an allowed origin
+ * followed by `/`. Requests with neither are blocked with 403 `csrf_block`.
  *
- * The refresh cookie already has `SameSite=lax` + `path=/api/auth`, which
- * blocks the common CSRF vectors (cross-site `fetch`, hidden iframe, XHR).
- * The remaining gap under `SameSite=lax` is top-level-navigation POSTs —
- * some browsers allow them. This middleware closes that gap by requiring
- * the `Origin` header (or a matching `Referer`) to be the configured
- * frontend origin on any state-changing request.
+ * This is the OWASP-recommended default-deny stance: "If neither of these
+ * headers are present, we recommend blocking the request." Real browsers
+ * always attach `Origin` on cross-origin requests and on most same-origin
+ * ones too — a legitimate same-origin SPA POST will never lack it.
+ * Non-browser automation (curl, scripts, server-to-server calls) must
+ * explicitly send `Origin: <allowedOrigin>` to reach these endpoints.
  *
- * Non-browser clients (curl, supertest, server-to-server, native mobile
- * apps without a WebView origin) typically send neither header; we let
- * those through because CSRF is specifically a browser-context attack
- * and a non-browser caller is not the CSRF threat model.
+ * The `SameSite=Lax` session cookie already blocks the common CSRF vectors
+ * (cross-site fetch, iframe, XHR), but top-level-navigation POSTs can still
+ * slip through in some browsers. This middleware closes that gap.
  *
- * GET/HEAD/OPTIONS are exempt — they should be idempotent. If a handler
- * mutates on GET that's a bug elsewhere, not this middleware's concern.
+ * The `Referer` branch uses a `startsWith(`${o}/`)` guard (note the trailing
+ * slash) so that a sibling-domain prefix like `https://allowed.example.evil.com/`
+ * cannot sneak past a naive `startsWith('https://allowed.example')` match.
+ *
+ * GET/HEAD/OPTIONS are exempt — they must be idempotent. A handler that
+ * mutates on GET is a bug in that handler, not this middleware's concern.
  */
 export function requireAllowedOrigin(allowedOrigin: string | readonly string[]) {
   const allowedOrigins = Array.isArray(allowedOrigin) ? [...allowedOrigin] : [allowedOrigin];
@@ -34,16 +36,6 @@ export function requireAllowedOrigin(allowedOrigin: string | readonly string[]) 
     const origin = typeof req.headers.origin === 'string' ? req.headers.origin : null;
     const referer = typeof req.headers.referer === 'string' ? req.headers.referer : null;
 
-    // Non-browser client: no Origin, no Referer. Modern browsers always
-    // attach Origin on cross-origin POSTs (and most same-origin ones), so a
-    // request with neither header is very unlikely to be a CSRF attempt
-    // from a victim's browser. Let it through; Bearer auth or cookie
-    // presence is the real credential.
-    if (origin === null && referer === null) {
-      next();
-      return;
-    }
-
     if (origin !== null && allowedOrigins.includes(origin)) {
       next();
       return;
@@ -51,8 +43,8 @@ export function requireAllowedOrigin(allowedOrigin: string | readonly string[]) 
 
     // Referer fallback. Some legacy flows (e.g. link-clicks through certain
     // proxies) may strip Origin but retain Referer; check with a
-    // startsWith+'/' guard so `https://evil.com?victim=https://allowed/…`
-    // cannot sneak past a naive prefix match.
+    // startsWith+'/' guard so a sibling-domain prefix like
+    // `https://allowed.example.evil.com/` cannot sneak past a naive prefix match.
     if (referer !== null && allowedOrigins.some((o) => referer.startsWith(`${o}/`))) {
       next();
       return;

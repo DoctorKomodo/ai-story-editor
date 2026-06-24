@@ -23,7 +23,6 @@ describe('[AU13] BYOK no-leak proof', () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>[];
 
   beforeEach(async () => {
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
 
     // Attach a fetch stub so Venice validation succeeds without network IO.
@@ -50,35 +49,34 @@ describe('[AU13] BYOK no-leak proof', () => {
   afterEach(async () => {
     for (const spy of consoleSpy) spy.mockRestore();
     vi.unstubAllGlobals();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
-  async function registerAndLogin(): Promise<string> {
-    await request(app)
+  async function registerAndLogin(): Promise<ReturnType<typeof request.agent>> {
+    const agent = request.agent(app);
+    await agent
       .post('/api/auth/register')
+      .set('Origin', 'http://localhost:3000')
       .send({ name: NAME, username: USERNAME, password: PASSWORD });
-    const loginRes = await request(app)
+    const loginRes = await agent
       .post('/api/auth/login')
+      .set('Origin', 'http://localhost:3000')
       .send({ username: USERNAME, password: PASSWORD });
-    return loginRes.body.accessToken as string;
+    expect(loginRes.status).toBe(200);
+    return agent;
   }
 
   it('(a) never logs the raw Venice key during the full PUT → GET → DELETE cycle', async () => {
-    const accessToken = await registerAndLogin();
+    const agent = await registerAndLogin();
 
-    await request(app)
+    await agent
       .put('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ apiKey: VENICE_KEY });
 
-    await request(app)
-      .get('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`);
+    await agent.get('/api/users/me/venice-key');
 
-    await request(app)
-      .delete('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`);
+    await agent.delete('/api/users/me/venice-key').set('Origin', 'http://localhost:3000');
 
     const combined = logCalls.join('\n');
     expect(combined).not.toContain(VENICE_KEY);
@@ -89,18 +87,16 @@ describe('[AU13] BYOK no-leak proof', () => {
   });
 
   it('(b) never leaks the key via any route response (PUT success, GET, DELETE, error paths)', async () => {
-    const accessToken = await registerAndLogin();
+    const agent = await registerAndLogin();
 
-    const putRes = await request(app)
+    const putRes = await agent
       .put('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ apiKey: VENICE_KEY });
-    const getRes = await request(app)
-      .get('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`);
-    const deleteRes = await request(app)
+    const getRes = await agent.get('/api/users/me/venice-key');
+    const deleteRes = await agent
       .delete('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`);
+      .set('Origin', 'http://localhost:3000');
 
     const bodies = [
       JSON.stringify(putRes.body),
@@ -113,16 +109,14 @@ describe('[AU13] BYOK no-leak proof', () => {
   });
 
   it('(c) never returns ciphertext field names in any response', async () => {
-    const accessToken = await registerAndLogin();
+    const agent = await registerAndLogin();
 
-    await request(app)
+    await agent
       .put('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ apiKey: VENICE_KEY });
 
-    const getRes = await request(app)
-      .get('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const getRes = await agent.get('/api/users/me/venice-key');
 
     const asText = JSON.stringify(getRes.body);
     for (const forbidden of [
@@ -136,11 +130,11 @@ describe('[AU13] BYOK no-leak proof', () => {
   });
 
   it('(d) the stored ciphertext in the DB is unrelated to the plaintext key', async () => {
-    const accessToken = await registerAndLogin();
+    const agent = await registerAndLogin();
 
-    await request(app)
+    await agent
       .put('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ apiKey: VENICE_KEY });
 
     const row = await prisma.user.findFirst({ where: { username: USERNAME } });
@@ -161,11 +155,11 @@ describe('[AU13] BYOK no-leak proof', () => {
       vi.fn(async () => mockResponse(401, { error: 'invalid' })),
     );
 
-    const accessToken = await registerAndLogin();
+    const agent = await registerAndLogin();
 
-    const res = await request(app)
+    const res = await agent
       .put('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ apiKey: VENICE_KEY });
 
     expect(res.status).toBe(400);

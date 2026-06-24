@@ -1,6 +1,8 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
+import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
 import { prisma } from '../setup';
 
@@ -9,15 +11,25 @@ const USERNAME = 'ai-models-user';
 const PASSWORD = 'ai-models-password';
 const VALID_KEY = 'sk-venice-ai-models-test-key-LAST';
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -63,7 +75,7 @@ describe('GET /api/ai/models [V1]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -73,48 +85,46 @@ describe('GET /api/ai/models [V1]', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
   });
 
-  async function storeKey(accessToken: string): Promise<void> {
+  async function storeKey(agent: ReturnType<typeof request.agent>): Promise<void> {
     // PUT /venice-key hits Venice once to validate before storing. Mock that
     // validation call with a 200.
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-    const res = await request(app)
+    const res = await agent
       .put('/api/users/me/venice-key')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ apiKey: VALID_KEY });
     expect(res.status).toBe(200);
   }
 
-  it('returns 401 without a Bearer token', async () => {
+  it('returns 401 without a session cookie', async () => {
     const res = await request(app).get('/api/ai/models');
     expect(res.status).toBe(401);
   });
 
   it('returns 409 venice_key_required when the user has no stored key', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
-      .get('/api/ai/models')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const { agent } = await registerAndLogin();
+    const res = await agent.get('/api/ai/models');
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('venice_key_required');
+    expect(res.headers['cache-control']).toBe('no-store');
     // Nothing hit Venice for models.
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it('returns the filtered, mapped model list when the user has a key', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken);
+    const { agent } = await registerAndLogin();
+    await storeKey(agent);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
 
-    const res = await request(app)
-      .get('/api/ai/models')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/ai/models');
 
     expect(res.status).toBe(200);
+    expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body).toEqual({
       models: [
         {
@@ -164,14 +174,12 @@ describe('GET /api/ai/models [V1]', () => {
   });
 
   it('caches results in-memory: a second call within the TTL does not re-hit Venice', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken);
+    const { agent } = await registerAndLogin();
+    await storeKey(agent);
 
     // First call hits Venice exactly once for /models.
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    const first = await request(app)
-      .get('/api/ai/models')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const first = await agent.get('/api/ai/models');
     expect(first.status).toBe(200);
 
     const modelsCallsAfterFirst = fetchSpy.mock.calls.filter(([url]) =>
@@ -179,9 +187,7 @@ describe('GET /api/ai/models [V1]', () => {
     ).length;
 
     // Second call within the TTL must not trigger another /models fetch.
-    const second = await request(app)
-      .get('/api/ai/models')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const second = await agent.get('/api/ai/models');
     expect(second.status).toBe(200);
     expect(second.body).toEqual(first.body);
 
@@ -192,13 +198,11 @@ describe('GET /api/ai/models [V1]', () => {
   });
 
   it('never exposes the plaintext Venice API key in the response body or headers', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken);
+    const { agent } = await registerAndLogin();
+    await storeKey(agent);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
-    const res = await request(app)
-      .get('/api/ai/models')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/ai/models');
 
     expect(res.status).toBe(200);
     expect(JSON.stringify(res.body)).not.toContain(VALID_KEY);

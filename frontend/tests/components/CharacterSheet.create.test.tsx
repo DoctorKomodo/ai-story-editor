@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { Character } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { CharacterSheet } from '@/components/CharacterSheet';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 import { makeCharacter } from '../fixtures/character';
@@ -50,7 +50,6 @@ describe('CharacterSheet — create mode', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });

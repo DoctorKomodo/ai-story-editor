@@ -1,34 +1,53 @@
 // Shared Venice-fetch + auth helpers for chat route integration tests.
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { expect, vi } from 'vitest';
 import { app } from '../../src/index';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { getSession } from '../../src/services/session-store';
+import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+export const TEST_ORIGIN = 'http://localhost:3000';
+
+export interface TestSession {
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}
+
+function extractSessionId(res: request.Response): string {
+  const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
+  const name = sessionCookieName();
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${name}=`));
+  expect(cookie).toBeDefined();
+  return decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+}
 
 export async function registerAndLogin(
   username: string,
   password = 'chat-route-pw',
   name = 'Chat Route User',
-): Promise<string> {
-  await request(app).post('/api/auth/register').send({ name, username, password });
-  const login = await request(app).post('/api/auth/login').send({ username, password });
+): Promise<TestSession> {
+  const agent = request.agent(app);
+  await agent
+    .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
+    .send({ name, username, password });
+  const login = await agent
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  return { agent, sessionId: extractSessionId(login) };
 }
 
-export function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+export function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -36,14 +55,13 @@ export function makeFakeReq(accessToken: string): Request {
 // ─── DB teardown ──────────────────────────────────────────────────────────────
 
 export async function resetAll(): Promise<void> {
+  _resetSessionStore();
   await prisma.message.deleteMany();
   await prisma.chat.deleteMany();
   await prisma.outlineItem.deleteMany();
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();
   await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
 }
 
@@ -113,6 +131,7 @@ export async function storeKey(
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
   const keyRes = await agent
     .put('/api/users/me/venice-key')
+    .set('Origin', TEST_ORIGIN)
     .send({ apiKey: 'sk-venice-sc5-test-key-ABCD' });
   expect(keyRes.status).toBe(200);
 }

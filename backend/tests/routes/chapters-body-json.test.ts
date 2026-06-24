@@ -7,16 +7,22 @@
 // the regression surface for the pipeline first shipped under [B3].
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { prisma } from '../setup';
+
+const TEST_ORIGIN = 'http://localhost:3000';
+
+interface TestSession {
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,32 +30,40 @@ async function registerAndLogin(
   username: string,
   password = 'b10-pw',
   name = 'B10 User',
-): Promise<string> {
-  await request(app).post('/api/auth/register').send({ name, username, password });
-  const login = await request(app).post('/api/auth/login').send({ username, password });
+): Promise<TestSession> {
+  const agent = request.agent(app);
+  await agent
+    .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
+    .send({ name, username, password });
+  const login = await agent
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
 
 async function resetAll(): Promise<void> {
+  _resetSessionStore();
   await prisma.message.deleteMany();
   await prisma.chat.deleteMany();
   await prisma.outlineItem.deleteMany();
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();
   await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
 }
 
@@ -95,8 +109,8 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
   });
 
   it('PATCH with bodyJson derives wordCount from the tree and returns the decrypted body', async () => {
-    const accessToken = await registerAndLogin('b10-happy');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('b10-happy');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Save pipeline' });
     const storyId = story.id as string;
 
@@ -108,9 +122,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     const chapterId = created.id as string;
 
     const tree = paragraphDoc('four five six seven'); // 4 words
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: tree });
     expect(res.status).toBe(200);
     expect(res.body.chapter.wordCount).toBe(4);
@@ -124,8 +138,8 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
   });
 
   it('PATCH with bodyJson: null clears body and sets wordCount to 0', async () => {
-    const accessToken = await registerAndLogin('b10-null');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('b10-null');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Clearable' });
     const storyId = story.id as string;
 
@@ -138,9 +152,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     });
     const chapterId = created.id as string;
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: null });
     expect(res.status).toBe(200);
     expect(res.body.chapter.wordCount).toBe(0);
@@ -148,8 +162,8 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
   });
 
   it('PATCH with whitespace-only / empty-paragraph bodyJson yields wordCount 0', async () => {
-    const accessToken = await registerAndLogin('b10-empty');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('b10-empty');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Empty' });
     const storyId = story.id as string;
 
@@ -167,17 +181,17 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
         { type: 'paragraph', content: [{ type: 'text', text: '   ' }] },
       ],
     };
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: emptyTree });
     expect(res.status).toBe(200);
     expect(res.body.chapter.wordCount).toBe(0);
   });
 
   it('PATCH with bodyJson AND title in the same request updates both; wordCount reflects new body', async () => {
-    const accessToken = await registerAndLogin('b10-combo');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('b10-combo');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Combo' });
     const storyId = story.id as string;
 
@@ -191,9 +205,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     const chapterId = created.id as string;
 
     const newTree = paragraphDoc('one two three four five six seven'); // 7 words
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'New Title', bodyJson: newTree });
     expect(res.status).toBe(200);
     expect(res.body.chapter.title).toBe('New Title');
@@ -203,8 +217,8 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
   });
 
   it('text-only PATCH (title + status, no bodyJson) leaves body and wordCount untouched [B3 regression]', async () => {
-    const accessToken = await registerAndLogin('b10-text-only');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('b10-text-only');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Stable Body' });
     const storyId = story.id as string;
 
@@ -218,9 +232,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     });
     const chapterId = created.id as string;
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ title: 'Renamed', status: 'revision' });
     expect(res.status).toBe(200);
     expect(res.body.chapter.title).toBe('Renamed');
@@ -232,9 +246,7 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     expect(p.content[0].text).toBe('alpha beta gamma delta');
 
     // Follow-up GET confirms the body was not rewritten.
-    const follow = await request(app)
-      .get(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`);
+    const follow = await agent.get(`/api/stories/${storyId}/chapters/${chapterId}`);
     expect(follow.status).toBe(200);
     expect(follow.body.chapter.wordCount).toBe(4);
     const fp = (
@@ -244,8 +256,8 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
   });
 
   it('PATCH with a 2-paragraph / 10-word fixture computes wordCount === 10 (regression)', async () => {
-    const accessToken = await registerAndLogin('b10-wordcount');
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin('b10-wordcount');
+    const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Counting' });
     const storyId = story.id as string;
 
@@ -261,9 +273,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       'Over the very lazy dog.', // 5 words
     );
 
-    const res = await request(app)
+    const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: tree });
     expect(res.status).toBe(200);
     expect(res.body.chapter.wordCount).toBe(10);

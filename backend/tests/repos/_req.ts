@@ -34,7 +34,7 @@ export async function makeUserContext(
       contentDekRecoverySalt: gen.recoveryWrap.salt,
     },
   });
-  const req = { user: { id: user.id, email: user.email } } as unknown as Request;
+  const req = { user: { id: user.id } } as unknown as Request;
   attachDekToRequest(req, gen.dek);
   return { user: { id: user.id, username: user.username }, req, dek: gen.dek };
 }
@@ -48,8 +48,6 @@ export async function resetAllTables(): Promise<void> {
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();
   await prisma.story.deleteMany();
-  await prisma.session.deleteMany();
-  await prisma.refreshToken.deleteMany();
   await prisma.user.deleteMany();
 }
 

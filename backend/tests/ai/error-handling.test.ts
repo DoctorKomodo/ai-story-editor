@@ -3,13 +3,12 @@
 // and that raw Venice error bodies / stack traces are never exposed.
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
@@ -81,32 +80,43 @@ function errorResponse(
   });
 }
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const res = await request(app)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -140,8 +150,6 @@ describe('Venice error handling [V11]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -158,8 +166,6 @@ describe('Venice error handling [V11]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
@@ -167,9 +173,9 @@ describe('Venice error handling [V11]', () => {
 
   describe('POST /api/ai/complete', () => {
     it('Venice 401 → our 400 with code venice_key_invalid', async () => {
-      const accessToken = await registerAndLogin();
-      await storeKey(accessToken, fetchSpy);
-      const req = makeFakeReq(accessToken);
+      const { agent, sessionId } = await registerAndLogin();
+      await storeKey(agent, fetchSpy);
+      const req = makeFakeReq(sessionId);
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       // Models list succeeds, then the completion returns 401
@@ -181,9 +187,9 @@ describe('Venice error handling [V11]', () => {
         errorResponse(401, `Invalid API key ${VENICE_RAW_ERROR_SENTINEL}`),
       );
 
-      const res = await request(app)
+      const res = await agent
         .post('/api/ai/complete')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', 'http://localhost:3000')
         .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
 
       expect(res.status).toBe(400);
@@ -193,17 +199,17 @@ describe('Venice error handling [V11]', () => {
     });
 
     it('Venice 429 with retry-after: 60 → our 429 with retryAfterSeconds: 60', async () => {
-      const accessToken = await registerAndLogin();
-      await storeKey(accessToken, fetchSpy);
-      const req = makeFakeReq(accessToken);
+      const { agent, sessionId } = await registerAndLogin();
+      await storeKey(agent, fetchSpy);
+      const req = makeFakeReq(sessionId);
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
       fetchSpy.mockResolvedValueOnce(errorResponse(429, 'rate limited', { 'retry-after': '60' }));
 
-      const res = await request(app)
+      const res = await agent
         .post('/api/ai/complete')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', 'http://localhost:3000')
         .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
 
       expect(res.status).toBe(429);
@@ -212,17 +218,17 @@ describe('Venice error handling [V11]', () => {
     });
 
     it('Venice 429 with no retry-after → retryAfterSeconds: null', async () => {
-      const accessToken = await registerAndLogin();
-      await storeKey(accessToken, fetchSpy);
-      const req = makeFakeReq(accessToken);
+      const { agent, sessionId } = await registerAndLogin();
+      await storeKey(agent, fetchSpy);
+      const req = makeFakeReq(sessionId);
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
       fetchSpy.mockResolvedValueOnce(errorResponse(429, 'rate limited'));
 
-      const res = await request(app)
+      const res = await agent
         .post('/api/ai/complete')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', 'http://localhost:3000')
         .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
 
       expect(res.status).toBe(429);
@@ -231,17 +237,17 @@ describe('Venice error handling [V11]', () => {
     });
 
     it('Venice 503 → our 502 with code venice_unavailable', async () => {
-      const accessToken = await registerAndLogin();
-      await storeKey(accessToken, fetchSpy);
-      const req = makeFakeReq(accessToken);
+      const { agent, sessionId } = await registerAndLogin();
+      await storeKey(agent, fetchSpy);
+      const req = makeFakeReq(sessionId);
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
       fetchSpy.mockResolvedValueOnce(errorResponse(503, 'Service Unavailable'));
 
-      const res = await request(app)
+      const res = await agent
         .post('/api/ai/complete')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', 'http://localhost:3000')
         .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
 
       expect(res.status).toBe(502);
@@ -249,9 +255,9 @@ describe('Venice error handling [V11]', () => {
     });
 
     it('Venice 418 (unexpected status) → our 502 with code venice_error', async () => {
-      const accessToken = await registerAndLogin();
-      await storeKey(accessToken, fetchSpy);
-      const req = makeFakeReq(accessToken);
+      const { agent, sessionId } = await registerAndLogin();
+      await storeKey(agent, fetchSpy);
+      const req = makeFakeReq(sessionId);
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -259,9 +265,9 @@ describe('Venice error handling [V11]', () => {
         errorResponse(418, `I am a teapot ${VENICE_RAW_ERROR_SENTINEL}`),
       );
 
-      const res = await request(app)
+      const res = await agent
         .post('/api/ai/complete')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', 'http://localhost:3000')
         .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
 
       expect(res.status).toBe(502);
@@ -271,9 +277,9 @@ describe('Venice error handling [V11]', () => {
     });
 
     it('Venice API key is never logged when Venice returns 401', async () => {
-      const accessToken = await registerAndLogin();
-      await storeKey(accessToken, fetchSpy);
-      const req = makeFakeReq(accessToken);
+      const { agent, sessionId } = await registerAndLogin();
+      await storeKey(agent, fetchSpy);
+      const req = makeFakeReq(sessionId);
       const { storyId, chapterId } = await setupStoryAndChapter(req);
 
       fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -285,9 +291,9 @@ describe('Venice error handling [V11]', () => {
       const logSpy = vi.spyOn(console, 'log');
       const infoSpy = vi.spyOn(console, 'info');
 
-      await request(app)
+      await agent
         .post('/api/ai/complete')
-        .set('Authorization', `Bearer ${accessToken}`)
+        .set('Origin', 'http://localhost:3000')
         .send({ action: 'continue', selectedText: '', chapterId, storyId, modelId: BASE_MODEL_ID });
 
       // The key must never appear in any console channel

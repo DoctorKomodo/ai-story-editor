@@ -9,46 +9,49 @@ const NAME = 'Original Name';
 const NEW_NAME = 'New Display Name';
 const USERNAME = 'update-profile-user';
 const PASSWORD = 'correct-horse-battery';
+const TEST_ORIGIN = 'http://localhost:3000';
 
-async function registerAndLogin(): Promise<{ accessToken: string; userId: string }> {
-  await request(app)
+async function registerAndLogin(
+  username = USERNAME,
+  name = NAME,
+): Promise<{ agent: ReturnType<typeof request.agent>; userId: string }> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+    .set('Origin', TEST_ORIGIN)
+    .send({ name, username, password: PASSWORD });
+  const login = await agent
     .post('/api/auth/login')
-    .send({ username: USERNAME, password: PASSWORD });
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password: PASSWORD });
   expect(login.status).toBe(200);
-  return {
-    accessToken: login.body.accessToken as string,
-    userId: login.body.user.id as string,
-  };
+  return { agent, userId: login.body.user.id as string };
 }
 
 describe('[X3] POST /api/auth/update-profile', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
-  it('returns 401 without a bearer token', async () => {
-    const res = await request(app).post('/api/auth/update-profile').send({ name: NEW_NAME });
+  it('returns 401 without a session cookie', async () => {
+    const res = await request(app)
+      .post('/api/auth/update-profile')
+      .set('Origin', TEST_ORIGIN)
+      .send({ name: NEW_NAME });
     expect(res.status).toBe(401);
   });
 
   it('happy path: 200 with updated user, DB row updated', async () => {
-    const { accessToken, userId } = await registerAndLogin();
-    const res = await request(app)
+    const { agent, userId } = await registerAndLogin();
+    const res = await agent
       .post('/api/auth/update-profile')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ name: NEW_NAME });
     expect(res.status).toBe(200);
     expect(res.body.user).toMatchObject({
@@ -61,10 +64,10 @@ describe('[X3] POST /api/auth/update-profile', () => {
   });
 
   it('trims surrounding whitespace before storing', async () => {
-    const { accessToken, userId } = await registerAndLogin();
-    const res = await request(app)
+    const { agent, userId } = await registerAndLogin();
+    const res = await agent
       .post('/api/auth/update-profile')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ name: '   Trimmed Name   ' });
     expect(res.status).toBe(200);
     expect(res.body.user.name).toBe('Trimmed Name');
@@ -73,30 +76,30 @@ describe('[X3] POST /api/auth/update-profile', () => {
   });
 
   it('rejects empty name (400 validation_error)', async () => {
-    const { accessToken } = await registerAndLogin();
-    const res = await request(app)
+    const { agent } = await registerAndLogin();
+    const res = await agent
       .post('/api/auth/update-profile')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ name: '' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('rejects whitespace-only name (400 validation_error)', async () => {
-    const { accessToken } = await registerAndLogin();
-    const res = await request(app)
+    const { agent } = await registerAndLogin();
+    const res = await agent
       .post('/api/auth/update-profile')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ name: '     ' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
   });
 
   it('rejects names longer than 80 chars after trim (400 validation_error)', async () => {
-    const { accessToken } = await registerAndLogin();
-    const res = await request(app)
+    const { agent } = await registerAndLogin();
+    const res = await agent
       .post('/api/auth/update-profile')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ name: 'a'.repeat(81) });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
@@ -104,22 +107,16 @@ describe('[X3] POST /api/auth/update-profile', () => {
 
   it('does not affect other users', async () => {
     const a = await registerAndLogin();
-    await request(app)
-      .post('/api/auth/register')
-      .send({ name: 'Second', username: 'second-user', password: PASSWORD });
-    const loginB = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'second-user', password: PASSWORD });
-    const bId = loginB.body.user.id as string;
+    const b = await registerAndLogin('second-user', 'Second');
 
-    const res = await request(app)
+    const res = await a.agent
       .post('/api/auth/update-profile')
-      .set('Authorization', `Bearer ${a.accessToken}`)
+      .set('Origin', TEST_ORIGIN)
       .send({ name: NEW_NAME });
     expect(res.status).toBe(200);
 
     const aRow = await prisma.user.findUniqueOrThrow({ where: { id: a.userId } });
-    const bRow = await prisma.user.findUniqueOrThrow({ where: { id: bId } });
+    const bRow = await prisma.user.findUniqueOrThrow({ where: { id: b.userId } });
     expect(aRow.name).toBe(NEW_NAME);
     expect(bRow.name).toBe('Second');
   });

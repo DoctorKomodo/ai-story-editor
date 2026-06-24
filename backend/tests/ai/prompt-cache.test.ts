@@ -3,13 +3,12 @@
 
 import { createHash } from 'node:crypto';
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
@@ -88,31 +87,43 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const res = await request(app)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const session = getSession(decoded.sessionId!);
+function makeFakeReq(sessionId: string): Request {
+  const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -129,7 +140,7 @@ async function setupTestData(req: Request): Promise<{ storyId: string; chapterId
 }
 
 async function callCompleteAndGetRequestBody(
-  accessToken: string,
+  agent: ReturnType<typeof request.agent>,
   storyId: string,
   chapterId: string,
   modelId: string,
@@ -138,9 +149,9 @@ async function callCompleteAndGetRequestBody(
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
   fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-  await request(app)
+  await agent
     .post('/api/ai/complete')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
@@ -182,8 +193,6 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -200,24 +209,16 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   it('sets prompt_cache_key at top level to sha256(storyId:modelId) first 32 hex chars', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const body = await callCompleteAndGetRequestBody(
-      accessToken,
-      storyId,
-      chapterId,
-      MODEL_A,
-      fetchSpy,
-    );
+    const body = await callCompleteAndGetRequestBody(agent, storyId, chapterId, MODEL_A, fetchSpy);
 
     // [V23] prompt_cache_key is a Venice TOP-LEVEL field, not nested under
     // venice_parameters — nesting causes Venice to silently ignore it.
@@ -233,25 +234,19 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
   });
 
   it('same storyId + modelId produces the same cache key across requests', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const body1 = await callCompleteAndGetRequestBody(
-      accessToken,
-      storyId,
-      chapterId,
-      MODEL_A,
-      fetchSpy,
-    );
+    const body1 = await callCompleteAndGetRequestBody(agent, storyId, chapterId, MODEL_A, fetchSpy);
     // Reset spy between calls, but cache is warm so no second models fetch needed
     fetchSpy.mockClear();
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -279,24 +274,18 @@ describe('POST /api/ai/complete — prompt cache key [V8]', () => {
   });
 
   it('different modelId produces a different cache key', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const bodyA = await callCompleteAndGetRequestBody(
-      accessToken,
-      storyId,
-      chapterId,
-      MODEL_A,
-      fetchSpy,
-    );
+    const bodyA = await callCompleteAndGetRequestBody(agent, storyId, chapterId, MODEL_A, fetchSpy);
     fetchSpy.mockClear();
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';

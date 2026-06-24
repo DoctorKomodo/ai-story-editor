@@ -5,13 +5,12 @@
 
 import { Prisma } from '@prisma/client';
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
@@ -102,37 +101,47 @@ function jsonResponse(status: number, body: unknown): Response {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const res = await request(app)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
 
 /**
- * Decode the access token to get userId + sessionId, retrieve the DEK from
- * the in-process session store, and return a fake Express Request that has the
- * DEK attached so repo calls can encrypt/decrypt.
+ * Retrieve the DEK from the in-process session store and return a fake Express
+ * Request that has the DEK attached so repo calls can encrypt/decrypt.
  */
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const sessionId = decoded.sessionId!;
+function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -227,8 +236,6 @@ describe('POST /api/ai/complete [V5]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -245,23 +252,22 @@ describe('POST /api/ai/complete [V5]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
-  it('returns 401 without a Bearer token', async () => {
+  it('returns 401 without an auth cookie', async () => {
     const res = await request(app)
       .post('/api/ai/complete')
+      .set('Origin', 'http://localhost:3000')
       .send({ action: 'continue', selectedText: '', chapterId: 'x', storyId: 'x', modelId: 'y' });
     expect(res.status).toBe(401);
   });
 
   it('returns 400 on invalid body — missing required fields', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
+    const { agent } = await registerAndLogin();
+    const res = await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({ action: 'continue' }); // missing chapterId / storyId / modelId
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
@@ -269,48 +275,42 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('returns 400 when action is an invalid enum value', async () => {
-    const accessToken = await registerAndLogin();
-    const res = await request(app)
-      .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({
-        action: 'teleport',
-        selectedText: '',
-        chapterId: 'c',
-        storyId: 's',
-        modelId: 'm',
-      });
+    const { agent } = await registerAndLogin();
+    const res = await agent.post('/api/ai/complete').set('Origin', 'http://localhost:3000').send({
+      action: 'teleport',
+      selectedText: '',
+      chapterId: 'c',
+      storyId: 's',
+      modelId: 'm',
+    });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
     expect(Array.isArray(res.body.error.issues)).toBe(true);
   });
 
   it('returns 409 venice_key_required when user has no BYOK key', async () => {
-    const accessToken = await registerAndLogin();
+    const { agent } = await registerAndLogin();
 
     // Prime the models cache manually with a stub so we hit the "no BYOK key"
     // path from veniceKeyService.getClient, not from fetchModels. But the handler calls
     // fetchModels first — so we need to let the 409 come from that call.
     // Since there's no key, veniceKeyService.getClient inside fetchModels will throw.
 
-    const res = await request(app)
-      .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({
-        action: 'continue',
-        selectedText: '',
-        chapterId: 'some-chapter',
-        storyId: 'some-story',
-        modelId: BASE_MODEL_ID,
-      });
+    const res = await agent.post('/api/ai/complete').set('Origin', 'http://localhost:3000').send({
+      action: 'continue',
+      selectedText: '',
+      chapterId: 'some-chapter',
+      storyId: 'some-story',
+      modelId: BASE_MODEL_ID,
+    });
     expect(res.status).toBe(409);
     expect(res.body.error.code).toBe('venice_key_required');
   });
 
   it('returns 404 when chapter storyId does not match body storyId', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
 
     // Create a second story; the chapter belongs to the first story.
     const story1 = await createStoryRepo(req).create({ title: 'Story 1' });
@@ -324,9 +324,9 @@ describe('POST /api/ai/complete [V5]', () => {
     // Mock the models call so the handler gets past fetchModels
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
 
-    const res = await request(app)
+    const res = await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .send({
         action: 'continue',
         selectedText: '',
@@ -339,29 +339,26 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('returns 404 when story is not owned by the caller', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
+    const { agent } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
 
-    const res = await request(app)
-      .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .send({
-        action: 'continue',
-        selectedText: '',
-        chapterId: 'nonexistent-chapter',
-        storyId: 'nonexistent-story',
-        modelId: BASE_MODEL_ID,
-      });
+    const res = await agent.post('/api/ai/complete').set('Origin', 'http://localhost:3000').send({
+      action: 'continue',
+      selectedText: '',
+      chapterId: 'nonexistent-chapter',
+      storyId: 'nonexistent-story',
+      modelId: BASE_MODEL_ID,
+    });
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   it('streams SSE with at least one data chunk and a [DONE] terminator', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     // Mock: models list + Venice completion stream
@@ -370,9 +367,9 @@ describe('POST /api/ai/complete [V5]', () => {
       sseStreamResponse([makeChunk('Hello'), makeChunk(' world', 'stop')]),
     );
 
-    const res = await request(app)
+    const res = await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -393,17 +390,17 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('Venice is called with the per-user decrypted key in Authorization header', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Hi', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -434,17 +431,17 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('Venice request carries the prompt builder messages and max_completion_tokens', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -475,15 +472,15 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('max_completion_tokens: per-model override above model cap → model cap wins (X28)', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     // User sets 16k override for this model; model caps at 4096 → expect 4096.
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: {
         settingsJson: {
           chat: { model: null, overrides: { [BASE_MODEL_ID]: { maxTokens: 16_000 } } },
@@ -494,9 +491,9 @@ describe('POST /api/ai/complete [V5]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -517,15 +514,15 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('max_completion_tokens: per-model override under model cap → override wins (X28)', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     // User sets 800 override for qwen (cap 16384) → expect 800.
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: {
         settingsJson: {
           chat: { model: null, overrides: { 'qwen-qwq-32b': { maxTokens: 800 } } },
@@ -536,9 +533,9 @@ describe('POST /api/ai/complete [V5]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -558,15 +555,15 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('passes resolved temperature and top_p from per-model override to Venice (X28)', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     // Set a per-model override for temperature and topP on BASE_MODEL_ID.
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: {
         settingsJson: {
           chat: {
@@ -580,9 +577,9 @@ describe('POST /api/ai/complete [V5]', () => {
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -604,24 +601,24 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('reads includeVeniceSystemPrompt from settingsJson.ai when set to false', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     // Update user's settingsJson to set includeVeniceSystemPrompt: false
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: { settingsJson: { ai: { includeVeniceSystemPrompt: false } } },
     });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -643,24 +640,24 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('defaults includeVeniceSystemPrompt to true when settingsJson is null', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     // Ensure settingsJson is null
-    const decoded = jwt.decode(accessToken) as AccessTokenPayload;
+    const session = getSession(sessionId);
     await prisma.user.update({
-      where: { id: decoded.sub },
+      where: { id: session!.userId },
       data: { settingsJson: Prisma.DbNull },
     });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -682,17 +679,17 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('plaintext chapter body never appears in the SSE response', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupStoryAndChapter(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('Completion text', 'stop')]));
 
-    const res = await request(app)
+    const res = await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -708,17 +705,17 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('[pcs] system message contains <previous_chapters> when includePreviousChaptersInPrompt=true and a prior chapter has a summary', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterIdSecond } = await setupTwoChapters(req);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';
@@ -747,17 +744,17 @@ describe('POST /api/ai/complete [V5]', () => {
   });
 
   it('[pcs] system message omits <previous_chapters> when includePreviousChaptersInPrompt=false', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterIdSecond } = await setupTwoChapters(req, { toggleOff: true });
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-    await request(app)
+    await agent
       .post('/api/ai/complete')
-      .set('Authorization', `Bearer ${accessToken}`)
+      .set('Origin', 'http://localhost:3000')
       .buffer(true)
       .parse((response, callback) => {
         let data = '';

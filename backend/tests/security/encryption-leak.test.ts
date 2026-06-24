@@ -240,11 +240,6 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
         // Force the seed into the test DB. setup.ts pins DATABASE_URL for this
         // process, but the spawned child sees its own env — be explicit.
         DATABASE_URL: testDatabaseUrl,
-        // The seed calls auth.register() which doesn't need JWT secrets, but
-        // auth.service reads them at module load for other exports. Ensure
-        // they're set to something so the import side-effect doesn't explode.
-        JWT_SECRET: process.env.JWT_SECRET ?? 'test-jwt-secret',
-        REFRESH_TOKEN_SECRET: process.env.REFRESH_TOKEN_SECRET ?? 'test-refresh-secret',
       },
       encoding: 'utf8',
       // 2 minutes is generous — the seed does ~4× argon2id derivations (~400ms)

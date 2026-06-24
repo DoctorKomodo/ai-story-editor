@@ -3,13 +3,12 @@
 // has supportsReasoning: true, and is absent otherwise.
 
 import type { Request } from 'express';
-import jwt from 'jsonwebtoken';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
+import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import type { AccessTokenPayload } from '../../src/services/auth.service';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
@@ -84,31 +83,43 @@ function jsonResponse(status: number, body: unknown): Response {
   });
 }
 
-async function registerAndLogin(): Promise<string> {
-  await request(app)
+async function registerAndLogin(): Promise<{
+  agent: ReturnType<typeof request.agent>;
+  sessionId: string;
+}> {
+  const agent = request.agent(app);
+  await agent
     .post('/api/auth/register')
+    .set('Origin', 'http://localhost:3000')
     .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await request(app)
+  const login = await agent
     .post('/api/auth/login')
+    .set('Origin', 'http://localhost:3000')
     .send({ username: USERNAME, password: PASSWORD });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
+  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
+  expect(cookie).toBeDefined();
+  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  return { agent, sessionId };
 }
 
-async function storeKey(accessToken: string, fetchSpy: ReturnType<typeof vi.fn>): Promise<void> {
+async function storeKey(
+  agent: ReturnType<typeof request.agent>,
+  fetchSpy: ReturnType<typeof vi.fn>,
+): Promise<void> {
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, { data: [] }));
-  const res = await request(app)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
 
-function makeFakeReq(accessToken: string): Request {
-  const decoded = jwt.decode(accessToken) as AccessTokenPayload;
-  const session = getSession(decoded.sessionId!);
+function makeFakeReq(sessionId: string): Request {
+  const session = getSession(sessionId);
   expect(session).not.toBeNull();
-  const req = { user: { id: decoded.sub, email: null } } as unknown as Request;
+  const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
 }
@@ -125,7 +136,7 @@ async function setupTestData(req: Request): Promise<{ storyId: string; chapterId
 }
 
 async function callComplete(
-  accessToken: string,
+  agent: ReturnType<typeof request.agent>,
   storyId: string,
   chapterId: string,
   modelId: string,
@@ -134,9 +145,9 @@ async function callComplete(
   fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
   fetchSpy.mockResolvedValueOnce(sseStreamResponse([makeChunk('OK', 'stop')]));
 
-  await request(app)
+  await agent
     .post('/api/ai/complete')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .buffer(true)
     .parse((response, callback) => {
       let data = '';
@@ -155,10 +166,13 @@ async function callComplete(
   return JSON.parse((init as RequestInit).body as string) as Record<string, unknown>;
 }
 
-async function setReasoningOff(accessToken: string, modelId: string): Promise<void> {
-  const res = await request(app)
+async function setReasoningOff(
+  agent: ReturnType<typeof request.agent>,
+  modelId: string,
+): Promise<void> {
+  const res = await agent
     .patch('/api/users/me/settings')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', 'http://localhost:3000')
     .send({ chat: { overrides: { [modelId]: { reasoning: false } } } });
   expect(res.status).toBe(200);
 }
@@ -174,8 +188,6 @@ describe('POST /api/ai/complete — reasoning model [V6]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
     veniceModelsService.resetCache();
 
@@ -192,73 +204,53 @@ describe('POST /api/ai/complete — reasoning model [V6]', () => {
     await prisma.character.deleteMany();
     await prisma.chapter.deleteMany();
     await prisma.story.deleteMany();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   it('sets strip_thinking_response: true when model has supportsReasoning: true', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const requestBody = await callComplete(
-      accessToken,
-      storyId,
-      chapterId,
-      REASONING_MODEL_ID,
-      fetchSpy,
-    );
+    const requestBody = await callComplete(agent, storyId, chapterId, REASONING_MODEL_ID, fetchSpy);
     const vp = requestBody.venice_parameters as Record<string, unknown>;
     expect(vp.strip_thinking_response).toBe(true);
   });
 
   it('does not set strip_thinking_response for a non-reasoning model', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const requestBody = await callComplete(
-      accessToken,
-      storyId,
-      chapterId,
-      PLAIN_MODEL_ID,
-      fetchSpy,
-    );
+    const requestBody = await callComplete(agent, storyId, chapterId, PLAIN_MODEL_ID, fetchSpy);
     const vp = requestBody.venice_parameters as Record<string, unknown>;
     // Must be absent — setting it to false would still be wrong.
     expect(vp.strip_thinking_response).toBeUndefined();
   });
 
   it('sends reasoning:{enabled:false} when a reasoning model is toggled off', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupTestData(req);
-    await setReasoningOff(accessToken, REASONING_MODEL_ID);
+    await setReasoningOff(agent, REASONING_MODEL_ID);
 
-    const body = await callComplete(accessToken, storyId, chapterId, REASONING_MODEL_ID, fetchSpy);
+    const body = await callComplete(agent, storyId, chapterId, REASONING_MODEL_ID, fetchSpy);
     expect(body.reasoning).toEqual({ enabled: false });
   });
 
   it('omits reasoning when on (default) and for non-reasoning models', async () => {
-    const accessToken = await registerAndLogin();
-    await storeKey(accessToken, fetchSpy);
-    const req = makeFakeReq(accessToken);
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
     const { storyId, chapterId } = await setupTestData(req);
 
-    const onBody = await callComplete(
-      accessToken,
-      storyId,
-      chapterId,
-      REASONING_MODEL_ID,
-      fetchSpy,
-    );
+    const onBody = await callComplete(agent, storyId, chapterId, REASONING_MODEL_ID, fetchSpy);
     expect(onBody.reasoning).toBeUndefined();
 
-    const plainBody = await callComplete(accessToken, storyId, chapterId, PLAIN_MODEL_ID, fetchSpy);
+    const plainBody = await callComplete(agent, storyId, chapterId, PLAIN_MODEL_ID, fetchSpy);
     expect(plainBody.reasoning).toBeUndefined();
   });
 });

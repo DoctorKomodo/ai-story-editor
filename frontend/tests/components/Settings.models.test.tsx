@@ -16,7 +16,7 @@ import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
 import type { Model } from '@/hooks/useModels';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 import { makeModel } from '../fixtures/model';
@@ -218,7 +218,6 @@ describe('SettingsModal Models tab (X28)', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });

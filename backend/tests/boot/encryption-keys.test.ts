@@ -2,8 +2,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { validateEncryptionEnv } from '../../src/boot/env-validation';
 
 describe('validateEncryptionEnv() — no required encryption env secret', () => {
-  it('does not throw when no encryption env vars are set', () => {
-    expect(() => validateEncryptionEnv({ env: {} as NodeJS.ProcessEnv })).not.toThrow();
+  it('does not throw and emits no warnings when no stale vars are set', () => {
+    const warn = vi.fn();
+    expect(() => validateEncryptionEnv({ env: {} as NodeJS.ProcessEnv, warn })).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('warns (does not throw) if a stale APP_ENCRYPTION_KEY lingers', () => {
@@ -20,6 +22,20 @@ describe('validateEncryptionEnv() — no required encryption env secret', () => 
       warn,
     });
     expect(warn).toHaveBeenCalledWith(expect.stringMatching(/CONTENT_ENCRYPTION_KEY/));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns if a stale JWT_SECRET lingers', () => {
+    const warn = vi.fn();
+    validateEncryptionEnv({ env: { JWT_SECRET: 'x' } as NodeJS.ProcessEnv, warn });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/JWT_SECRET/));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns if a stale REFRESH_TOKEN_SECRET lingers', () => {
+    const warn = vi.fn();
+    validateEncryptionEnv({ env: { REFRESH_TOKEN_SECRET: 'x' } as NodeJS.ProcessEnv, warn });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/REFRESH_TOKEN_SECRET/));
     expect(warn).toHaveBeenCalledTimes(1);
   });
 });

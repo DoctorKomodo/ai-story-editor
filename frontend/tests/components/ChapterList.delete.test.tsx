@@ -3,7 +3,7 @@ import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChapterList } from '@/components/ChapterList';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 import { makeChapterMeta } from '../fixtures/chapter';
@@ -39,7 +39,6 @@ describe('ChapterList — delete', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     setUnauthorizedHandler(() => useSessionStore.getState().clearSession());
     useSessionStore.setState({
       user: { id: 'u1', username: 'alice', name: 'Alice' },

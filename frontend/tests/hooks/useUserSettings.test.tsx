@@ -12,7 +12,7 @@ import {
   useUpdateUserSetting,
   useUserSettings,
 } from '@/hooks/useUserSettings';
-import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetApiClientForTests } from '@/lib/api';
 import { GLOBAL_TEXT_GEN_DEFAULTS } from '@/lib/textGenDefaults';
 import { useErrorStore } from '@/store/errors';
 
@@ -92,7 +92,6 @@ describe('useUpdateUserSetting', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     act(() => {

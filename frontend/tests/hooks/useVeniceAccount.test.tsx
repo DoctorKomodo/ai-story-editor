@@ -3,7 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react';
 import type { JSX, ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useVeniceAccountQuery, veniceAccountQueryKey } from '@/hooks/useVeniceAccount';
-import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetApiClientForTests } from '@/lib/api';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -28,7 +28,6 @@ function makeWrapper(): {
 describe('useVeniceAccountQuery [X32]', () => {
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
   });
 
   afterEach(() => {

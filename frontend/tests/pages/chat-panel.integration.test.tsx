@@ -7,7 +7,7 @@ import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
 import { useActiveChapterStore } from '@/store/activeChapter';
@@ -47,9 +47,6 @@ const FULL_SETTINGS = {
 
 function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response> {
   return (url) => {
-    if (url.endsWith('/auth/refresh')) {
-      return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
-    }
     if (url.endsWith('/auth/me')) {
       return Promise.resolve(
         jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
@@ -108,7 +105,6 @@ describe('EditorPage chat panel + modals (F55)', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });

@@ -109,7 +109,7 @@ describe('swapSession', () => {
       dataAtChange.push(qc.getQueryData(['stories', 'list']));
     });
 
-    await swapSession(qc, { id: 'B', username: 'b', name: 'B' }, 'B-token');
+    await swapSession(qc, { id: 'B', username: 'b', name: 'B' });
     unsub();
 
     const bIdx = userAtChange.indexOf('b');
@@ -117,9 +117,9 @@ describe('swapSession', () => {
     expect(dataAtChange[bIdx]).toBeUndefined();
   });
 
-  it('sets the new user/token via the session store', async () => {
+  it('sets the new user in the session store', async () => {
     const qc = new QueryClient();
-    await swapSession(qc, { id: 'B', username: 'b', name: 'User B' }, 'B-token');
+    await swapSession(qc, { id: 'B', username: 'b', name: 'User B' });
     expect(useSessionStore.getState().user?.username).toBe('b');
     expect(useSessionStore.getState().status).toBe('authenticated');
   });
@@ -150,6 +150,11 @@ describe('handleUnauthorizedAccess (registered-QC integration)', () => {
       attachedSelection: { text: 'leak', chapter: { id: 'c', number: 1, title: '' } },
     });
     registerSessionResetQueryClient(qc);
+    // Guard requires an active session; seed it so the handler proceeds.
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
 
     handleUnauthorizedAccess();
     // resetClientStateUsingRegistered is fire-and-forget (void Promise).

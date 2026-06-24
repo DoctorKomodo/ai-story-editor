@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import type { Story } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { storyQueryKey, useUpdateStoryMutation } from '@/hooks/useStories';
-import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetApiClientForTests } from '@/lib/api';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -33,7 +33,6 @@ let fetchMock: ReturnType<typeof vi.fn>;
 describe('useUpdateStoryMutation', () => {
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

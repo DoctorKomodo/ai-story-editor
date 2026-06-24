@@ -15,7 +15,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsModal } from '@/components/Settings';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { useSessionStore } from '@/store/session';
 
@@ -137,7 +137,6 @@ function renderModal(): { qc: ReturnType<typeof createQueryClient> } {
 
 beforeEach(() => {
   resetApiClientForTests();
-  setAccessToken('test-token');
   setUnauthorizedHandler(() => {
     useSessionStore.getState().clearSession();
   });

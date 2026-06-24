@@ -24,7 +24,7 @@ through its repo is a bug — even if it "just" reads a single column
 that "happens not to be encrypted." It bypasses the encryption
 contract; close the bypass.
 
-Non-narrative entities (`User`, `RefreshToken`) may be accessed
+Non-narrative entities (`User`) may be accessed
 directly via Prisma from services.
 
 ## Repo shape & helpers

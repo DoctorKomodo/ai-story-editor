@@ -13,7 +13,7 @@ import {
   useRenameChatMutation,
   useSendChatMessageMutation,
 } from '@/hooks/useChat';
-import { ApiError, apiStream, resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { ApiError, apiStream, resetApiClientForTests } from '@/lib/api';
 import { resetClientState } from '@/lib/sessionReset';
 import { abortAllStreams } from '@/lib/streamRegistry';
 import { useChatDraftStore } from '@/store/chatDraft';
@@ -486,7 +486,6 @@ describe('useCreateChatMutation cache invalidation', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -609,7 +608,6 @@ describe('useRenameChatMutation', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -678,7 +676,6 @@ describe('useRemoveChatMutation', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -764,7 +761,6 @@ describe('useChat schema drift', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });
@@ -812,7 +808,6 @@ describe('useChatMessagesQuery runtime validation', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok');
     fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
   });

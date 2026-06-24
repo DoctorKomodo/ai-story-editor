@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetApiClientForTests, setAccessToken, setUnauthorizedHandler } from '@/lib/api';
+import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
 import { useActiveChapterStore } from '@/store/activeChapter';
@@ -47,9 +47,6 @@ function mockImpl(
   storyHandler: (url: string) => Promise<Response>,
 ): (url: string) => Promise<Response> {
   return (url: string) => {
-    if (url.endsWith('/auth/refresh')) {
-      return Promise.resolve(jsonResponse(200, { accessToken: 'tok-refresh' }));
-    }
     if (url.endsWith('/auth/me')) {
       return Promise.resolve(
         jsonResponse(200, { user: { id: 'u1', username: 'alice', name: 'Alice' } }),
@@ -111,7 +108,6 @@ describe('EditorPage (F51 — AppShell shell)', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('tok-1');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });

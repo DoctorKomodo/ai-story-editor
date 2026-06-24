@@ -29,16 +29,16 @@ talks to Venice.ai directly.
   the global error handler in `src/index.ts` owns the default shape.
   Per-route catches that just `res.status(500).json(...)` are noise and
   cost coverage of the global path.
-- `req.user` is `{ id, email, sessionId }`. **`requireAuth` also
-  attaches the request-scoped DEK** (`attachDekToRequest`) from the
-  session store — that is the DEK the narrative repos consume. No auth
-  middleware → no DEK → the repo throws `DekNotAvailableError`.
+- `req.user` is `{ id, sessionId }`. **`requireAuth` also attaches the
+  request-scoped DEK** (`attachDekToRequest`) from the session store —
+  that is the DEK the narrative repos consume. No auth middleware → no
+  DEK → the repo throws `DekNotAvailableError`.
 
 ## Auth & ownership
 
 - **Public routes** (no `requireAuth`): `POST /api/auth/{register,login,
-  refresh,logout,reset-password}` and `GET /api/health`. Everything
-  else requires auth.
+  logout,reset-password}` and `GET /api/health`. Everything else
+  requires auth.
 - Story / chapter / character / outline / chat / message routes require
   **both** `requireAuth` and `requireOwnership(type, { idParam })`.
   `idParam` defaults to `${type}Id`; pass `{ idParam: 'id' }` when the
@@ -46,11 +46,24 @@ talks to Venice.ai directly.
 - **No id-enumeration oracle:** an unknown id and an unowned id collapse
   to the **same 403**. After ownership passes, a row that then reads back
   null is a delete race — return **404**, not 500.
-- `requireAuth` returns **two distinct 401s**: `unauthorized` (no /
-  malformed / invalid token) vs `session_expired` (token parsed but the
-  session is gone from the store). They are separate codes on purpose —
-  the frontend only triggers its silent-refresh / re-login flow on
-  `session_expired`. Don't collapse them.
+- `requireAuth` returns **two distinct 401s**: `unauthorized` (no session
+  cookie / session unknown to the store) vs `session_expired` (cookie
+  present, session evicted or server restarted). They are separate codes
+  on purpose — the frontend redirects to login on both, but only shows the
+  "session expired" banner on `session_expired`. Don't collapse them.
+- **Session lifetime:** 7-day sliding idle window (each authenticated
+  request extends the expiry) with a hard 30-day absolute cap. Both
+  enforced in the in-memory session store (`session-store.ts`).
+- **CSRF posture:** a global default-deny `Origin`/`Referer` check
+  (`middleware/origin-check.middleware.ts`) covers all `/api` routes for
+  every non-safe method (`POST`/`PUT`/`PATCH`/`DELETE`). This is
+  **token-less** — it works because: (a) no state-changing GET routes
+  exist, (b) only `express.json()` is mounted (no urlencoded/multipart
+  on mutating routes), (c) no method-override middleware. If a future
+  route violates any of these three conditions, `SameSite=Lax` becomes
+  the only remaining CSRF defense (which has a documented ~2-minute
+  top-level-navigation-POST hole) — such a route MUST add an explicit
+  CSRF token.
 - **Never expose `passwordHash`** or any `User` secret column
   (`contentDekPassword*`, `contentDekRecovery*`, `veniceApiKeyEnc`).
   These live on `User`, are **not** touched by the narrative repo layer,
@@ -99,7 +112,7 @@ Three steps, used by every CRUD route:
   repo layer**. Controllers, services, and routes never call Prisma
   directly for these models. The repo layer encrypts on write,
   decrypts on read; bypassing it leaks ciphertext or skips encryption.
-- **Non-narrative entities** (`User`, `RefreshToken`) may be accessed
+- **Non-narrative entities** (`User`) may be accessed
   directly via Prisma from services.
 - **No raw SQL** outside migration files.
 - Foreign key fields **must have indexes**.
@@ -204,8 +217,11 @@ Three steps, used by every CRUD route:
   has been retired: the BYOK Venice key is now wrapped by the per-user
   content DEK (via `content-crypto.service.ts` in `venice-key.service.ts`).
   There is no `CONTENT_ENCRYPTION_KEY`, and one must not be reintroduced —
-  the boot validator (`backend/src/boot/env-validation.ts`) warns if it
-  is.
+  the boot validator (`backend/src/boot/env-validation.ts`) warns if it is.
+- `JWT_SECRET` and `REFRESH_TOKEN_SECRET` are also **retired** (removed
+  with the cookie-session auth cutover). The boot validator warns if they
+  linger in `.env`. There is no JWT signing secret — authentication is
+  handled via the in-memory session store (`session-store.ts`).
 
 ## Testing (backend lane)
 

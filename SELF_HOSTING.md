@@ -87,6 +87,8 @@ You'll need:
 - A reverse proxy (nginx, Caddy, Traefik, Cloudflare Tunnel) if you intend to expose the instance to the internet — Inkwell does not ship one.
 - A small amount of memory: the default stack peaks around ~600 MB RAM under typical load (postgres + node backend + nginx-fronted SPA).
 
+> **TLS is mandatory in production.** Authentication uses an opaque httpOnly session cookie. In production mode (`NODE_ENV=production`) the cookie is `__Host-session` with `Secure=true`, which browsers will only send over HTTPS. Running in production mode over plain HTTP = cookie never sent = users cannot authenticate. Terminate TLS at your reverse proxy and pass the request through to the backend.
+
 Inkwell uses a **bring-your-own-key (BYOK)** model for AI features — operators do **not** need a Venice.ai account. Each end-user pastes their own Venice API key into Settings on first AI use. Stored keys are encrypted under the user's own DEK, so the operator has no server-side secret to manage for this.
 
 ## Run from published images (recommended)
@@ -104,9 +106,10 @@ curl -L -o docker-compose.yml \
 curl -L -o .env \
   https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/.env.example
 
-# 2. Generate the long-lived secrets and paste them into .env, replacing the
-#    placeholder defaults (see the secret-gen block under "First-run steps").
-#    JWT_SECRET and REFRESH_TOKEN_SECRET are required.
+# 2. Edit .env: set FRONTEND_URL to your public HTTPS origin, and set
+#    TRUST_PROXY_HOPS to match your reverse-proxy hop count (default 1).
+#    No long-lived signing secrets are required — session auth uses the
+#    in-memory session store; there are no JWT_SECRET / REFRESH_TOKEN_SECRET.
 
 # 3. Pull the images and start the stack. The backend runs `prisma migrate
 #    deploy` automatically on boot, so the schema is created on its own.
@@ -150,30 +153,22 @@ Prefer this only if you're modifying the code or can't pull from GHCR.
 git clone https://github.com/<your-fork>/story-editor.git
 cd story-editor
 
-# 2. Create your .env from the template
+# 2. Create your .env from the template and set FRONTEND_URL to your public
+#    HTTPS origin. Adjust TRUST_PROXY_HOPS if your topology has more than
+#    one proxy hop between the internet and the backend container (default 1).
+#    There is no server-held encryption key and no JWT signing secret to
+#    generate — authentication is handled via the in-memory session store.
 cp .env.example .env
 
-# 3. Generate the long-lived secrets the backend requires.
-#    JWT_SECRET and REFRESH_TOKEN_SECRET sign access and refresh tokens
-#    respectively. There is no server-held encryption key — Venice keys and
-#    narrative content are both protected by per-user DEKs.
-{
-  echo "JWT_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
-  echo "REFRESH_TOKEN_SECRET=$(node -e "console.log(require('node:crypto').randomBytes(48).toString('base64'))")"
-} >> /tmp/inkwell-secrets.env
-# /tmp/inkwell-secrets.env now contains two KEY=VALUE lines with real
-# generated secrets — paste them into .env, replacing the placeholder
-# defaults, then delete the temp file.
-
-# 4. Bring up the stack — backend runs `prisma migrate deploy` automatically
+# 3. Bring up the stack — backend runs `prisma migrate deploy` automatically
 #    on first boot, so the schema is created on its own.
 docker compose up -d
 
-# 5. Wait for /api/health to return 200 (~10s)
+# 4. Wait for /api/health to return 200 (~10s)
 curl -sf http://localhost:4000/api/health
 # {"status":"ok",...}
 
-# 6. Open the UI
+# 5. Open the UI
 open http://localhost:3000
 ```
 
@@ -246,6 +241,22 @@ After restore, every user's narrative content is decryptable as before *only if*
 0 3 * * *  cd /opt/inkwell && bash scripts/backup-db.sh
 30 3 * * * find /opt/inkwell/backups -name '*.sql.gz' -mtime +30 -delete
 ```
+
+## Environment variables
+
+| Variable | Default | Notes |
+|---|---|---|
+| `DATABASE_URL` | *(required)* | Postgres connection string. |
+| `FRONTEND_URL` | `http://localhost:3000` | Public HTTPS origin of the frontend. Used for CORS and the global CSRF Origin/Referer check on all `/api` routes. Must be the real public origin in production (a mismatch → `403 csrf_block` on every mutation). Comma-separate multiple values for multi-origin dev setups. |
+| `PORT` | `4000` | Port the backend Express server binds to. |
+| `TRUST_PROXY_HOPS` | `1` | Number of trusted reverse-proxy hops in front of the backend. Must match your actual topology. Set to `0` if the backend is exposed directly (no proxy). **Never** set to `true` or a value that trusts all hops — that lets clients spoof `X-Forwarded-For` and defeat rate limits. |
+| `SESSION_STORE_MAX` | `10000` | Maximum number of concurrent in-memory sessions. If you see `"evicting a live session under cap pressure"` in logs, users are being silently logged out — raise this value. |
+
+**Removed variables:** `JWT_SECRET` and `REFRESH_TOKEN_SECRET` are gone as of the cookie-session auth cutover. The boot validator warns if they linger in `.env` and ignores them. There is no server-held signing secret for session auth.
+
+**Non-browser clients** (curl, scripts, server-to-server calls): every mutating request (`POST`/`PUT`/`PATCH`/`DELETE`) to any `/api` endpoint must include an `Origin` header matching the configured `FRONTEND_URL`. Browsers set this automatically; automation must add it explicitly or the request is rejected with `403 csrf_block`.
+
+---
 
 ## Port layout (`[I6]` stub)
 

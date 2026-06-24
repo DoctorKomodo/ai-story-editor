@@ -19,15 +19,15 @@ import { prisma } from '../setup';
 
 const authService = createAuthService(prisma);
 
+const TEST_ORIGIN = 'http://localhost:3000';
+
 describe('[AU9] register() — username-based signup supersede', () => {
   beforeEach(async () => {
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await prisma.refreshToken.deleteMany();
     await prisma.user.deleteMany();
   });
 
@@ -176,6 +176,7 @@ describe('[AU9] register() — username-based signup supersede', () => {
     it('returns 201 with { user, recoveryCode } on success', async () => {
       const res = await request(app)
         .post('/api/auth/register')
+        .set('Origin', TEST_ORIGIN)
         .send({ name: 'Linnet', username: 'linnet', password: 'goodpass' });
 
       expect(res.status).toBe(201);
@@ -192,10 +193,12 @@ describe('[AU9] register() — username-based signup supersede', () => {
     it('returns 409 { error: { code: "username_unavailable" } } on duplicate username', async () => {
       await request(app)
         .post('/api/auth/register')
+        .set('Origin', TEST_ORIGIN)
         .send({ name: 'A', username: 'routes-dup', password: 'goodpass' });
 
       const res = await request(app)
         .post('/api/auth/register')
+        .set('Origin', TEST_ORIGIN)
         .send({ name: 'B', username: 'routes-dup', password: 'goodpass' });
 
       expect(res.status).toBe(409);
@@ -208,6 +211,7 @@ describe('[AU9] register() — username-based signup supersede', () => {
     it('returns 400 with validation_error code on bad input', async () => {
       const res = await request(app)
         .post('/api/auth/register')
+        .set('Origin', TEST_ORIGIN)
         .send({ name: '', username: 'ok', password: 'ok' });
 
       expect(res.status).toBe(400);

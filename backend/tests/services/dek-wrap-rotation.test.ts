@@ -15,6 +15,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { forceRecoveryRotation } from '../../prisma/scripts/force-recovery-rotation';
 import { createAuthService } from '../../src/services/auth.service';
+import { _sessionCount } from '../../src/services/session-store';
 import { prisma } from '../setup';
 
 const PASSWORD = 'correct-horse-battery';
@@ -106,15 +107,11 @@ async function seedFakeStory(userId: string): Promise<{
 
 describe('[E14] forceRecoveryRotation (admin-triggered recovery wrap invalidation)', () => {
   beforeEach(async () => {
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.story.deleteMany();
     await prisma.user.deleteMany();
   });
 
   afterEach(async () => {
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
     await prisma.story.deleteMany();
     await prisma.user.deleteMany();
   });
@@ -239,27 +236,23 @@ describe('[E14] forceRecoveryRotation (admin-triggered recovery wrap invalidatio
 
     const auth = createAuthService(prisma);
     const loginResult = await auth.login({ username: 'demo', password: PASSWORD });
-    expect(loginResult.accessToken).toBeTypeOf('string');
-    expect(loginResult.accessToken.length).toBeGreaterThan(0);
+    expect(loginResult.sessionId).toBeTypeOf('string');
     expect(loginResult.user.id).toBe(userId);
   });
 
-  it('does not revoke existing sessions or refresh tokens — this is a key-management action, not a session revocation', async () => {
+  it('does not revoke existing in-memory sessions — this is a key-management action, not a session revocation', async () => {
     const userId = await registerUser('demo');
 
-    // Log in first so a session + refresh token exist.
+    // Log in first so an in-memory session exists.
     const auth = createAuthService(prisma);
     await auth.login({ username: 'demo', password: PASSWORD });
 
-    const rtBefore = await prisma.refreshToken.count({ where: { userId } });
-    const sBefore = await prisma.session.count({ where: { userId } });
-    expect(rtBefore).toBeGreaterThanOrEqual(1);
+    const sBefore = _sessionCount();
     expect(sBefore).toBeGreaterThanOrEqual(1);
 
     const result = await forceRecoveryRotation(prisma, 'demo');
     expect(result).toEqual({ status: 'invalidated', userId });
 
-    expect(await prisma.refreshToken.count({ where: { userId } })).toBe(rtBefore);
-    expect(await prisma.session.count({ where: { userId } })).toBe(sBefore);
+    expect(_sessionCount()).toBe(sBefore);
   });
 });

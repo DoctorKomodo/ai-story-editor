@@ -16,11 +16,13 @@ import { createAuthRouter } from '../../src/routes/auth.routes';
 import { createVeniceAccountRouter } from '../../src/routes/venice-account.routes';
 import { createVeniceKeyRouter } from '../../src/routes/venice-key.routes';
 import * as contentCrypto from '../../src/services/content-crypto.service';
+import { _resetSessionStore } from '../../src/services/session-store';
 import { DEFAULT_VENICE_ENDPOINT } from '../../src/services/venice-key.service';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
+const TEST_ORIGIN = 'http://localhost:3000';
 const NAME = 'Account Test User';
 const USERNAME = 'venice-account-user';
 const PASSWORD = 'venice-account-password';
@@ -74,22 +76,28 @@ async function registerAndLogin(
   name: string,
   username: string,
   password: string,
-): Promise<string> {
-  await request(appUnderTest).post('/api/auth/register').send({ name, username, password });
-  const login = await request(appUnderTest).post('/api/auth/login').send({ username, password });
+): Promise<ReturnType<typeof request.agent>> {
+  const agent = request.agent(appUnderTest);
+  await agent
+    .post('/api/auth/register')
+    .set('Origin', TEST_ORIGIN)
+    .send({ name, username, password });
+  const login = await agent
+    .post('/api/auth/login')
+    .set('Origin', TEST_ORIGIN)
+    .send({ username, password });
   expect(login.status).toBe(200);
-  return login.body.accessToken as string;
+  return agent;
 }
 
 async function storeKey(
-  appUnderTest: express.Express,
-  accessToken: string,
+  agent: ReturnType<typeof request.agent>,
   fetchSpy: ReturnType<typeof vi.fn>,
 ): Promise<void> {
   fetchSpy.mockResolvedValueOnce(modelsResponse(200));
-  const res = await request(appUnderTest)
+  const res = await agent
     .put('/api/users/me/venice-key')
-    .set('Authorization', `Bearer ${accessToken}`)
+    .set('Origin', TEST_ORIGIN)
     .send({ apiKey: VALID_KEY });
   expect(res.status).toBe(200);
 }
@@ -100,8 +108,7 @@ describe('GET /api/users/me/venice-account [X32]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
@@ -110,23 +117,20 @@ describe('GET /api/users/me/venice-account [X32]', () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
-    await prisma.session.deleteMany();
-    await prisma.refreshToken.deleteMany();
+    _resetSessionStore();
     await prisma.user.deleteMany();
   });
 
   // ── 1. Auth guard ──────────────────────────────────────────────────────────
-  it('returns 401 without a Bearer token', async () => {
+  it('returns 401 without a session', async () => {
     const res = await request(app).get('/api/users/me/venice-account');
     expect(res.status).toBe(401);
   });
 
   // ── 2. No stored key ───────────────────────────────────────────────────────
   it('returns verified:false when no key is stored', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    const res = await agent.get('/api/users/me/venice-account');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       verified: false,
@@ -140,13 +144,11 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 3. Both balances present ──────────────────────────────────────────────
   it('returns verified:true with balanceUsd and diem when both present', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 2.25, diem: 1800 }));
 
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -160,12 +162,10 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 4. USD missing ─────────────────────────────────────────────────────────
   it('returns balanceUsd:null when data.balances.USD is missing', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ diem: 500 }));
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
     expect(res.body.balanceUsd).toBeNull();
@@ -174,12 +174,10 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 5. DIEM missing ────────────────────────────────────────────────────────
   it('returns diem:null when data.balances.DIEM is missing', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 1.5 }));
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
     expect(res.body.balanceUsd).toBe(1.5);
@@ -188,12 +186,10 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 6. Empty balances ──────────────────────────────────────────────────────
   it('returns balanceUsd:null and diem:null when data.balances is empty', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({}));
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
     expect(res.status).toBe(200);
     expect(res.body.verified).toBe(true);
     expect(res.body.balanceUsd).toBeNull();
@@ -202,15 +198,13 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 7. Venice 401 → app 200 verified:false ────────────────────────────────
   it('returns verified:false with endpoint/lastSix echoed when Venice returns 401', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
 
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     fetchSpy.mockResolvedValueOnce(errorResponse(401, 'Invalid API key'));
 
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -228,15 +222,13 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 8. Venice 429 → app 429 venice_rate_limited (with upstreamStatus) ─────
   it('returns 429 venice_rate_limited with upstreamStatus when Venice rate-limits', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     fetchSpy.mockResolvedValueOnce(errorResponse(429, 'rate limited', { 'retry-after': '30' }));
 
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
 
     expect(res.status).toBe(429);
     expect(res.body.error.code).toBe('venice_rate_limited');
@@ -250,15 +242,13 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 9. Venice 503 → app 502 venice_unavailable (with upstreamStatus) ──────
   it('returns 502 venice_unavailable with upstreamStatus:503 when Venice returns 503', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     fetchSpy.mockResolvedValueOnce(errorResponse(503, 'Service Unavailable'));
 
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
 
     expect(res.status).toBe(502);
     expect(res.body.error.code).toBe('venice_unavailable');
@@ -271,15 +261,13 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 10. Fetch reject → 502 with upstreamStatus:null ───────────────────────
   it('returns 502 venice_unavailable with upstreamStatus:null on transport failure', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
     const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
 
     expect(res.status).toBe(502);
     expect(res.body.error.code).toBe('venice_unavailable');
@@ -293,8 +281,8 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 11. Plaintext key never in response body / headers / logs ─────────────
   it('never exposes the plaintext Venice key in the response or logs', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 5, diem: 2000 }));
 
@@ -303,9 +291,7 @@ describe('GET /api/users/me/venice-account [X32]', () => {
     const logSpy = vi.spyOn(console, 'log');
     const infoSpy = vi.spyOn(console, 'info');
 
-    const res = await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    const res = await agent.get('/api/users/me/venice-account');
 
     expect(res.status).toBe(200);
 
@@ -329,14 +315,12 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 12. URL pin: hits /api_keys/rate_limits ────────────────────────────────
   it('hits Venice GET /api_keys/rate_limits (not /v1/models)', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 1, diem: 1 }));
 
-    await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    await agent.get('/api/users/me/venice-account');
 
     // The first fetch (index 0) was storeKey's validate-against-/models call.
     // The probe call (index 1) is what we're asserting.
@@ -349,17 +333,15 @@ describe('GET /api/users/me/venice-account [X32]', () => {
 
   // ── 13. Single decrypt per request ─────────────────────────────────────────
   it('decrypts the stored key exactly once per request', async () => {
-    const accessToken = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
-    await storeKey(app, accessToken, fetchSpy);
+    const agent = await registerAndLogin(app, NAME, USERNAME, PASSWORD);
+    await storeKey(agent, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(rateLimitsResponse({ usd: 1, diem: 1 }));
 
     const decryptSpy = vi.spyOn(contentCrypto, 'decryptWithDek');
     const beforeCount = decryptSpy.mock.calls.length;
 
-    await request(app)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${accessToken}`);
+    await agent.get('/api/users/me/venice-account');
 
     const decryptsForThisRequest = decryptSpy.mock.calls.length - beforeCount;
     expect(decryptsForThisRequest).toBe(1);
@@ -381,10 +363,10 @@ describe('GET /api/users/me/venice-account [X32]', () => {
     );
     testApp.use(globalErrorHandler);
 
-    const tokenA = await registerAndLogin(testApp, NAME, USERNAME, PASSWORD);
-    const tokenB = await registerAndLogin(testApp, NAME_B, USERNAME_B, PASSWORD_B);
-    await storeKey(testApp, tokenA, fetchSpy);
-    await storeKey(testApp, tokenB, fetchSpy);
+    const agentA = await registerAndLogin(testApp, NAME, USERNAME, PASSWORD);
+    const agentB = await registerAndLogin(testApp, NAME_B, USERNAME_B, PASSWORD_B);
+    await storeKey(agentA, fetchSpy);
+    await storeKey(agentB, fetchSpy);
 
     // 30 successes for user A + 1 for user B = 31 fetch slots needed.
     for (let i = 0; i < 31; i++) {
@@ -392,25 +374,19 @@ describe('GET /api/users/me/venice-account [X32]', () => {
     }
 
     for (let i = 0; i < 30; i++) {
-      const r = await request(testApp)
-        .get('/api/users/me/venice-account')
-        .set('Authorization', `Bearer ${tokenA}`);
+      const r = await agentA.get('/api/users/me/venice-account');
       expect(r.status).toBe(200);
     }
 
     // 31st request from user A should be rate-limited with the router's own code.
-    const blocked = await request(testApp)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${tokenA}`);
+    const blocked = await agentA.get('/api/users/me/venice-account');
     expect(blocked.status).toBe(429);
     expect(blocked.body.error.code).toBe('account_rate_limited');
     // CRITICAL: this is OUR limit (chatty client), distinct from `venice_rate_limited` (Venice's limit).
     expect(blocked.body.error.code).not.toBe('venice_rate_limited');
 
     // User B not blocked.
-    const userBRes = await request(testApp)
-      .get('/api/users/me/venice-account')
-      .set('Authorization', `Bearer ${tokenB}`);
+    const userBRes = await agentB.get('/api/users/me/venice-account');
     expect(userBRes.status).toBe(200);
   }, 15_000);
 });

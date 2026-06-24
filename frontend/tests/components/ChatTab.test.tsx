@@ -13,12 +13,7 @@ import { ChatTab } from '@/components/ChatTab';
 import { chatMessagesQueryKey, chatsQueryKey } from '@/hooks/useChat';
 import { modelsQueryKey } from '@/hooks/useModels';
 import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
-import {
-  apiStream,
-  resetApiClientForTests,
-  setAccessToken,
-  setUnauthorizedHandler,
-} from '@/lib/api';
+import { apiStream, resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 import { truncateAtWordBoundary } from '@/lib/strings';
 import { useChatDraftStore } from '@/store/chatDraft';
@@ -60,7 +55,6 @@ describe('ChatTab — smoke', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('test-token');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });
@@ -424,7 +418,6 @@ describe('ChatTab — useMessageActions integration', () => {
 
   beforeEach(() => {
     resetApiClientForTests();
-    setAccessToken('test-token');
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
     });

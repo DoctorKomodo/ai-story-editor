@@ -8,7 +8,7 @@ import { QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useDefaultPromptsQuery } from '@/hooks/useDefaultPrompts';
-import { resetApiClientForTests, setAccessToken } from '@/lib/api';
+import { resetApiClientForTests } from '@/lib/api';
 import { createQueryClient } from '@/lib/queryClient';
 
 const mockDefaults = {
@@ -31,7 +31,6 @@ function jsonResponse(body: unknown): Response {
 
 beforeEach(() => {
   resetApiClientForTests();
-  setAccessToken('test-token');
   vi.stubGlobal(
     'fetch',
     vi.fn(async (input: RequestInfo | URL) => {
