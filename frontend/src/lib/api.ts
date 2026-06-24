@@ -204,6 +204,19 @@ export async function apiStream(path: string, init?: ApiRequestInit): Promise<Re
   return doRequest(path, init);
 }
 
+// ─── Export / Import API client functions ────────────────────────────────────
+
+export async function fetchExportBlob(): Promise<{ blob: Blob; filename: string }> {
+  const res = await fetch(buildUrl('/users/me/export'), { credentials: 'include' });
+  if (!res.ok) {
+    if (res.status === 401) onUnauthorized?.();
+    throw new ApiError(res.status, 'Export failed');
+  }
+  const cd = res.headers.get('Content-Disposition') ?? '';
+  const match = cd.match(/filename="([^"]+)"/);
+  return { blob: await res.blob(), filename: match?.[1] ?? 'inkwell-backup.json' };
+}
+
 // ─── Chat API client functions ───────────────────────────────────────────────
 //
 // Thin wrappers over `api()` / `apiStream()` used by SC14+ scene-tab hooks.
