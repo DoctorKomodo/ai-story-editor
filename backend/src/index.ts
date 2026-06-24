@@ -11,6 +11,7 @@ import { requireAllowedOrigin } from './middleware/origin-check.middleware';
 import { createAiRouter } from './routes/ai.routes';
 import { createAiDefaultsRouter } from './routes/ai-defaults.routes';
 import { createAuthRouter } from './routes/auth.routes';
+import { createExportRouter } from './routes/backup.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
 import {
@@ -124,6 +125,7 @@ app.use('/api/auth', createAuthRouter());
 app.use('/api/users/me/venice-key', createVeniceKeyRouter());
 app.use('/api/users/me/venice-account', createVeniceAccountRouter());
 app.use('/api/users/me/settings', createUserSettingsRouter());
+app.use('/api/users/me/export', createExportRouter());
 app.use('/api/ai', createAiRouter());
 app.use('/api/ai', createAiDefaultsRouter());
 app.use('/api/stories', createStoriesRouter());
