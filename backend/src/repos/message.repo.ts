@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import type { Citation, Message, MessageAttachment, MessageRole } from 'story-editor-shared';
 import { MESSAGE_ENCRYPTED_FIELD_KEYS, MESSAGE_JSON_PAYLOAD_FIELD_KEYS } from 'story-editor-shared';
@@ -32,7 +32,7 @@ function resolveUserId(req: Request): string {
 }
 
 async function ensureChatOwned(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   chatId: string,
   userId: string,
 ): Promise<void> {
@@ -48,31 +48,31 @@ function serialiseJsonField(v: unknown | null | undefined): string | null {
 }
 
 export function createMessageRepo(req: Request, client: PrismaClient = defaultPrisma) {
-  async function create(input: MessageCreateInput) {
+  async function createWithin(tx: Prisma.TransactionClient, input: MessageCreateInput) {
     const userId = resolveUserId(req);
-    await ensureChatOwned(client, input.chatId, userId);
-    // Bump Chat.lastActivityAt atomically with the insert — ordering by recency depends on it.
-    const row = await client.$transaction(async (tx) => {
-      const created = await tx.message.create({
-        data: {
-          chatId: input.chatId,
-          role: input.role,
-          model: input.model ?? null,
-          tokens: input.tokens ?? null,
-          latencyMs: input.latencyMs ?? null,
-          ...writeEncrypted(req, 'content', input.content),
-          ...writeEncrypted(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
-          ...writeEncrypted(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
-        },
-      });
-      await tx.chat.update({
-        where: { id: input.chatId },
-        data: { lastActivityAt: new Date() },
-        select: { id: true },
-      });
-      return created;
+    await ensureChatOwned(tx, input.chatId, userId);
+    const created = await tx.message.create({
+      data: {
+        chatId: input.chatId,
+        role: input.role,
+        model: input.model ?? null,
+        tokens: input.tokens ?? null,
+        latencyMs: input.latencyMs ?? null,
+        ...writeEncrypted(req, 'content', input.content),
+        ...writeEncrypted(req, 'attachmentJson', serialiseJsonField(input.attachmentJson)),
+        ...writeEncrypted(req, 'citationsJson', serialiseJsonField(input.citationsJson ?? null)),
+      },
     });
-    return shape(row, req);
+    await tx.chat.update({
+      where: { id: input.chatId },
+      data: { lastActivityAt: new Date() },
+      select: { id: true },
+    });
+    return shape(created, req);
+  }
+
+  async function create(input: MessageCreateInput) {
+    return client.$transaction((tx) => createWithin(tx, input));
   }
 
   async function update(id: string, chatId: string, input: { content: string }) {
@@ -160,7 +160,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     return { count: result.count };
   }
 
-  return { create, update, findById, findManyForChat, countForChat, deleteAllAfter };
+  return { create, createWithin, update, findById, findManyForChat, countForChat, deleteAllAfter };
 }
 
 // The `as unknown as RepoMessage` cast lands at end-of-function (not at the

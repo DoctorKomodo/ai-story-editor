@@ -1,7 +1,7 @@
 # General Rules Digest (cross-cutting)
 
 > **Read by:** `/bd-execute` prepends this file to every implementer
-> + code-quality-reviewer dispatch, alongside whatever lane digests
+> + task-reviewer dispatch, alongside whatever lane digests
 > the touch-set resolves to. These rules apply regardless of where
 > the work lands — backend, frontend, shared, tests, scripts.
 >

@@ -1,6 +1,6 @@
 ---
 name: bd-execute
-description: Bridge from bd → superpowers' subagent-driven-development loop. Claims a bd issue, reads its plan link, picks rules digests by touch-set, then runs the implementer + spec-reviewer + code-quality-reviewer loop with project rules prepended at each dispatch. After the loop reports CLEAN, hands off to `/bd-close-reviewed`. User-invocable as `/bd-execute <BD_ID>`.
+description: Bridge from bd → superpowers' subagent-driven-development loop. Claims a bd issue, reads its plan link, picks rules digests by touch-set, then runs the implementer + task-reviewer loop with project rules prepended at each dispatch, plus a final whole-branch review. After the loop is clean, hands off to `/bd-close-reviewed`. User-invocable as `/bd-execute <BD_ID>`.
 ---
 
 # bd-execute
@@ -8,6 +8,8 @@ description: Bridge from bd → superpowers' subagent-driven-development loop. C
 The bridge between bd and the superpowers `subagent-driven-development` loop. Owns project-rule injection at dispatch time per `docs/superpowers-injection-spike.md` (Phase 0).
 
 This skill is the **controller**: when invoked, you (the main session) drive the loop directly using superpowers' prompt templates as content, with project digests prepended. Do **not** invoke `superpowers:subagent-driven-development` separately — that would create two competing loops.
+
+> **Targets superpowers 6.x** (single merged `task-reviewer`, file-based task-brief / review-package handoffs, a per-task progress ledger, and a final whole-branch review). If the installed superpowers major changes again and the templates or scripts named below don't resolve, **stop and surface the drift to the user** (see "Read superpowers' templates → Structure validation"). Do not improvise a substitution.
 
 ## Inputs
 
@@ -30,36 +32,54 @@ Run `bd show <id> --json` and confirm:
 
 Extract the `plan: <path>` line from `.notes`. If absent, stop and tell the user — see "When the issue has no plan link".
 
+**Resume check (compaction-safe).** Read the progress ledger if it exists:
+`cat "$(git rev-parse --show-toplevel)/.superpowers/sdd/progress.md"`. Any task the ledger marks complete is DONE — do **not** re-dispatch it; resume at the first task not marked complete. The commits the ledger names exist in `git log` even when your context no longer remembers creating them; after a compaction trust the ledger and `git log` over recollection.
+
 ### 1. Read the plan
 
 Read the plan file at `<path>`. Identify:
 
-- **Touch-set** — the list of files the plan creates or modifies. Plans authored via `superpowers:writing-plans` typically have a "Files to Create / Modify" or "File Map" section. Extract those paths.
-- **Tasks** — the plan's task list (numbered or otherwise). Capture the full text of each task verbatim — implementers must not have to read the plan file. While extracting, also look for a `model: <name>` line at the top of each task body; record it as that task's per-task model override (consumed in step 6, see "Model selection").
+- **Touch-set** — the list of files the plan creates or modifies. Plans authored via `superpowers:writing-plans` have a "File Structure" / "Files to Create / Modify" section. Extract those paths.
+- **Tasks** — the plan's numbered task list. You do **not** paste task text into dispatches in 6.x — the `task-brief` script extracts each task to a file (step 6). But you still read the plan once here to learn the task count, the per-task `model:` overrides (a `model: <name>` line at the top of a task body — consumed in "Model selection"), and the **Global Constraints** section (handed to the reviewer verbatim in step 7).
 
-### 2. Pick rules digests
+### 2. Pick rules digests and assemble the project-rules file
 
-Read `docs/agent-rules/index.md`. For each path in the touch-set, walk the mapping table top-to-bottom and union the matched digest names. The result is a deduplicated list of digest filenames (e.g. `backend.md`, `repo-boundary.md`).
+Read `docs/agent-rules/index.md`. For each path in the touch-set, walk the mapping table top-to-bottom and **union** the matched digest names (a cross-boundary plan gets all matched digests, not the first match). The result is a deduplicated list of digest filenames (e.g. `general.md`, `backend.md`, `repo-boundary.md`, `frontend.md`).
 
-Read each matched digest file under `docs/agent-rules/` into memory. They are the **`<RULES_BLOCK>`** that gets injected into every dispatch.
+First resolve the active superpowers version and the SDD paths (used here and throughout the loop), then ensure the workspace exists and assemble the unioned digests into one file there:
 
-If a digest filename listed in `index.md` doesn't resolve to a readable file (typo in the index, file moved without index update, etc.): print a one-line warning that names the missing digest and proceed with the digests that *did* resolve. Do not stall the loop — fail visible, not silent. Surface the warning in your end-of-task summary so the user can fix the index.
+```bash
+SP=~/.claude/plugins/cache/claude-plugins-official/superpowers
+VER="$(ls -1 "$SP" | sort -V | tail -1)"   # highest installed semver = the active version
+SDD="$SP/$VER/skills/subagent-driven-development"
+WS="$("$SDD/scripts/sdd-workspace")"        # <repo-root>/.superpowers/sdd, self-ignoring
+cat docs/agent-rules/general.md docs/agent-rules/backend.md … > "$WS/project-rules.md"
+```
 
-If the touch-set is empty or doesn't match any glob, dispatch with no `<RULES_BLOCK>` and surface that as a concern in your end-of-task summary — usually it means the plan's file map is missing or the index needs an entry.
+If `$SP` doesn't exist (a different install method), don't guess — see step 3's "Plugin path fallback". `$WS` is `<repo-root>/.superpowers/sdd` with a self-ignoring `.gitignore` (the `sdd-workspace` script writes it) — so `project-rules.md`, task briefs, reports, review packages, and the ledger all stay out of `git status`. The assembled `project-rules.md` is the **`<RULES_BLOCK>`** handed (as a path) to the implementer and the task-reviewer. Keeping it in a file — not pasted inline — keeps the controller's context lean across dispatches.
+
+If a digest filename listed in `index.md` doesn't resolve to a readable file: print a one-line warning naming the missing digest, omit it from the concatenation, and proceed with the digests that *did* resolve. Surface the warning in your end-of-task summary.
+
+If the touch-set is empty or matches no glob, dispatch with no project-rules file and surface that as a concern — usually it means the plan's file map is missing or the index needs an entry.
 
 ### 3. Read superpowers' templates
 
 Read these files fresh (the bridge does not fork them — plugin upgrades roll forward automatically):
 
-- `~/.claude/plugins/cache/claude-plugins-official/superpowers/<version>/skills/subagent-driven-development/implementer-prompt.md`
-- `~/.claude/plugins/cache/claude-plugins-official/superpowers/<version>/skills/subagent-driven-development/spec-reviewer-prompt.md`
-- `~/.claude/plugins/cache/claude-plugins-official/superpowers/<version>/skills/subagent-driven-development/code-quality-reviewer-prompt.md`
+- `$SDD/implementer-prompt.md`
+- `$SDD/task-reviewer-prompt.md`
+- `$SP/$VER/skills/requesting-code-review/code-reviewer.md` (final whole-branch review, step 10)
 
-Discover `<version>` via `ls ~/.claude/plugins/cache/claude-plugins-official/superpowers/` (usually one entry, e.g. `5.1.0`).
+`$SP`, `$VER`, and `$SDD` were resolved in step 2. `$VER` is the highest installed semver — the version Claude Code loads when more than one is present (cross-check: the path any already-loaded superpowers skill reports in this session is the active version). Ignore older sibling versions.
 
 **Plugin path fallback.** If the `~/.claude/plugins/cache/claude-plugins-official/superpowers/` directory doesn't exist (different install method — user-config plugin, project-vendored, or a future plugin manager that picks a different location), do **not** guess or fork. Stop and ask the user where superpowers is installed; record the answer in this skill so the next dispatch finds it. The bridge depends on these templates being readable; bypassing them by inlining a copy is forbidden (see Forbidden list below).
 
-**Placeholder-name validation.** Once the templates are read, confirm that the placeholder strings you intend to substitute (e.g. `[FULL TEXT of task from plan - paste it here]`, `[Scene-setting...]`, `Work from: [directory]`) actually appear in the templates verbatim. If a plugin upgrade has renamed them, the substitution would silently produce malformed prompts — stop and surface the rename to the user instead.
+**Structure validation.** Once the templates are read, confirm the 6.x shape holds:
+- `implementer-prompt.md` exists and contains the placeholders `[BRIEF_FILE]`, `[Scene-setting`, `Work from: [directory]`, and `[REPORT_FILE]`.
+- `task-reviewer-prompt.md` exists (a **single** merged reviewer returning both spec-compliance and code-quality verdicts) and contains `[BRIEF_FILE]`, `[GLOBAL_CONSTRAINTS]`, `[REPORT_FILE]`, `[BASE_SHA]`, `[HEAD_SHA]`, `[DIFF_FILE]`.
+- The helper scripts `scripts/task-brief`, `scripts/review-package`, and `scripts/sdd-workspace` exist and are executable.
+
+If any of these is renamed, missing, or split/merged differently (e.g. a future major reverts to two separate reviewer files, or renames a placeholder), the substitutions below would silently produce malformed prompts — **stop and surface the drift to the user** rather than improvising. This skill is the place to fix the mapping when that happens.
 
 ### 4. Claim the issue
 
@@ -69,90 +89,129 @@ bd update <id> --claim
 
 If `--claim` fails because someone else claimed it, stop and tell the user.
 
-### 5. Track tasks locally
+### 5. Track tasks locally + open the ledger
 
-Use TodoWrite to write down each task from the plan as a todo item. (This is one of the few cases where TodoWrite is correct in this project — it's superpowers' per-task ledger during execution. The bd issue is the cross-session ledger; the TodoWrite list is the within-session per-task ledger. Do **not** create per-task bd issues.)
+Use TodoWrite to write each task from the plan as a todo item. (This is one of the few cases where TodoWrite is correct in this project — it's the within-session per-task ledger. The bd issue is the cross-session ledger. Do **not** create per-task bd issues.)
+
+TodoWrite does **not** survive compaction. The durable record is the progress ledger at `$WS/progress.md`. When a task's review comes back clean (step 9), append one line:
+
+```
+Task N: complete (commits <base7>..<head7>, review clean)
+```
+
+`git clean -fdx` destroys the ledger (git-ignored scratch); recover from `git log` if that happens.
 
 ### 6. For each task: dispatch implementer
 
-Construct the implementer prompt by composing:
+**a. Write the task brief to a file** (so the task text never passes through your context):
 
-```
-## Project Rules (from <list of digest filenames>)
-
-<contents of all matched digest files, separated by `---`>
-
----
-
-<the rest of implementer-prompt.md template, with substitutions:>
-- [FULL TEXT of task from plan] → the verbatim task text
-- [Scene-setting...] → a one-paragraph "where this fits, what it depends on" framing pulled from the plan's introduction
-- Work from: [directory] → the repo root absolute path
+```bash
+"$SDD/scripts/task-brief" <plan-path> <N>        # prints e.g. .superpowers/sdd/task-N-brief.md
 ```
 
-Dispatch via the Agent tool, `subagent_type: general-purpose`, **`model: "sonnet"`** by default (or per-task override — see "Model selection" below), with the composed prompt. (Do not pass the plan file path to the subagent — give them the extracted text directly. Subagents do not read the plan file. Reading the plan file would re-cost the entire plan tokens per dispatch and pull in tasks the subagent shouldn't be touching.)
+(`$SDD` = the version's `subagent-driven-development` dir.) Record the current `HEAD` SHA as this task's **BASE** before dispatching — you need it for the review package, and `HEAD~1` would silently drop all but the last commit of a multi-commit task.
+
+**b. Compose the dispatch** from `implementer-prompt.md`'s prompt body, substituting:
+- `[BRIEF_FILE]` → the brief path from (a).
+- `[Scene-setting…]` → one paragraph: where this task fits, what earlier tasks it depends on, and the **interfaces/decisions from earlier tasks** the brief can't know.
+- `Work from: [directory]` → the repo-root absolute path.
+- `[REPORT_FILE]` → `$WS/task-N-report.md`.
+
+Inject the project rules near the top of the prompt (before `## Task Description`):
+
+```
+## Project Rules
+
+Read your project rules first: <$WS/project-rules.md>. They are binding
+implementation rules for this codebase — follow them as strictly as the
+task brief. (Omit this block only if step 2 produced no project-rules file.)
+```
+
+Dispatch via the Agent tool, `subagent_type: general-purpose`, with an **explicit `model:`** (default `"sonnet"`, or the per-task override from the plan — see "Model selection"). Hand the subagent files, not pasted bulk: the dispatch prompt carries scene-setting + paths, not the task text or the digests.
 
 #### Implementer status protocol
 
-The implementer's final summary will declare one of four statuses (per superpowers' `subagent-driven-development` SKILL.md). Handle each:
+The implementer's final message declares one of four statuses (per superpowers' `subagent-driven-development` SKILL.md). Handle each:
 
-- **`DONE`** — implementation complete, all assertions / TDD steps passed. Proceed to step 7 (spec reviewer).
-- **`DONE_WITH_CONCERNS`** — implementation complete but the implementer flagged something for human review (e.g. a public API ambiguity, a follow-up they noticed but didn't fix). Read the concerns. If they are tractable adjustments to *this* task: re-dispatch the implementer with the fix asked for. If they are out-of-scope follow-ups: capture them as TODOs in your end-of-loop summary and proceed to step 7. Do not silently drop concerns.
-- **`NEEDS_CONTEXT`** — implementer couldn't proceed without additional information (e.g. an undocumented API shape, a missing fixture). Treat this as your problem, not the implementer's: gather the context (read the relevant files, query Context7 MCP for docs, check sibling code) and re-dispatch with the additional context appended to the original prompt. Do **not** ask the user unless the context truly isn't recoverable from the repo.
-- **`BLOCKED`** — implementer hit a hard stop (e.g. an environmental issue, a contradiction in the plan, a missing dependency). Stop the loop, surface the blocker to the user with the full implementer summary, and do **not** call `bd close` or proceed to the next task. The bd issue stays claimed until you (or the user) resolve the blocker and resume.
+- **`DONE`** — implementation complete, tests pass. Proceed to step 7 (task reviewer).
+- **`DONE_WITH_CONCERNS`** — complete but the implementer flagged doubts. Read them. If they're about correctness or scope: re-dispatch the implementer to address them before review. If they're observations (e.g. "this file is getting large"): note them in the ledger/summary and proceed to step 7. Do not silently drop concerns.
+- **`NEEDS_CONTEXT`** — the implementer needs info that wasn't provided. Treat it as your problem: gather the context (read the relevant files, query Context7 MCP for docs, check sibling code) and re-dispatch with the missing context appended. Do **not** ask the user unless the context truly isn't recoverable from the repo.
+- **`BLOCKED`** — a hard stop (environmental issue, a contradiction in the plan, a missing dependency). Assess: a context problem → add context + re-dispatch same model; needs more reasoning → re-dispatch a more capable model; task too large → split it; plan itself is wrong → stop the loop and escalate to the user with the full implementer summary. Do **not** `bd close` or advance. The bd issue stays claimed until resolved.
 
-If you're unsure which status the implementer reported, re-read superpowers' `subagent-driven-development/SKILL.md` once for the canonical definitions — the bridge defers to it.
+Never force the same model to retry an escalation without changing something.
 
-### 7. For each task: dispatch spec reviewer
+### 7. For each task: dispatch the task reviewer (spec + quality, one pass)
 
-After the implementer reports DONE (or DONE_WITH_CONCERNS resolved):
+After the implementer reports DONE (or DONE_WITH_CONCERNS resolved), generate the review package and dispatch **one** reviewer that returns both a spec-compliance verdict and a code-quality verdict.
 
-Compose the spec-reviewer prompt by reading the spec-reviewer template, substituting:
-- The task text
-- Git SHAs of the implementer's commits for this task
+**a. Generate the review package** from the recorded BASE (not `HEAD~1`):
 
-Dispatch via Agent tool, `subagent_type: general-purpose`, **`model: "sonnet"`** (always — reviewers don't synthesise; see "Model selection"). **No project rules digest is prepended to the spec reviewer** — its job is to verify the implementation matches the *spec*, not the project's general rules.
-
-If the spec reviewer finds gaps: re-dispatch the implementer (same subagent type) with the gaps as fix instructions. Loop until spec-clean.
-
-### 8. For each task: dispatch code-quality reviewer
-
-After spec-clean, compose the code-quality-reviewer prompt with the **same** `<RULES_BLOCK>` prepended as the implementer (so the reviewer enforces the same project rules the implementer was held to):
-
-```
-## Project Rules (from <list of digest filenames>)
-
-<contents of matched digests>
-
----
-
-<rest of code-quality-reviewer template>
+```bash
+"$SDD/scripts/review-package" <BASE> <HEAD>      # prints the unique .diff path it wrote
 ```
 
-Dispatch via Agent tool, `subagent_type: general-purpose`, **`model: "sonnet"`** (always — same rationale as the spec reviewer; see "Model selection").
+This writes the commit list + stat summary + `-U10` diff to a file. It never enters your context.
 
-If the code-quality reviewer finds issues: re-dispatch the implementer with fix instructions (using the same `model:` parameter the original implementer dispatch used). Loop until quality-clean.
+**b. Compose the dispatch** from `task-reviewer-prompt.md`, substituting:
+- `[BRIEF_FILE]` → the same brief file the implementer used.
+- `[GLOBAL_CONSTRAINTS]` → the plan's **Global Constraints** section, copied **verbatim** (exact values, formats, and stated relationships between components). This is the reviewer's attention lens — do not paraphrase, and do not pre-judge findings or tell the reviewer what not to flag.
+- `[REPORT_FILE]` → the implementer's report file.
+- `[BASE_SHA]` / `[HEAD_SHA]` → the SHAs.
+- `[DIFF_FILE]` → the review-package path from (a).
 
-### 9. Mark task complete in TodoWrite, move to next task
+Inject the **same project-rules file pointer** as the implementer (the merged reviewer now owns the code-quality half, so it enforces the same project rules the implementer was held to):
 
-Repeat steps 6–9 for each remaining task. Do not pause between tasks unless an implementer reports BLOCKED you cannot resolve, or all tasks are done.
+```
+## Project Rules
 
-### 10. After all tasks: hand off to close-reviewed
+Read the project rules: <$WS/project-rules.md>. Treat a violation of these
+rules as a code-quality finding at the severity the rule implies.
+```
 
-After the last task reports CLEAN from both reviewers, invoke:
+Dispatch via the Agent tool, `subagent_type: general-purpose`, with an **explicit `model:`** (default `"sonnet"` — see "Model selection").
+
+**c. Act on the verdicts:**
+- **Spec ❌ or Critical/Important quality findings** → dispatch **one** fix subagent (same task, same model as the implementer dispatch) with the complete findings list — not one fixer per finding. The fix subagent re-runs the tests covering its change and appends results to the same report file; confirm the report contains the command + output before re-reviewing. Then regenerate the review package (fresh range) and re-dispatch the reviewer. Loop until spec ✅ **and** no open Critical/Important.
+- **⚠️ "Cannot verify from diff"** items → you resolve each yourself (you hold the cross-task context the reviewer lacks). A confirmed gap is a failed spec review — send it back and re-review.
+- **Minor findings** → record them in the ledger and carry the list into the final whole-branch review (step 10) for triage. Don't silently discard them.
+- **Plan-mandated finding** (the reviewer flags something the plan's text explicitly requires) → that's the user's decision, like any plan contradiction. Present the finding beside the plan text and ask which governs. Don't dispatch a fix that contradicts the plan without asking, and don't dismiss the finding because the plan mandates it.
+
+### 8. (folded into step 7)
+
+The 6.x reviewer returns spec compliance **and** code quality in one pass — there is no separate code-quality dispatch. Both verdicts are required; a report missing either is not acceptable.
+
+### 9. Mark task complete, move to next task
+
+Mark the TodoWrite item complete **and** append the `Task N: complete (commits <base7>..<head7>, review clean)` line to `$WS/progress.md` in the same step. Repeat steps 6–9 for each remaining task. Do not pause to check in between tasks — execute the whole plan. The only reasons to stop are an unresolvable BLOCKED, a plan-mandated finding needing the user's call, or all tasks done.
+
+### 10. After all tasks: final whole-branch review
+
+The per-task reviews are task-scoped gates; a cross-task / whole-branch review runs once at the end and catches integration issues no single task's diff shows.
+
+```bash
+"$SDD/scripts/review-package" "$(git merge-base main HEAD)" HEAD   # whole-branch package
+```
+
+Dispatch the final reviewer from `requesting-code-review/code-reviewer.md`, `subagent_type: general-purpose`, on the **most capable available model** (Opus — a whole-branch review is a judgment task, per superpowers' Model Selection). Prepend the same project-rules file pointer, hand it the whole-branch package path, and include the **Minor findings list** accumulated in the ledger so it can triage which must be fixed before close.
+
+If it returns Critical/Important findings: dispatch **one** fix subagent with the complete list, re-run covering tests, then re-review. Loop until clean.
+
+### 11. Hand off to close-reviewed
+
+After the final review is clean, invoke:
 
 ```
 /bd-close-reviewed <id>
 ```
 
-That skill runs typecheck, the path-matched surface reviewer fan-out (`security-reviewer`, `repo-boundary-reviewer`), and the bd close. **You do not run `bd close` directly from this skill.**
+That skill runs typecheck, the path-matched **surface**-reviewer fan-out (`security-reviewer`, `repo-boundary-reviewer` — narrower and project-tuned, complementary to the broad final review above), the verify line, and the bd close. **You do not run `bd close` directly from this skill**, and `/bd-close-reviewed` — not superpowers' `finishing-a-development-branch` — is this project's terminal gate.
 
 ## When the issue has no plan link
 
 Stop. Tell the user the issue has no plan and suggest the path forward:
 
-- If the work needs design discussion → `superpowers:brainstorming` first, then `superpowers:writing-plans` (which writes a plan to `docs/superpowers/plans/YYYY-MM-DD-*.md`), then `/bd-link-plan <id> <plan-path>`, then re-invoke `/bd-execute <id>`.
-- If the bd issue is genuinely trivial and a plan would be theatre → still write a one-paragraph "trivial:" note explaining why, then either lift the trivial path into the bd notes as `plan: trivial` plus an inline rationale, or pick a different workflow. Per project convention, every bd issue goes through brainstorm → plan → execute via superpowers, but the plan can be terse.
+- If the work needs design discussion → `superpowers:brainstorming` first, then `superpowers:writing-plans` (which writes a plan to `docs/superpowers/plans/YYYY-MM-DD-*.md`), then `scripts/bd-link-plan.sh <id> <plan-path>`, then re-invoke `/bd-execute <id>`.
+- If the bd issue is genuinely trivial and a plan would be theatre → still write a one-paragraph "trivial:" note explaining why, then lift it into the bd notes as `plan: trivial` plus an inline rationale. Per project convention, every bd issue goes through brainstorm → plan → execute, but the plan can be terse.
 
 Do **not** make up a plan inline and proceed — that defeats the brainstorm gate.
 
@@ -160,35 +219,29 @@ Do **not** make up a plan inline and proceed — that defeats the brainstorm gat
 
 Stop. The brainstorming-split convention puts the plan on each child sub-issue, not on the parent. If the parent has children with `blocked-by` edges and no plan of its own, `/bd-execute` should be invoked on each **child** in turn (via `bd ready` to find the unblocked one), not on the parent. The parent closes automatically after every child closes.
 
-## Diff review (after the loop)
+## Pre-flight plan review
 
-Once `/bd-close-reviewed` succeeds:
+Before dispatching Task 1, scan the plan once for conflicts: tasks that contradict each other or the Global Constraints, and anything the plan explicitly mandates that the review rubric treats as a defect (a test that asserts nothing, verbatim duplication of a logic block). Present everything you find as **one batched question** — each finding beside the plan text that mandates it, asking which governs — before execution begins, not one interrupt per discovery. If the scan is clean, proceed without comment.
 
-1. Read `git diff <merge-base>...HEAD`.
-2. Compare to the implementer's status summary. Look for:
-   - Claimed-but-missing changes.
-   - Unintended churn outside the touch-set.
-   - Debug logging left behind.
-   - Plaintext leaks (decrypted narrative content in new logs / response shapes — see `docs/agent-rules/repo-boundary.md`).
-3. This is a sanity check, not a re-review. If something stands out, decide whether to fix in this PR or file a follow-up bd issue.
+## Diff sanity check (after the loop)
+
+The final whole-branch review (step 10) and `/bd-close-reviewed` are the real gates and already read the whole-branch diff — so no separate controller re-review is needed. The one thing to confirm yourself, because it's cheap and project-critical: that the final reviewer was handed a project-rules file **including `repo-boundary.md`** whenever the touch-set is narrative-adjacent (that digest carries the no-plaintext-leak invariant). If the touch-set produced no project-rules file, or `repo-boundary.md` wasn't in it for a narrative change, skim `git diff <merge-base>...HEAD` once for decrypted narrative content in new logs / response shapes before handing off.
 
 ## Model selection
 
-Subagent dispatches in this skill default to **Sonnet** (`model: "sonnet"`):
+Always specify `model:` explicitly on every dispatch — an omitted model inherits the session's model (often the most expensive), which silently defeats this section.
 
-- **Implementer** — Sonnet by default. The work is structured: the plan + rules digest spell out exactly what to do, and Sonnet executes structured TDD-shaped work well. Per-task override (see below) lifts to Opus when the task is genuinely synthesis-heavy.
-- **Spec reviewer** — Sonnet, **always**. Mechanical comparison: does the diff implement what the task said? No synthesis required.
-- **Code-quality reviewer** — Sonnet, **always**. Same shape: check the diff against the prepended rules digest.
+- **Implementer** — default **Sonnet**. The plan + project rules spell out the work; Sonnet executes structured TDD-shaped tasks well. When a task's plan text contains the complete code to write, the work is transcription + testing — Sonnet is still the floor (don't drop to Haiku; it takes more turns on multi-step work and the turn count outweighs the token saving). Per-task lift to Opus via a plan `model: opus` line (below).
+- **Task reviewer** — **Sonnet**, scaled to the diff: a small mechanical diff stays on Sonnet; a subtle concurrency/crypto change can justify Opus. Sonnet is the default.
+- **Final whole-branch reviewer (step 10)** — **Opus** (most capable available). A whole-branch review is a judgment task.
 
-Surface reviewers (`security-reviewer`, `repo-boundary-reviewer`) dispatched by `/bd-close-reviewed` already pin `model: sonnet` in their agent frontmatter (`.claude/agents/`). The bridge does not need to override.
+Surface reviewers (`security-reviewer`, `repo-boundary-reviewer`) dispatched by `/bd-close-reviewed` pin their own model in agent frontmatter (`.claude/agents/`) — the bridge doesn't override them.
 
-`subagent_type: general-purpose` has **no agent-definition file**, so without an explicit `model:` parameter the dispatched agent inherits the parent session's model (typically Opus). That's the failure mode this section closes.
+`subagent_type: general-purpose` has **no agent-definition file**, so without an explicit `model:` it inherits the parent session's model. That's the failure mode this section closes.
 
 ### When to opt the implementer up to Opus
 
-A task warrants Opus when *what to build* is the hard part rather than *how to express the build*: non-obvious algorithm design, hairy cross-file refactors with many invariants in flight, novel API design, or a task whose "Context" framing genuinely needs cross-domain reasoning to interpret.
-
-Signal it in the **plan**, not in the bridge: add a `model: opus` line to the task header before any other body text, e.g.
+A task warrants Opus when *what to build* is the hard part rather than *how to express the build*: non-obvious algorithm design, hairy cross-file refactors with many invariants in flight, novel API design, or a task whose framing genuinely needs cross-domain reasoning. Signal it in the **plan**, not the bridge — add a `model: opus` line to the task header before any other body text:
 
 ```
 ### Task 4: redesign chapter export pipeline
@@ -198,28 +251,22 @@ model: opus
 [task body…]
 ```
 
-When the bridge reads the plan in step 1 and extracts each task's text, it also looks for a `model: <name>` line at the top of the task body. If present, that value is used as the `model:` parameter for that task's implementer dispatch (and any subsequent re-dispatch on review failure). If absent, Sonnet is the default.
-
-The reviewer dispatches stay on Sonnet regardless — their work shape doesn't change with task difficulty. Don't speculatively opt up: Opus on a Sonnet-shaped task is wasted budget without measurably better output.
-
-### When to consider Haiku
-
-For exceptionally mechanical tasks (formatting, single-file rename, simple deletion) the spec + code-quality reviewer dispatches *could* drop to Haiku. Don't. Default Sonnet — Haiku misses subtle code-quality issues often enough that the savings rarely repay the missed catches. Reconsider only if Phase 2's cost data shows reviewer dispatches as the dominant line item.
-
-### Cost rationale
-
-The pre-fix default (no `model:` parameter → inherits parent → Opus on a typical session) ran every dispatch on Opus. The Sonnet defaults above cut the spec + code-quality reviewer cost roughly 2–3× per task with no expected loss in catch rate. Implementer cost depends on task mix; Sonnet handles most tasks well, Opus is the exception, not the default.
+When step 1 reads the plan it records that override and uses it for that task's implementer dispatch (and any fix re-dispatch). Absent the line, Sonnet. Don't speculatively opt up: Opus on a Sonnet-shaped task is wasted budget.
 
 ## Forbidden
 
-- Skipping the spec reviewer or code-quality reviewer for any task.
-- Forking superpowers' template files (read them fresh each dispatch).
-- Hardcoding the `<RULES_BLOCK>` into the bridge skill's content (always read from `docs/agent-rules/`).
+- Skipping the task review, or accepting a report missing either verdict (spec compliance **and** code quality are both required from the single 6.x reviewer).
+- Skipping the final whole-branch review (step 10) before handing off.
+- Forking superpowers' template files (read them fresh each dispatch); inlining a hand-copied template instead of reading the installed one.
+- Hardcoding the `<RULES_BLOCK>` into the bridge skill's content (always assemble it from `docs/agent-rules/`).
+- Dispatching a task reviewer without a diff file — generate it with `scripts/review-package <BASE> <HEAD>` first, using the recorded per-task BASE (never `HEAD~1`).
+- Pasting task text or the digests inline into a dispatch when a file handoff exists — hand briefs, reports, diffs, and the project-rules file as paths.
+- Pre-judging a reviewer's findings ("treat as Minor at most", "don't flag X") — let the reviewer raise it and adjudicate in the loop.
 - Calling `bd close` directly from this skill (always go through `/bd-close-reviewed`).
 - Dispatching multiple implementer subagents in parallel for the same plan (conflicts; superpowers' Red Flags rule).
-- Letting the implementer self-review replace the two-stage review (both stages run, in order, every task).
-- Dispatching any subagent without an explicit `model:` parameter (inherits Opus by default; see "Model selection").
+- Dispatching any subagent without an explicit `model:` parameter.
+- Re-dispatching a task the progress ledger already marks complete (check the ledger + `git log` after any compaction or resume).
 
 ## Verification
 
-This skill is intentionally not directly verifiable by an automated `verify:` line — its correctness is observed end-to-end during the first ~10 real bd issues that flow through it (per Phase 1 → Phase 2 gate in `docs/multi-agent-workflow-plan.md`). For a Phase-1 smoke test, see Phase 1 verification step 1 in that plan: hand-craft a no-op task plan, run `/bd-execute`, and confirm the digest reaches the implementer's effective prompt.
+This skill is intentionally not directly verifiable by an automated `verify:` line — its correctness is observed end-to-end across the bd issues that flow through it. For a smoke test, hand-craft a no-op single-task plan, run `/bd-execute`, and confirm: (1) the project-rules file is assembled and its path reaches the implementer dispatch; (2) the task-brief and review-package files are written under `.superpowers/sdd/`; (3) the task reviewer returns both verdicts; (4) the progress ledger gains a `Task 1: complete …` line.

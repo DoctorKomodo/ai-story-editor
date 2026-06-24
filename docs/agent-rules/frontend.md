@@ -1,7 +1,7 @@
 # Frontend Rules Digest
 
 > **Read by:** `/bd-execute` prepends this file to the implementer +
-> code-quality-reviewer prompts when the plan's touch-set includes
+> task-reviewer prompts when the plan's touch-set includes
 > frontend code (per `docs/agent-rules/index.md`). Keep prose tight,
 > imperative, and self-contained — the implementer/reviewer subagent
 > will not read other docs at dispatch time.

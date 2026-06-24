@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
@@ -270,6 +271,26 @@ async function setupChatFixture() {
   const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
   return { req: user.req, chatId: chat.id as string };
 }
+
+describe('messageRepo.createWithin — tx-aware insert (story-editor-wy6)', () => {
+  beforeEach(resetAllTables);
+  afterEach(resetAllTables);
+
+  it('createWithin inserts inside an outer transaction without nesting $transaction', async () => {
+    const { req, chatId } = await setupChatFixture();
+    const created = await prisma.$transaction(async (tx) => {
+      const repo = createMessageRepo(req);
+      return repo.createWithin(tx as unknown as Prisma.TransactionClient, {
+        chatId,
+        role: 'user',
+        content: 'inside tx',
+      });
+    });
+    expect(created.content).toBe('inside tx');
+    const back = await createMessageRepo(req).findById(created.id as string);
+    expect(back?.content).toBe('inside tx');
+  });
+});
 
 describe('messageRepo.create — Chat.lastActivityAt bump (story-editor-loj)', () => {
   beforeEach(resetAllTables);
