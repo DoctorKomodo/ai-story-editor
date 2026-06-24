@@ -138,7 +138,7 @@ describe('SettingsModal (F43)', () => {
     expect(screen.getByTestId('settings-close')).toBeInTheDocument();
   });
 
-  it('renders five tabs in order with Venice active by default', () => {
+  it('renders six tabs in order with Venice active by default', () => {
     vi.stubGlobal(
       'fetch',
       routeFetch({
@@ -155,6 +155,7 @@ describe('SettingsModal (F43)', () => {
       'Prompts',
       'Writing',
       'Appearance',
+      'Backup',
     ]);
     expect(screen.getByTestId('settings-tab-venice')).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByTestId('settings-panel-venice')).toBeInTheDocument();

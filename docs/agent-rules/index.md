@@ -1,7 +1,7 @@
 # Agent-Rules Index — Path-Glob → Digest Mapping
 
 > **Read by:** `/bd-execute` consults this file to pick which digest(s)
-> to prepend to the implementer + code-quality-reviewer prompts, based
+> to prepend to the implementer + task-reviewer prompts, based
 > on the plan's touch-set.
 >
 > **Resolution:** match each plan path against the globs below

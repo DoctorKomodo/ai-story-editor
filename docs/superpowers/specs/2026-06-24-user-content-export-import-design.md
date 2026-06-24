@@ -34,10 +34,11 @@ The single most important fit: **export and import are "just another
 authenticated request."** No new key handling is required.
 
 - The request-scoped DEK is attached by `requireAuth`
-  (`backend/src/middleware/auth.middleware.ts:79`,
-  `attachDekToRequest`) for every authenticated request, sourced from the
-  Option-B session store. The repo layer reads it via the request-scoped
-  `WeakMap` in `content-crypto.service.ts:337`.
+  (`backend/src/middleware/auth.middleware.ts:47`, `attachDekToRequest`) for
+  every authenticated request. `requireAuth` resolves the caller from the
+  opaque httpOnly **session cookie** (`auth.middleware.ts:31`) and pulls the
+  DEK out of the in-memory session store. The repo layer reads it via the
+  request-scoped `WeakMap` in `content-crypto.service.ts:337`.
 - Therefore **export = decrypt-on-read through the repos**, and **import =
   encrypt-on-write through the repos**, using the caller's own DEK. The
   existing `projectDecrypted` / `writeEncrypted` machinery
@@ -120,10 +121,10 @@ Notes:
 
 ### What is NOT in the export (v1)
 
-- **`User.settingsJson`** (prompt overrides, model params). It's user
-  configuration, not narrative content, and it's not encrypted. Candidate for
-  a v2 `"settings"` top-level key; explicitly out of v1 to keep the surface
-  tight. Flagged as an open question below.
+- **`User.settingsJson`** (prompt overrides, model params). **Decided: out of
+  v1** — it's user configuration, not narrative content, so v1 stays
+  narrative-only to keep the surface tight. Reserved as a v2 `"settings"`
+  top-level key if "complete account migration" becomes a goal.
 - **Venice API key**, **password / recovery wraps**, **sessions**,
   **refresh tokens**. Key material and auth state — never exported. (The
   operator-level `APP_ENCRYPTION_KEY` backup story is unrelated and unchanged.)
@@ -132,9 +133,19 @@ Notes:
 
 Both endpoints mount next to the existing `/api/users/me/*` routers in
 `backend/src/index.ts` (alongside `venice-key`, `settings`). Both require
-`requireAuth`. Bearer-auth only (no cookies) → no `requireAllowedOrigin`
-needed, consistent with the other mutating Bearer routes (e.g. `POST
-/api/stories`).
+`requireAuth`.
+
+**Auth & CSRF (cookie-session model).** Auth is the opaque httpOnly session
+cookie (PR #140) — there is no Bearer/JWT path. Both endpoints therefore
+inherit the **global** `requireAllowedOrigin` Origin/Referer check mounted at
+`index.ts:95` (`app.use('/api', requireAllowedOrigin(...))`). For the
+destructive `POST import` that global check **is** the CSRF defense, and it is
+sufficient — no per-route CSRF token is needed — precisely because import
+honours CLAUDE.md's "Cookie-session auth CSRF posture" invariants: it is a
+state-changing **POST** (not a GET), and it is parsed by `express.json()` only
+(no urlencoded/multipart parser), so SameSite=Lax + the global Origin/Referer
+default-deny cover it. `GET export` is read-only, so it introduces no
+state-changing-GET hole.
 
 ### `GET /api/users/me/export`
 
@@ -157,11 +168,23 @@ needed, consistent with the other mutating Bearer routes (e.g. `POST
   composed from the existing per-entity create schemas so imported rows satisfy
   exactly the same constraints as API-created rows (title lengths, status
   enums, `worldNotes` 50k cap, etc.).
-- **Raised body limit.** The global `express.json({ limit: '256kb' })`
-  (`index.ts:77`) is per-route-overridable; mount this router with a larger
-  JSON parser (e.g. `express.json({ limit: '25mb' })`) — a whole-account import
-  dwarfs a single narrative field. Exact ceiling is an open question (see
-  Risks).
+- **Raised body limit — path-scoped, mounted before the global parser.** The
+  global `express.json({ limit: '256kb' })` (`index.ts:89`) gates *incoming
+  request bodies* and was sized to fit the largest single narrative-field write
+  (`worldNotes`, 50k chars ≈ ~200KB worst-case UTF-8 + JSON overhead — see the
+  `index.ts:87` comment). A whole-account import carries *every* chapter, chat,
+  and message at once, so it legitimately needs far more headroom. **Mount a
+  path-scoped `express.json({ limit: '25mb' })` on `/api/users/me/import`
+  *before* the global 256kb parser** — Express runs the first matching parser,
+  which sets `req._body = true`, and the later global parser then skips. (A
+  larger parser mounted *after* the global one would never run: the 256kb
+  parser would already have rejected the body with `413`.) The rest of the API
+  keeps the tight 256kb ceiling; only import accepts large bodies. 25mb is the
+  proposed ceiling (see Risks for the size/timeout coupling).
+  - *Note (out of scope):* Venice flows do not interact with this limit —
+    Venice's SSE responses are streamed and never pass through `express.json`,
+    and the requests that trigger Venice carry only IDs + a short payload
+    (context is assembled server-side in `prompt.service`), not the corpus.
 - **Replace-all, transactional.** The entire wipe-then-recreate runs inside a
   single interactive `prisma.$transaction` so a mid-import failure rolls back
   and leaves the user's *original* data intact:
@@ -175,9 +198,15 @@ needed, consistent with the other mutating Bearer routes (e.g. `POST
      `@@unique([storyId, order])` constraints.
   4. Derive `wordCount` per chapter from `bodyJson` using the same
      `computeWordCount` / `tipTapJsonToText` path the chapter routes use
-     (`backend/src/routes/chapters.routes.ts:58`) — do not trust the file's
+     (`backend/src/routes/chapters.routes.ts:59`) — do not trust the file's
      count. `summary` is applied via `chapterRepo.update(..., { summaryJson })`
      after create (create() doesn't take a summary).
+- **Rate limit (decided).** Import is expensive and destructive, so it gets a
+  modest per-user limiter, built on the same `express-rate-limit` pattern as
+  the `/api/ai` limiter (`index.ts:90`) and the auth limiters
+  (`auth.routes.ts`). A handful of imports per hour is ample for legitimate use
+  and bounds both abuse and accidental repeat-fires. Exact window/limit is a
+  tuning detail for the plan.
 - Response: `200`, `{ imported: { stories, chapters, characters, outlineItems, chats, messages } }`.
 
 #### Repo/transaction note (implementation flag)
@@ -254,22 +283,36 @@ operator scripts.
 
 ## Risks / open questions
 
-1. **Import body size & transaction timeout.** A large account (long chat
-   histories) can produce a multi-MB file and a long-running transaction.
-   Prisma's interactive-transaction default timeout (5s) may be exceeded.
-   Decide a body-limit ceiling and a `maxWait`/`timeout` for the tx; consider
-   chunked inserts inside the tx if needed. **Open.**
-2. **Include `settingsJson` in v1?** Leaning no (keep v1 narrative-only). If
-   "complete migration" is the priority, add a `"settings"` key. **Open —
-   user's call.**
-3. **Message `createdAt` / `lastActivityAt` fidelity.** `messageRepo.create`
+1. **Transaction timeout (genuine open question).** A large account (long chat
+   histories) can produce a multi-MB import and a long-running interactive
+   transaction. Prisma's interactive-transaction default timeout (5s) may be
+   exceeded. Set an explicit `maxWait`/`timeout` on the `$transaction`, and if
+   that proves insufficient consider batched inserts inside the tx. The exact
+   values are a tuning call for the plan. **Open.**
+   - *Body size is resolved* (no longer coupled here): a path-scoped 25mb
+     parser on `/api/users/me/import`, mounted before the global 256kb parser —
+     see the import endpoint section.
+2. **Message `createdAt` / `lastActivityAt` fidelity.** `messageRepo.create`
    stamps `createdAt = now()` and bumps `Chat.lastActivityAt`. Imported chat
    timelines therefore collapse to import time. Acceptable for v1 (content is
    preserved; only timestamps shift). Documented as known lossiness; raising it
    to faithful timestamps would need repo changes. **Accept for v1.**
-4. **Rate limiting.** Import is expensive and destructive. Consider a modest
-   per-user limit (the `/api/ai` limiter pattern in `index.ts:90` is the
-   template). **Open.**
+3. **Per-chapter 256kb ceiling (pre-existing, cross-reference only).** Because
+   `bodyJson` is `z.unknown()` with no `.max()` (`shared/src/schemas/chapter.ts`),
+   the only bound on a single chapter's TipTap body is the global 256kb request
+   parser — a chapter that serialises past ~256kb (very roughly ~20k words)
+   gets an opaque `413` on save *today*. This is unrelated to export/import
+   (import gets its own 25mb parser), but the export round-trip surfaces it: a
+   chapter that imports fine inside the 25mb payload could fail a later
+   *individual* save under the 256kb route limit. Out of scope for this spec;
+   tracked separately as `story-editor-ylb`. **Not blocking.**
+
+### Resolved (were open at draft)
+
+- **`settingsJson` in v1 → no.** v1 is narrative-only; v2 `"settings"` key
+  reserved. (See "What is NOT in the export".)
+- **Rate limiting → yes.** Modest per-user limiter on import, `/api/ai`-style.
+  (See the import endpoint section.)
 
 ## Known lossiness (v1, by design)
 

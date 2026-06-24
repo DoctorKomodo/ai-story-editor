@@ -82,7 +82,7 @@ bd show <id>                   # detailed view (description + verify: + plan: in
 
 **Working tracker is bd. All open tasks live in bd; `TASKS.md` is a historical ID-mapping table that maps `[A-Z]\d+` IDs (referenced by plan docs, commit messages, and agent prompts) to their bd issues.** New tasks file directly into bd (`bd create …`); there are no checkboxes to tick.
 
-**Default implementation flow is `/bd-execute <id>`** — the bridge skill that claims the issue, dispatches superpowers' implementer + spec-reviewer + code-quality-reviewer loop with project-rule digests prepended at every dispatch, then hands off to `/bd-close-reviewed`. Operating doc: `docs/agent-workflow.md`.
+**Default implementation flow is `/bd-execute <id>`** — the bridge skill that claims the issue, dispatches superpowers' implementer + task-reviewer (one reviewer returning both spec-compliance and code-quality verdicts) loop with project-rule digests prepended at every dispatch, runs a final whole-branch review, then hands off to `/bd-close-reviewed`. Operating doc: `docs/agent-workflow.md`.
 
 **`/bd-execute` requires a `plan: <path>` link in the issue's `--notes`.** That's the brainstorm gate: every task gets a written plan before it gets implemented. The plan can be terse if the work is trivial — but it has to exist, and the bd issue has to point at it.
 
@@ -90,7 +90,7 @@ For every task:
 
 1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line + `plan:` link in `--notes`.
 2. **If `--notes` has no `plan:` link:** run `superpowers:brainstorming` first, then `superpowers:writing-plans` (writes a plan under `docs/superpowers/plans/YYYY-MM-DD-<slug>.md`), then `bash scripts/bd-link-plan.sh <id> <plan-path>` to record the link.
-3. `/bd-execute <id>` — runs the full implement → spec-review → quality-review loop, claims the issue along the way, and hands off to `/bd-close-reviewed` at the end.
+3. `/bd-execute <id>` — runs the full implement → task-review (spec + quality, one pass) loop per task, a final whole-branch review, claims the issue along the way, and hands off to `/bd-close-reviewed` at the end.
 4. `/bd-close-reviewed` runs typecheck on affected workspaces, fans path-matched surface reviewers (`security-reviewer`, `repo-boundary-reviewer`), and refuses close on `BLOCK` / `FIX_BEFORE_MERGE` findings. If a reviewer blocks: fix the code (not the test, not the verify) and re-loop. Override requires `--override-block "<reviewer> — <reason>"` plus explicit user-ack.
 5. Move to the next task immediately — do not refactor or add scope.
 
@@ -132,7 +132,7 @@ Closed work from the original bring-up letters lives in immutable `docs/done/don
 
 ### Local tooling
 
-- **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + spec-reviewer + code-quality-reviewer (Sonnet by default; per-task `model: opus` opt-in) per task, hands off to `/bd-close-reviewed` after the loop reports CLEAN.
+- **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' (6.x) subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + task-reviewer (one reviewer, both spec-compliance and code-quality verdicts; Sonnet by default, per-task `model: opus` opt-in) per task via file-based brief/report/diff handoffs, runs a final whole-branch review, then hands off to `/bd-close-reviewed`.
 - **`/bd-close-reviewed <BD_ID>`** — `.claude/skills/bd-close-reviewed/`. Gates close on typecheck + path-matched surface reviewers + verify-line. Wraps `scripts/bd-close-reviewed.sh` for the mechanical phases.
 - **`scripts/bd-link-plan.sh <id> <plan-path>`** — links a plan file to a bd issue's `--notes`. Idempotent; preserves the `verify:` line. Called as a step in the protocol above when the issue lacks a plan link.
 
@@ -152,10 +152,10 @@ Closed work from the original bring-up letters lives in immutable `docs/done/don
 - **Dependencies: install the current stable mainline by default, not whatever range the LLM remembers.** Before adding a new package — or pinning one that doesn't already exist in `package.json` — check what the current stable is via `npm view <pkg> version` (latest tag) and, if the major-version jump matters (e.g. Express 4 → 5, Vite 5 → 8, Tiptap 2 → 3, Zod 3 → 4), `npm view <pkg> versions --json | tail` to confirm the latest stable on the channel you want. Pin to the latest stable by default. Going in on an older major needs a real reason recorded in the commit (e.g. "blocked on upstream peer X" with a removal trigger), not silence. The historical pattern of landing dependencies several majors behind current and then paying for the bump later (Express 4, the dep-sweep PRs) is what this rule exists to prevent. Apply equally to `dependencies`, `devDependencies`, `peerDependencies`, and tooling pulled in via skill / hook / agent glue. Doesn't apply to *intentional* downgrades to dodge a known regression — those need the same commit-message justification.
 
 ### Backend
-*Backend implementation rules live in `docs/agent-rules/backend.md` (read by implementer + code-quality-reviewer at dispatch time via `/bd-execute`).*
+*Backend implementation rules live in `docs/agent-rules/backend.md` (read by the implementer + task-reviewer at dispatch time via `/bd-execute`).*
 
 ### Frontend
-*Frontend implementation rules live in `docs/agent-rules/frontend.md` (read by implementer + code-quality-reviewer at dispatch time via `/bd-execute`).*
+*Frontend implementation rules live in `docs/agent-rules/frontend.md` (read by the implementer + task-reviewer at dispatch time via `/bd-execute`).*
 
 ### Database
 *Database / repo-layer rules live in `docs/agent-rules/backend.md` (general database rules) and `docs/agent-rules/repo-boundary.md` (narrative-entity boundary, encrypt-on-write / decrypt-on-read template). Every model has `createdAt`; most have `updatedAt`. `Message` carries a nullable `updatedAt` (`null` = never edited; set only by the in-place edit path `message.repo.update`) — it is no longer append-only. The app is at/near release, so **schema changes must preserve and migrate existing data** — the migration rules live in `backend.md` / `repo-boundary.md` and the gate is in "When to Stop and Ask" below.*

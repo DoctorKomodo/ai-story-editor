@@ -85,3 +85,9 @@ export function tipTapJsonToText(tree: unknown): string {
   if (!tree || typeof tree !== 'object') return '';
   return extractText(tree as TipTapNode).trim();
 }
+
+export function computeWordCount(bodyJson: unknown): number {
+  const text = tipTapJsonToText(bodyJson).trim();
+  if (text.length === 0) return 0;
+  return text.split(/\s+/).filter(Boolean).length;
+}

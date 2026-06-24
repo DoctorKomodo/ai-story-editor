@@ -1,1 +1,1 @@
-export type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance';
+export type SettingsTab = 'venice' | 'models' | 'prompts' | 'writing' | 'appearance' | 'data';
