@@ -130,6 +130,10 @@ function loginIpLimiter() {
     standardHeaders: 'draft-7',
     legacyHeaders: false,
     keyGenerator: (req) => ipKeyGenerator(req.ip ?? 'unknown-ip'),
+    // Failed logins (wrong-password 401s) MUST consume from the pool — that's
+    // the brute-force surface this limiter exists to bound. Explicit rather
+    // than relying on the library default, matching SENSITIVE_AUTH_LIMIT_OPTIONS.
+    skipFailedRequests: false,
   });
 }
 
