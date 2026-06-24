@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Dynamically imported so the test file resolves even before the component exists.
 // (The import is at top-level so vitest can fail on module-not-found.)
@@ -56,5 +56,31 @@ describe('SettingsDataTab', () => {
       target: { value: 'replace everything' },
     });
     expect(restore).toBeDisabled();
+  });
+
+  it('enables Restore when a valid backup file is staged AND the exact phrase is typed', async () => {
+    renderTab();
+
+    // Stage a valid backup file via the file input.
+    const validBackup = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [],
+    };
+    const file = new File([JSON.stringify(validBackup)], 'backup.json', {
+      type: 'application/json',
+    });
+    fireEvent.change(screen.getByTestId('data-restore-file'), { target: { files: [file] } });
+
+    // Type the exact confirmation phrase.
+    fireEvent.change(screen.getByLabelText(/type .*replace everything/i), {
+      target: { value: 'replace everything' },
+    });
+
+    // onFileChange is async (f.text() + safeParse) — wait for state to settle.
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /restore/i })).toBeEnabled();
+    });
   });
 });
