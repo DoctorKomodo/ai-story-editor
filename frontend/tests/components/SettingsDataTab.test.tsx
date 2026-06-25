@@ -159,4 +159,21 @@ describe('SettingsDataTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /restore/i }));
     await waitFor(() => expect(exportSpy).toHaveBeenCalledTimes(1));
   });
+
+  it('navigates to the library after a successful restore', async () => {
+    vi.spyOn(apiModule, 'fetchExportBlob').mockResolvedValue({
+      blob: new Blob(['{}']),
+      filename: 'b.json',
+    });
+    vi.spyOn(apiModule, 'api').mockResolvedValue(IMPORT_RESULT);
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    renderTab();
+    await stageValidFile();
+    fireEvent.change(screen.getByLabelText(/type .*replace everything/i), {
+      target: { value: 'replace everything' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith('/'));
+  });
 });

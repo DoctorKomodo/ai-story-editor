@@ -1,4 +1,5 @@
 import { type JSX, useId, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { type ImportFile, importSchema } from 'story-editor-shared';
 import { useExportBackup, useImportBackup } from '@/hooks/useBackup';
 
@@ -6,6 +7,7 @@ const CONFIRM_PHRASE = 'replace everything';
 
 export function SettingsDataTab(): JSX.Element {
   const confirmId = useId();
+  const navigate = useNavigate();
   const exporter = useExportBackup();
   const importer = useImportBackup();
   const [staged, setStaged] = useState<ImportFile | null>(null);
@@ -45,6 +47,7 @@ export function SettingsDataTab(): JSX.Element {
     setFileName('');
     setPhrase('');
     if (fileRef.current) fileRef.current.value = '';
+    navigate('/');
   }
 
   const canRestore = staged !== null && phrase === CONFIRM_PHRASE && !importer.isPending;
