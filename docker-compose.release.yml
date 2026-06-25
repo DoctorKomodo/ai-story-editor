@@ -1,34 +1,7 @@
-# docker-compose.release.yml — run Inkwell from PUBLISHED GHCR images.
-#
-# This is the operator stack: no source checkout, no local build. Pulls the
-# pre-built backend + frontend images from GitHub Container Registry.
-#
-# Recommended setup — copy this file into a clean directory as
-# `docker-compose.yml` so every command is a bare `docker compose ...` (no
-# `-f`, and the repo's dev override can never leak in):
-#
-#   mkdir inkwell && cd inkwell
-#   curl -L -o docker-compose.yml \
-#     https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/docker-compose.release.yml
-#   curl -L -o .env \
-#     https://raw.githubusercontent.com/doctorkomodo/ai-story-editor/main/.env.example
-#   # edit .env: set JWT_SECRET, REFRESH_TOKEN_SECRET
-#   docker compose pull
-#   docker compose up -d
-#
-# INKWELL_VERSION selects the image tag; it defaults to `latest`, so
-# `docker compose pull && docker compose up -d` always grabs the newest
-# release. Pin a specific version for reproducibility:
-#
-#   INKWELL_VERSION=0.2.0 docker compose up -d
-#
-# Only the frontend port (:3000) is published — it is the single public entry
-# point. The frontend's nginx reverse-proxies /api/* to the backend over the
-# internal compose network, and the backend reaches Postgres the same way, so
-# neither the backend (:4000) nor Postgres (:5432) is exposed to the host.
-# Operators who serve the API from a SEPARATE origin (a frontend image built
-# with VITE_API_BASE_URL pointing elsewhere) must route :4000 through their own
-# reverse proxy — see SELF_HOSTING.md.
+# Inkwell — operator stack from published GHCR images (no source build).
+# Setup, env vars, INKWELL_VERSION, updating, ports, and backups: see
+# SELF_HOSTING.md ("Run from published images"). Save this as
+# docker-compose.yml in a clean dir so commands are a bare `docker compose …`.
 services:
   postgres:
     image: postgres:16-alpine
@@ -51,9 +24,7 @@ services:
     env_file:
       - .env
     environment:
-      # Resolve postgres via the compose network rather than localhost. The
-      # default tracks POSTGRES_* so an operator who overrides only those still
-      # gets a consistent connection string.
+      # Default resolves postgres over the compose network and tracks POSTGRES_*.
       DATABASE_URL: ${DATABASE_URL:-postgresql://${POSTGRES_USER:-storyeditor}:${POSTGRES_PASSWORD:-storyeditor}@postgres:5432/${POSTGRES_DB:-storyeditor}}
       NODE_ENV: ${NODE_ENV:-production}
       PORT: "4000"

@@ -55,8 +55,6 @@ jobs:
           POSTGRES_USER=storyeditor
           POSTGRES_PASSWORD=storyeditor
           POSTGRES_DB=storyeditor
-          JWT_SECRET=ci-jwt-secret-do-not-use-in-production
-          REFRESH_TOKEN_SECRET=ci-refresh-secret-do-not-use-in-production
           FRONTEND_URL=http://localhost:3000
           PORT=4000
           ENV
