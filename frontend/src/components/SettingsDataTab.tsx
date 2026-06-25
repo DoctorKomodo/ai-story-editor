@@ -12,13 +12,18 @@ export function SettingsDataTab(): JSX.Element {
   const [parseError, setParseError] = useState<string | null>(null);
   const [phrase, setPhrase] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const [fileName, setFileName] = useState('');
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     setParseError(null);
     setStaged(null);
     setPhrase('');
     const f = e.target.files?.[0];
-    if (!f) return;
+    if (!f) {
+      setFileName('');
+      return;
+    }
+    setFileName(f.name);
     try {
       const parsed = importSchema.safeParse(JSON.parse(await f.text()));
       if (!parsed.success) {
@@ -36,6 +41,7 @@ export function SettingsDataTab(): JSX.Element {
     await exporter.download();
     await importer.mutateAsync(staged);
     setStaged(null);
+    setFileName('');
     setPhrase('');
     if (fileRef.current) fileRef.current.value = '';
   }
@@ -93,8 +99,21 @@ export function SettingsDataTab(): JSX.Element {
               onChange={(e) => {
                 void onFileChange(e);
               }}
-              className="text-[12px] text-ink-3 font-sans"
+              className="sr-only"
             />
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                data-testid="data-restore-browse"
+                onClick={() => fileRef.current?.click()}
+                className="w-fit px-3 py-1.5 text-[12px] rounded-[var(--radius)] border border-line text-ink-2 bg-bg hover:bg-[color:var(--surface-hover)] transition-colors"
+              >
+                Choose file…
+              </button>
+              <span className="text-[12px] font-sans text-ink-4 truncate">
+                {fileName || 'No file selected'}
+              </span>
+            </div>
           </div>
 
           {parseError ? (
