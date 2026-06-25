@@ -31,12 +31,21 @@ export function SettingsDataTab(): JSX.Element {
       const parsed = importSchema.safeParse(JSON.parse(await f.text()));
       if (!parsed.success) {
         setParseError('That file is not a valid Inkwell backup.');
+        clearFileSelection();
         return;
       }
       setStaged(parsed.data);
     } catch {
       setParseError('Could not read that file as JSON.');
+      clearFileSelection();
     }
+  }
+
+  // Clear the displayed filename and reset the native input so re-picking the
+  // same (rejected) file still re-fires onChange.
+  function clearFileSelection(): void {
+    setFileName('');
+    if (fileRef.current) fileRef.current.value = '';
   }
 
   async function onRestore(): Promise<void> {

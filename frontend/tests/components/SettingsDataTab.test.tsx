@@ -25,6 +25,10 @@ function renderTab() {
 
 describe('SettingsDataTab', () => {
   beforeEach(() => {
+    navigateSpy.mockClear();
+    // The real safety-export path clicks an anchor to trigger a download;
+    // stub it so jsdom doesn't log "Not implemented: navigation to another Document".
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
     resetApiClientForTests();
     setUnauthorizedHandler(() => {
       useSessionStore.getState().clearSession();
@@ -116,6 +120,14 @@ describe('SettingsDataTab', () => {
     fireEvent.change(screen.getByTestId('data-restore-file'), { target: { files: [file] } });
     await waitFor(() => expect(screen.getByTestId('data-restore-summary')).toBeInTheDocument());
   }
+
+  it('clears the filename display when an invalid file is selected', async () => {
+    renderTab();
+    const bad = new File(['not json'], 'bad.json', { type: 'application/json' });
+    fireEvent.change(screen.getByTestId('data-restore-file'), { target: { files: [bad] } });
+    await waitFor(() => expect(screen.getByTestId('data-restore-error')).toBeInTheDocument());
+    expect(screen.getByText('No file selected')).toBeInTheDocument();
+  });
 
   it('renders the safety export checkbox checked by default', async () => {
     renderTab();
