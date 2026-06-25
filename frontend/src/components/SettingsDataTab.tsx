@@ -14,11 +14,13 @@ export function SettingsDataTab(): JSX.Element {
   const [parseError, setParseError] = useState<string | null>(null);
   const [phrase, setPhrase] = useState('');
   const [safetyBackup, setSafetyBackup] = useState(true);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
     setParseError(null);
+    setRestoreError(null);
     setStaged(null);
     setPhrase('');
     const f = e.target.files?.[0];
@@ -50,8 +52,32 @@ export function SettingsDataTab(): JSX.Element {
 
   async function onRestore(): Promise<void> {
     if (!staged) return;
-    if (safetyBackup) await exporter.download();
-    await importer.mutateAsync(staged);
+    setRestoreError(null);
+
+    // Safety export runs first and gates the restore: if we can't hand the user
+    // a backup of what's about to be deleted, abort before touching anything.
+    if (safetyBackup) {
+      try {
+        await exporter.download();
+      } catch {
+        setRestoreError(
+          'Could not download the safety backup, so the restore was cancelled. Your content was not changed.',
+        );
+        return;
+      }
+    }
+
+    try {
+      await importer.mutateAsync(staged);
+    } catch (err) {
+      setRestoreError(
+        err instanceof Error && err.message
+          ? `Restore failed: ${err.message}`
+          : 'Restore failed. Please try again.',
+      );
+      return;
+    }
+
     setStaged(null);
     setFileName('');
     setPhrase('');
@@ -206,6 +232,16 @@ export function SettingsDataTab(): JSX.Element {
           >
             {importer.isPending ? 'Restoring…' : 'Restore'}
           </button>
+
+          {restoreError ? (
+            <p
+              role="alert"
+              data-testid="data-restore-failure"
+              className="text-[12px] font-sans text-[color:var(--danger)]"
+            >
+              {restoreError}
+            </p>
+          ) : null}
         </div>
       </section>
     </div>

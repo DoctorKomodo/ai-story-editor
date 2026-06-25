@@ -188,4 +188,38 @@ describe('SettingsDataTab', () => {
     fireEvent.click(screen.getByRole('button', { name: /restore/i }));
     await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith('/'));
   });
+
+  it('shows a failure banner and does not navigate when the import rejects', async () => {
+    vi.spyOn(apiModule, 'fetchExportBlob').mockResolvedValue({
+      blob: new Blob(['{}']),
+      filename: 'b.json',
+    });
+    vi.spyOn(apiModule, 'api').mockRejectedValue(new Error('Server exploded'));
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    renderTab();
+    await stageValidFile();
+    fireEvent.change(screen.getByLabelText(/type .*replace everything/i), {
+      target: { value: 'replace everything' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await waitFor(() => expect(screen.getByTestId('data-restore-failure')).toBeInTheDocument());
+    expect(screen.getByTestId('data-restore-failure')).toHaveTextContent(/Server exploded/i);
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('cancels with a safety-backup message (import not called) when the safety export fails', async () => {
+    vi.spyOn(apiModule, 'fetchExportBlob').mockRejectedValue(new Error('network down'));
+    const importSpy = vi.spyOn(apiModule, 'api').mockResolvedValue(IMPORT_RESULT);
+    renderTab();
+    await stageValidFile();
+    fireEvent.change(screen.getByLabelText(/type .*replace everything/i), {
+      target: { value: 'replace everything' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await waitFor(() => expect(screen.getByTestId('data-restore-failure')).toBeInTheDocument());
+    expect(screen.getByTestId('data-restore-failure')).toHaveTextContent(/safety backup/i);
+    expect(importSpy).not.toHaveBeenCalled();
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
 });
