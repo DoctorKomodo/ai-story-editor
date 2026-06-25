@@ -1,5 +1,5 @@
 import type { JSX } from 'react';
-import { APP_VERSION } from '@/lib/version';
+import { APP_VERSION } from '@/lib/appVersion';
 import { RecoveryCodeCard } from './RecoveryCodeCard';
 
 export interface RecoveryCodeHandoffProps {
@@ -53,7 +53,7 @@ export function RecoveryCodeHandoff({
           </cite>
         </blockquote>
         <div className="flex gap-2 font-mono text-[11px] text-[var(--ink-4)]">
-          <span>{APP_VERSION}</span>
+          <span>v{APP_VERSION}</span>
         </div>
       </aside>
 
