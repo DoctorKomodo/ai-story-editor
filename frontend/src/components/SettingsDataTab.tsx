@@ -11,6 +11,7 @@ export function SettingsDataTab(): JSX.Element {
   const [staged, setStaged] = useState<ImportFile | null>(null);
   const [parseError, setParseError] = useState<string | null>(null);
   const [phrase, setPhrase] = useState('');
+  const [safetyBackup, setSafetyBackup] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
 
@@ -38,7 +39,7 @@ export function SettingsDataTab(): JSX.Element {
 
   async function onRestore(): Promise<void> {
     if (!staged) return;
-    await exporter.download();
+    if (safetyBackup) await exporter.download();
     await importer.mutateAsync(staged);
     setStaged(null);
     setFileName('');
@@ -143,11 +144,25 @@ export function SettingsDataTab(): JSX.Element {
                 .
               </p>
               <p className="text-[12px] font-sans text-[color:var(--danger)]">
-                Restoring will permanently delete all current content. A safety export will be
-                downloaded automatically before the restore begins.
+                Restoring will permanently delete all current content.
+                {safetyBackup
+                  ? ' A safety backup of your current content will be downloaded first.'
+                  : ''}
               </p>
             </div>
           ) : null}
+
+          <label className="flex items-center gap-2 text-[12px] text-ink-2 font-sans">
+            <input
+              type="checkbox"
+              data-testid="data-restore-safety"
+              checked={safetyBackup}
+              onChange={(e) => {
+                setSafetyBackup(e.target.checked);
+              }}
+            />
+            Download a safety backup of my current content first
+          </label>
 
           <div className="flex flex-col gap-1">
             <label htmlFor={confirmId} className="text-[12px] font-medium text-ink-2">
