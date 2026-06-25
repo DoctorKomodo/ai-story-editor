@@ -54,8 +54,7 @@ export function SettingsDataTab(): JSX.Element {
     if (!staged) return;
     setRestoreError(null);
 
-    // Safety export runs first and gates the restore: if we can't hand the user
-    // a backup of what's about to be deleted, abort before touching anything.
+    // A failed safety export aborts the restore — never delete content we couldn't back up.
     if (safetyBackup) {
       try {
         await exporter.download();
