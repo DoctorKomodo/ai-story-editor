@@ -61,3 +61,16 @@ describe('AuthForm login', () => {
     expect(screen.queryByLabelText(/display name/i)).not.toBeInTheDocument();
   });
 });
+
+describe('AuthForm footer', () => {
+  it('shows the real app version and not the old hardcoded footer', () => {
+    render(
+      <MemoryRouter>
+        <AuthForm mode="login" onSubmit={vi.fn()} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByText(/^v\d+\.\d+\.\d+/)).toBeInTheDocument();
+    expect(screen.queryByText(/Self-hosted/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/inkwell-01/)).not.toBeInTheDocument();
+  });
+});

@@ -1,3 +1,4 @@
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
@@ -5,6 +6,11 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  define: {
+    __APP_VERSION__: JSON.stringify(
+      (createRequire(import.meta.url)('./package.json') as { version: string }).version,
+    ),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
