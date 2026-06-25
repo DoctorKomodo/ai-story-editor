@@ -24,7 +24,7 @@ The backup-file picker at `SettingsDataTab.tsx:88-97` is a raw `<input type="fil
 
 **Files:**
 - Modify: `frontend/src/components/SettingsDataTab.tsx` (file-input block at lines 86-98; add a `fileName` state)
-- Test: `frontend/src/components/SettingsDataTab.test.tsx` (created/extended in Task 2)
+- Test: `frontend/tests/components/SettingsDataTab.test.tsx` (extended in Task 2)
 
 **Interfaces:**
 - Consumes: existing `fileRef`, `onFileChange`.
@@ -105,75 +105,73 @@ git commit -m "[<bd-id>] restore: styled 'Choose file' button replaces native fi
 
 **Files:**
 - Modify: `frontend/src/components/SettingsDataTab.tsx`
-- Test: `frontend/src/components/SettingsDataTab.test.tsx` (create if absent)
+- Test: `frontend/tests/components/SettingsDataTab.test.tsx` (**extend the existing file** — do not create a colocated one; this project keeps tests under `frontend/tests/`)
 
 **Interfaces:**
 - Consumes: `useExportBackup()` (`exporter.download`), `useImportBackup()` (`importer.mutateAsync`).
 - Produces: a `safetyBackup` boolean state (default `true`); a checkbox with `data-testid="data-restore-safety"`; `onRestore` calls `exporter.download()` only when `safetyBackup` is true.
 
-- [ ] **Step 1: Write the failing test — unchecked safety box skips the export download**
+**Test-harness facts (verified against the existing file — match this style, do NOT introduce wholesale hook mocking):**
+- The existing tests use **real hooks** and drive the component through the real `useExportBackup`/`useImportBackup`, asserting at the `@/lib/api` boundary. Mirror `frontend/tests/hooks/useBackup.test.tsx`: `vi.spyOn(apiModule, 'fetchExportBlob')` for the safety export and `vi.spyOn(apiModule, 'api')` for the import. (`import * as apiModule from '@/lib/api'`.) This avoids the native download path (`URL.createObjectURL` / anchor click) entirely.
+- The valid backup fixture shape is exactly `{ formatVersion: 1, app: 'inkwell', exportedAt: '2026-06-24T12:00:00.000Z', stories: [] }` (see `importSchema` = `exportSchema` in `shared/src/schemas/transfer.ts`). A `File` made with `new File([JSON.stringify(fixture)], 'backup.json', { type: 'application/json' })` staged via `data-restore-file` works — the existing "enables Restore" test relies on `File.text()` resolving in jsdom.
+- A valid `ImportResult` (what `apiModule.api` must resolve for the import) is `{ imported: { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 } }` (`importResultSchema`, `transfer.ts`). Returning anything else makes `importResultSchema.parse` throw and the restore reject.
+- The component will gain `useNavigate()` in Task 3. Mock it once at the top of the test file using `vi.hoisted` so all `renderTab()` calls keep working without a router:
+  ```tsx
+  const { navigateSpy } = vi.hoisted(() => ({ navigateSpy: vi.fn() }));
+  vi.mock('react-router-dom', async (orig) => ({
+    ...(await orig<typeof import('react-router-dom')>()),
+    useNavigate: () => navigateSpy,
+  }));
+  ```
+  Adding this mock now (in Task 2) keeps the file green when Task 3 wires `useNavigate` into the component.
 
-Create `frontend/src/components/SettingsDataTab.test.tsx`. Mock both hooks so we can assert the export is/isn't called. Stage a valid file by mocking `importSchema` parse path is not needed — instead drive the component by mocking the hooks and firing the file input with a valid backup JSON. Use a minimal valid `ImportFile` shape (empty `stories: []`).
+- [ ] **Step 1: Write the failing tests — safety export is gated on the checkbox**
+
+Add to the existing `describe('SettingsDataTab', …)` in `frontend/tests/components/SettingsDataTab.test.tsx`. Add `import * as apiModule from '@/lib/api'` at the top, the `vi.hoisted`/`vi.mock('react-router-dom', …)` block above, and a small helper that stages the valid fixture + spies. Example new cases:
 
 ```tsx
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { SettingsDataTab } from './SettingsDataTab';
+const VALID_BACKUP = { formatVersion: 1, app: 'inkwell', exportedAt: '2026-06-24T12:00:00.000Z', stories: [] };
+const IMPORT_RESULT = { imported: { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 } };
 
-const download = vi.fn().mockResolvedValue(undefined);
-const mutateAsync = vi.fn().mockResolvedValue({ stories: 0, chapters: 0 });
-const navigate = vi.fn();
-
-vi.mock('@/hooks/useBackup', () => ({
-  useExportBackup: () => ({ download, isPending: false }),
-  useImportBackup: () => ({ mutateAsync, isPending: false }),
-}));
-vi.mock('react-router-dom', () => ({ useNavigate: () => navigate }));
-
-const validBackup = JSON.stringify({ version: 1, exportedAt: '2026-06-25T00:00:00.000Z', stories: [] });
-
-async function stageFile(): Promise<void> {
-  const input = screen.getByTestId('data-restore-file') as HTMLInputElement;
-  const file = new File([validBackup], 'backup.json', { type: 'application/json' });
-  Object.defineProperty(file, 'text', { value: () => Promise.resolve(validBackup) });
-  fireEvent.change(input, { target: { files: [file] } });
+async function stageValidFile(): Promise<void> {
+  const file = new File([JSON.stringify(VALID_BACKUP)], 'backup.json', { type: 'application/json' });
+  fireEvent.change(screen.getByTestId('data-restore-file'), { target: { files: [file] } });
   await waitFor(() => expect(screen.getByTestId('data-restore-summary')).toBeInTheDocument());
 }
 
-describe('SettingsDataTab restore', () => {
-  beforeEach(() => {
-    download.mockClear();
-    mutateAsync.mockClear();
-    navigate.mockClear();
-  });
+it('skips the safety export when the checkbox is unchecked', async () => {
+  const exportSpy = vi.spyOn(apiModule, 'fetchExportBlob');
+  vi.spyOn(apiModule, 'api').mockResolvedValue(IMPORT_RESULT);
+  renderTab();
+  await stageValidFile();
+  fireEvent.click(screen.getByTestId('data-restore-safety')); // default on → uncheck
+  fireEvent.change(screen.getByLabelText(/type .*replace everything/i), { target: { value: 'replace everything' } });
+  fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+  await waitFor(() => expect(apiModule.api).toHaveBeenCalledWith('/users/me/import', expect.objectContaining({ method: 'POST' })));
+  expect(exportSpy).not.toHaveBeenCalled();
+});
 
-  it('skips the safety export when the checkbox is unchecked', async () => {
-    render(<SettingsDataTab />);
-    await stageFile();
-    fireEvent.click(screen.getByTestId('data-restore-safety')); // default on → uncheck
-    fireEvent.change(screen.getByTestId('data-restore-phrase'), { target: { value: 'replace everything' } });
-    fireEvent.click(screen.getByTestId('data-restore-btn'));
-    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
-    expect(download).not.toHaveBeenCalled();
-  });
-
-  it('runs the safety export when the checkbox is left checked', async () => {
-    render(<SettingsDataTab />);
-    await stageFile();
-    fireEvent.change(screen.getByTestId('data-restore-phrase'), { target: { value: 'replace everything' } });
-    fireEvent.click(screen.getByTestId('data-restore-btn'));
-    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
-    expect(download).toHaveBeenCalledTimes(1);
-  });
+it('runs the safety export when the checkbox is left checked', async () => {
+  const exportSpy = vi
+    .spyOn(apiModule, 'fetchExportBlob')
+    .mockResolvedValue({ blob: new Blob(['{}']), filename: 'inkwell-backup.json' });
+  vi.spyOn(apiModule, 'api').mockResolvedValue(IMPORT_RESULT);
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  renderTab();
+  await stageValidFile();
+  fireEvent.change(screen.getByLabelText(/type .*replace everything/i), { target: { value: 'replace everything' } });
+  fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+  await waitFor(() => expect(exportSpy).toHaveBeenCalledTimes(1));
 });
 ```
 
-> Note for implementer: confirm the real `importSchema` (in `story-editor-shared`) accepts `{ version, exportedAt, stories: [] }`. If its required fields differ, adjust `validBackup` to a minimal valid instance rather than mocking the schema — the file-staging path must exercise the real parse.
+> The existing `beforeEach` stubs global `fetch` to return `{}`; spying on `apiModule.api`/`fetchExportBlob` overrides that for these cases. Keep `vi.unstubAllGlobals()` / `vi.restoreAllMocks()` teardown consistent with the file.
 
 - [ ] **Step 2: Run the test to verify it fails**
 
 Run: `npm --prefix frontend run test -- SettingsDataTab`
-Expected: FAIL — `data-restore-safety` not found / `download` called when it shouldn't be.
+Expected: FAIL — `data-restore-safety` not found / export still runs when unchecked.
 
 - [ ] **Step 3: Add the `safetyBackup` state and checkbox**
 
@@ -235,7 +233,7 @@ Expected: PASS (both checked and unchecked cases).
 - [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/src/components/SettingsDataTab.tsx frontend/src/components/SettingsDataTab.test.tsx
+git add frontend/src/components/SettingsDataTab.tsx frontend/tests/components/SettingsDataTab.test.tsx
 git commit -m "[<bd-id>] restore: make safety export an opt-in checkbox (default on)"
 ```
 
@@ -248,24 +246,28 @@ After a successful import, `useImportBackup` invalidates all queries; the open s
 **Files:**
 - Modify: `frontend/src/components/SettingsDataTab.tsx` (navigate after restore)
 - Modify: `frontend/src/pages/EditorPage.tsx:465-474` (error-state back link)
-- Test: `frontend/src/components/SettingsDataTab.test.tsx` (extend Task 2's file)
+- Test: `frontend/tests/components/SettingsDataTab.test.tsx` (extend Task 2's additions)
 
 **Interfaces:**
 - Consumes: `useNavigate` from `react-router-dom`; the dashboard route is `/` (`router.tsx:95`).
-- Produces: after a successful `mutateAsync`, `navigate('/')` is called; EditorPage error state renders a `<Link to="/">` / button to `/`.
+- Produces: after a successful `mutateAsync`, `navigate('/')` is called; EditorPage error state renders a `<Link to="/">` to `/`.
 
 - [ ] **Step 1: Write the failing test — restore navigates to `/`**
 
-Add to `SettingsDataTab.test.tsx` (the `react-router-dom` mock and `navigate` spy from Task 2 are already in place):
+Add to `frontend/tests/components/SettingsDataTab.test.tsx` (the `vi.mock('react-router-dom', …)` + `navigateSpy` from Task 2 are already in place; reset `navigateSpy.mockClear()` in `beforeEach` or per-test):
 
 ```tsx
-  it('navigates to the library after a successful restore', async () => {
-    render(<SettingsDataTab />);
-    await stageFile();
-    fireEvent.change(screen.getByTestId('data-restore-phrase'), { target: { value: 'replace everything' } });
-    fireEvent.click(screen.getByTestId('data-restore-btn'));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith('/'));
-  });
+it('navigates to the library after a successful restore', async () => {
+  vi.spyOn(apiModule, 'fetchExportBlob').mockResolvedValue({ blob: new Blob(['{}']), filename: 'b.json' });
+  vi.spyOn(apiModule, 'api').mockResolvedValue(IMPORT_RESULT);
+  vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+  vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+  renderTab();
+  await stageValidFile();
+  fireEvent.change(screen.getByLabelText(/type .*replace everything/i), { target: { value: 'replace everything' } });
+  fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+  await waitFor(() => expect(navigateSpy).toHaveBeenCalledWith('/'));
+});
 ```
 
 - [ ] **Step 2: Run the test to verify it fails**
@@ -334,7 +336,7 @@ Expected: PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add frontend/src/components/SettingsDataTab.tsx frontend/src/components/SettingsDataTab.test.tsx frontend/src/pages/EditorPage.tsx
+git add frontend/src/components/SettingsDataTab.tsx frontend/tests/components/SettingsDataTab.test.tsx frontend/src/pages/EditorPage.tsx
 git commit -m "[<bd-id>] restore: navigate to library after restore; add back link to load-error page"
 ```
 
@@ -344,5 +346,6 @@ git commit -m "[<bd-id>] restore: navigate to library after restore; add back li
 
 - **Spec coverage:** Three reported defects → Task 1 (button), Task 2 (save-prompt opt-in), Task 3 (dead-end page). All covered.
 - **Decision recorded:** safety export is opt-in via a default-on checkbox (user-approved direction). Default-on preserves the safety net; the visible labeled checkbox removes the surprise.
-- **Type consistency:** `safetyBackup`/`setSafetyBackup`, `data-testid` values (`data-restore-safety`, `editor-page-error-home`), and `navigate('/')` are used consistently across tasks.
-- **Open item for implementer:** verify the real `importSchema` shape for the test fixture (Step 1 note in Task 2) rather than mocking the schema.
+- **Type consistency:** `safetyBackup`/`setSafetyBackup`, `data-testid` values (`data-restore-safety`, `data-restore-browse`, `editor-page-error-home`), and `navigate('/')` are used consistently across tasks.
+- **Test harness:** tests extend `frontend/tests/components/SettingsDataTab.test.tsx` using real hooks + `vi.spyOn(apiModule, …)` (matching `useBackup.test.tsx`), the verified `{ formatVersion, app, exportedAt, stories }` backup fixture, the `{ imported: {…} }` `ImportResult`, and a hoisted `useNavigate` mock. No wholesale hook mocking.
+- **Open item for implementer:** confirm `Link` is imported from `react-router-dom` in `EditorPage.tsx` before using it in Task 3 Step 5 (add to the existing import if absent).
