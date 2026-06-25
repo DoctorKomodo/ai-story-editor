@@ -71,7 +71,7 @@ import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
 import { extractVeniceMessage } from '@/lib/veniceError';
-import { useActiveChapterStore } from '@/store/activeChapter';
+import { resolveActiveChapterId, useActiveChapterStore } from '@/store/activeChapter';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
@@ -125,6 +125,13 @@ export function EditorPage(): JSX.Element {
   useEffect(() => {
     setSelectedCharacterId(null);
   }, [activeChapterId, story?.id, setSelectedCharacterId]);
+
+  useEffect(() => {
+    const chapters = chaptersQuery.data;
+    if (!chapters) return;
+    const next = resolveActiveChapterId(chapters, activeChapterId);
+    if (next !== activeChapterId) setActiveChapterId(next);
+  }, [chaptersQuery.data, activeChapterId, setActiveChapterId]);
 
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   // Paper passes `null` on unmount (chapter switch via key={chapterId}); we
