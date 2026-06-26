@@ -16,6 +16,10 @@ export default defineConfig({
     // import-time failure that manifests as "0 tests per file" without an
     // obvious red flag. CI also asserts `numTotalTests > 0` on top of this.
     passWithNoTests: false,
+    // Force the full default reporter so console output prints on every
+    // invocation — `make test` then shows what CI shows. CI's CLI `--reporter`
+    // flags still override this.
+    reporters: ['default'],
   },
   resolve: {
     alias: {

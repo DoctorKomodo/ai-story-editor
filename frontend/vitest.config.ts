@@ -21,5 +21,9 @@ export default defineConfig({
     // 0 tests (see the @testing-library/dom incident). CI also asserts
     // `numTotalTests > 0` on top of this.
     passWithNoTests: false,
+    // Force the full default reporter so console output (incl. React act
+    // warnings) prints on every invocation — `make test` then shows what CI
+    // shows. CI's CLI `--reporter` flags still override this.
+    reporters: ['default'],
   },
 });
