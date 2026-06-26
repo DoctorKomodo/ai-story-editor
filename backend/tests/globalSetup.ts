@@ -2,6 +2,18 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+function runQuiet(cmd: string, opts: Parameters<typeof execSync>[1] = {}): void {
+  try {
+    execSync(cmd, { ...opts, stdio: 'pipe', encoding: 'utf8' });
+  } catch (e) {
+    // execSync throws a SpawnSyncError with the child's stdout/stderr attached.
+    const x = e as { stdout?: string | Buffer; stderr?: string | Buffer };
+    if (x.stdout) process.stderr.write(x.stdout.toString());
+    if (x.stderr) process.stderr.write(x.stderr.toString());
+    throw e;
+  }
+}
+
 const TEST_DATABASE_URL =
   process.env.TEST_DATABASE_URL ??
   'postgresql://storyeditor:storyeditor@localhost:5432/storyeditor_test';
@@ -18,7 +30,7 @@ export async function setup(): Promise<void> {
   // handles schema sync against whatever DB the CI env points at.
   const inCI = process.env.CI === 'true' || process.env.CI === '1';
   if (!inCI && fs.existsSync(resetScript)) {
-    execSync(`bash ${resetScript}`, { stdio: 'inherit' });
+    runQuiet(`bash ${resetScript}`);
   }
 
   const migrationsDir = path.resolve(rootDir, 'prisma', 'migrations');
@@ -30,9 +42,8 @@ export async function setup(): Promise<void> {
     ? 'npx prisma migrate deploy'
     : 'npx prisma db push --skip-generate --accept-data-loss';
 
-  execSync(syncCmd, {
+  runQuiet(syncCmd, {
     cwd: rootDir,
-    stdio: 'inherit',
     env: { ...process.env, DATABASE_URL: TEST_DATABASE_URL },
   });
 }

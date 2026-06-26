@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { defineConfig } from 'vitest/config';
+import { isIntentionalLog } from './tests/intentional-logs';
 
 export default defineConfig({
   test: {
@@ -16,6 +17,17 @@ export default defineConfig({
     // import-time failure that manifests as "0 tests per file" without an
     // obvious red flag. CI also asserts `numTotalTests > 0` on top of this.
     passWithNoTests: false,
+    // Force the full default reporter so console output prints on every
+    // invocation — `make test` then shows what CI shows. CI's CLI `--reporter`
+    // flags still override this.
+    reporters: ['default'],
+    // Suppress by-design dev logs from error-path tests so output is readable.
+    // Returns false ⇒ vitest drops the whole console block. Unmatched lines
+    // still print, so unexpected errors stay visible. The logging still RUNS
+    // (E12 leak test relies on it); this governs display only.
+    onConsoleLog(log: string): boolean | void {
+      if (isIntentionalLog(log)) return false;
+    },
   },
   resolve: {
     alias: {
