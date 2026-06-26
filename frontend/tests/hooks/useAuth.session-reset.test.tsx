@@ -7,6 +7,7 @@ import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { useAttachedSelectionStore } from '@/store/attachedSelection';
 import { useChatDraftStore } from '@/store/chatDraft';
 import { useSessionStore } from '@/store/session';
+import { actStore } from '../utils/actStore';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -52,7 +53,7 @@ describe('useAuth — session reset on auth transition (story-editor-7lo)', () =
     vi.unstubAllGlobals();
     setUnauthorizedHandler(null);
     resetApiClientForTests();
-    act(() => {
+    actStore(() => {
       useSessionStore.setState({ user: null, status: 'idle', sessionExpired: false });
       useAttachedSelectionStore.setState({ attachedSelection: null });
       useChatDraftStore.setState({ drafts: {} });

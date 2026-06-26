@@ -10,6 +10,7 @@ import { createQueryClient } from '@/lib/queryClient';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
 import { makeCharacter } from '../fixtures/character';
+import { actStore } from '../utils/actStore';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -76,8 +77,10 @@ describe('CastTab — delete', () => {
     vi.unstubAllGlobals();
     setUnauthorizedHandler(null);
     resetApiClientForTests();
-    useSessionStore.setState({ user: null, status: 'idle' });
-    useSelectedCharacterStore.setState({ selectedCharacterId: null });
+    actStore(() => {
+      useSessionStore.setState({ user: null, status: 'idle' });
+      useSelectedCharacterStore.setState({ selectedCharacterId: null });
+    });
   });
 
   it('× is only rendered for the selected card', () => {

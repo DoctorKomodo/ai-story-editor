@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
 import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
 import { useSessionStore } from '@/store/session';
+import { actStore } from '../utils/actStore';
 
 const fetchMock = vi.fn();
 beforeEach(() => {
@@ -24,7 +25,9 @@ beforeEach(() => {
 afterEach(() => {
   vi.unstubAllGlobals();
   resetApiClientForTests();
-  useSessionStore.setState({ user: null, status: 'idle' });
+  actStore(() => {
+    useSessionStore.setState({ user: null, status: 'idle' });
+  });
 });
 
 function renderModal() {

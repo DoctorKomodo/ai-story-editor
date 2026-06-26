@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ThemeApply } from '@/components/ThemeApply';
 import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings';
 import { useSessionStore } from '@/store/session';
+import { actStore } from '../utils/actStore';
 
 beforeEach(() => {
   useSessionStore.setState({
@@ -13,7 +14,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  useSessionStore.setState({ user: null, status: 'idle' });
+  actStore(() => {
+    useSessionStore.setState({ user: null, status: 'idle' });
+  });
   delete document.documentElement.dataset.theme;
   document.documentElement.style.removeProperty('--prose-font');
   document.documentElement.style.removeProperty('--prose-size');
