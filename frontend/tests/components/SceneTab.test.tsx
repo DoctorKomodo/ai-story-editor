@@ -23,6 +23,7 @@ import { createQueryClient } from '@/lib/queryClient';
 import { truncateAtWordBoundary } from '@/lib/strings';
 import { useChatDraftStore } from '@/store/chatDraft';
 import { useSessionStore } from '@/store/session';
+import { actStore } from '../utils/actStore';
 
 // Partially mock @/lib/api so we can intercept `apiStream` for SSE sends
 // without affecting the other exports (api, resetApiClientForTests, etc).
@@ -97,8 +98,10 @@ function teardownTest(): void {
   vi.unstubAllGlobals();
   setUnauthorizedHandler(null);
   resetApiClientForTests();
-  useSessionStore.setState({ user: null, status: 'idle' });
-  useChatDraftStore.setState({ drafts: {} });
+  actStore(() => {
+    useSessionStore.setState({ user: null, status: 'idle' });
+    useChatDraftStore.setState({ drafts: {} });
+  });
 }
 
 // ─── Test 7: Soft-delete with undo ─────────────────────────────────────────────

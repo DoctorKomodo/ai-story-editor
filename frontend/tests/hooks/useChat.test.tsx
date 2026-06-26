@@ -17,6 +17,7 @@ import { ApiError, apiStream, resetApiClientForTests } from '@/lib/api';
 import { resetClientState } from '@/lib/sessionReset';
 import { abortAllStreams } from '@/lib/streamRegistry';
 import { useChatDraftStore } from '@/store/chatDraft';
+import { actStore } from '../utils/actStore';
 
 vi.mock('@/lib/api', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api')>('@/lib/api');
@@ -60,7 +61,9 @@ beforeEach(() => {
 
 afterEach(() => {
   abortAllStreams();
-  useChatDraftStore.setState({ drafts: {} });
+  actStore(() => {
+    useChatDraftStore.setState({ drafts: {} });
+  });
 });
 
 describe('useSendChatMessageMutation', () => {
@@ -393,12 +396,14 @@ describe('useSendChatMessageMutation', () => {
     expect(signalBox.current?.aborted).toBe(true);
     expect(useChatDraftStore.getState().drafts['c1']).toBeUndefined();
 
-    try {
-      enqueue('data: {"choices":[{"delta":{"content":"B"}}]}\n\n');
-    } catch {
-      // expected: stream cancelled by the abort
-    }
-    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    await act(async () => {
+      try {
+        enqueue('data: {"choices":[{"delta":{"content":"B"}}]}\n\n');
+      } catch {
+        // expected: stream cancelled by the abort
+      }
+      await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    });
 
     expect(appendSpy).not.toHaveBeenCalled();
     expect(useChatDraftStore.getState().drafts['c1']).toBeUndefined();
