@@ -3,6 +3,7 @@ import type { Editor as TiptapEditor } from '@tiptap/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { InlineAIResult } from '@/components/InlineAIResult';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
+import { actStore } from '../utils/actStore';
 
 /**
  * F34 tests.
@@ -51,7 +52,9 @@ function makeEditorMock(selectionTo = 10): EditorMock {
 }
 
 afterEach(() => {
-  useInlineAIResultStore.setState({ inlineAIResult: null });
+  actStore(() => {
+    useInlineAIResultStore.setState({ inlineAIResult: null });
+  });
   vi.restoreAllMocks();
 });
 

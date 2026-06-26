@@ -8,9 +8,12 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { AppShell } from '@/components/AppShell';
 import { useFocusToggle } from '@/hooks/useFocusToggle';
 import { useUiStore } from '@/store/ui';
+import { actStore } from '../utils/actStore';
 
 function resetTweaks(): void {
-  useUiStore.setState({ layout: 'three-col' });
+  actStore(() => {
+    useUiStore.setState({ layout: 'three-col' });
+  });
 }
 
 function renderShell(): void {

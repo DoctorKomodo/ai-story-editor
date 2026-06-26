@@ -8,6 +8,7 @@ import { DEFAULT_SETTINGS, userSettingsQueryKey } from '@/hooks/useUserSettings'
 import { createQueryClient } from '@/lib/queryClient';
 import { type AttachedSelectionValue, useAttachedSelectionStore } from '@/store/attachedSelection';
 import { makeModel } from '../fixtures/model';
+import { actStore } from '../utils/actStore';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -37,7 +38,9 @@ describe('ChatComposer (F40)', () => {
   });
 
   afterEach(() => {
-    useAttachedSelectionStore.setState({ attachedSelection: null });
+    actStore(() => {
+      useAttachedSelectionStore.setState({ attachedSelection: null });
+    });
   });
 
   it('Send button has aria-label "Send"', () => {
@@ -275,7 +278,9 @@ describe('ChatComposer web-search toggle (F50)', () => {
   });
 
   afterEach(() => {
-    useAttachedSelectionStore.setState({ attachedSelection: null });
+    actStore(() => {
+      useAttachedSelectionStore.setState({ attachedSelection: null });
+    });
     vi.restoreAllMocks();
   });
 

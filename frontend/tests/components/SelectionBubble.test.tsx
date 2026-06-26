@@ -3,6 +3,7 @@ import type { JSX } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type SelectionAction, SelectionBubble } from '@/components/SelectionBubble';
 import { useSelectionStore } from '@/store/selection';
+import { actStore } from '../utils/actStore';
 
 /**
  * F33 tests.
@@ -16,7 +17,9 @@ import { useSelectionStore } from '@/store/selection';
 
 afterEach(() => {
   // Each test owns its own state — reset the store and clear spies.
-  useSelectionStore.setState({ selection: null });
+  actStore(() => {
+    useSelectionStore.setState({ selection: null });
+  });
   vi.restoreAllMocks();
 });
 

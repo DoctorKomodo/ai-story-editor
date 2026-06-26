@@ -6,9 +6,12 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Sidebar, type SidebarProps } from '@/components/Sidebar';
 import { useSidebarTabStore } from '@/store/sidebarTab';
+import { actStore } from '../utils/actStore';
 
 function resetSidebarTab(): void {
-  useSidebarTabStore.setState({ sidebarTab: 'chapters' });
+  actStore(() => {
+    useSidebarTabStore.setState({ sidebarTab: 'chapters' });
+  });
 }
 
 function renderSidebar(props: Partial<SidebarProps> = {}): void {
