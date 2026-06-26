@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetApiClientForTests, setUnauthorizedHandler } from '@/lib/api';
+import { APP_VERSION } from '@/lib/appVersion';
 import { createQueryClient } from '@/lib/queryClient';
 import { AppRouter } from '@/router';
 import { useSessionStore } from '@/store/session';
@@ -73,8 +74,7 @@ describe('auth screen mockup redesign (F24)', () => {
     const heroText = aside?.textContent ?? '';
     expect(heroText).toMatch(/Inkwell/);
     expect(heroText).toMatch(/stray marginalia/i);
-    expect(heroText).toMatch(/Self-hosted/);
-    expect(heroText).toMatch(/inkwell-01/);
+    expect(heroText).toContain(`v${APP_VERSION}`);
   });
 
   it('hero is hidden below the 720px breakpoint via responsive utilities', async () => {

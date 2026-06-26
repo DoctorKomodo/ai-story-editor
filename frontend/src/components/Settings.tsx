@@ -19,6 +19,7 @@ import type { JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
 import { formatUsd } from '@/components/BalanceDisplay';
 import { SettingsAppearanceTab } from '@/components/SettingsAppearanceTab';
+import { SettingsDataTab } from '@/components/SettingsDataTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsPromptsTab } from '@/components/SettingsPromptsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
@@ -50,6 +51,7 @@ const TABS: ReadonlyArray<{ id: SettingsTab; label: string }> = [
   { id: 'prompts', label: 'Prompts' },
   { id: 'writing', label: 'Writing' },
   { id: 'appearance', label: 'Appearance' },
+  { id: 'data', label: 'Backup' },
 ];
 
 function EyeIcon(): JSX.Element {
@@ -170,8 +172,10 @@ export function SettingsModal({
           <SettingsPromptsTab />
         ) : activeTab === 'writing' ? (
           <SettingsWritingTab />
-        ) : (
+        ) : activeTab === 'appearance' ? (
           <SettingsAppearanceTab />
+        ) : (
+          <SettingsDataTab />
         )}
       </ModalBody>
 

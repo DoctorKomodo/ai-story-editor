@@ -43,3 +43,9 @@ backups/*.sql.gz
 
 # Harness-created agent git worktrees (local-only scratch copies)
 .claude/worktrees/
+
+# superpowers subagent-driven-development scratch workspace (task briefs,
+# reports, review packages, progress ledger). The sdd-workspace script also
+# drops a self-ignoring .gitignore inside; this top-level entry is the
+# belt-and-suspenders so anything written under .superpowers/ stays untracked.
+.superpowers/

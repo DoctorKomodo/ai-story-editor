@@ -32,7 +32,7 @@ import {
 } from '../repos/chapter.repo';
 import { getDekFromRequest } from '../services/content-crypto.service';
 import { resolvePrompt } from '../services/prompt.service';
-import { tipTapJsonToText } from '../services/tiptap-text';
+import { computeWordCount, tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
 import {
   buildVeniceParams,
@@ -54,12 +54,6 @@ const POST_ORDER_RETRY_ATTEMPTS = 3;
 
 function isPrismaUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
-}
-
-function computeWordCount(bodyJson: unknown): number {
-  const text = tipTapJsonToText(bodyJson).trim();
-  if (text.length === 0) return 0;
-  return text.split(/\s+/).filter(Boolean).length;
 }
 
 export function createChaptersRouter() {

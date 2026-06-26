@@ -18,10 +18,10 @@
 brainstorm  →  plan  →  bd issue  →  /bd-execute  →  /bd-close-reviewed
 (superpowers   (superpowers   (filed in    (bridge to       (path-matched
 brainstorming)  writing-plans)  bd, with    superpowers'     surface
-                                plan link   subagent loop,   reviewers,
-                                via         with rules       typecheck,
-                                /bd-link-   digest           bd close)
-                                plan)       prepended)
+                                plan link   subagent loop +   reviewers,
+                                via         rules digest +    typecheck,
+                                /bd-link-   final whole-      bd close)
+                                plan)       branch review)
 ```
 
 Every bd issue goes through this loop, including trivial ones. There
@@ -135,42 +135,66 @@ queue.)
 
 1. Reads the bd issue state and extracts the `plan: <path>` line
    from notes. Stops if the issue is already closed, claimed by
-   someone else, or has no plan link.
-2. Reads the plan file linked from bd notes; extracts the touch-set
-   and the per-task text.
+   someone else, or has no plan link. Also reads the progress
+   ledger (`.superpowers/sdd/progress.md`) so a resumed run skips
+   tasks already marked complete.
+2. Reads the plan file linked from bd notes; extracts the touch-set,
+   the Global Constraints section, and per-task `model:` overrides.
+   (Task *text* is extracted to a brief file per task at dispatch
+   time via `scripts/task-brief`, not pasted through context.)
 3. Reads `docs/agent-rules/index.md`; matches the plan's file map
    against the path-glob table; unions the matched digest names and
-   reads each digest into memory.
-4. Reads superpowers' prompt templates fresh from the installed
+   assembles them into one `.superpowers/sdd/project-rules.md` file.
+4. Reads superpowers 6.x prompt templates fresh from the installed
    plugin (`~/.claude/plugins/cache/claude-plugins-official/
    superpowers/<version>/skills/subagent-driven-development/
-   {implementer,spec-reviewer,code-quality-reviewer}-prompt.md`).
+   {implementer,task-reviewer}-prompt.md`, plus
+   `requesting-code-review/code-reviewer.md` for the final review).
+   Picks the highest installed `<version>`. If the templates or the
+   `task-brief`/`review-package`/`sdd-workspace` scripts don't
+   resolve in the expected 6.x shape, it stops and surfaces the
+   drift instead of improvising.
 5. **Now** claims: `bd update <id> --claim`.
-6. Tracks per-task state in TodoWrite (within-session ledger).
-7. For each task: dispatches **implementer** → **spec reviewer** →
-   **code-quality reviewer** in that order. Project rules digests
-   are prepended to the implementer and code-quality-reviewer
-   prompts as a `## Project Rules` section before the
-   `## Task Description` block. The spec reviewer is dispatched
-   *without* the digest — its job is spec compliance, not project
-   rule enforcement.
-8. After the last task reports CLEAN from both reviewers, hands off
-   to `/bd-close-reviewed`.
+6. Tracks per-task state in TodoWrite (within-session ledger) and
+   appends a durable line to `.superpowers/sdd/progress.md` as each
+   task closes.
+7. For each task: dispatches **implementer** → **task reviewer**
+   (one reviewer returning both a spec-compliance verdict and a
+   code-quality verdict — 6.x merged the two former reviewers).
+   Task text, the implementer's report, and the diff are handed
+   over as files (`task-brief`, the report file, `review-package`).
+   The assembled project-rules file is pointed to from both the
+   implementer and the task-reviewer dispatches (the merged reviewer
+   owns the code-quality half, so it enforces the same rules the
+   implementer was held to).
+8. After the last task is clean, dispatches a **final whole-branch
+   review** (`requesting-code-review/code-reviewer.md`, on the most
+   capable model) over the `merge-base..HEAD` package, then hands
+   off to `/bd-close-reviewed`.
 
 **Continuous execution:** the bridge does not pause between tasks.
 The user is interrupted only when an implementer reports BLOCKED
-the bridge cannot resolve, ambiguity prevents progress, or all
-tasks are done.
+the bridge cannot resolve, a reviewer raises a plan-mandated
+finding that needs the user's call, or all tasks are done.
 
 **What the bridge does NOT do:** call `bd close` directly. That's
 `/bd-close-reviewed`'s job, after the surface reviewers run.
 
 ### 5. Close via `/bd-close-reviewed`
 
-**When:** `/bd-execute`'s loop reports CLEAN, or you implemented
-something by hand and want to close.
+**When:** `/bd-execute`'s loop reports CLEAN (after its final
+whole-branch review — see step 4), or you implemented something by
+hand and want to close.
 
 **Tool:** `/bd-close-reviewed <bd-id>` skill.
+
+This gate is **narrow and project-tuned** — typecheck, the verify
+line, and the path-matched surface reviewers. It is *complementary
+to*, not a replacement for, the broad final whole-branch review that
+`/bd-execute` runs at the end of its loop: that one is a general
+code review (cross-task, integration-level); this one is the two
+specialised lanes (auth/crypto, narrative-boundary) plus the close
+mechanics. Both run; neither subsumes the other.
 
 **What it does:**
 
@@ -210,28 +234,29 @@ every body, tokens-only from `index.css`, request-scoped DEK only,
 ciphertext never returned, etc. — are too many to restate per task,
 too project-specific to live in superpowers' generic prompts, and
 too important to skip. They live in `docs/agent-rules/` as plain
-prose and get **prepended at dispatch time** to the implementer +
-code-quality-reviewer prompts.
+prose. The bridge **assembles the matched digests into one file**
+(`.superpowers/sdd/project-rules.md`) and points each dispatch at
+that file.
 
-### How the prepend works
+### How the injection works
 
 The bridge skill is the controller. It reads superpowers'
-`implementer-prompt.md` template, the matching digest(s) from
-`docs/agent-rules/`, and constructs the dispatched Task prompt with
-this shape:
+`implementer-prompt.md` template, assembles the matching digest(s)
+from `docs/agent-rules/` into the project-rules file, and constructs
+the dispatched Task prompt with this shape:
 
 ```
 You are implementing Task N: [task name]
 
-## Project Rules (from docs/agent-rules/<name>.md)
+## Project Rules
 
-<digest content, verbatim, with literal section headers>
-
----
+Read your project rules first: <.superpowers/sdd/project-rules.md>.
+They are binding implementation rules for this codebase — follow
+them as strictly as the task brief.
 
 ## Task Description
 
-[FULL TEXT of task from plan]
+Read your task brief first: [BRIEF_FILE]   (written by scripts/task-brief)
 
 ## Context
 
@@ -240,10 +265,11 @@ You are implementing Task N: [task name]
 [...rest of implementer-prompt.md template, with substitutions...]
 ```
 
-The same `## Project Rules` block is prepended to the
-code-quality-reviewer's prompt so it enforces the same rules the
-implementer was held to. The spec-reviewer's prompt is
-*not* augmented — its scope is spec compliance, not project rules.
+The same `## Project Rules` pointer is given to the **task
+reviewer** so it enforces the same rules the implementer was held to
+— the 6.x reviewer is a single pass that returns both a
+spec-compliance verdict and a code-quality verdict, so there is no
+longer a separate spec-only reviewer to leave un-augmented.
 
 ### How `index.md` resolves digests
 
@@ -282,19 +308,23 @@ picks it up.
 
 ## Model selection
 
-`/bd-execute` defaults its dispatched subagents to **Sonnet** — both
-reviewers always, the implementer unless the task opts up. The two
-surface reviewers invoked by `/bd-close-reviewed`
-(`security-reviewer`, `repo-boundary-reviewer`) pin `model: sonnet`
-in their agent frontmatter, so the close gate is consistent.
+`/bd-execute` defaults its dispatched subagents to **Sonnet** — the
+per-task reviewer always, the implementer unless the task opts up.
+The **final whole-branch review** (the last step before the close
+handoff) is the exception: it runs on **Opus**, since a whole-branch
+review is a judgment task. The two surface reviewers invoked by
+`/bd-close-reviewed` (`security-reviewer`, `repo-boundary-reviewer`)
+pin `model: sonnet` in their agent frontmatter, so the close gate is
+consistent.
 
-**Why Sonnet by default.** The bridge's subagents do structured
-work: implementers execute TDD tasks against a plan + rules digest;
-reviewers compare a diff against a spec or a digest. None of that
-is synthesis. Sonnet handles structured execution well; running
-Opus by default (which is what happens with no explicit
-`model:` parameter, since `subagent_type: general-purpose` has no
-agent-definition file to consult) is wasted budget.
+**Why Sonnet by default.** The bridge's per-task subagents do
+structured work: implementers execute TDD tasks against a plan +
+rules digest; the task reviewer compares a diff against the spec and
+the digest. None of that is synthesis. Sonnet handles structured
+execution well; running Opus by default (which is what happens with
+no explicit `model:` parameter, since `subagent_type:
+general-purpose` has no agent-definition file to consult) is wasted
+budget.
 
 ### Opting the implementer up to Opus
 
@@ -314,8 +344,8 @@ model: opus
 The bridge picks the line up when it extracts task text in step 1
 of its loop and uses it as the `model:` parameter for that task's
 implementer dispatch (and any re-dispatch on review failure). The
-spec + code-quality reviewers stay on Sonnet regardless — their
-work shape doesn't change with task difficulty.
+task reviewer stays on Sonnet regardless — its work shape doesn't
+change with task difficulty.
 
 If no `model:` line is present, Sonnet is the default. Don't
 speculatively opt up.
