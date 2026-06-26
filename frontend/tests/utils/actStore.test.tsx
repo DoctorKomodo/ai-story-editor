@@ -34,14 +34,16 @@ describe('actStore', () => {
 
     // Bare mutation outside act → React logs the act warning.
     useCountStore.setState({ n: 1 });
-    const bareWarned = errorSpy.mock.calls.some((c) => String(c[0]).includes('not wrapped in act'));
+    const bareWarned = errorSpy.mock.calls.some((c: unknown[]) =>
+      String(c[0]).includes('not wrapped in act'),
+    );
     expect(bareWarned).toBe(true);
 
     errorSpy.mockClear();
 
     // Same mutation via actStore → no act warning.
     actStore(() => useCountStore.setState({ n: 2 }));
-    const wrappedWarned = errorSpy.mock.calls.some((c) =>
+    const wrappedWarned = errorSpy.mock.calls.some((c: unknown[]) =>
       String(c[0]).includes('not wrapped in act'),
     );
     expect(wrappedWarned).toBe(false);
