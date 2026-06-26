@@ -400,7 +400,8 @@ git commit -m "[story-editor-cgg] buffer test-DB reset/migrate subprocess output
 - [ ] **E12 leak test:** `npm -w story-editor-backend run test -- tests/security/byok-leak.test.ts` → pass.
 
 **Suggested bd verify line for `story-editor-cgg`** (stack must be healthy first — `docker compose up -d --wait` gates on the Postgres healthcheck so `globalSetup`'s `docker exec` reset doesn't race a cold container):
-`verify: docker compose up -d --wait && npm -w story-editor-backend run test 2>&1 | tee /tmp/be.out | grep -E "Tests +[0-9]+ passed" && [ "$(grep -cE '\[venice\.|\[chapter\.repo\]|\[V15\]|\[error-handler\.dev\]|Applying migration' /tmp/be.out)" = "0" ]`
+`verify: docker compose up -d --wait && npm -w story-editor-backend run test > /tmp/be.out 2>&1 && [ "$(grep -cE '\[venice\.|\[chapter\.repo\]|\[V15\]|\[error-handler\.dev\]|Applying migration' /tmp/be.out)" = "0" ]`
+(Redirect-to-file + npm exit code, not a pipe into `grep -q` — the latter SIGPIPEs npm under `pipefail` → exit 141.)
 
 ## Out of scope (tracked separately)
 
