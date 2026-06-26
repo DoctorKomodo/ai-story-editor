@@ -1,6 +1,30 @@
 import { act, renderHook } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { useActiveChapterStore } from '@/store/activeChapter';
+import { resolveActiveChapterId, useActiveChapterStore } from '@/store/activeChapter';
+
+const chapters = [
+  { id: 'b', orderIndex: 1 },
+  { id: 'a', orderIndex: 0 },
+  { id: 'c', orderIndex: 2 },
+];
+
+describe('resolveActiveChapterId', () => {
+  it('keeps the current selection when it belongs to the list', () => {
+    expect(resolveActiveChapterId(chapters, 'c')).toBe('c');
+  });
+
+  it('selects the lowest-orderIndex chapter when current is null', () => {
+    expect(resolveActiveChapterId(chapters, null)).toBe('a');
+  });
+
+  it('replaces a stale selection (not in the list) with the first chapter', () => {
+    expect(resolveActiveChapterId(chapters, 'from-another-story')).toBe('a');
+  });
+
+  it('returns null for an empty chapter list', () => {
+    expect(resolveActiveChapterId([], 'anything')).toBeNull();
+  });
+});
 
 afterEach(() => {
   act(() => {

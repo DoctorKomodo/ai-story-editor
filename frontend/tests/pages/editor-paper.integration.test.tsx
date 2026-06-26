@@ -158,7 +158,15 @@ describe('EditorPage paper integration (F52)', () => {
     expect(screen.getByRole('toolbar', { name: /formatting/i })).toBeInTheDocument();
   });
 
-  it('shows the empty-state placeholder when no chapter is active', async () => {
+  it('shows the empty-state placeholder when the story has no chapters', async () => {
+    // With auto-select-first-chapter, the empty state appears only when there
+    // is nothing to select — a story that has chapters auto-opens its first.
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/stories/abc123/chapters')) {
+        return Promise.resolve(jsonResponse(200, { chapters: [] }));
+      }
+      return defaultRouter()(url, init);
+    });
     renderEditor();
 
     await waitFor(() => {
@@ -167,6 +175,18 @@ describe('EditorPage paper integration (F52)', () => {
 
     expect(screen.getByTestId('editor-empty-state')).toBeInTheDocument();
     expect(screen.queryByRole('textbox', { name: /chapter body/i })).toBeNull();
+  });
+
+  it('auto-selects the first chapter when none is active (no stale empty state)', async () => {
+    // Regression guard for the story-switch staleness fix: the activeChapterId
+    // store starts null here (beforeEach), but a story with chapters must
+    // auto-open the first one instead of stranding on the empty state.
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /chapter body/i })).toBeInTheDocument();
+    });
+    expect(screen.queryByTestId('editor-empty-state')).toBeNull();
   });
 
   it('mounts Paper when an active chapter is selected', async () => {

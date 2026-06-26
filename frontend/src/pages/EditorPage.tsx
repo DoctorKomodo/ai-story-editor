@@ -27,7 +27,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import type { JSX } from 'react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import type { Chapter } from 'story-editor-shared';
 import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
 import { AppShell } from '@/components/AppShell';
@@ -71,7 +71,7 @@ import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
 import { triggerAskAI } from '@/lib/askAi';
 import { extractVeniceMessage } from '@/lib/veniceError';
-import { useActiveChapterStore } from '@/store/activeChapter';
+import { resolveActiveChapterId, useActiveChapterStore } from '@/store/activeChapter';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
 import { useSessionStore } from '@/store/session';
@@ -125,6 +125,13 @@ export function EditorPage(): JSX.Element {
   useEffect(() => {
     setSelectedCharacterId(null);
   }, [activeChapterId, story?.id, setSelectedCharacterId]);
+
+  useEffect(() => {
+    const chapters = chaptersQuery.data;
+    if (!chapters) return;
+    const next = resolveActiveChapterId(chapters, activeChapterId);
+    if (next !== activeChapterId) setActiveChapterId(next);
+  }, [chaptersQuery.data, activeChapterId, setActiveChapterId]);
 
   const [editor, setEditor] = useState<TiptapEditor | null>(null);
   // Paper passes `null` on unmount (chapter switch via key={chapterId}); we
@@ -467,9 +474,16 @@ export function EditorPage(): JSX.Element {
       <div
         role="alert"
         data-testid="editor-page-error"
-        className="min-h-screen flex items-center justify-center px-6 text-center font-sans text-[13px] text-ink-3"
+        className="min-h-screen flex flex-col items-center justify-center gap-4 px-6 text-center font-sans text-[13px] text-ink-3"
       >
-        Could not load story
+        <p className="m-0">Could not load story</p>
+        <Link
+          to="/"
+          data-testid="editor-page-error-home"
+          className="px-3 py-1.5 text-[12px] rounded-[var(--radius)] bg-ink text-bg hover:bg-ink-2 transition-colors"
+        >
+          Back to library
+        </Link>
       </div>
     );
   }

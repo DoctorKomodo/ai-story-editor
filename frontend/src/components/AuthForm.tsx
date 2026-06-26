@@ -3,6 +3,7 @@ import { type FormEvent, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { LoginCredentials, RegisterCredentials } from '@/hooks/useAuth';
 import { ApiError } from '@/lib/api';
+import { APP_VERSION } from '@/lib/appVersion';
 
 export type AuthMode = 'login' | 'register';
 
@@ -235,9 +236,7 @@ export function AuthForm({ mode, onSubmit }: AuthFormProps): JSX.Element {
           </cite>
         </blockquote>
         <div className="flex gap-2 font-mono text-[11px] text-[var(--ink-4)]">
-          <span>Self-hosted · v0.4.2</span>
-          <span>·</span>
-          <span>inkwell-01</span>
+          <span>v{APP_VERSION}</span>
         </div>
       </aside>
 
