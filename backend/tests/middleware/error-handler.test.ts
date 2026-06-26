@@ -1,6 +1,6 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { globalErrorHandler } from '../../src/index';
 import { NoVeniceKeyError } from '../../src/lib/venice';
 import '../setup';
@@ -113,5 +113,28 @@ describe('globalErrorHandler [B7]', () => {
       expect(res.body.error.message).toBe('Internal server error');
       expect(res.body.error.code).toBe('internal_error');
     });
+  });
+
+  it("dev mode tags the handler's console log with a stable [error-handler.dev] prefix", async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await request(makeApp(new Error('boom-message'))).get('/boom');
+      expect(spy).toHaveBeenCalledWith('[error-handler.dev]', expect.any(Error));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('production mode does not log the error to the console at all', async () => {
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      await request(makeApp(new Error('boom-message'))).get('/boom');
+      expect(spy).not.toHaveBeenCalled();
+    } finally {
+      spy.mockRestore();
+      process.env.NODE_ENV = original;
+    }
   });
 });

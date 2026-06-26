@@ -191,7 +191,7 @@ export function globalErrorHandler(
   }
   const isProd = process.env.NODE_ENV === 'production';
   if (!isProd) {
-    console.error(err);
+    console.error('[error-handler.dev]', err);
   }
   const message = isProd
     ? 'Internal server error'
