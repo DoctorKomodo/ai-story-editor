@@ -44,6 +44,7 @@ export async function resetAllTables(): Promise<void> {
   // cascade, but explicit is faster and safer across test runs.
   await prisma.message.deleteMany();
   await prisma.chat.deleteMany();
+  await prisma.draft.deleteMany();
   await prisma.outlineItem.deleteMany();
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();
