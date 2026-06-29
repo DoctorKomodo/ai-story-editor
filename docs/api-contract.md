@@ -119,16 +119,16 @@ Cascades chapters / characters / outline / chats / messages. Response `204`.
 ## Chapters — `/api/stories/:storyId/chapters`
 
 ### `GET /`
-Response `200`: `{ "chapters": [ … ] }` — **metadata only**, sorted by `orderIndex`: `{ "id", "storyId", "title", "wordCount", "orderIndex", "status", "createdAt", "updatedAt", "hasSummary", "summaryIsStale" }`. `bodyJson` is omitted here; use the single-chapter GET.
+Response `200`: `{ "chapters": [ … ] }` — **metadata only**, sorted by `orderIndex`: `{ "id", "storyId", "title", "wordCount", "orderIndex", "createdAt", "updatedAt", "hasSummary", "summaryIsStale" }`. `bodyJson` is omitted here; use the single-chapter GET.
 
 ### `POST /`
-Body: `{ "title", "bodyJson?", "status?" }`. Backend assigns `orderIndex` and computes `wordCount` from `bodyJson` before encryption. Response `201`: `{ "chapter" }`.
+Body: `{ "title", "bodyJson?" }`. Backend assigns `orderIndex` and computes `wordCount` from `bodyJson` before encryption. Response `201`: `{ "chapter" }`.
 
 ### `GET /:chapterId`
-Response `200`: `{ "chapter": { "id", "storyId", "title", "bodyJson", "wordCount", "orderIndex", "status", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "summary", "summaryUpdatedAt" } }`. `bodyJson` is the decrypted TipTap tree; `summary` is the structured summary (or `null`).
+Response `200`: `{ "chapter": { "id", "storyId", "title", "bodyJson", "wordCount", "orderIndex", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "summary", "summaryUpdatedAt" } }`. `bodyJson` is the decrypted TipTap tree; `summary` is the structured summary (or `null`).
 
 ### `PATCH /:chapterId`
-Body: any subset of `{ "title", "bodyJson", "status", "orderIndex" }`. If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`.
+Body: any subset of `{ "title", "bodyJson", "orderIndex" }`. If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`.
 
 ### `DELETE /:chapterId`
 Response `204` (remaining chapters are re-packed to sequential `orderIndex`).

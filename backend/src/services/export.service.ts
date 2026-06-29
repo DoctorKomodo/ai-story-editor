@@ -46,7 +46,6 @@ export async function buildExport(req: Request): Promise<ExportFile> {
 
       chapters.push({
         title: meta.title,
-        status: meta.status,
         orderIndex: meta.orderIndex,
         bodyJson: full?.bodyJson,
         summary: meta.summary ?? null,

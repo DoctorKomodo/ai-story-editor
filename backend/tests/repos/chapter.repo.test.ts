@@ -74,7 +74,6 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
     // Metadata is present.
     expect(ch.wordCount).toBe(2);
     expect(ch.orderIndex).toBe(0);
-    expect(ch.status).toBe('draft');
     // Body must NOT be present in the metadata projection — search the full
     // object so this fails loudly if a future change reintroduces it.
     expect(Object.keys(ch as Record<string, unknown>)).not.toContain('bodyJson');

@@ -58,7 +58,6 @@ export async function runImport(req: Request, file: ImportFile): Promise<ImportR
             storyId: story.id,
             title: ch.title,
             bodyJson: ch.bodyJson,
-            status: ch.status,
             orderIndex: i,
             wordCount: computeWordCount(ch.bodyJson),
           });

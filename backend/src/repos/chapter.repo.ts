@@ -3,7 +3,6 @@ import type { Request } from 'express';
 import {
   CHAPTER_ENCRYPTED_FIELD_KEYS,
   CHAPTER_META_ENCRYPTED_FIELD_KEYS,
-  type ChapterStatus,
   type ChapterSummary,
   chapterSummarySchema,
 } from 'story-editor-shared';
@@ -21,7 +20,6 @@ export interface RepoChapterCreateInput {
   // Body is stored encrypted as a serialised JSON string. Caller passes the
   // TipTap JSON tree; the repo serialises + encrypts it.
   bodyJson?: unknown;
-  status?: string;
   orderIndex: number;
   // Plaintext integer derived from bodyJson at save time (before encryption)
   // — we can't count words over ciphertext, so this stays plaintext. See
@@ -33,7 +31,6 @@ export interface RepoChapterUpdateInput {
   title?: string;
   bodyJson?: unknown;
   summaryJson?: ChapterSummary | null;
-  status?: string;
   orderIndex?: number;
   wordCount?: number;
 }
@@ -55,7 +52,6 @@ export type RepoChapter = {
   summaryIsStale: boolean;
   wordCount: number;
   orderIndex: number;
-  status: ChapterStatus;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -111,7 +107,6 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       data: {
         storyId: input.storyId,
         orderIndex: input.orderIndex,
-        status: input.status ?? 'draft',
         wordCount: input.wordCount ?? 0,
         // Post-[E11]: narrative content is ciphertext-only. `title` uses the
         // standard triple; `body` is the serialised TipTap JSON tree
@@ -159,7 +154,6 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         id: true,
         storyId: true,
         orderIndex: true,
-        status: true,
         wordCount: true,
         createdAt: true,
         updatedAt: true,
@@ -232,7 +226,6 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         data.updatedAt = now; // same instant so a fresh summary isn't immediately stale (this write bumps @updatedAt otherwise)
       }
     }
-    if (input.status !== undefined) data.status = input.status;
     if (input.orderIndex !== undefined) data.orderIndex = input.orderIndex;
     if (input.wordCount !== undefined) data.wordCount = input.wordCount;
 

@@ -99,7 +99,6 @@ export function createChaptersRouter() {
             storyId,
             title: body.title,
             bodyJson: body.bodyJson,
-            status: body.status,
             orderIndex: nextOrderIndex,
             wordCount,
           });
@@ -201,7 +200,6 @@ export function createChaptersRouter() {
 
       const input: RepoChapterUpdateInput = {};
       if (body.title !== undefined) input.title = body.title;
-      if (body.status !== undefined) input.status = body.status;
       if (body.orderIndex !== undefined) input.orderIndex = body.orderIndex;
       if (body.bodyJson !== undefined) {
         input.bodyJson = body.bodyJson;
