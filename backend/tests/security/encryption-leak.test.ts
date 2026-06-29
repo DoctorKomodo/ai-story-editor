@@ -17,6 +17,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
@@ -30,6 +31,7 @@ const SENTINEL = 'SENTINEL_E12_DO_NOT_LEAK';
 const NARRATIVE_TABLES = [
   'Story',
   'Chapter',
+  'Draft',
   'Character',
   'OutlineItem',
   'Chat',
@@ -102,6 +104,25 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
         stateAtEnd: `summary-state ${SENTINEL}`,
         openThreads: `summary-threads ${SENTINEL}`,
       },
+    });
+
+    const draftRepo = createDraftRepo(ctx.req);
+    await draftRepo.create({
+      chapterId: chapter.id as string,
+      bodyJson: {
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: `draft-body ${SENTINEL}` }] },
+        ],
+      },
+      summaryJson: {
+        events: `draft-events ${SENTINEL}`,
+        stateAtEnd: `draft-state ${SENTINEL}`,
+        openThreads: `draft-threads ${SENTINEL}`,
+      },
+      label: `draft-label ${SENTINEL}`,
+      wordCount: 2,
+      orderIndex: 0,
     });
 
     await characterRepo.create({
