@@ -62,7 +62,7 @@ describe('GET /api/users/me/export', () => {
     expect(res.headers['content-disposition']).toMatch(
       /attachment; filename="inkwell-backup-export-user-\d{8}\.json"/,
     );
-    expect(res.body.formatVersion).toBe(1);
+    expect(res.body.formatVersion).toBe(2);
     expect(res.body.stories[0].title).toBe('My Story');
     expect(res.body.stories[0].worldNotes).toBe('secret lore');
     expect(res.body.stories[0].chapters[0].bodyJson.content[0].content[0].text).toBe('hello world');
@@ -115,7 +115,7 @@ describe('POST /api/users/me/import', () => {
   it('re-sequences orderIndex/order from a gappy file', async () => {
     const agent = await registerAndLogin('seq-user');
     const file = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -124,7 +124,6 @@ describe('POST /api/users/me/import', () => {
           chapters: [
             {
               title: 'B',
-              status: 'draft',
               orderIndex: 7,
               bodyJson: { type: 'doc', content: [] },
               summary: null,
@@ -132,7 +131,6 @@ describe('POST /api/users/me/import', () => {
             },
             {
               title: 'A',
-              status: 'draft',
               orderIndex: 2,
               bodyJson: { type: 'doc', content: [] },
               summary: null,
@@ -186,7 +184,7 @@ describe('POST /api/users/me/import', () => {
     };
 
     const file = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -195,7 +193,6 @@ describe('POST /api/users/me/import', () => {
           chapters: [
             {
               title: 'Ch1',
-              status: 'draft',
               orderIndex: 0,
               bodyJson: {
                 type: 'doc',
@@ -258,7 +255,7 @@ describe('POST /api/users/me/import', () => {
     // interfere with other import tests that use different usernames.
     const agent = await registerAndLogin('ratelimit-user');
     const minimalPayload = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [],

@@ -216,7 +216,7 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     expect(p.content[0].text).toBe('one two three four five six seven');
   });
 
-  it('text-only PATCH (title + status, no bodyJson) leaves body and wordCount untouched [B3 regression]', async () => {
+  it('text-only PATCH (title only, no bodyJson) leaves body and wordCount untouched [B3 regression]', async () => {
     const { agent, sessionId } = await registerAndLogin('b10-text-only');
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Stable Body' });
@@ -235,10 +235,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
       .set('Origin', TEST_ORIGIN)
-      .send({ title: 'Renamed', status: 'revision' });
+      .send({ title: 'Renamed' });
     expect(res.status).toBe(200);
     expect(res.body.chapter.title).toBe('Renamed');
-    expect(res.body.chapter.status).toBe('revision');
     // Body + wordCount must be UNCHANGED.
     expect(res.body.chapter.wordCount).toBe(4);
     expect(typeof res.body.chapter.bodyJson).toBe('object');
