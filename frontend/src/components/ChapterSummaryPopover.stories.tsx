@@ -15,7 +15,6 @@ const baseMeta: ChapterMeta = {
   title: 'The Bronze Key',
   wordCount: 2800,
   orderIndex: 0,
-  status: 'draft',
   hasSummary: false,
   summaryIsStale: false,
   createdAt: '2026-04-01T12:00:00Z',

@@ -11,7 +11,6 @@ export function makeChapterMeta(overrides: Partial<ChapterMeta> = {}): ChapterMe
     title: 'Opening',
     wordCount: 42,
     orderIndex: 0,
-    status: 'draft',
     hasSummary: false,
     summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',

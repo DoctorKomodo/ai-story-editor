@@ -56,7 +56,6 @@ describe('useChapterQuery', () => {
         title: 'Opening',
         orderIndex: 0,
         wordCount: 42,
-        status: 'draft' as const,
         hasSummary: false,
         summaryIsStale: false,
         createdAt: '2026-04-01T00:00:00.000Z',

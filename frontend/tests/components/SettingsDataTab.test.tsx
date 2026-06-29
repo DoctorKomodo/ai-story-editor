@@ -75,7 +75,7 @@ describe('SettingsDataTab', () => {
 
     // Stage a valid backup file via the file input.
     const validBackup = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [],
@@ -97,7 +97,7 @@ describe('SettingsDataTab', () => {
   });
 
   const VALID_BACKUP = {
-    formatVersion: 1,
+    formatVersion: 2,
     app: 'inkwell',
     exportedAt: '2026-06-24T12:00:00.000Z',
     stories: [],

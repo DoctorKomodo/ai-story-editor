@@ -56,7 +56,7 @@ describe('useImportBackup', () => {
 
     await act(async () => {
       await result.current.mutateAsync({
-        formatVersion: 1,
+        formatVersion: 2,
         app: 'inkwell',
         exportedAt: '2026-06-24T12:00:00.000Z',
         stories: [],

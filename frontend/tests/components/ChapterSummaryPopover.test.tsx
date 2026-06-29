@@ -12,7 +12,6 @@ const META = {
   orderIndex: 0,
   title: 'Ch',
   wordCount: 10,
-  status: 'draft' as const,
   createdAt: '2026-05-18T00:00:00.000Z',
   updatedAt: '2026-05-18T00:00:00.000Z',
 };

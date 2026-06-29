@@ -221,7 +221,6 @@ describe('EditorPage (F51 — AppShell shell)', () => {
               title: '',
               orderIndex: 0,
               wordCount: 0,
-              status: 'draft',
               bodyJson: null,
               hasSummary: false,
               summaryIsStale: false,
