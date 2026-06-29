@@ -29,7 +29,6 @@ describe('Chapter model', () => {
     });
     expect(chapter.id).toMatch(/^c[a-z0-9]+$/);
     expect(chapter.wordCount).toBe(0);
-    expect(chapter.status).toBe('draft');
     expect(chapter.orderIndex).toBe(0);
     expect(chapter.storyId).toBe(story.id);
     expect(chapter.createdAt).toBeInstanceOf(Date);

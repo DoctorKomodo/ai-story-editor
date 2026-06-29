@@ -32,19 +32,17 @@ describe('[E5] Chapter — ciphertext columns (post-E11)', () => {
     expect(read.bodyAuthTag).toBe(SENTINEL.authTag);
   });
 
-  it('keeps orderIndex, status, storyId, wordCount plaintext — needed for UI/progress', async () => {
+  it('keeps orderIndex, storyId, wordCount plaintext — needed for UI/progress', async () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
     const created = await prisma.chapter.create({
       data: {
         storyId: story.id,
         orderIndex: 7,
-        status: 'draft',
         wordCount: 1234,
       },
     });
     expect(created.orderIndex).toBe(7);
-    expect(created.status).toBe('draft');
     expect(created.wordCount).toBe(1234);
     expect(created.storyId).toBe(story.id);
   });
