@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { chapterStatusSchema, chapterSummarySchema } from './chapter';
+import { chapterSummarySchema } from './chapter';
 import { characterCreateSchema } from './character';
 import { chatKindSchema } from './chat';
 import { citationSchema, messageAttachmentSchema, messageRoleSchema } from './message';
@@ -29,7 +29,6 @@ const chatExportSchema = z.strictObject({
 
 const chapterExportSchema = z.strictObject({
   title: z.string().min(1).max(500),
-  status: chapterStatusSchema,
   orderIndex: z.number().int().nonnegative(),
   bodyJson: z.unknown().optional(),
   summary: chapterSummarySchema.nullable().default(null),

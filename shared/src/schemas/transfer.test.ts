@@ -11,7 +11,6 @@ const minimal = {
       chapters: [
         {
           title: 'C',
-          status: 'draft',
           orderIndex: 0,
           bodyJson: { type: 'doc', content: [] },
           summary: null,

@@ -5,7 +5,6 @@ export type {
   ChapterMeta,
   ChapterMetaEncryptedFieldKey,
   ChapterReorderInput,
-  ChapterStatus,
   ChapterSummary,
   ChapterUpdateInput,
 } from './schemas/chapter';
@@ -20,7 +19,6 @@ export {
   chapterReorderSchema,
   chapterResponseSchema,
   chapterSchema,
-  chapterStatusSchema,
   chapterSummaryJsonSchema,
   chapterSummaryResponseSchema,
   chapterSummarySchema,

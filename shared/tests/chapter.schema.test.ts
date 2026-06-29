@@ -10,7 +10,6 @@ import {
   chapterReorderSchema,
   chapterResponseSchema,
   chapterSchema,
-  chapterStatusSchema,
   chapterSummaryJsonSchema,
   chapterSummaryResponseSchema,
   chapterSummarySchema,
@@ -24,26 +23,11 @@ const VALID_META = {
   title: 'Chapter One',
   wordCount: 0,
   orderIndex: 0,
-  status: 'draft' as const,
   createdAt: '2026-05-15T00:00:00.000Z',
   updatedAt: '2026-05-15T00:00:00.000Z',
   hasSummary: false,
   summaryIsStale: false,
 };
-
-describe('chapterStatusSchema', () => {
-  it('accepts the three documented values', () => {
-    expect(chapterStatusSchema.parse('draft')).toBe('draft');
-    expect(chapterStatusSchema.parse('revision')).toBe('revision');
-    expect(chapterStatusSchema.parse('final')).toBe('final');
-  });
-
-  it('rejects unknown status values', () => {
-    expect(() => chapterStatusSchema.parse('archived')).toThrow();
-    expect(() => chapterStatusSchema.parse('DRAFT')).toThrow();
-    expect(() => chapterStatusSchema.parse(0)).toThrow();
-  });
-});
 
 describe('chapterMetaSchema', () => {
   it('accepts a valid meta row', () => {
@@ -112,8 +96,8 @@ describe('chapterCreateSchema', () => {
     expect(chapterCreateSchema.parse({ title: 'New' })).toEqual({ title: 'New' });
   });
 
-  it('accepts title + bodyJson + status', () => {
-    const input = { title: 'New', bodyJson: { type: 'doc' }, status: 'draft' as const };
+  it('accepts title + bodyJson', () => {
+    const input = { title: 'New', bodyJson: { type: 'doc' } };
     expect(chapterCreateSchema.parse(input)).toEqual(input);
   });
 
@@ -134,7 +118,6 @@ describe('chapterUpdateSchema', () => {
     expect(chapterUpdateSchema.parse({ bodyJson: { type: 'doc' } })).toEqual({
       bodyJson: { type: 'doc' },
     });
-    expect(chapterUpdateSchema.parse({ status: 'final' })).toEqual({ status: 'final' });
     expect(chapterUpdateSchema.parse({ orderIndex: 3 })).toEqual({ orderIndex: 3 });
   });
 
@@ -256,7 +239,6 @@ describe('chapterMetaSchema (summary flags)', () => {
         title: 't',
         wordCount: 0,
         orderIndex: 0,
-        status: 'draft',
         createdAt: '2026-05-18T00:00:00.000Z',
         updatedAt: '2026-05-18T00:00:00.000Z',
         hasSummary: true,
@@ -272,7 +254,6 @@ describe('chapterMetaSchema (summary flags)', () => {
         title: 't',
         wordCount: 0,
         orderIndex: 0,
-        status: 'draft',
         createdAt: '2026-05-18T00:00:00.000Z',
         updatedAt: '2026-05-18T00:00:00.000Z',
       }),
@@ -289,7 +270,6 @@ describe('chapterSchema (summary + summaryUpdatedAt)', () => {
         title: 't',
         wordCount: 0,
         orderIndex: 0,
-        status: 'draft',
         createdAt: '2026-05-18T00:00:00.000Z',
         updatedAt: '2026-05-18T00:00:00.000Z',
         hasSummary: false,

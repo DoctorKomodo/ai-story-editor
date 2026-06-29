@@ -4,8 +4,6 @@ export const CHAPTER_TITLE_MIN = 1;
 export const CHAPTER_TITLE_MAX = 500;
 export const CHAPTER_SUMMARY_FIELD_MAX = 8000;
 
-export const chapterStatusSchema = z.enum(['draft', 'revision', 'final']);
-
 export const chapterSummarySchema = z.strictObject({
   events: z
     .string()
@@ -60,7 +58,6 @@ const chapterMetaBase = z.strictObject({
   title: z.string(),
   wordCount: z.number().int().nonnegative(),
   orderIndex: z.number().int().nonnegative(),
-  status: chapterStatusSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -84,13 +81,11 @@ export const chapterSchema = chapterMetaSchema.extend({
 export const chapterCreateSchema = z.strictObject({
   title: z.string().min(CHAPTER_TITLE_MIN).max(CHAPTER_TITLE_MAX),
   bodyJson: z.unknown().optional(),
-  status: chapterStatusSchema.optional(),
 });
 
 export const chapterUpdateSchema = z.strictObject({
   title: z.string().min(CHAPTER_TITLE_MIN).max(CHAPTER_TITLE_MAX).optional(),
   bodyJson: z.unknown().optional(),
-  status: chapterStatusSchema.optional(),
   orderIndex: z.number().int().nonnegative().optional(),
 });
 
@@ -121,7 +116,6 @@ export const CHAPTER_ENCRYPTED_FIELD_KEYS = ['title', 'body', 'summaryJson'] as 
 export const CHAPTER_META_ENCRYPTED_FIELD_KEYS = ['title'] as const;
 
 // z.infer type exports
-export type ChapterStatus = z.infer<typeof chapterStatusSchema>;
 export type Chapter = z.infer<typeof chapterSchema>;
 export type ChapterMeta = z.infer<typeof chapterMetaSchema>;
 export type ChapterCreateInput = z.infer<typeof chapterCreateSchema>;
