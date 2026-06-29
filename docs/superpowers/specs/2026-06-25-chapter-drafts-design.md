@@ -146,9 +146,9 @@ chip is fed a separate `storyStatus` path. It is a half-built feature, not a liv
 
 ## 5. Migration (breaking, on populated data — but decrypt-free)
 
-One Prisma migration with SQL backfill, written as explicit ordered DDL to avoid the
+The net schema change is one logical migration written as explicit ordered DDL to avoid the
 non-null/circular-FK trap (you cannot add a non-null FK to a populated table without a backfill
-window):
+window). Its full ordered sequence is:
 
 1. **Create the `Draft` table** (all columns), plus `Chapter.activeDraftId` as **nullable**, and add
    `Chat.draftId` as **nullable**.
@@ -168,18 +168,71 @@ window):
 "exactly one active draft" invariant is enforced in application logic, not by a DB NOT NULL.
 
 The verbatim ciphertext copy (step 2) and the chat backfill (step 4) are **hand-written raw SQL**
-inside the migration file (`INSERT … SELECT` / `UPDATE … FROM`), not output of `prisma migrate diff` —
-the generated diff covers the schema-shape changes; the data backfill is added by hand. **Rollback
-strategy: restore-from-backup**, not a down-migration — consistent with house style (the project ships
-no down-migrations), and the `scripts/backup-*.sh` pg_dump path already covers the new `Draft` table
-table-agnostically with no change. Given the destructive column drops on real data, take a backup
-immediately before running this migration.
+inside the migration (`INSERT … SELECT` / `UPDATE … FROM`), not output of `prisma migrate diff` —
+the generated diff covers the schema-shape changes; the data backfill is added by hand.
+
+### 5a. Delivery: expand-contract across dev steps, squashed to one migration before merge
+
+The build order (§11) splits this into independently-reviewable bd steps, and **each step ends at
+`/bd-close-reviewed`, which runs the full typecheck + test suite.** A step therefore cannot drop a
+column whose readers are retired in a *later* step, or its own suite would fail. So the sequence
+above is delivered **expand-first, contract-last**, with the destructive drops landing in the step
+that retires the last reader:
+
+- **Step 2 (9wk.2) — expand:** sub-steps 1–4 above (create `Draft`, backfill drafts + active pointer
+  + chat `draftId`) **plus `DROP COLUMN Chapter.status`** (safe — step 1 already removed every
+  reader). Keeps `Chat.chapterId` (still read by the ownership chains until step 3) and keeps
+  `Chapter.body*/summary*/wordCount` (still read until steps 4–5). **The backfill `INSERT…SELECT`
+  logic is validated here**, while the old columns still exist: a test seeds a draftless chapter
+  (raw Prisma) and runs the same backfill SQL, asserting one draft with byte-identical ciphertext +
+  `wordCount` + `activeDraftId` set + chat re-pointed. This is the correctness gate for the
+  data-moving SQL.
+- **Step 3 (9wk.3) — contract (chat):** after the ownership chains are rewritten and chat-create
+  writes `draftId`, make `Chat.draftId` non-null, add its FK, and **drop `Chat.chapterId`** + old
+  indexes.
+- **Step 5 (9wk.5) — contract (chapter):** after prompt/export/import/aggregates source from the
+  active draft, **drop `Chapter.body*/summaryJson*/summaryJsonUpdatedAt/wordCount`**.
+
+Until the step-5 contract, body/summary/wordCount live in **both** `Chapter` and `Draft`. This
+duplication never reaches an operator (see 5b) — it exists only inside the feature branch during
+dev.
+
+### 5b. The migration that ships on `main` is a single squashed migration
+
+No operator ever deploys an in-between 9wk version; the schema change only becomes real when the
+whole epic merges to `main`. So **before the epic merges, a consolidation task replaces the per-step
+scaffolding migrations with one clean migration** (pre-9wk → post-9wk) carrying the full ordered
+sequence 1–6 above. That single migration is validated by:
+
+- a **`prisma migrate diff`** check proving the squashed migration reaches a schema **identical** to
+  the staged per-step migrations (empty diff), and
+- a **baseline-fixture harness:** a committed **schema-only** `pre-9wk` baseline (`pg_dump
+  --schema-only` of a DB with only the pre-9wk migrations applied — regenerable from git, no
+  production data) is loaded into a scratch schema, seeded with representative encrypted
+  chapters/chats, then the consolidated migration is applied and the full transform asserted (drafts
+  created, ciphertext byte-identical, pointers set, chats re-pointed, old columns gone, no orphans).
+
+The backfill *logic* is already proven in step 2 (above); the consolidation only re-proves it on
+populated pre-9wk data end-to-end, since after the drops it can no longer be seeded via the normal
+`db:test:reset` path.
+
+### 5c. Operator upgrade (one-shot, automatic)
+
+The backend container entrypoint (`backend/docker-entrypoint.sh`) runs `prisma migrate deploy` on
+every boot, so on `docker compose pull && up -d` the consolidated migration applies automatically
+and atomically against the operator's populated `pgdata` — one shot, no manual step
+(`SELF_HOSTING.md` already documents this expand-then-contract norm). **Rollback strategy:
+restore-from-backup**, not a down-migration — consistent with house style (no down-migrations); the
+`scripts/backup-db.sh` pg_dump path already covers the new `Draft` table table-agnostically. Because
+the consolidated migration drops columns on real data, **the post-9wk release notes must flag it as
+destructive** so operators take a `scripts/backup-db.sh` snapshot first (per `SELF_HOSTING.md`).
 
 Properties:
 - **No DEK at migration time** — encrypted bytes are relocated, never decrypted.
 - **Existing data preserved exactly** — every chapter ends with one draft holding its current
   content and chats. Users see no change until they create a second draft.
-- **E12 leak test extended to cover `Draft`** before this lands (gate per CLAUDE.md testing rules).
+- **E12 leak test extended to cover `Draft`** in step 2, before any `Draft` ciphertext exists in a
+  shipped build (gate per CLAUDE.md testing rules).
 
 > Per CLAUDE.md "When to Stop and Ask", this is a breaking data-model change (column drops + a new
 > encrypted narrative column + re-pointed FK). It must be planned and reviewed with the user — this
@@ -384,24 +437,35 @@ oldest-truncated under the token budget. Specifics:
 ## 11. Suggested build order (for the plan)
 
 Re-ordered so each step is independently shippable + reviewable, and the big authz rewrite is its
-own unit (per review):
+own unit (per review). Per §5a, the migration is **expand-first/contract-last**: each step that
+touches the schema adds a per-step *scaffolding* migration that keeps its own close-gate green; per
+§5b these scaffolding migrations are **squashed into one consolidated migration (step 9) before the
+epic merges to `main`.**
 
 1. **Remove `Chapter.status`** across shared/backend/frontend + export-schema change + format-version
-   bump. Small, independent, de-risks the migration PR. (security/repo reviewers not triggered.)
-2. **Draft schema + migration** (Draft entity, Chapter column moves, `activeDraftId`, `Chat.draftId`
-   add/backfill) + **E12 leak-test extension to `Draft`**. (repo-boundary-reviewer.)
+   bump. Small, independent, de-risks the migration PR. (security/repo reviewers not triggered.) ✅ shipped.
+2. **Draft schema + EXPAND migration** — new `Draft` entity; backfill one draft per chapter (verbatim
+   ciphertext copy) + `activeDraftId` + `Chat.draftId` (both nullable); `DROP Chapter.status`; keep
+   `Chat.chapterId` + `Chapter.body*/summary*/wordCount`. Minimal `draft.repo.ts` (encrypt/decrypt
+   create+read) + **backfill-logic test** (§5a) + **E12 leak-test extension to `Draft`**.
+   (repo-boundary-reviewer.)
 3. **Ownership-chain + chat/message re-point** — rewrite the nested `where` clauses in
    `chat.repo.ts`, `message.repo.ts`, `ownership.middleware.ts`; flip the `Chat` wire contract
-   (`chapterId`→`draftId`) in `RepoChat`/serializer/shared schema/create-input/stories; drop
-   `Chat.chapterId`. (**security-reviewer** gate.)
+   (`chapterId`→`draftId`) in `RepoChat`/serializer/shared schema/create-input/stories; **CONTRACT
+   migration: `Chat.draftId` non-null + FK, drop `Chat.chapterId`.** (**security-reviewer** gate.)
 4. **`draft.repo.ts` + draft routes** (list/create-fork-blank/rename/delete-with-reindex/set-active);
    re-scope chat routes to draft; move body + summary/summarise endpoints to draft scope.
 5. **Prompt + export/import + aggregates** — prompt previous-chapter context via the active-draft
    summary (metadata join); rewrite `aggregateForStories` to total active-draft word counts (raw/
    reduce, not `groupBy._sum`) + fix its test; export/import round-trips all drafts (`drafts[]` +
    per-draft chats, three-phase import write with `activeDraftId` restore + orderIndex densification +
-   exactly-one-`isActive` refine, format version 2, `importResultSchema` draft count).
+   exactly-one-`isActive` refine, format version 2, `importResultSchema` draft count). **CONTRACT
+   migration: drop `Chapter.body*/summaryJson*/summaryJsonUpdatedAt/wordCount`.**
 6. **Frontend state** — `selectedDraft` + autosave-baseline re-seed + chat query re-keying.
 7. **Sidebar tree** — draft children, hover actions, subtle single-draft affordance + new-draft
    dialog.
 8. **Editor sub-row label binding** to the viewed draft.
+9. **Squash migrations + consolidation gate (pre-merge)** — replace the step-2/3/5 scaffolding
+   migrations with one consolidated migration (§5b); validate with the `prisma migrate diff`
+   equality check + the committed pre-9wk schema-baseline harness; add the destructive-migration flag
+   to the release notes (§5c). Runs last, just before the epic merges to `main`.
