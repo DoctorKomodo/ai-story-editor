@@ -1,4 +1,4 @@
-import type { Prisma, PrismaClient } from '@prisma/client';
+import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { type ChapterSummary, chapterSummarySchema } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
@@ -67,7 +67,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         ...writeEncrypted(req, 'body', bodyPlaintext),
         ...writeEncrypted(req, 'summaryJson', summaryPlaintext),
         ...writeEncrypted(req, 'label', labelPlaintext),
-      } as Prisma.DraftUncheckedCreateInput,
+      },
     });
     return shape(row, req);
   }
