@@ -45,7 +45,7 @@ describe('transfer schemas', () => {
     expect(exportSchema.parse(minimal)).toBeTruthy();
   });
   it('rejects an unknown formatVersion', () => {
-    expect(exportSchema.safeParse({ ...minimal, formatVersion: 2 }).success).toBe(false);
+    expect(exportSchema.safeParse({ ...minimal, formatVersion: 99 }).success).toBe(false);
   });
   it('rejects unknown top-level keys (strict)', () => {
     expect(exportSchema.safeParse({ ...minimal, settings: {} }).success).toBe(false);

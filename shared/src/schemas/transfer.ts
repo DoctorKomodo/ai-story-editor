@@ -7,7 +7,7 @@ import { outlineCreateSchema } from './outline';
 import { storyCreateSchema } from './story';
 
 /** Bump only on a breaking change to the file shape. Import rejects anything else. */
-export const EXPORT_FORMAT_VERSION = 1 as const;
+export const EXPORT_FORMAT_VERSION = 2 as const;
 
 const messageExportSchema = z.strictObject({
   role: messageRoleSchema,
