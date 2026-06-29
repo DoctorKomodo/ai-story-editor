@@ -46,7 +46,9 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     expect(created.summary).toEqual({ events: 'e', stateAtEnd: 's', openThreads: 'o' });
     expect(JSON.stringify(created.bodyJson)).toContain('hello drafts');
     expect(
-      Object.keys(created as Record<string, unknown>).some((k) => k.endsWith('Ciphertext')),
+      Object.keys(created as Record<string, unknown>).some(
+        (k) => k.endsWith('Ciphertext') || k.endsWith('Iv') || k.endsWith('AuthTag'),
+      ),
     ).toBe(false);
 
     // Re-read decrypts identically.
