@@ -94,6 +94,8 @@ describe('[9wk.2] drafts expand backfill — verbatim ciphertext relocation', ()
     expect(draft.wordCount).toBe(before.wordCount);
     expect(draft.orderIndex).toBe(0);
     expect(draft.labelCiphertext).toBeNull();
+    expect(draft.labelIv).toBeNull();
+    expect(draft.labelAuthTag).toBeNull();
 
     // Pointers set.
     const chapterAfter = await prisma.chapter.findUniqueOrThrow({ where: { id: chapter.id } });

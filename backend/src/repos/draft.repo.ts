@@ -124,6 +124,7 @@ function shape(row: unknown, req: Request): RepoDraft {
 
   const rawRow = row as { summaryJsonUpdatedAt: Date | null };
   projected.summaryUpdatedAt = rawRow.summaryJsonUpdatedAt;
+  delete projected.summaryJsonUpdatedAt;
 
   return projected as RepoDraft;
 }
