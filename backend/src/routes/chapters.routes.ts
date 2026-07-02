@@ -17,11 +17,7 @@ import { z } from 'zod';
 import { badRequest } from '../lib/bad-request';
 import { respond } from '../lib/respond';
 import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
-import {
-  logVeniceErrorDev,
-  mapVeniceError,
-  type VeniceRequestSnapshot,
-} from '../lib/venice-errors';
+import { logVeniceErrorDev, mapVeniceError } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
@@ -35,15 +31,9 @@ import { getDekFromRequest } from '../services/content-crypto.service';
 import { resolvePrompt } from '../services/prompt.service';
 import { computeWordCount, tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
-import {
-  buildVeniceParams,
-  hydrateUserSettings,
-  logVeniceParams,
-  promptCacheKey,
-  resolveReasoningEnabled,
-  resolveTextGenWithFallback,
-} from '../services/venice-call.service';
+import { hydrateUserSettings } from '../services/venice-call.service';
 import { veniceKeyService } from '../services/venice-key.service';
+import { callVeniceCompletion, prepareVeniceCall } from '../services/venice-stream.service';
 
 // [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
 // After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
@@ -328,69 +318,37 @@ export function createChaptersRouter() {
 
       const systemMessage = `${resolvePrompt(userPrompts, 'system')}\n\n${resolvePrompt(userPrompts, 'summariseChapter')}`;
 
-      const venice_parameters = buildVeniceParams({
-        base: {},
-        supportsReasoning: modelInfo.supportsReasoning === true,
-        includeVeniceSystemPrompt,
-      });
-      const reasoningEnabled = resolveReasoningEnabled(settings, modelInfo);
-
-      const resolved = resolveTextGenWithFallback(
-        settings,
-        modelInfo,
-        modelInfo.maxCompletionTokens,
-      );
-
-      logVeniceParams({
+      const prepared = prepareVeniceCall({
         route: 'chapter-summarise',
         userId,
         modelId: body.modelId,
-        resolved,
+        messages: [
+          { role: 'system', content: systemMessage },
+          { role: 'user', content: plaintext },
+        ],
+        settings,
+        baseVeniceParams: {},
+        fallbackMaxCompletionTokens: modelInfo.maxCompletionTokens,
+        cacheKeyParts: [chapterId, body.modelId],
         action: 'summariseChapter',
         modelCap: modelInfo.maxCompletionTokens,
-        reasoningEnabled,
+        includeVeniceSystemPrompt,
+        responseFormat: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'ChapterSummary',
+            schema: chapterSummaryJsonSchema(),
+            strict: true,
+          },
+        },
+        snapshotResponseFormat: { type: 'json_schema', name: 'ChapterSummary' },
       });
-
-      const cacheKey = promptCacheKey(chapterId, body.modelId);
-
-      const snapshot: VeniceRequestSnapshot = {
-        model: body.modelId,
-        messageCount: 2,
-        systemMessagePreview: systemMessage,
-        userMessagePreview: plaintext,
-        venice_parameters,
-        response_format: { type: 'json_schema', name: 'ChapterSummary' },
-        promptCacheKey: cacheKey,
-        temperature: resolved.temperature,
-        top_p: resolved.top_p,
-        max_completion_tokens: resolved.max_completion_tokens,
-      };
+      const snapshot = prepared.snapshot;
 
       const client = await veniceKeyService.getClient(getDekFromRequest(req), userId);
-      let raw: { choices?: Array<{ message?: { content?: string } }> };
+      let raw: Awaited<ReturnType<typeof callVeniceCompletion>>;
       try {
-        const completion = await client.chat.completions.create({
-          model: body.modelId,
-          messages: [
-            { role: 'system', content: systemMessage },
-            { role: 'user', content: plaintext },
-          ],
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'ChapterSummary',
-              schema: chapterSummaryJsonSchema(),
-              strict: true,
-            },
-          },
-          temperature: resolved.temperature,
-          top_p: resolved.top_p,
-          max_completion_tokens: resolved.max_completion_tokens,
-          prompt_cache_key: cacheKey,
-          venice_parameters,
-          ...(reasoningEnabled ? {} : { reasoning: { enabled: false } }),
-        } as unknown as Parameters<typeof client.chat.completions.create>[0]);
-        raw = completion as unknown as typeof raw;
+        raw = await callVeniceCompletion({ client, prepared });
       } catch (err) {
         logVeniceErrorDev({ err, ctx: { userId, route: 'chapter-summarise' }, request: snapshot });
         if (mapVeniceError(err, res, { userId, route: 'chapter-summarise' })) return;

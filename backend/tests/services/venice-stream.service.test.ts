@@ -21,6 +21,7 @@ import { getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
 import { promptCacheKey } from '../../src/services/venice-call.service';
 import {
+  callVeniceCompletion,
   type PreparedVeniceCall,
   prepareVeniceCall,
   streamVeniceToResponse,
@@ -524,5 +525,37 @@ describe('streamVeniceToResponse', () => {
     });
     expect(headers2['x-venice-remaining-requests']).toBeUndefined();
     expect(headers2['x-venice-limit-requests']).toBeUndefined();
+  });
+});
+
+// ─── callVeniceCompletion ─────────────────────────────────────────────────────
+
+describe('callVeniceCompletion', () => {
+  it('returns the completion and sends no `stream` key, carrying response_format through', async () => {
+    const createSpy = vi.fn(async (_params: Record<string, unknown>) => ({
+      choices: [{ message: { content: '{"summary":"ok"}' } }],
+    }));
+    const client = {
+      chat: { completions: { create: createSpy } },
+    } as unknown as OpenAI;
+
+    const prepared: PreparedVeniceCall = {
+      requestParams: {
+        model: 'test-model',
+        response_format: { type: 'json_schema', json_schema: { name: 'ChapterSummary' } },
+      },
+      snapshot: { model: 'test-model', messageCount: 2 },
+    };
+
+    const result = await callVeniceCompletion({ client, prepared });
+
+    expect(result.choices?.[0]?.message?.content).toBe('{"summary":"ok"}');
+    expect(createSpy).toHaveBeenCalledOnce();
+    const sentParams = createSpy.mock.calls[0]?.[0] as Record<string, unknown>;
+    expect(sentParams).not.toHaveProperty('stream');
+    expect(sentParams.response_format).toEqual({
+      type: 'json_schema',
+      json_schema: { name: 'ChapterSummary' },
+    });
   });
 });

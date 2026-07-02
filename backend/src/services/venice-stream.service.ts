@@ -4,8 +4,8 @@
 //
 // Behavior-preserving: SSE frame bytes, the six x-venice-* headers, status codes,
 // error envelopes, and upstream request semantics are unchanged from the three
-// pre-extraction call sites. This module is also where all `as unknown as` casts
-// against the openai SDK now live — the routes no longer touch the SDK's request/
+// pre-extraction call sites. This module is also where every unknown-cast against
+// the openai SDK now lives — the routes no longer touch the SDK's request/
 // response shapes directly.
 
 import type { Request, Response } from 'express';
@@ -272,4 +272,21 @@ export async function streamVeniceToResponse(opts: {
   } finally {
     res.end();
   }
+}
+
+// ─── callVeniceCompletion ─────────────────────────────────────────────────────
+
+export interface VeniceCompletionResult {
+  choices?: Array<{ message?: { content?: string } }>;
+}
+
+export async function callVeniceCompletion(opts: {
+  client: OpenAI;
+  prepared: PreparedVeniceCall;
+}): Promise<VeniceCompletionResult> {
+  const { client, prepared } = opts;
+  const completion = await client.chat.completions.create(
+    prepared.requestParams as unknown as Parameters<typeof client.chat.completions.create>[0],
+  );
+  return completion as unknown as VeniceCompletionResult;
 }
