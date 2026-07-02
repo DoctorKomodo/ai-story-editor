@@ -32,6 +32,7 @@ import type { Chapter } from 'story-editor-shared';
 import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
 import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
+import { ChapterConflictBanner } from '@/components/ChapterConflictBanner';
 import { ChapterList } from '@/components/ChapterList';
 import { ChapterSummaryPopover } from '@/components/ChapterSummaryPopover';
 import { ChapterSummarySheet } from '@/components/ChapterSummarySheet';
@@ -62,6 +63,7 @@ import { useAutosave } from '@/hooks/useAutosave';
 import { useChapterDraft } from '@/hooks/useChapterDraft';
 import {
   chapterQueryKey,
+  isChapterConflictError,
   useChapterQuery,
   useChaptersQuery,
   useUpdateChapterMutation,
@@ -247,6 +249,24 @@ export function EditorPage(): JSX.Element {
     setDraftBodyJson(seed);
   }, [activeChapterId, chapterQuery.data]);
 
+  // Last-seen server `updatedAt` — sent as the PATCH's `expectedUpdatedAt`
+  // precondition. Kept fresh from the single-chapter cache, which
+  // `useUpdateChapterMutation`'s `onSuccess` also writes after every save.
+  const serverUpdatedAtRef = useRef<string | null>(null);
+  useEffect(() => {
+    serverUpdatedAtRef.current = chapterQuery.data?.updatedAt ?? null;
+  }, [chapterQuery.data?.updatedAt]);
+
+  // True when the last save was rejected 409 (another tab/device moved the
+  // chapter since we last read it). While true, autosave is inert — the
+  // local draft (already persisted by `onDirty`) is the safety net, and the
+  // conflict banner offers Reload / Overwrite.
+  const [conflict, setConflict] = useState(false);
+  const [conflictActionBusy, setConflictActionBusy] = useState(false);
+  useEffect(() => {
+    setConflict(false);
+  }, [activeChapterId]);
+
   const handleSave = useCallback(
     async (value: JSONContent): Promise<void> => {
       if (!story?.id || !activeChapterId) return;
@@ -254,17 +274,30 @@ export function EditorPage(): JSX.Element {
       // schema is `.strict()` and rejects the extra key with 400, and the
       // chapter route already recomputes wordCount server-side from
       // `bodyJson` (see `chapters.routes.ts:242`).
-      await updateChapter.mutateAsync({
-        storyId: story.id,
-        chapterId: activeChapterId,
-        input: { bodyJson: value },
-      });
+      try {
+        await updateChapter.mutateAsync({
+          storyId: story.id,
+          chapterId: activeChapterId,
+          input: {
+            bodyJson: value,
+            ...(serverUpdatedAtRef.current !== null
+              ? { expectedUpdatedAt: serverUpdatedAtRef.current }
+              : {}),
+          },
+        });
+      } catch (err) {
+        if (isChapterConflictError(err)) setConflict(true);
+        throw err;
+      }
     },
     [story?.id, activeChapterId, updateChapter],
   );
 
   const autosave = useAutosave<JSONContent>({
-    payload: draftBodyJson,
+    // A conflict makes the payload inert — `runSave` early-returns on `null`
+    // and no new debounce schedules, which stops the one-shot retry from
+    // re-409ing against a body the user hasn't reconciled yet.
+    payload: conflict ? null : draftBodyJson,
     save: handleSave,
     // Treat each chapter as its own document — switching chapters resets the
     // baseline so the new chapter's freshly-loaded body isn't mistaken for a
@@ -277,6 +310,39 @@ export function EditorPage(): JSX.Element {
     onDirty: chapterDraft.persistDraft,
     onSaved: chapterDraft.clearDraft,
   });
+
+  const handleConflictReload = useCallback(async (): Promise<void> => {
+    setConflictActionBusy(true);
+    try {
+      const res = await chapterQuery.refetch();
+      const serverBody = (res.data?.bodyJson as JSONContent | null) ?? {
+        type: 'doc',
+        content: [{ type: 'paragraph' }],
+      };
+      setConflict(false);
+      setRestoreSeed({ nonce: Date.now(), bodyJson: serverBody });
+      setDraftBodyJson(serverBody);
+    } finally {
+      setConflictActionBusy(false);
+    }
+  }, [chapterQuery]);
+
+  const handleConflictOverwrite = useCallback(async (): Promise<void> => {
+    if (!story?.id || activeChapterId === null || draftBodyJson === null) return;
+    setConflictActionBusy(true);
+    try {
+      // Deliberately WITHOUT `expectedUpdatedAt` — explicit user-sanctioned
+      // last-write-wins.
+      await updateChapter.mutateAsync({
+        storyId: story.id,
+        chapterId: activeChapterId,
+        input: { bodyJson: draftBodyJson },
+      });
+      setConflict(false);
+    } finally {
+      setConflictActionBusy(false);
+    }
+  }, [story?.id, activeChapterId, draftBodyJson, updateChapter]);
 
   useUnloadFlush(
     useCallback(() => {
@@ -612,7 +678,19 @@ export function EditorPage(): JSX.Element {
             <div className="flex-1 overflow-y-auto">
               {activeChapterId ? (
                 <>
-                  {chapterDraft.pendingDraft !== null ? (
+                  {conflict ? (
+                    <div className="mx-auto w-full max-w-[720px] px-6 pt-4">
+                      <ChapterConflictBanner
+                        onReload={() => {
+                          void handleConflictReload();
+                        }}
+                        onOverwrite={() => {
+                          void handleConflictOverwrite();
+                        }}
+                        busy={conflictActionBusy}
+                      />
+                    </div>
+                  ) : chapterDraft.pendingDraft !== null ? (
                     <div className="mx-auto w-full max-w-[720px] px-6 pt-4">
                       <DraftRestoreBanner
                         savedAt={chapterDraft.pendingDraft.savedAt}

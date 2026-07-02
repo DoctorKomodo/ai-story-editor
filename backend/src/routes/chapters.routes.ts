@@ -27,6 +27,7 @@ import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
 import {
   ChapterNotOwnedError,
+  ChapterVersionConflictError,
   createChapterRepo,
   type RepoChapterUpdateInput,
 } from '../repos/chapter.repo';
@@ -208,7 +209,24 @@ export function createChaptersRouter() {
         input.wordCount = computeWordCount(body.bodyJson);
       }
 
-      const chapter = await createChapterRepo(req).update(chapterId, input);
+      let chapter: Awaited<ReturnType<ReturnType<typeof createChapterRepo>['update']>>;
+      try {
+        chapter = await createChapterRepo(req).update(
+          chapterId,
+          input,
+          body.expectedUpdatedAt !== undefined
+            ? { expectedUpdatedAt: new Date(body.expectedUpdatedAt) }
+            : undefined,
+        );
+      } catch (err) {
+        if (err instanceof ChapterVersionConflictError) {
+          res
+            .status(409)
+            .json({ error: { message: 'Chapter was modified elsewhere', code: 'conflict' } });
+          return;
+        }
+        throw err;
+      }
       if (!chapter) {
         res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
         return;
