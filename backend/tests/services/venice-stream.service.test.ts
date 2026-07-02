@@ -10,14 +10,22 @@
 // local `createVeniceModelsService` instance (which prepareVeniceCall, tied to
 // the singleton, would never see).
 
+import { EventEmitter } from 'node:events';
+import type { Request, Response } from 'express';
+import type OpenAI from 'openai';
+import { APIError } from 'openai';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { VeniceErrorContext } from '../../src/lib/venice-errors';
 import type { UserSettings } from '../../src/routes/user-settings.routes';
 import { getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
 import { promptCacheKey } from '../../src/services/venice-call.service';
 import {
+  type PreparedVeniceCall,
   prepareVeniceCall,
+  streamVeniceToResponse,
   type VeniceChatMessage,
+  type VeniceStreamChunk,
 } from '../../src/services/venice-stream.service';
 import {
   jsonResponse,
@@ -244,5 +252,277 @@ describe('prepareVeniceCall', () => {
     expect(prepared.requestParams.max_completion_tokens).toBe(777);
     expect(prepared.requestParams.temperature).toBeUndefined();
     expect(prepared.requestParams.top_p).toBeUndefined();
+  });
+});
+
+// ─── streamVeniceToResponse ─────────────────────────────────────────────────────
+
+const CTX: VeniceErrorContext = { userId: 'u1', route: 'ai-complete' };
+
+const PREPARED: PreparedVeniceCall = {
+  requestParams: { model: 'test-model' },
+  snapshot: { model: 'test-model', messageCount: 2 },
+};
+
+function headersFrom(map: Record<string, string>) {
+  return { get: (name: string) => map[name] ?? null };
+}
+
+function makeFakeClient(
+  respond: () => {
+    data: AsyncIterable<VeniceStreamChunk>;
+    response: { headers: { get(name: string): string | null } };
+  },
+): OpenAI {
+  return {
+    chat: {
+      completions: {
+        create: () => ({ withResponse: async () => respond() }),
+      },
+    },
+  } as unknown as OpenAI;
+}
+
+function makeFakeReqRes() {
+  const req = new EventEmitter() as unknown as Request;
+  const written: string[] = [];
+  const headers: Record<string, string> = {};
+  const state = { ended: false, statusCode: undefined as number | undefined };
+  const res = {
+    status(code: number) {
+      state.statusCode = code;
+      return res;
+    },
+    setHeader(name: string, value: string) {
+      headers[name] = value;
+    },
+    flushHeaders() {},
+    write(chunk: string) {
+      written.push(chunk);
+      return true;
+    },
+    end() {
+      state.ended = true;
+    },
+  } as unknown as Response;
+  return { req, res, written, headers, state };
+}
+
+// Builds an async-iterable "stream" matching the openai SDK's chunk stream
+// shape, with a duck-typed `.controller.abort()` for the client-disconnect
+// wiring under test. `onYield` runs synchronously right after each chunk is
+// produced — used to simulate a mid-stream client disconnect between chunks.
+function makeVeniceStream(
+  chunks: VeniceStreamChunk[],
+  opts: { throwAt?: number; err?: unknown; onYield?: (index: number) => void } = {},
+) {
+  const abort = vi.fn();
+  async function* gen(): AsyncGenerator<VeniceStreamChunk> {
+    for (let i = 0; i < chunks.length; i++) {
+      if (opts.throwAt === i) throw opts.err ?? new Error('boom');
+      yield chunks[i];
+      opts.onYield?.(i);
+    }
+    if (opts.throwAt !== undefined && opts.throwAt >= chunks.length) {
+      throw opts.err ?? new Error('boom');
+    }
+  }
+  const iterable = gen();
+  (iterable as unknown as { controller: { abort: () => void } }).controller = { abort };
+  return { iterable, abort };
+}
+
+describe('streamVeniceToResponse', () => {
+  let errSpy: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+  });
+
+  afterEach(() => {
+    errSpy.mockRestore();
+  });
+
+  it('forwards chunks and writes [DONE] on normal completion', async () => {
+    const chunk = { choices: [{ delta: { content: 'hi' }, finish_reason: null }] };
+    const { iterable } = makeVeniceStream([chunk]);
+    const client = makeFakeClient(() => ({
+      data: iterable,
+      response: { headers: headersFrom({}) },
+    }));
+    const { req, res, written, state } = makeFakeReqRes();
+
+    await streamVeniceToResponse({ client, req, res, prepared: PREPARED, ctx: CTX });
+
+    expect(written).toEqual([`data: ${JSON.stringify(chunk)}\n\n`, 'data: [DONE]\n\n']);
+    expect(state.ended).toBe(true);
+    expect(state.statusCode).toBe(200);
+  });
+
+  it('client disconnect: stops the loop, writes no [DONE], attempts upstream abort', async () => {
+    const chunk0 = { choices: [{ delta: { content: 'a' }, finish_reason: null }] };
+    const chunk1 = { choices: [{ delta: { content: 'b' }, finish_reason: null }] };
+    const { req, res, written, state } = makeFakeReqRes();
+    const { iterable, abort } = makeVeniceStream([chunk0, chunk1], {
+      onYield: (i) => {
+        if (i === 0) (req as unknown as EventEmitter).emit('close');
+      },
+    });
+    const client = makeFakeClient(() => ({
+      data: iterable,
+      response: { headers: headersFrom({}) },
+    }));
+
+    await streamVeniceToResponse({ client, req, res, prepared: PREPARED, ctx: CTX });
+
+    expect(written).toEqual([`data: ${JSON.stringify(chunk0)}\n\n`]);
+    expect(written).not.toContain('data: [DONE]\n\n');
+    expect(abort).toHaveBeenCalledOnce();
+    expect(state.ended).toBe(true);
+  });
+
+  it('non-APIError mid-stream: generic stream_error frame then [DONE], byte-exact', async () => {
+    const { iterable } = makeVeniceStream([], { throwAt: 0, err: new Error('db exploded') });
+    const client = makeFakeClient(() => ({
+      data: iterable,
+      response: { headers: headersFrom({}) },
+    }));
+    const { req, res, written, state } = makeFakeReqRes();
+
+    await streamVeniceToResponse({ client, req, res, prepared: PREPARED, ctx: CTX });
+
+    expect(written).toEqual([
+      `data: ${JSON.stringify({
+        error: 'An internal stream error occurred.',
+        code: 'stream_error',
+        message: 'An internal stream error occurred.',
+      })}\n\n`,
+      'data: [DONE]\n\n',
+    ]);
+    expect(state.ended).toBe(true);
+  });
+
+  it('APIError mid-stream: routes through mapVeniceErrorToSse', async () => {
+    const apiErr = new APIError(503, { error: { message: 'Upstream busy' } }, '503', new Headers());
+    const { iterable } = makeVeniceStream([], { throwAt: 0, err: apiErr });
+    const client = makeFakeClient(() => ({
+      data: iterable,
+      response: { headers: headersFrom({}) },
+    }));
+    const { req, res, written, state } = makeFakeReqRes();
+
+    await streamVeniceToResponse({ client, req, res, prepared: PREPARED, ctx: CTX });
+
+    expect(written[0]).toContain('"code":"venice_unavailable"');
+    expect(written[1]).toBe('data: [DONE]\n\n');
+    expect(state.ended).toBe(true);
+  });
+
+  it("onChunk returning 'consume' suppresses the default frame; hook-written frames appear in order", async () => {
+    const chunk0 = { choices: [{ delta: { content: 'x' }, finish_reason: null }] };
+    const chunk1 = { choices: [{ delta: { content: 'y' }, finish_reason: null }] };
+    const { iterable } = makeVeniceStream([chunk0, chunk1]);
+    const client = makeFakeClient(() => ({
+      data: iterable,
+      response: { headers: headersFrom({}) },
+    }));
+    const { req, res, written, state } = makeFakeReqRes();
+
+    await streamVeniceToResponse({
+      client,
+      req,
+      res,
+      prepared: PREPARED,
+      ctx: CTX,
+      hooks: {
+        onChunk: (chunk, write) => {
+          if (chunk === chunk0) {
+            write('event: custom\ndata: {}\n\n');
+            return 'consume';
+          }
+          return 'forward';
+        },
+      },
+    });
+
+    expect(written).toEqual([
+      'event: custom\ndata: {}\n\n',
+      `data: ${JSON.stringify(chunk1)}\n\n`,
+      'data: [DONE]\n\n',
+    ]);
+    expect(state.ended).toBe(true);
+  });
+
+  it('onDone runs after the last chunk and before [DONE]', async () => {
+    const chunk = { choices: [{ delta: { content: 'z' }, finish_reason: null }] };
+    const { iterable } = makeVeniceStream([chunk]);
+    const client = makeFakeClient(() => ({
+      data: iterable,
+      response: { headers: headersFrom({}) },
+    }));
+    const { req, res, written, state } = makeFakeReqRes();
+    const order: string[] = [];
+
+    await streamVeniceToResponse({
+      client,
+      req,
+      res,
+      prepared: PREPARED,
+      ctx: CTX,
+      hooks: {
+        onChunk: () => {
+          order.push('chunk');
+          return 'forward';
+        },
+        onDone: async () => {
+          order.push('done');
+        },
+      },
+    });
+
+    expect(order).toEqual(['chunk', 'done']);
+    expect(written.at(-1)).toBe('data: [DONE]\n\n');
+    expect(state.ended).toBe(true);
+  });
+
+  it('rate-limit headers: forwards each x-venice-* header only when Venice sent the source header', async () => {
+    const chunk = { choices: [{ delta: { content: 'a' }, finish_reason: null }] };
+    const { iterable: present } = makeVeniceStream([chunk]);
+    const clientPresent = makeFakeClient(() => ({
+      data: present,
+      response: {
+        headers: headersFrom({
+          'x-ratelimit-remaining-requests': '10',
+          'x-ratelimit-limit-requests': '100',
+        }),
+      },
+    }));
+    const { req: req1, res: res1, headers: headers1 } = makeFakeReqRes();
+    await streamVeniceToResponse({
+      client: clientPresent,
+      req: req1,
+      res: res1,
+      prepared: PREPARED,
+      ctx: CTX,
+    });
+    expect(headers1['x-venice-remaining-requests']).toBe('10');
+    expect(headers1['x-venice-limit-requests']).toBe('100');
+    expect(headers1['x-venice-remaining-tokens']).toBeUndefined();
+
+    const { iterable: absent } = makeVeniceStream([chunk]);
+    const clientAbsent = makeFakeClient(() => ({
+      data: absent,
+      response: { headers: headersFrom({}) },
+    }));
+    const { req: req2, res: res2, headers: headers2 } = makeFakeReqRes();
+    await streamVeniceToResponse({
+      client: clientAbsent,
+      req: req2,
+      res: res2,
+      prepared: PREPARED,
+      ctx: CTX,
+    });
+    expect(headers2['x-venice-remaining-requests']).toBeUndefined();
+    expect(headers2['x-venice-limit-requests']).toBeUndefined();
   });
 });
