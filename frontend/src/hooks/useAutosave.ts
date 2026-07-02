@@ -31,6 +31,18 @@ export interface UseAutosaveOptions<T> {
    * timer or pending follow-up for the previous key is cancelled.
    */
   resetKey?: string | number | null;
+  /**
+   * Fired on every payload change that differs from the last-saved baseline
+   * (i.e. whenever a debounce is (re)scheduled, a follow-up is queued, or an
+   * edit lands during a retry wait). NOT fired for the baseline seed.
+   */
+  onDirty?: (payload: T) => void;
+  /**
+   * Fired after a successful save IFF no newer edit is pending (the
+   * follow-up branch in runSave suppresses it — the newer edit re-fires
+   * onDirty and onSaved comes with ITS save).
+   */
+  onSaved?: (payload: T) => void;
 }
 
 export interface UseAutosaveResult {
@@ -42,7 +54,7 @@ export interface UseAutosaveResult {
 }
 
 export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
-  const { payload, save, debounceMs = 4000, equals = Object.is, resetKey } = opts;
+  const { payload, save, debounceMs = 4000, equals = Object.is, resetKey, onDirty, onSaved } = opts;
 
   const [status, setStatus] = useState<AutosaveStatus>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -52,6 +64,8 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
   const saveRef = useRef(save);
   const equalsRef = useRef(equals);
   const debounceMsRef = useRef(debounceMs);
+  const onDirtyRef = useRef(onDirty);
+  const onSavedRef = useRef(onSaved);
 
   // Track the most recent payload we've observed and the last one saved
   // (so we can diff), and whether we've seen the baseline yet.
@@ -80,6 +94,12 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
   useEffect(() => {
     debounceMsRef.current = debounceMs;
   }, [debounceMs]);
+  useEffect(() => {
+    onDirtyRef.current = onDirty;
+  }, [onDirty]);
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  }, [onSaved]);
 
   // Reset baseline state when `resetKey` changes (e.g. chapter switch in the
   // editor). Declared *before* the payload effect so that on a render where
@@ -200,6 +220,7 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
           scheduleDebouncedSave(saveFn);
         } else {
           pendingFollowupRef.current = false;
+          onSavedRef.current?.(payloadToSave);
         }
       } catch {
         if (!mountedRef.current) return;
@@ -268,6 +289,8 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     ) {
       return;
     }
+
+    onDirtyRef.current?.(payload);
 
     // Edit during an in-flight save: queue a follow-up (handled in runSave).
     if (savingRef.current) {

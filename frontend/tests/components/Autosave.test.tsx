@@ -16,11 +16,19 @@ const DEBOUNCE_MS = 4000;
 interface HarnessProps {
   save: (payload: string) => Promise<void>;
   initial?: string | null;
+  onDirty?: (payload: string) => void;
+  onSaved?: (payload: string) => void;
 }
 
-function Harness({ save, initial = 'baseline' }: HarnessProps): JSX.Element {
+function Harness({ save, initial = 'baseline', onDirty, onSaved }: HarnessProps): JSX.Element {
   const [payload, setPayload] = useState<string | null>(initial);
-  const { status, savedAt, retryAt } = useAutosave({ payload, save, debounceMs: DEBOUNCE_MS });
+  const { status, savedAt, retryAt } = useAutosave({
+    payload,
+    save,
+    debounceMs: DEBOUNCE_MS,
+    onDirty,
+    onSaved,
+  });
   return (
     <>
       <AutosaveIndicator status={status} savedAt={savedAt} retryAt={retryAt} />
@@ -216,6 +224,83 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     await advance(200);
     expect(save).toHaveBeenCalledTimes(2);
     expect(save).toHaveBeenNthCalledWith(2, 'fixed-B');
+  });
+
+  it('does not fire onDirty for the initial baseline payload', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onDirty = vi.fn<(p: string) => void>();
+    render(<Harness save={save} onDirty={onDirty} />);
+
+    await advance(DEBOUNCE_MS + 100);
+
+    expect(onDirty).not.toHaveBeenCalled();
+  });
+
+  it('fires onDirty with the payload on each dirty change', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onDirty = vi.fn<(p: string) => void>();
+    render(<Harness save={save} onDirty={onDirty} />);
+
+    clickButton('EditA');
+    // Fires before the debounce elapses.
+    expect(onDirty).toHaveBeenCalledTimes(1);
+    expect(onDirty).toHaveBeenCalledWith('fixed-A');
+
+    clickButton('EditB');
+    expect(onDirty).toHaveBeenCalledTimes(2);
+    expect(onDirty).toHaveBeenLastCalledWith('fixed-B');
+  });
+
+  it('fires onSaved with the saved payload after a successful save', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onSaved = vi.fn<(p: string) => void>();
+    render(<Harness save={save} onSaved={onSaved} />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS + 100);
+    await advance(0);
+
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith('fixed-A');
+  });
+
+  it('suppresses onSaved when an edit arrived during the in-flight save, then fires it after the follow-up save', async () => {
+    let resolveFirst: (() => void) | null = null;
+    const save = vi
+      .fn<(p: string) => Promise<void>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirst = () => resolve();
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const onSaved = vi.fn<(p: string) => void>();
+
+    render(<Harness save={save} onSaved={onSaved} />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // Edit while the first save is in flight.
+    clickButton('EditB');
+
+    await act(async () => {
+      resolveFirst!();
+    });
+    // First save resolved with no newer *unsaved* payload relative to itself?
+    // Actually a follow-up is pending (payload changed to fixed-B), so onSaved
+    // must NOT fire yet for the first save.
+    expect(onSaved).not.toHaveBeenCalled();
+
+    await advance(DEBOUNCE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenNthCalledWith(2, 'fixed-B');
+
+    await advance(0);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith('fixed-B');
   });
 
   it('flushes a pending debounce against the previous save fn when resetKey changes', async () => {
