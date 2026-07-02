@@ -4,7 +4,6 @@ import { z } from 'zod';
 import {
   logVeniceErrorDev,
   mapVeniceError,
-  mapVeniceErrorToSse,
   type VeniceRequestSnapshot,
 } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -16,15 +15,9 @@ import { getDekFromRequest } from '../services/content-crypto.service';
 import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
-import {
-  buildVeniceParams,
-  hydrateUserSettings,
-  logVeniceParams,
-  promptCacheKey,
-  resolveReasoningEnabled,
-  resolveTextGenWithFallback,
-} from '../services/venice-call.service';
+import { hydrateUserSettings } from '../services/venice-call.service';
 import { veniceKeyService } from '../services/venice-key.service';
+import { prepareVeniceCall, streamVeniceToResponse } from '../services/venice-stream.service';
 
 // ─── Request body schema ──────────────────────────────────────────────────────
 
@@ -148,175 +141,32 @@ export function createAiRouter() {
           userPrompts,
         });
 
-        // ── 10. Enrich venice_parameters ─────────────────────────────────────
-        const modelInfo = veniceModelsService.findModel(body.modelId, userId);
-        const venice_parameters = buildVeniceParams({
-          base: baseVeniceParams,
-          supportsReasoning: modelInfo?.supportsReasoning === true,
-        });
-        const reasoningEnabled = resolveReasoningEnabled(settings, modelInfo);
-
-        // ── 10b. Resolve text-gen parameters (X28) ────────────────────────────
-        const resolved = resolveTextGenWithFallback(settings, modelInfo, max_completion_tokens);
-
-        logVeniceParams({
+        // ── 10. Prepare the Venice request (params, model settings, cache key) ──
+        const prepared = prepareVeniceCall({
           route: 'ai-complete',
           userId,
           modelId: body.modelId,
-          resolved,
+          messages,
+          settings,
+          baseVeniceParams,
+          fallbackMaxCompletionTokens: max_completion_tokens,
+          cacheKeyParts: [body.storyId, body.modelId],
           action: body.action,
           modelCap: modelMaxCompletionTokens,
-          reasoningEnabled,
         });
+        snapshot = prepared.snapshot;
 
         // ── 11. Get the Venice client ─────────────────────────────────────────
         const client = await veniceKeyService.getClient(getDekFromRequest(req), userId);
 
-        // ── 12. Call Venice with streaming ────────────────────────────────────
-        // [V9] Use .withResponse() so we can read rate-limit headers from the
-        // HTTP response before the body streams. The SDK returns headers as soon
-        // as the response status line arrives, before any body bytes.
-        // `venice_parameters` is not in the openai SDK types; cast through
-        // unknown at the call site. Also cast .withResponse() return so TS
-        // treats `data` as AsyncIterable<ChatCompletionChunk> (stream: true
-        // guarantees this at runtime but the overload union obscures it).
-        // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
-        // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
-        // Deterministic per (storyId, modelId).
-        const cacheKey = promptCacheKey(body.storyId, body.modelId);
-
-        snapshot = {
-          model: body.modelId,
-          messageCount: messages.length,
-          systemMessagePreview:
-            typeof messages[0]?.content === 'string' ? messages[0].content : undefined,
-          userMessagePreview:
-            typeof messages.at(-1)?.content === 'string'
-              ? (messages.at(-1)!.content as string)
-              : undefined,
-          venice_parameters,
-          promptCacheKey: cacheKey,
-          temperature: resolved.temperature,
-          top_p: resolved.top_p,
-          max_completion_tokens: resolved.max_completion_tokens,
-        };
-
-        const streamWithResp = (await client.chat.completions
-          .create({
-            model: body.modelId,
-            messages,
-            stream: true as const,
-            temperature: resolved.temperature,
-            top_p: resolved.top_p,
-            max_completion_tokens: resolved.max_completion_tokens,
-            prompt_cache_key: cacheKey,
-            venice_parameters,
-            ...(reasoningEnabled ? {} : { reasoning: { enabled: false } }),
-          } as unknown as Parameters<typeof client.chat.completions.create>[0])
-          .withResponse()) as unknown as {
-          data: AsyncIterable<{
-            choices: Array<{ delta: { content?: string }; finish_reason: string | null }>;
-          }>;
-          // Fetch API Response (not Express Response) — use structural type to avoid
-          // the import collision between Express.Response and globalThis.Response.
-          response: { headers: { get(name: string): string | null } };
-        };
-        const { data: stream, response: veniceResponse } = streamWithResp;
-
-        // ── 13. Write SSE response ────────────────────────────────────────────
-        res.status(200);
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache, no-transform');
-        res.setHeader('Connection', 'keep-alive');
-
-        // [V9][V28] Forward Venice rate-limit headers to the client so the
-        // frontend can display "X / Y remaining until HH:MM" without a second
-        // round-trip. Only set each when Venice actually sent it.
-        const remainingRequests = veniceResponse.headers.get('x-ratelimit-remaining-requests');
-        const remainingTokens = veniceResponse.headers.get('x-ratelimit-remaining-tokens');
-        const limitRequests = veniceResponse.headers.get('x-ratelimit-limit-requests');
-        const limitTokens = veniceResponse.headers.get('x-ratelimit-limit-tokens');
-        const resetRequests = veniceResponse.headers.get('x-ratelimit-reset-requests');
-        const resetTokens = veniceResponse.headers.get('x-ratelimit-reset-tokens');
-        if (remainingRequests !== null) {
-          res.setHeader('x-venice-remaining-requests', remainingRequests);
-        }
-        if (remainingTokens !== null) {
-          res.setHeader('x-venice-remaining-tokens', remainingTokens);
-        }
-        if (limitRequests !== null) {
-          res.setHeader('x-venice-limit-requests', limitRequests);
-        }
-        if (limitTokens !== null) {
-          res.setHeader('x-venice-limit-tokens', limitTokens);
-        }
-        if (resetRequests !== null) {
-          res.setHeader('x-venice-reset-requests', resetRequests);
-        }
-        if (resetTokens !== null) {
-          res.setHeader('x-venice-reset-tokens', resetTokens);
-        }
-
-        if (typeof res.flushHeaders === 'function') {
-          res.flushHeaders();
-        }
-
-        // Headers are now committed — all errors from this point must be written
-        // as terminal SSE frames; Express's global error handler can no longer
-        // send an HTTP error response.
-
-        // Stop iteration cleanly when the client disconnects mid-stream.
-        let clientClosed = false;
-        req.on('close', () => {
-          clientClosed = true;
-          // Best-effort abort of the Venice stream so we don't leak an open
-          // connection upstream.
-          try {
-            (stream as unknown as { controller?: { abort?: () => void } }).controller?.abort?.();
-          } catch {
-            // Ignore — the stream may already be closed.
-          }
+        // ── 12-13. Call Venice with streaming + write the SSE response ─────────
+        await streamVeniceToResponse({
+          client,
+          req,
+          res,
+          prepared,
+          ctx: { userId, route: 'ai-complete' },
         });
-
-        try {
-          for await (const chunk of stream) {
-            if (clientClosed) break;
-            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-          }
-
-          if (!clientClosed) {
-            res.write('data: [DONE]\n\n');
-          }
-        } catch (streamErr) {
-          // Stream errored after headers were flushed — write a terminal error
-          // frame so the client knows something went wrong, then close cleanly.
-          // Do NOT call next(err): headers are already committed.
-          logVeniceErrorDev({
-            err: streamErr,
-            ctx: { userId, route: 'ai-complete' },
-            request: snapshot,
-          });
-          if (!clientClosed) {
-            // [V11] Map Venice API errors to structured SSE frames. Falls back to
-            // generic stream_error for unknown errors.
-            const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), {
-              userId,
-              route: 'ai-complete',
-            });
-            if (!handled) {
-              res.write(
-                `data: ${JSON.stringify({
-                  error: 'An internal stream error occurred.',
-                  code: 'stream_error',
-                  message: 'An internal stream error occurred.',
-                })}\n\n`,
-              );
-              res.write('data: [DONE]\n\n');
-            }
-          }
-        } finally {
-          res.end();
-        }
       } catch (err) {
         // [V11] Map Venice API errors before the SSE headers are flushed.
         logVeniceErrorDev({ err, ctx: { userId, route: 'ai-complete' }, request: snapshot });
