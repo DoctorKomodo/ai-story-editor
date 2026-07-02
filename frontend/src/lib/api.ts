@@ -213,12 +213,13 @@ export const KEEPALIVE_MAX_BYTES = 60_000;
  * `visibilitychange` — there is no response to observe and no 401 flow at
  * unload time, so this deliberately bypasses `doRequest`.
  *
- * Returns `false` without sending when the JSON body exceeds
- * `KEEPALIVE_MAX_BYTES` (the caller falls back to the local draft, which is
- * the guaranteed persistence layer regardless). Never throws.
+ * Takes the already-serialized JSON body (the caller needs the same string
+ * for its own dedupe key, so serializing once here avoids doing it twice per
+ * flush). Returns `false` without sending when it exceeds `KEEPALIVE_MAX_BYTES`
+ * (the caller falls back to the local draft, which is the guaranteed
+ * persistence layer regardless). Never throws.
  */
-export function apiKeepalivePatch(path: string, body: object): boolean {
-  const json = JSON.stringify(body);
+export function apiKeepalivePatch(path: string, json: string): boolean {
   const byteLength = new TextEncoder().encode(json).length;
   if (byteLength > KEEPALIVE_MAX_BYTES) return false;
 

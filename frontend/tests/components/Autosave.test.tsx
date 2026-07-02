@@ -18,6 +18,7 @@ interface HarnessProps {
   initial?: string | null;
   onDirty?: (payload: string) => void;
   onSaved?: (payload: string) => void;
+  suspended?: boolean;
   /** Test-only escape hatch: kept in sync with the hook's `getPendingPayload`. */
   pendingPayloadRef?: { current: (() => string | null) | null };
 }
@@ -27,6 +28,7 @@ function Harness({
   initial = 'baseline',
   onDirty,
   onSaved,
+  suspended,
   pendingPayloadRef,
 }: HarnessProps): JSX.Element {
   const [payload, setPayload] = useState<string | null>(initial);
@@ -36,6 +38,7 @@ function Harness({
     debounceMs: DEBOUNCE_MS,
     onDirty,
     onSaved,
+    suspended,
   });
   useEffect(() => {
     if (pendingPayloadRef) pendingPayloadRef.current = getPendingPayload;
@@ -386,6 +389,71 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     await advance(DEBOUNCE_MS + 200);
     expect(saveA).toHaveBeenCalledTimes(1);
     expect(saveB).not.toHaveBeenCalled();
+  });
+
+  it('suppresses scheduled server saves while suspended but keeps onDirty firing and getPendingPayload null (conflict-window safety net)', async () => {
+    // Regression for the story-editor-tyh finding: typing after a conflict is
+    // detected must keep flowing into the local draft layer (onDirty) while
+    // the network autosave — and therefore the unload-flush's view of "is
+    // there anything pending" — stays suppressed.
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onDirty = vi.fn<(p: string) => void>();
+    const pendingPayloadRef: { current: (() => string | null) | null } = { current: null };
+    render(
+      <Harness save={save} onDirty={onDirty} suspended pendingPayloadRef={pendingPayloadRef} />,
+    );
+
+    clickButton('EditA');
+    expect(onDirty).toHaveBeenCalledTimes(1);
+    expect(onDirty).toHaveBeenCalledWith('fixed-A');
+    // getPendingPayload must not surface the dirty payload while suspended —
+    // useUnloadFlush's keepalive PATCH must not fire during a conflict.
+    expect(pendingPayloadRef.current?.()).toBeNull();
+
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).not.toHaveBeenCalled();
+
+    clickButton('EditB');
+    expect(onDirty).toHaveBeenCalledTimes(2);
+    expect(onDirty).toHaveBeenCalledWith('fixed-B');
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('does not fire an already-scheduled retry once suspended flips true before it elapses', async () => {
+    // The exact race from the finding: the failing save that trips the
+    // conflict schedules a one-shot retry BEFORE the caller has a chance to
+    // flip `suspended`. That retry must not turn into a real save once
+    // suspended is true.
+    const save = vi.fn<(p: string) => Promise<void>>().mockRejectedValueOnce(new Error('boom'));
+    const { rerender } = render(<Harness save={save} suspended={false} />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS);
+    await advance(0); // let the rejection settle and schedule the retry
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent(/^Save failed — retrying/);
+
+    // Caller (EditorPage) flips suspended synchronously on the 409 catch.
+    rerender(<Harness save={save} suspended />);
+
+    await advance(DEBOUNCE_MS * 2 + 200);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes scheduling normal debounced saves once suspended flips back to false', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const { rerender } = render(<Harness save={save} suspended />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).not.toHaveBeenCalled();
+
+    rerender(<Harness save={save} suspended={false} />);
+    clickButton('EditB');
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith('fixed-B');
   });
 
   it('does not misroute a follow-up to the new save fn when chapter switches mid-flight', async () => {

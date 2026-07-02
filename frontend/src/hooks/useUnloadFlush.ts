@@ -38,12 +38,11 @@ export function useUnloadFlush(getPending: () => UnloadFlushArgs | null): void {
       const pending = getPendingRef.current();
       if (pending === null) return;
 
-      const body = { bodyJson: pending.bodyJson };
-      const serialized = JSON.stringify(body);
+      const serialized = JSON.stringify({ bodyJson: pending.bodyJson });
       if (lastFlushedBodyRef.current === serialized) return;
 
       const path = `/stories/${encodeURIComponent(pending.storyId)}/chapters/${encodeURIComponent(pending.chapterId)}`;
-      const sent = apiKeepalivePatch(path, body);
+      const sent = apiKeepalivePatch(path, serialized);
       if (sent) lastFlushedBodyRef.current = serialized;
     };
 

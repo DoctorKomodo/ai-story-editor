@@ -294,10 +294,10 @@ export function EditorPage(): JSX.Element {
   );
 
   const autosave = useAutosave<JSONContent>({
-    // A conflict makes the payload inert — `runSave` early-returns on `null`
-    // and no new debounce schedules, which stops the one-shot retry from
-    // re-409ing against a body the user hasn't reconciled yet.
-    payload: conflict ? null : draftBodyJson,
+    // Payload stays live (not forced null) during a conflict — the user's
+    // continued typing must keep flowing into the local draft via `onDirty`
+    // below. `suspended` is what stops the SERVER save; see that option.
+    payload: draftBodyJson,
     save: handleSave,
     // Treat each chapter as its own document — switching chapters resets the
     // baseline so the new chapter's freshly-loaded body isn't mistaken for a
@@ -306,9 +306,18 @@ export function EditorPage(): JSX.Element {
     // new chapter id via the pending-follow-up branch).
     resetKey: activeChapterId,
     // Persists a plaintext draft to IndexedDB on every dirty change and
-    // deletes it once a save is confirmed (see useChapterDraft).
+    // deletes it once a save is confirmed (see useChapterDraft). Keeps firing
+    // while `suspended`, so keystrokes typed during an unresolved conflict
+    // still land on disk.
     onDirty: chapterDraft.persistDraft,
     onSaved: chapterDraft.clearDraft,
+    // While a conflict is unresolved, suppress the debounced/retry SERVER
+    // save (and `getPendingPayload`, so the unload-time keepalive flush also
+    // stays suppressed) — the local draft above is the safety net until the
+    // user resolves via Reload or Overwrite. Neither send an unconditional
+    // clobbering PATCH: Reload discards local edits in favor of the server's
+    // version, Overwrite is one explicit user-sanctioned PATCH.
+    suspended: conflict,
   });
 
   const handleConflictReload = useCallback(async (): Promise<void> => {

@@ -43,6 +43,16 @@ export interface UseAutosaveOptions<T> {
    * onDirty and onSaved comes with ITS save).
    */
   onSaved?: (payload: T) => void;
+  /**
+   * When `true`, suppresses scheduling or firing any SERVER save (debounce,
+   * retry, and in-flight follow-up) while still tracking `payload` changes
+   * and firing `onDirty` normally — e.g. during an unresolved chapter
+   * conflict, where the local draft must keep absorbing keystrokes but no
+   * automatic PATCH may go out until the caller resolves the conflict.
+   * `getPendingPayload()` also returns `null` while suspended, so a
+   * best-effort unload flush doesn't race an unresolved conflict.
+   */
+  suspended?: boolean;
 }
 
 export interface UseAutosaveResult<T> {
@@ -59,7 +69,16 @@ export interface UseAutosaveResult<T> {
 }
 
 export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T> {
-  const { payload, save, debounceMs = 4000, equals = Object.is, resetKey, onDirty, onSaved } = opts;
+  const {
+    payload,
+    save,
+    debounceMs = 4000,
+    equals = Object.is,
+    resetKey,
+    onDirty,
+    onSaved,
+    suspended = false,
+  } = opts;
 
   const [status, setStatus] = useState<AutosaveStatus>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -71,6 +90,7 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T
   const debounceMsRef = useRef(debounceMs);
   const onDirtyRef = useRef(onDirty);
   const onSavedRef = useRef(onSaved);
+  const suspendedRef = useRef(suspended);
 
   // Track the most recent payload we've observed and the last one saved
   // (so we can diff), and whether we've seen the baseline yet.
@@ -105,6 +125,9 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T
   useEffect(() => {
     onSavedRef.current = onSaved;
   }, [onSaved]);
+  useEffect(() => {
+    suspendedRef.current = suspended;
+  }, [suspended]);
 
   // Reset baseline state when `resetKey` changes (e.g. chapter switch in the
   // editor). Declared *before* the payload effect so that on a render where
@@ -192,7 +215,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T
     // when it was scheduled.
     const runSave = async (saveFn: (p: T) => Promise<void>): Promise<void> => {
       const payloadToSave = latestPayloadRef.current;
-      if (payloadToSave === null) return;
+      // Guards a retry/follow-up timer that was scheduled before `suspended`
+      // flipped true (e.g. the very save whose 409 trips a conflict) — by
+      // the time the timer fires, suspension has propagated.
+      if (payloadToSave === null || suspendedRef.current) return;
 
       savingRef.current = true;
       safeSetStatus('saving');
@@ -266,6 +292,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T
     const scheduleDebouncedSave = (overrideSave?: (p: T) => Promise<void>): void => {
       clearDebounce();
       clearRetry();
+      // While suspended, no SERVER save may be scheduled — `onDirty` above
+      // has already persisted the edit to the local draft layer, which is
+      // the only guaranteed persistence while suspended.
+      if (suspendedRef.current) return;
       // Caller can pass an explicit save fn to keep a follow-up locked to the
       // chapter the original save was scheduled for; otherwise re-snapshot.
       const snapshotSave = overrideSave ?? saveRef.current;
@@ -326,6 +356,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T
   }, []);
 
   const getPendingPayload = useCallback((): T | null => {
+    // Suspended means no SERVER save may go out — including a best-effort
+    // unload-time keepalive flush, which would otherwise race an unresolved
+    // conflict. The local draft (via onDirty) is the only guaranteed layer.
+    if (suspendedRef.current) return null;
     const latest = latestPayloadRef.current;
     if (latest === null || !baselineSetRef.current) return null;
     if (savingRef.current) return latest;
