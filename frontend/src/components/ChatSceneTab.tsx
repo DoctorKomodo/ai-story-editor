@@ -143,11 +143,11 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
   } = useSoftDelete((id: string) => removeChat.mutateAsync(id), { timeoutMs: 5_000 });
 
   const onSend = useCallback(
-    async (args: ChatSendArgs): Promise<void> => {
+    async (args: ChatSendArgs): Promise<boolean> => {
       const guard = checkChatSendGuards({ activeChapterId: chapterId, selectedModelId });
       if (guard) {
         useErrorStore.getState().push(guard);
-        return;
+        return false;
       }
       const cId = chapterId as string;
       const mId = selectedModelId as string;
@@ -168,7 +168,7 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
             code: 'create_failed',
             message: err instanceof Error ? err.message : 'Could not create the session.',
           });
-          return;
+          return false;
         }
       }
       // Evaluate isFirstTurn AFTER chatId is resolved so explicit-create-then-send
@@ -196,7 +196,8 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
       } catch {
         // Error is already reflected in sendChatMessage.error and the draft store.
         // Don't propagate — ChatComposer calls onSend via `void onSend(args)`.
-        return;
+        // The message was consumed: banner retry owns re-sending this content.
+        return true;
       }
 
       if (isFirstTurn) {
@@ -207,6 +208,7 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
           // non-fatal — session remains usable without a title
         }
       }
+      return true;
     },
     [
       chapterId,

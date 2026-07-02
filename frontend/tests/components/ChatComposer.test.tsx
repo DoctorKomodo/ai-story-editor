@@ -1,5 +1,5 @@
 import { type QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -243,6 +243,47 @@ describe('ChatComposer (F40)', () => {
     // submits.
     await user.keyboard('{Meta>}{Enter}{/Meta}');
     expect(onSend).not.toHaveBeenCalled();
+  });
+
+  it('restores the typed text when onSend resolves false (send not accepted)', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(false);
+    renderWithQuery(<ChatComposer onSend={onSend} />);
+    const textarea = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+    await user.type(textarea, 'precious draft');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => {
+      expect(textarea).toHaveValue('precious draft');
+    });
+  });
+
+  it('re-attaches the selection when onSend resolves false', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(false);
+    useAttachedSelectionStore.setState({ attachedSelection: SAMPLE_ATTACHMENT });
+    renderWithQuery(<ChatComposer onSend={onSend} />);
+    const textarea = screen.getByRole('textbox', { name: 'Message' });
+    await user.type(textarea, 'precious draft');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => {
+      expect(useAttachedSelectionStore.getState().attachedSelection).not.toBeNull();
+    });
+    expect(screen.getByTestId('composer-attachment')).toBeInTheDocument();
+  });
+
+  it('still clears the textarea when onSend resolves true', async () => {
+    const user = userEvent.setup();
+    const onSend = vi.fn().mockResolvedValue(true);
+    renderWithQuery(<ChatComposer onSend={onSend} />);
+    const textarea = screen.getByRole('textbox', { name: 'Message' }) as HTMLTextAreaElement;
+    await user.type(textarea, 'going away');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => {
+      expect(textarea).toHaveValue('');
+    });
   });
 });
 

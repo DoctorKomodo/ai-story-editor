@@ -209,4 +209,53 @@ describe('ChatSceneTab — bug regressions', () => {
       });
     });
   });
+
+  it('a guard-rejected send (no model selected) leaves the typed message in the composer', async () => {
+    fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      if (url.includes('/api/chapters/ch1/chats') && !url.includes('/messages')) {
+        return jsonResponse(200, {
+          chats: [
+            {
+              id: 'c1',
+              chapterId: 'ch1',
+              title: 'Existing chat',
+              kind: 'ask',
+              messageCount: 0,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+              lastActivityAt: new Date().toISOString(),
+            },
+          ],
+        });
+      }
+      if (url.includes('/api/chats/c1/messages')) {
+        return jsonResponse(200, { messages: [] });
+      }
+      return jsonResponse(404, { error: 'not_mocked' });
+    }) as FetchMock;
+    vi.stubGlobal('fetch', fetchMock);
+
+    // No model selected — mirrors DEFAULT_SETTINGS where chat.model is null.
+    const qc = createQueryClient();
+    qc.setQueryData(userSettingsQueryKey, {
+      ...DEFAULT_SETTINGS,
+      chat: { ...DEFAULT_SETTINGS.chat, model: null },
+    });
+    qc.setQueryData(modelsQueryKey, []);
+
+    const user = userEvent.setup();
+    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    await screen.findByRole('button', { name: /Chat: Existing chat/ });
+
+    const textarea = await screen.findByLabelText('Message');
+    await user.type(textarea, 'do not lose me');
+    await user.click(screen.getByRole('button', { name: 'Send' }));
+
+    await waitFor(() => {
+      expect(useErrorStore.getState().errors.some((e) => e.code === 'no_model')).toBe(true);
+    });
+    expect(vi.mocked(apiStream).mock.calls.length).toBe(0);
+    expect(screen.getByLabelText('Message')).toHaveValue('do not lose me');
+  });
 });
