@@ -128,7 +128,7 @@ Body: `{ "title", "bodyJson?", "status?" }`. Backend assigns `orderIndex` and co
 Response `200`: `{ "chapter": { "id", "storyId", "title", "bodyJson", "wordCount", "orderIndex", "status", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "summary", "summaryUpdatedAt" } }`. `bodyJson` is the decrypted TipTap tree; `summary` is the structured summary (or `null`).
 
 ### `PATCH /:chapterId`
-Body: any subset of `{ "title", "bodyJson", "status", "orderIndex" }`. If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`.
+Body: any subset of `{ "title", "bodyJson", "status", "orderIndex" }`, plus optional `"expectedUpdatedAt"` (ISO datetime — optimistic-concurrency precondition; omitted = unconditional last-write-wins, which is what old clients and import send). If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`. Response `409` `{ "error": { "message", "code": "conflict" } }` when `expectedUpdatedAt` is sent and no longer matches the chapter's `updatedAt` (edited elsewhere — client should refetch, or resend without the precondition to overwrite).
 
 ### `DELETE /:chapterId`
 Response `204` (remaining chapters are re-packed to sequential `orderIndex`).
