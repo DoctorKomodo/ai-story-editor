@@ -348,6 +348,29 @@ describe('Chat persistence [V15]', () => {
     expect(res.body.error.code).toBe('not_found');
   });
 
+  it('returns 400 unknown_model when modelId is not in the Venice model list', async () => {
+    const { agent, sessionId } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+    const req = makeFakeReq(sessionId);
+    const { chapterId } = await setupStoryAndChapter(req);
+
+    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chatId = chat.id as string;
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+
+    const res = await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', 'http://localhost:3000')
+      .send({ content: 'hi', modelId: 'model-not-in-list' });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('unknown_model');
+
+    // No side effects: the failure happens before the user message is persisted.
+    const msgs = await prisma.message.findMany({ where: { chatId } });
+    expect(msgs).toHaveLength(0);
+  });
+
   it('streams SSE, persists user + assistant messages with tokens and latencyMs', async () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);

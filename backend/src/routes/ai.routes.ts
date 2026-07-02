@@ -72,7 +72,7 @@ export function createAiRouter() {
         // Called before any DB reads so a missing BYOK key surfaces immediately
         // without leaking whether the story/chapter exists (per spec: step 6
         // runs "first"). Also throws UnknownModelError when modelId isn't in
-        // Venice's list → propagates as 500 (V11 will refine later).
+        // Venice's list → 400 unknown_model via the global handler.
         await veniceModelsService.fetchModels(getDekFromRequest(req), userId);
         const modelContextLength = veniceModelsService.getModelContextLength(body.modelId, userId);
 

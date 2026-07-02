@@ -355,6 +355,23 @@ describe('POST /api/ai/complete [V5]', () => {
     expect(res.body.error.code).toBe('not_found');
   });
 
+  it('returns 400 unknown_model when modelId is not in the Venice model list', async () => {
+    const { agent } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+
+    const res = await agent.post('/api/ai/complete').set('Origin', 'http://localhost:3000').send({
+      action: 'continue',
+      selectedText: '',
+      chapterId: 'nonexistent-chapter',
+      storyId: 'nonexistent-story',
+      modelId: 'model-not-in-list',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('unknown_model');
+  });
+
   it('streams SSE with at least one data chunk and a [DONE] terminator', async () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
