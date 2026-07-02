@@ -1,8 +1,17 @@
 import express, { type NextFunction, type Request, type Response } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { z } from 'zod';
 import { globalErrorHandler } from '../../src/index';
+import { forbidden, HttpError, notFound } from '../../src/lib/http-errors';
 import { NoVeniceKeyError } from '../../src/lib/venice';
+import { ChapterNotOwnedError } from '../../src/repos/chapter.repo';
+import { CharacterNotOwnedError } from '../../src/repos/character.repo';
+import { OutlineNotOwnedError } from '../../src/repos/outline.repo';
+import { InvalidCredentialsError, UsernameUnavailableError } from '../../src/services/auth.service';
+import { DekNotAvailableError } from '../../src/services/content-crypto.service';
+import { UnknownModelError } from '../../src/services/venice.models.service';
+import { VeniceKeyCheckError, VeniceKeyInvalidError } from '../../src/services/venice-key.service';
 import '../setup';
 
 // Isolated mini-app: Express dispatches middleware in registration order, so
@@ -51,6 +60,101 @@ describe('globalErrorHandler [B7]', () => {
     expect(res.body).not.toHaveProperty('stack');
     expect(res.body.error).not.toHaveProperty('stack');
     expect(JSON.stringify(res.body)).not.toMatch(/\s+at\s.*\(.*:\d+:\d+\)/);
+  });
+
+  it('maps a thrown HttpError to its own status/code/message', async () => {
+    const res = await request(makeApp(new HttpError(404, 'not_found', 'Chapter not found'))).get(
+      '/boom',
+    );
+    expect(res.status).toBe(404);
+    expect(res.body).toEqual({ error: { message: 'Chapter not found', code: 'not_found' } });
+  });
+
+  it('never includes a stack for mapped errors, even in dev', async () => {
+    const err = notFound();
+    err.stack = 'Error: x\n    at fake (/tmp/fake.ts:1:1)';
+    const res = await request(makeApp(err)).get('/boom');
+    expect(JSON.stringify(res.body)).not.toContain('/tmp/fake.ts');
+  });
+
+  it('maps ZodError to the badRequestFromZod shape', async () => {
+    const zerr = z.object({ title: z.string() }).safeParse({}).error!;
+    const res = await request(makeApp(zerr)).get('/boom');
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+    expect(res.body.error.message).toBe('Invalid request body');
+    expect(Array.isArray(res.body.error.issues)).toBe(true);
+  });
+
+  it('maps UnknownModelError to 400 unknown_model', async () => {
+    const res = await request(makeApp(new UnknownModelError('no-such-model'))).get('/boom');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: { message: 'Unknown Venice model: no-such-model', code: 'unknown_model' },
+    });
+    expect(res.body.error).not.toHaveProperty('stack');
+  });
+
+  it('maps InvalidCredentialsError to 401 invalid_credentials', async () => {
+    const res = await request(makeApp(new InvalidCredentialsError())).get('/boom');
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({
+      error: { message: 'Invalid credentials', code: 'invalid_credentials' },
+    });
+  });
+
+  it('maps UsernameUnavailableError to 409 username_unavailable', async () => {
+    const res = await request(makeApp(new UsernameUnavailableError())).get('/boom');
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({
+      error: { message: 'Username unavailable', code: 'username_unavailable' },
+    });
+  });
+
+  it('maps VeniceKeyInvalidError to 400 venice_key_invalid', async () => {
+    const res = await request(makeApp(new VeniceKeyInvalidError())).get('/boom');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({
+      error: { message: 'venice_key_invalid', code: 'venice_key_invalid' },
+    });
+  });
+
+  it('maps VeniceKeyCheckError to 502 venice_unreachable', async () => {
+    const res = await request(makeApp(new VeniceKeyCheckError('upstream down'))).get('/boom');
+    expect(res.status).toBe(502);
+    expect(res.body).toEqual({
+      error: { message: 'venice_unreachable', code: 'venice_unreachable' },
+    });
+  });
+
+  it.each([
+    ['ChapterNotOwnedError', new ChapterNotOwnedError()],
+    ['CharacterNotOwnedError', new CharacterNotOwnedError()],
+    ['OutlineNotOwnedError', new OutlineNotOwnedError()],
+  ])('maps %s to 403 forbidden', async (_name, err) => {
+    const res = await request(makeApp(err)).get('/boom');
+    expect(res.status).toBe(403);
+    expect(res.body).toEqual({ error: { message: 'Forbidden', code: 'forbidden' } });
+  });
+
+  it('maps DekNotAvailableError to 401 session_expired (byte-identical to auth.middleware)', async () => {
+    const res = await request(makeApp(new DekNotAvailableError())).get('/boom');
+    expect(res.status).toBe(401);
+    expect(res.body).toEqual({
+      error: { message: 'Session expired', code: 'session_expired' },
+    });
+  });
+
+  it('a mapped HttpError still returns its real message/code in production', async () => {
+    const original = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const res = await request(makeApp(forbidden('Not your story'))).get('/boom');
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual({ error: { message: 'Not your story', code: 'forbidden' } });
+    } finally {
+      process.env.NODE_ENV = original;
+    }
   });
 
   describe('production mode', () => {

@@ -158,7 +158,10 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     const res = await agent.get(`/api/chats/${chatId}/messages`);
     expect(res.status).toBe(500);
     // `error.stack` is only populated when NODE_ENV !== 'production' (test env).
+    // respond() wraps the raw ZodError in EgressSchemaDriftError so the central
+    // ZodError -> 400 mapping branch doesn't misclassify this server-side
+    // egress-contract drift as a client 400 (see lib/respond.ts).
     expect(res.body.error.stack).toBeDefined();
-    expect(res.body.error.stack).toMatch(/ZodError/);
+    expect(res.body.error.stack).toMatch(/EgressSchemaDriftError/);
   });
 });
