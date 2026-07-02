@@ -106,7 +106,6 @@ export function useChapterDraft(args: UseChapterDraftArgs): UseChapterDraftResul
     // serverUpdatedAt is read fresh via argsRef inside the async callback —
     // including it here would re-run the lookup on every save, not just on
     // chapter switch.
-    // biome-ignore lint/correctness/useExhaustiveDependencies: serverUpdatedAt intentionally excluded, see comment above.
   }, [userId, chapterId, serverLoaded]);
 
   return { pendingDraft, persistDraft, clearDraft, acceptDraft, discardDraft };

@@ -42,6 +42,10 @@ export interface SendArgs {
 }
 
 export interface ChatComposerProps {
+  // `void` in the union is deliberate: handlers that return nothing (and
+  // async handlers returning Promise<void>) must stay assignable — only an
+  // explicit `false` means "not consumed, restore the draft".
+  // biome-ignore lint/suspicious/noConfusingVoidType: back-compat acceptance contract, see comment above.
   onSend: (args: SendArgs) => void | boolean | Promise<void | boolean>;
   disabled?: boolean;
   state?: 'idle' | 'streaming';

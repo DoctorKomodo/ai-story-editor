@@ -214,6 +214,7 @@ export function EditorPage(): JSX.Element {
     nonce: number;
     bodyJson: JSONContent;
   } | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChapterId is the reset trigger — the effect must re-run on chapter switch even though it doesn't read the id.
   useEffect(() => {
     setRestoreSeed(null);
   }, [activeChapterId]);
@@ -263,6 +264,7 @@ export function EditorPage(): JSX.Element {
   // conflict banner offers Reload / Overwrite.
   const [conflict, setConflict] = useState(false);
   const [conflictActionBusy, setConflictActionBusy] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChapterId is the reset trigger — the effect must re-run on chapter switch even though it doesn't read the id.
   useEffect(() => {
     setConflict(false);
   }, [activeChapterId]);
