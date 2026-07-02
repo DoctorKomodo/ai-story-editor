@@ -49,3 +49,6 @@ backups/*.sql.gz
 # drops a self-ignoring .gitignore inside; this top-level entry is the
 # belt-and-suspenders so anything written under .superpowers/ stays untracked.
 .superpowers/
+
+# Beads / Dolt files (added by bd init)
+.beads/proxieddb/
