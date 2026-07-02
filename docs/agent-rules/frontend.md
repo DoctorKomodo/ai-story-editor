@@ -21,11 +21,16 @@ to the backend at `/api/*`; never talks to Venice.ai directly.
   cookie, and no `/auth/refresh` endpoint.** Do not add these.
 - A **401 is terminal**. There is no silent-refresh or retry dance.
   On any 401 from any API call, `onUnauthorized` fires, client state
-  is reset, and the user is routed to /login. A `session_expired`
-  response code (cookie present, session gone — e.g. after a server
-  restart) shows the "session expired" banner first; `unauthorized`
-  (no cookie) goes straight to /login. Both paths clear the session
-  slice and all per-user stores.
+  is reset, and the user is routed to /login. The backend
+  distinguishes `session_expired` (cookie present, session gone —
+  e.g. after a server restart) from `unauthorized` (no cookie), but
+  the frontend currently treats both identically via the single
+  `onUnauthorized` handler (`frontend/src/lib/api.ts`) — there is
+  **no** code-specific branch and no "session expired" banner
+  (known UX gap, documented in `docs/encryption.md`'s 401-handling
+  step; the server-side code split exists so the frontend can adopt
+  a distinct banner later without an API change).
+  Both paths clear the session slice and all per-user stores.
 - The auth identifier is `username` (lowercased, 3–32 chars,
   `/^[a-z0-9_-]+$/`). `User.email` is optional metadata only.
 - **Telemetry / error-reporting buffers must flush on every auth
