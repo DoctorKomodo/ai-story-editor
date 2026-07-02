@@ -15,6 +15,7 @@ import {
 } from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequest } from '../lib/bad-request';
+import { notFound } from '../lib/http-errors';
 import { respond } from '../lib/respond';
 import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
 import { logVeniceErrorDev, mapVeniceError } from '../lib/venice-errors';
@@ -22,7 +23,6 @@ import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
 import {
-  ChapterNotOwnedError,
   ChapterVersionConflictError,
   createChapterRepo,
   type RepoChapterUpdateInput,
@@ -140,16 +140,8 @@ export function createChaptersRouter() {
         seenOrders.add(item.orderIndex);
       }
 
-      try {
-        await createChapterRepo(req).reorder(storyId, body.chapters);
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof ChapterNotOwnedError) {
-          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
-          return;
-        }
-        throw err;
-      }
+      await createChapterRepo(req).reorder(storyId, body.chapters);
+      res.status(204).send();
     }),
   );
 
@@ -165,10 +157,7 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
       try {
         const chapter = await createChapterRepo(req).findById(chapterId);
-        if (!chapter || chapter.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!chapter || chapter.storyId !== storyId) throw notFound();
         respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
       } catch (err) {
         next(err);
@@ -185,10 +174,7 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
 
       const existing = await createChapterRepo(req).findById(chapterId);
-      if (!existing || existing.storyId !== storyId) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!existing || existing.storyId !== storyId) throw notFound();
 
       const input: RepoChapterUpdateInput = {};
       if (body.title !== undefined) input.title = body.title;
@@ -217,10 +203,7 @@ export function createChaptersRouter() {
         }
         throw err;
       }
-      if (!chapter) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!chapter) throw notFound();
       respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
     }),
   );
@@ -234,15 +217,9 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
       try {
         const existing = await createChapterRepo(req).findById(chapterId);
-        if (!existing || existing.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!existing || existing.storyId !== storyId) throw notFound();
         const ok = await createChapterRepo(req).remove(chapterId);
-        if (!ok) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!ok) throw notFound();
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -258,10 +235,7 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
 
       const updated = await createChapterRepo(req).update(chapterId, { summaryJson: body });
-      if (!updated) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
+      if (!updated) throw notFound('Chapter not found');
       respond(chapterSummaryResponseSchema, res, {
         summary: updated.summary!,
         summaryUpdatedAt: updated.summaryUpdatedAt?.toISOString() ?? null,
@@ -281,10 +255,7 @@ export function createChaptersRouter() {
       const storyId = req.params.storyId as string;
 
       const chapter = await createChapterRepo(req).findById(chapterId);
-      if (!chapter || chapter.storyId !== storyId) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
+      if (!chapter || chapter.storyId !== storyId) throw notFound('Chapter not found');
 
       const plaintext = tipTapJsonToText(chapter.bodyJson ?? null).trim();
       if (plaintext.length === 0 || chapter.wordCount === 0) {
@@ -376,10 +347,7 @@ export function createChaptersRouter() {
       }
 
       const updated = await createChapterRepo(req).update(chapterId, { summaryJson: parsed });
-      if (!updated) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
+      if (!updated) throw notFound('Chapter not found');
       respond(chapterSummaryResponseSchema, res, {
         summary: updated.summary!,
         summaryUpdatedAt: updated.summaryUpdatedAt?.toISOString() ?? null,
