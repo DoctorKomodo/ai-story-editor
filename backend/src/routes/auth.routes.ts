@@ -1,16 +1,10 @@
 import { type Request, type Response, Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { ZodError, z } from 'zod';
-import { badRequestFromZod } from '../lib/bad-request';
+import { z } from 'zod';
 import { prisma } from '../lib/prisma';
 import { clearSessionCookie, sessionCookieName, setSessionCookie } from '../lib/session-cookie';
 import { requireAuth } from '../middleware/auth.middleware';
-import {
-  authService,
-  InvalidCredentialsError,
-  nameSchema,
-  UsernameUnavailableError,
-} from '../services/auth.service';
+import { authService, nameSchema } from '../services/auth.service';
 
 function minPasswordLength(): number {
   return process.env.NODE_ENV === 'production' ? 8 : 4;
@@ -148,16 +142,6 @@ export function createAuthRouter() {
         recoveryCode: result.recoveryCode,
       });
     } catch (err) {
-      if (err instanceof ZodError) {
-        badRequestFromZod(res, err);
-        return;
-      }
-      if (err instanceof UsernameUnavailableError) {
-        res
-          .status(409)
-          .json({ error: { message: 'Username unavailable', code: 'username_unavailable' } });
-        return;
-      }
       next(err);
     }
   });
@@ -168,16 +152,6 @@ export function createAuthRouter() {
       setSessionCookie(res, sessionId);
       res.status(200).json({ user });
     } catch (err) {
-      if (err instanceof ZodError) {
-        badRequestFromZod(res, err);
-        return;
-      }
-      if (err instanceof InvalidCredentialsError) {
-        res
-          .status(401)
-          .json({ error: { message: 'Invalid credentials', code: 'invalid_credentials' } });
-        return;
-      }
       next(err);
     }
   });
@@ -193,6 +167,10 @@ export function createAuthRouter() {
     }
   });
 
+  // On InvalidCredentialsError the central error mapping returns a body +
+  // status identical to the login invalid-credentials path — reset-password
+  // must not expose "user not found" vs. "wrong recovery code" to the caller
+  // ([AU10] precedent).
   router.post(
     '/reset-password',
     resetPasswordIpLimiter(),
@@ -207,19 +185,6 @@ export function createAuthRouter() {
         });
         res.status(204).send();
       } catch (err) {
-        if (err instanceof ZodError) {
-          badRequestFromZod(res, err);
-          return;
-        }
-        if (err instanceof InvalidCredentialsError) {
-          // Identical body + status to the login invalid-credentials path —
-          // reset-password must not expose "user not found" vs. "wrong
-          // recovery code" to the caller ([AU10] precedent).
-          res.status(401).json({
-            error: { message: 'Invalid credentials', code: 'invalid_credentials' },
-          });
-          return;
-        }
         next(err);
       }
     },
@@ -243,16 +208,6 @@ export function createAuthRouter() {
       setSessionCookie(res, sessionId);
       res.status(204).send();
     } catch (err) {
-      if (err instanceof ZodError) {
-        badRequestFromZod(res, err);
-        return;
-      }
-      if (err instanceof InvalidCredentialsError) {
-        res.status(401).json({
-          error: { message: 'Invalid credentials', code: 'invalid_credentials' },
-        });
-        return;
-      }
       next(err);
     }
   });
@@ -273,10 +228,6 @@ export function createAuthRouter() {
       });
       res.status(200).json({ user });
     } catch (err) {
-      if (err instanceof ZodError) {
-        badRequestFromZod(res, err);
-        return;
-      }
       next(err);
     }
   });
@@ -325,16 +276,6 @@ export function createAuthRouter() {
           warning: 'Save this recovery code now — it will not be shown again.',
         });
       } catch (err) {
-        if (err instanceof ZodError) {
-          badRequestFromZod(res, err);
-          return;
-        }
-        if (err instanceof InvalidCredentialsError) {
-          res.status(401).json({
-            error: { message: 'Invalid credentials', code: 'invalid_credentials' },
-          });
-          return;
-        }
         next(err);
       }
     },
@@ -361,16 +302,6 @@ export function createAuthRouter() {
       clearSessionCookie(res);
       res.status(204).send();
     } catch (err) {
-      if (err instanceof ZodError) {
-        badRequestFromZod(res, err);
-        return;
-      }
-      if (err instanceof InvalidCredentialsError) {
-        res.status(401).json({
-          error: { message: 'Invalid credentials', code: 'invalid_credentials' },
-        });
-        return;
-      }
       next(err);
     }
   });
