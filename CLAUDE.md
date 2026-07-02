@@ -210,7 +210,7 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 
 | Thing | Convention | Example |
 |---|---|---|
-| Files (backend) | camelCase | `auth.service.ts` |
+| Files (backend) | kebab-case stem + dot-separated role suffix (`.service.ts`, `.routes.ts`, `.repo.ts`, `.middleware.ts`, `.config.ts`) | `content-crypto.service.ts`, `venice-key.routes.ts`, `chapter.repo.ts`, `origin-check.middleware.ts` |
 | Files (frontend) | PascalCase for components | `CharacterSheet.tsx` |
 | Files (frontend) | camelCase for hooks/lib | `useAuth.ts`, `api.ts` |
 | Database models | PascalCase | `Story`, `Chapter` |
@@ -219,7 +219,9 @@ Our internal client wrappers tell you what WE surface, not what the upstream act
 | React components | PascalCase | `CharacterSheet` |
 | React hooks | camelCase, `use` prefix | `useAuth`, `useStory` |
 | Environment vars | SCREAMING_SNAKE_CASE | `FRONTEND_URL` |
-| Test files | mirror source path + `.test.ts` | `tests/routes/stories.test.ts` |
+| Test files | grouped by role or feature dir under `backend/tests/` / `frontend/tests/` (dirs loosely track `src/` but need not — e.g. `tests/ai/`, `tests/auth/`, `tests/models/` have no src counterpart); filename names the subject, drops the src role suffix, and may add a facet | `tests/routes/stories.test.ts` ↔ `src/routes/stories.routes.ts`; `tests/repos/chapter.repo.summary.test.ts` |
+
+Known stray: `backend/src/services/venice.models.service.ts` uses a dotted stem where the convention wants `venice-models.service.ts`. Leave it — renaming is not worth the churn; don't copy the pattern.
 
 ---
 
