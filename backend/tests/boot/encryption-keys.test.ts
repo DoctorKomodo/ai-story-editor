@@ -39,3 +39,45 @@ describe('validateEncryptionEnv() — no required encryption env secret', () => 
     expect(warn).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('validateEncryptionEnv() — TEST_FAST_ARGON2 guard', () => {
+  it('throws (boot refuses) when TEST_FAST_ARGON2 is set with NODE_ENV=production', () => {
+    const warn = vi.fn();
+    expect(() =>
+      validateEncryptionEnv({
+        env: { TEST_FAST_ARGON2: '1', NODE_ENV: 'production' } as NodeJS.ProcessEnv,
+        warn,
+      }),
+    ).toThrow(/TEST_FAST_ARGON2/);
+  });
+
+  it('warns (does not throw) when set with a non-test, non-production NODE_ENV', () => {
+    const warn = vi.fn();
+    expect(() =>
+      validateEncryptionEnv({
+        env: { TEST_FAST_ARGON2: '1', NODE_ENV: 'development' } as NodeJS.ProcessEnv,
+        warn,
+      }),
+    ).not.toThrow();
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/TEST_FAST_ARGON2/));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('warns when set with NODE_ENV unset', () => {
+    const warn = vi.fn();
+    validateEncryptionEnv({ env: { TEST_FAST_ARGON2: '1' } as NodeJS.ProcessEnv, warn });
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/TEST_FAST_ARGON2/));
+    expect(warn).toHaveBeenCalledTimes(1);
+  });
+
+  it('is silent when set with NODE_ENV=test', () => {
+    const warn = vi.fn();
+    expect(() =>
+      validateEncryptionEnv({
+        env: { TEST_FAST_ARGON2: '1', NODE_ENV: 'test' } as NodeJS.ProcessEnv,
+        warn,
+      }),
+    ).not.toThrow();
+    expect(warn).not.toHaveBeenCalled();
+  });
+});

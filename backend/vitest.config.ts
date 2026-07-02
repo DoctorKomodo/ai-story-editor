@@ -10,6 +10,10 @@ export default defineConfig({
     exclude: ['tests/live/**', 'node_modules/**', 'dist/**'],
     setupFiles: ['tests/setup.ts'],
     globalSetup: ['tests/globalSetup.ts'],
+    // Fast-argon2 opt-in (see src/services/argon2.config.ts + .env.test.example).
+    // Set here — not in a workflow env block — so local and CI runs get it
+    // identically. argon2.config.test.ts fails the suite if this stops arriving.
+    env: { TEST_FAST_ARGON2: '1' },
     maxWorkers: 1,
     sequence: { concurrent: false },
     // Fail if the run collected no tests at all — defence against config
