@@ -30,7 +30,6 @@ import { projectVeniceCitations } from '../lib/venice-citations';
 import {
   logVeniceErrorDev,
   mapVeniceError,
-  mapVeniceErrorToSse,
   type VeniceRequestSnapshot,
 } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -44,15 +43,9 @@ import { getDekFromRequest } from '../services/content-crypto.service';
 import { buildPrompt } from '../services/prompt.service';
 import { tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
-import {
-  buildVeniceParams,
-  hydrateUserSettings,
-  logVeniceParams,
-  promptCacheKey,
-  resolveReasoningEnabled,
-  resolveTextGenWithFallback,
-} from '../services/venice-call.service';
+import { hydrateUserSettings } from '../services/venice-call.service';
 import { veniceKeyService } from '../services/venice-key.service';
+import { prepareVeniceCall, streamVeniceToResponse } from '../services/venice-stream.service';
 
 // ─── Request body schemas ─────────────────────────────────────────────────────
 
@@ -435,129 +428,29 @@ export function createChatMessagesRouter() {
           });
         }
 
-        // ── 9b. Get Venice client + enrich params ─────────────────────────────
+        // ── 9b. Get Venice client + prepare the request ───────────────────────
         const client = await veniceKeyService.getClient(getDekFromRequest(req), userId);
 
-        const modelInfo = veniceModelsService.findModel(body.modelId, userId);
-        const venice_parameters = buildVeniceParams({
-          base: baseVeniceParams,
-          supportsReasoning: modelInfo?.supportsReasoning === true,
-          enableWebSearch: body.enableWebSearch === true,
-          enableChatStreamHints: body.enableWebSearch === true,
-        });
-        const reasoningEnabled = resolveReasoningEnabled(settings, modelInfo);
-
-        // ── 9b. Resolve text-gen parameters (X28) ────────────────────────────
-        const resolved = resolveTextGenWithFallback(settings, modelInfo, max_completion_tokens);
-
-        logVeniceParams({
+        const startedAt = Date.now();
+        const prepared = prepareVeniceCall({
           route: 'chat',
           userId,
           modelId: body.modelId,
-          resolved,
+          messages,
+          settings,
+          baseVeniceParams,
+          fallbackMaxCompletionTokens: max_completion_tokens,
+          cacheKeyParts: [chatId, body.modelId],
           action,
           modelCap: modelMaxCompletionTokens,
-          enableWebSearch: venice_parameters.enable_web_search as string | undefined,
-          reasoningEnabled,
+          enableWebSearch: body.enableWebSearch === true,
+          enableChatStreamHints: body.enableWebSearch === true,
+          includeUsage: true,
         });
+        snapshot = prepared.snapshot;
 
-        // ── 10. Call Venice with streaming ────────────────────────────────────
-        // [V8/V23] `prompt_cache_key` is a Venice top-level field (sibling of
-        // `model` / `messages` / `stream`), NOT nested under `venice_parameters`.
-        // Scoped to (chatId, modelId) for the chat surface.
-        const startedAt = Date.now();
-        const cacheKey = promptCacheKey(chatId, body.modelId);
-
-        snapshot = {
-          model: body.modelId,
-          messageCount: messages.length,
-          systemMessagePreview:
-            typeof messages[0]?.content === 'string' ? messages[0].content : undefined,
-          userMessagePreview:
-            typeof messages.at(-1)?.content === 'string'
-              ? (messages.at(-1)!.content as string)
-              : undefined,
-          venice_parameters,
-          promptCacheKey: cacheKey,
-          temperature: resolved.temperature,
-          top_p: resolved.top_p,
-          max_completion_tokens: resolved.max_completion_tokens,
-        };
-
-        const streamWithResp = (await client.chat.completions
-          .create({
-            model: body.modelId,
-            messages,
-            stream: true as const,
-            temperature: resolved.temperature,
-            top_p: resolved.top_p,
-            max_completion_tokens: resolved.max_completion_tokens,
-            // Request usage in the final chunk so we can persist token counts.
-            stream_options: { include_usage: true },
-            prompt_cache_key: cacheKey,
-            venice_parameters,
-            ...(reasoningEnabled ? {} : { reasoning: { enabled: false } }),
-          } as unknown as Parameters<typeof client.chat.completions.create>[0])
-          .withResponse()) as unknown as {
-          data: AsyncIterable<{
-            choices: Array<{ delta: { content?: string | null }; finish_reason: string | null }>;
-            usage?: { total_tokens?: number } | null;
-          }>;
-          response: { headers: { get(name: string): string | null } };
-        };
-        const { data: stream, response: veniceResponse } = streamWithResp;
-
-        // ── 11. Write SSE response headers ────────────────────────────────────
-        res.status(200);
-        res.setHeader('Content-Type', 'text/event-stream');
-        res.setHeader('Cache-Control', 'no-cache, no-transform');
-        res.setHeader('Connection', 'keep-alive');
-
-        // [V9][V28] Forward Venice rate-limit headers. Limit/reset alongside
-        // remaining lets the frontend compute "X / Y remaining until HH:MM"
-        // without a second round-trip.
-        const remainingRequests = veniceResponse.headers.get('x-ratelimit-remaining-requests');
-        const remainingTokens = veniceResponse.headers.get('x-ratelimit-remaining-tokens');
-        const limitRequests = veniceResponse.headers.get('x-ratelimit-limit-requests');
-        const limitTokens = veniceResponse.headers.get('x-ratelimit-limit-tokens');
-        const resetRequests = veniceResponse.headers.get('x-ratelimit-reset-requests');
-        const resetTokens = veniceResponse.headers.get('x-ratelimit-reset-tokens');
-        if (remainingRequests !== null) {
-          res.setHeader('x-venice-remaining-requests', remainingRequests);
-        }
-        if (remainingTokens !== null) {
-          res.setHeader('x-venice-remaining-tokens', remainingTokens);
-        }
-        if (limitRequests !== null) {
-          res.setHeader('x-venice-limit-requests', limitRequests);
-        }
-        if (limitTokens !== null) {
-          res.setHeader('x-venice-limit-tokens', limitTokens);
-        }
-        if (resetRequests !== null) {
-          res.setHeader('x-venice-reset-requests', resetRequests);
-        }
-        if (resetTokens !== null) {
-          res.setHeader('x-venice-reset-tokens', resetTokens);
-        }
-
-        if (typeof res.flushHeaders === 'function') {
-          res.flushHeaders();
-        }
-
-        // Headers committed — all errors from here must be written as SSE frames.
-
-        let clientClosed = false;
-        req.on('close', () => {
-          clientClosed = true;
-          try {
-            (stream as unknown as { controller?: { abort?: () => void } }).controller?.abort?.();
-          } catch {
-            // ignore
-          }
-        });
-
-        // ── 12. Stream chunks, accumulate content + usage ─────────────────────
+        // ── 10-13. Stream chunks; citation latch + content/usage accumulation +
+        // assistant-message persistence survive via hooks (chat-only behavior). ──
         let accumulatedContent = '';
         let capturedTotalTokens: number | null = null;
         // [V26] Citation capture state. `citationsHandled` latches on the first
@@ -568,90 +461,62 @@ export function createChatMessagesRouter() {
         let citationsHandled = false;
         let capturedCitations: Citation[] | null = null;
 
-        try {
-          for await (const chunk of stream) {
-            if (clientClosed) break;
-
-            // [V26] Venice's `include_search_results_in_stream: true` adds a
-            // non-standard first chunk carrying `venice_search_results`. It is
-            // not part of the OpenAI chunk shape, so we access it via cast.
-            // We CONSUME this chunk (do not forward it to the client) and
-            // instead emit a single `event: citations` SSE frame before any
-            // content frame. Empty / malformed results → latch, emit nothing.
-            if (!citationsHandled) {
-              const veniceChunk = chunk as unknown as {
-                venice_search_results?: unknown;
-              };
-              if (veniceChunk.venice_search_results !== undefined) {
+        await streamVeniceToResponse({
+          client,
+          req,
+          res,
+          prepared,
+          ctx: { userId, route: 'chat' },
+          hooks: {
+            onChunk: (chunk, write) => {
+              // [V26] Venice's `include_search_results_in_stream: true` adds a
+              // non-standard first chunk carrying `venice_search_results`. We
+              // CONSUME this chunk (do not forward it to the client) and
+              // instead emit a single `event: citations` SSE frame before any
+              // content frame. Empty / malformed results → latch, emit nothing.
+              if (!citationsHandled && chunk.venice_search_results !== undefined) {
                 citationsHandled = true;
-                const projected = projectVeniceCitations(veniceChunk.venice_search_results);
+                const projected = projectVeniceCitations(chunk.venice_search_results);
                 if (projected.length > 0) {
                   capturedCitations = projected;
-                  res.write(
-                    `event: citations\ndata: ${JSON.stringify({ citations: projected })}\n\n`,
-                  );
+                  write(`event: citations\ndata: ${JSON.stringify({ citations: projected })}\n\n`);
                 }
-                // Do NOT forward this chunk — continue to the next iteration.
-                continue;
+                return 'consume';
               }
-            }
 
-            // Accumulate assistant content.
-            const deltaContent = chunk.choices[0]?.delta?.content;
-            if (typeof deltaContent === 'string') {
-              accumulatedContent += deltaContent;
-            }
+              // Accumulate assistant content.
+              const deltaContent = chunk.choices[0]?.delta?.content;
+              if (typeof deltaContent === 'string') {
+                accumulatedContent += deltaContent;
+              }
 
-            // Capture usage from the final chunk when stream_options.include_usage is set.
-            if (chunk.usage?.total_tokens != null) {
-              capturedTotalTokens = chunk.usage.total_tokens;
-            }
+              // Capture usage from the final chunk when stream_options.include_usage is set.
+              if (chunk.usage?.total_tokens != null) {
+                capturedTotalTokens = chunk.usage.total_tokens;
+              }
 
-            res.write(`data: ${JSON.stringify(chunk)}\n\n`);
-          }
-
-          // ── 13. Persist assistant message before [DONE] ───────────────────
-          if (!clientClosed) {
-            const latencyMs = Date.now() - startedAt;
-            try {
-              await messageRepo.create({
-                chatId,
-                role: 'assistant' as MessageRole,
-                content: accumulatedContent,
-                // [V26] Persist captured citations (null when none).
-                citationsJson: capturedCitations,
-                model: body.modelId,
-                tokens: capturedTotalTokens,
-                latencyMs,
-              });
-            } catch (persistErr) {
-              // DB error after stream completes — log server-side, still send [DONE].
-              console.error('[V15] Failed to persist assistant message', persistErr);
-            }
-            res.write('data: [DONE]\n\n');
-          }
-        } catch (streamErr) {
-          // Stream errored after headers flushed — write terminal SSE error frame.
-          logVeniceErrorDev({ err: streamErr, ctx: { userId, route: 'chat' }, request: snapshot });
-          if (!clientClosed) {
-            const handled = mapVeniceErrorToSse(streamErr, (data) => res.write(data), {
-              userId,
-              route: 'chat',
-            });
-            if (!handled) {
-              res.write(
-                `data: ${JSON.stringify({
-                  error: 'An internal stream error occurred.',
-                  code: 'stream_error',
-                  message: 'An internal stream error occurred.',
-                })}\n\n`,
-              );
-              res.write('data: [DONE]\n\n');
-            }
-          }
-        } finally {
-          res.end();
-        }
+              return 'forward';
+            },
+            onDone: async () => {
+              const latencyMs = Date.now() - startedAt;
+              try {
+                await messageRepo.create({
+                  chatId,
+                  role: 'assistant' as MessageRole,
+                  content: accumulatedContent,
+                  // [V26] Persist captured citations (null when none).
+                  citationsJson: capturedCitations,
+                  model: body.modelId,
+                  tokens: capturedTotalTokens,
+                  latencyMs,
+                });
+              } catch (persistErr) {
+                // DB error after stream completes — log server-side, still send [DONE].
+                console.error('[V15] Failed to persist assistant message', persistErr);
+              }
+            },
+          },
+        });
       } catch (err) {
         // Pre-stream error — map Venice errors to JSON, let global handler deal with others.
         logVeniceErrorDev({ err, ctx: { userId, route: 'chat' }, request: snapshot });
