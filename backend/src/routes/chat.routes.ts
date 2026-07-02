@@ -275,7 +275,7 @@ export function createChatMessagesRouter() {
           });
           return;
         }
-        if (body.fromMessageId !== undefined && (!anchor || anchor.role !== 'user')) {
+        if (body.fromMessageId !== undefined && anchor?.role !== 'user') {
           // Not found in this chat / belongs to another chat / not a user message.
           res.status(400).json({
             error: {
@@ -512,7 +512,12 @@ export function createChatMessagesRouter() {
                 });
               } catch (persistErr) {
                 // DB error after stream completes — log server-side, still send [DONE].
-                console.error('[V15] Failed to persist assistant message', persistErr);
+                // Bound to the message: a raw error object could theoretically
+                // serialize row data if a future ORM error shape echoed values.
+                console.error(
+                  '[V15] Failed to persist assistant message',
+                  persistErr instanceof Error ? persistErr.message : persistErr,
+                );
               }
             },
           },
