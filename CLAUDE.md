@@ -38,6 +38,7 @@ A self-hosted, web-based story and text editor ("Inkwell") with Venice.ai integr
 ```bash
 # First-time setup
 cp .env.example .env        # then edit values (see General rules for current drift)
+cp .env.test.example .env.test   # required before local backend test runs (see Testing Rules)
 make dev                    # brings up postgres + backend + frontend
                             # frontend :3000 · backend :4000
 
