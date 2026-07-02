@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutosaveIndicator } from '@/components/AutosaveIndicator';
 import { useAutosave } from '@/hooks/useAutosave';
@@ -18,16 +18,27 @@ interface HarnessProps {
   initial?: string | null;
   onDirty?: (payload: string) => void;
   onSaved?: (payload: string) => void;
+  /** Test-only escape hatch: kept in sync with the hook's `getPendingPayload`. */
+  pendingPayloadRef?: { current: (() => string | null) | null };
 }
 
-function Harness({ save, initial = 'baseline', onDirty, onSaved }: HarnessProps): JSX.Element {
+function Harness({
+  save,
+  initial = 'baseline',
+  onDirty,
+  onSaved,
+  pendingPayloadRef,
+}: HarnessProps): JSX.Element {
   const [payload, setPayload] = useState<string | null>(initial);
-  const { status, savedAt, retryAt } = useAutosave({
+  const { status, savedAt, retryAt, getPendingPayload } = useAutosave({
     payload,
     save,
     debounceMs: DEBOUNCE_MS,
     onDirty,
     onSaved,
+  });
+  useEffect(() => {
+    if (pendingPayloadRef) pendingPayloadRef.current = getPendingPayload;
   });
   return (
     <>
@@ -301,6 +312,23 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     await advance(0);
     expect(onSaved).toHaveBeenCalledTimes(1);
     expect(onSaved).toHaveBeenCalledWith('fixed-B');
+  });
+
+  it('getPendingPayload returns the dirty payload during the debounce window and null after a confirmed save', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const pendingPayloadRef: { current: (() => string | null) | null } = { current: null };
+    render(<Harness save={save} pendingPayloadRef={pendingPayloadRef} />);
+
+    // Baseline — nothing pending.
+    expect(pendingPayloadRef.current?.()).toBeNull();
+
+    clickButton('EditA');
+    expect(pendingPayloadRef.current?.()).toBe('fixed-A');
+
+    await advance(DEBOUNCE_MS + 100);
+    await advance(0);
+
+    expect(pendingPayloadRef.current?.()).toBeNull();
   });
 
   it('flushes a pending debounce against the previous save fn when resetKey changes', async () => {

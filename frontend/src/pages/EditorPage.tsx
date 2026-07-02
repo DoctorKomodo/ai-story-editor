@@ -68,6 +68,7 @@ import {
 } from '@/hooks/useChapters';
 import { useCharactersQuery } from '@/hooks/useCharacters';
 import { useStoryQuery } from '@/hooks/useStories';
+import { useUnloadFlush } from '@/hooks/useUnloadFlush';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
@@ -276,6 +277,14 @@ export function EditorPage(): JSX.Element {
     onDirty: chapterDraft.persistDraft,
     onSaved: chapterDraft.clearDraft,
   });
+
+  useUnloadFlush(
+    useCallback(() => {
+      const pending = autosave.getPendingPayload();
+      if (pending === null || !story?.id || activeChapterId === null) return null;
+      return { storyId: story.id, chapterId: activeChapterId, bodyJson: pending };
+    }, [autosave.getPendingPayload, story?.id, activeChapterId]),
+  );
 
   const handlePaperUpdate = useCallback(
     ({ bodyJson }: { bodyJson: JSONContent; wordCount: number }): void => {

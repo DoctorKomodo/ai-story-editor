@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * [F9] Autosave primitive.
@@ -45,15 +45,20 @@ export interface UseAutosaveOptions<T> {
   onSaved?: (payload: T) => void;
 }
 
-export interface UseAutosaveResult {
+export interface UseAutosaveResult<T> {
   status: AutosaveStatus;
   /** Wall-clock ms (Date.now()) of the last successful save, or null. */
   savedAt: number | null;
   /** Wall-clock ms (Date.now()) at which the next retry will fire, or null. */
   retryAt: number | null;
+  /**
+   * Latest payload if it differs from the last successfully-saved one (or a
+   * save is in flight for it), else null. Stable identity (reads refs).
+   */
+  getPendingPayload: () => T | null;
 }
 
-export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
+export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T> {
   const { payload, save, debounceMs = 4000, equals = Object.is, resetKey, onDirty, onSaved } = opts;
 
   const [status, setStatus] = useState<AutosaveStatus>('idle');
@@ -320,5 +325,14 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     };
   }, []);
 
-  return { status, savedAt, retryAt };
+  const getPendingPayload = useCallback((): T | null => {
+    const latest = latestPayloadRef.current;
+    if (latest === null || !baselineSetRef.current) return null;
+    if (savingRef.current) return latest;
+    const lastSaved = lastSavedPayloadRef.current;
+    if (lastSaved === null || !equalsRef.current(latest, lastSaved)) return latest;
+    return null;
+  }, []);
+
+  return { status, savedAt, retryAt, getPendingPayload };
 }
