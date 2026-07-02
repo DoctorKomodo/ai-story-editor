@@ -1,7 +1,7 @@
 import type { Response } from 'express';
 import { describe, expect, it } from 'vitest';
-import { z } from 'zod';
-import { respond } from '../../src/lib/respond';
+import { ZodError, z } from 'zod';
+import { EgressSchemaDriftError, respond } from '../../src/lib/respond';
 
 function fakeRes(): Response & { _body?: unknown; _status?: number } {
   const res = {
@@ -22,12 +22,29 @@ function fakeRes(): Response & { _body?: unknown; _status?: number } {
 const schema = z.strictObject({ hello: z.string() });
 
 describe('respond()', () => {
-  it('parses in non-production and surfaces ZodError on drift', () => {
+  it('parses in non-production and surfaces a drift error', () => {
     const prev = process.env.NODE_ENV;
     process.env.NODE_ENV = 'development';
     try {
       const res = fakeRes();
       expect(() => respond(schema, res, { hello: 1 } as never)).toThrow();
+    } finally {
+      process.env.NODE_ENV = prev;
+    }
+  });
+
+  it('wraps the drift throw in EgressSchemaDriftError, not a raw ZodError', () => {
+    const prev = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'development';
+    try {
+      const res = fakeRes();
+      try {
+        respond(schema, res, { hello: 1 } as never);
+        expect.unreachable('respond() should have thrown on schema drift');
+      } catch (err) {
+        expect(err).toBeInstanceOf(EgressSchemaDriftError);
+        expect(err).not.toBeInstanceOf(ZodError);
+      }
     } finally {
       process.env.NODE_ENV = prev;
     }

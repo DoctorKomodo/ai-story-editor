@@ -128,7 +128,7 @@ Body: `{ "title", "bodyJson?", "status?" }`. Backend assigns `orderIndex` and co
 Response `200`: `{ "chapter": { "id", "storyId", "title", "bodyJson", "wordCount", "orderIndex", "status", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "summary", "summaryUpdatedAt" } }`. `bodyJson` is the decrypted TipTap tree; `summary` is the structured summary (or `null`).
 
 ### `PATCH /:chapterId`
-Body: any subset of `{ "title", "bodyJson", "status", "orderIndex" }`. If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`.
+Body: any subset of `{ "title", "bodyJson", "status", "orderIndex" }`, plus optional `"expectedUpdatedAt"` (ISO datetime — optimistic-concurrency precondition; omitted = unconditional last-write-wins, which is what old clients and import send). If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`. Response `409` `{ "error": { "message", "code": "conflict" } }` when `expectedUpdatedAt` is sent and no longer matches the chapter's `updatedAt` (edited elsewhere — client should refetch, or resend without the precondition to overwrite).
 
 ### `DELETE /:chapterId`
 Response `204` (remaining chapters are re-packed to sequential `orderIndex`).
@@ -203,7 +203,7 @@ Body is one of three modes:
 - **resend**: `{ "fromMessageId", "modelId" }` (regenerate from a specific user turn)
 
 `enableWebSearch: true` sets the three Venice web-search params for the turn; when results come back, the stream opens with one `event: citations\ndata: {"citations":[…]}\n\n` frame before the content frames, then `data: [DONE]`. Forwards the `x-venice-remaining/limit/reset-{requests,tokens}` headers. Persists the user message, streams the assistant tokens, then persists the assistant message with `tokens`/`latencyMs`/`citationsJson`.
-Errors (pre-stream JSON): `404 not_found`, `400 attachment_chapter_mismatch`, `400 retry_invalid_state`, `400 resend_invalid_state`, `409 venice_key_required`. Mid-stream failures are written as a terminal SSE frame (`mapVeniceErrorToSse`, fallback `code: "stream_error"`).
+Errors (pre-stream JSON): `404 not_found`, `400 attachment_chapter_mismatch`, `400 retry_invalid_state`, `400 resend_invalid_state`, `409 venice_key_required`, `400 unknown_model`. Mid-stream failures are written as a terminal SSE frame (`mapVeniceErrorToSse`, fallback `code: "stream_error"`).
 
 ### `PATCH /api/chats/:chatId/messages/:id`
 Edit a **user** message in place. Body: `{ "content" }`. Response `200`: `{ "message" }` with `updatedAt` now set. Error: `404 not_found` (missing / not owned / not a user message).
@@ -222,7 +222,7 @@ Response `200`: `{ "defaults": { … } }` — the nine default templates (`syste
 Body: `{ "action", "selectedText", "chapterId", "storyId", "modelId" }`, where `action` ∈ `continue | rephrase | expand | summarise | rewrite | describe`. `selectedText` and `chapterId` are required.
 **Web search is not accepted here** — the schema omits `enableWebSearch`; web search is chat-only (citations have no inline UI). The route loads story/chapter/characters via the repo (decrypted), calls the prompt builder, and streams Venice tokens back as SSE (`data: <chunk>` … `data: [DONE]`). Sets `include_venice_system_prompt` from the user setting and `strip_thinking_response` / `prompt_cache_key` (top-level) as applicable; never sets the web-search params.
 Response headers: `x-venice-remaining/limit/reset-{requests,tokens}`.
-Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds`), `402 venice_insufficient_balance`, `400 venice_key_invalid`, `502 venice_unavailable`.
+Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds`), `402 venice_insufficient_balance`, `400 venice_key_invalid`, `502 venice_unavailable`, `400 unknown_model`.
 
 ---
 

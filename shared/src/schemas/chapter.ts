@@ -92,6 +92,10 @@ export const chapterUpdateSchema = z.strictObject({
   bodyJson: z.unknown().optional(),
   status: chapterStatusSchema.optional(),
   orderIndex: z.number().int().nonnegative().optional(),
+  // Optimistic-concurrency precondition: the chapter's updatedAt the client
+  // last saw. When present and stale, the PATCH is rejected 409 'conflict'.
+  // Optional — absent keeps legacy last-write-wins (old clients, import).
+  expectedUpdatedAt: z.string().datetime().optional(),
 });
 
 /**

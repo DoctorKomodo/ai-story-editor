@@ -1,25 +1,7 @@
 import { type Request, type Response, Router } from 'express';
-import { ZodError } from 'zod';
 import { requireAuth } from '../middleware/auth.middleware';
 import { getDekFromRequest } from '../services/content-crypto.service';
-import {
-  VeniceKeyCheckError,
-  VeniceKeyInvalidError,
-  veniceKeyService,
-} from '../services/venice-key.service';
-
-function badRequestFromZod(res: Response, err: ZodError): Response {
-  return res.status(400).json({
-    error: {
-      message: 'Invalid request body',
-      code: 'validation_error',
-      issues: err.issues.map((issue) => ({
-        path: issue.path,
-        message: issue.message,
-      })),
-    },
-  });
-}
+import { veniceKeyService } from '../services/venice-key.service';
 
 export function createVeniceKeyRouter() {
   const router = Router();
@@ -46,22 +28,6 @@ export function createVeniceKeyRouter() {
         endpoint: status.endpoint,
       });
     } catch (err) {
-      if (err instanceof ZodError) {
-        badRequestFromZod(res, err);
-        return;
-      }
-      if (err instanceof VeniceKeyInvalidError) {
-        res
-          .status(400)
-          .json({ error: { message: 'venice_key_invalid', code: 'venice_key_invalid' } });
-        return;
-      }
-      if (err instanceof VeniceKeyCheckError) {
-        res
-          .status(502)
-          .json({ error: { message: 'venice_unreachable', code: 'venice_unreachable' } });
-        return;
-      }
       next(err);
     }
   });

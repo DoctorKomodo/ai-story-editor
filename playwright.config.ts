@@ -1,6 +1,8 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// Tier-2 PR-blocking E2E. Runs against the live `make dev` compose stack
+// Tier-2 E2E — CI-manual-only today (.github/workflows/e2e.yml runs on
+// workflow_dispatch only; PR gating is an open decision tracked in bd issue
+// story-editor-7ns). Runs against the live `make dev` compose stack
 // (frontend :3000, backend :4000, postgres :5432). Tier-3 cross-browser /
 // soak specs would live under `tests/e2e-extended/` and use a separate
 // config or `--project=extended` selector.

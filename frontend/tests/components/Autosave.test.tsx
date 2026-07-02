@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { type JSX, useState } from 'react';
+import { type JSX, useEffect, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AutosaveIndicator } from '@/components/AutosaveIndicator';
 import { useAutosave } from '@/hooks/useAutosave';
@@ -16,11 +16,33 @@ const DEBOUNCE_MS = 4000;
 interface HarnessProps {
   save: (payload: string) => Promise<void>;
   initial?: string | null;
+  onDirty?: (payload: string) => void;
+  onSaved?: (payload: string) => void;
+  suspended?: boolean;
+  /** Test-only escape hatch: kept in sync with the hook's `getPendingPayload`. */
+  pendingPayloadRef?: { current: (() => string | null) | null };
 }
 
-function Harness({ save, initial = 'baseline' }: HarnessProps): JSX.Element {
+function Harness({
+  save,
+  initial = 'baseline',
+  onDirty,
+  onSaved,
+  suspended,
+  pendingPayloadRef,
+}: HarnessProps): JSX.Element {
   const [payload, setPayload] = useState<string | null>(initial);
-  const { status, savedAt, retryAt } = useAutosave({ payload, save, debounceMs: DEBOUNCE_MS });
+  const { status, savedAt, retryAt, getPendingPayload } = useAutosave({
+    payload,
+    save,
+    debounceMs: DEBOUNCE_MS,
+    onDirty,
+    onSaved,
+    suspended,
+  });
+  useEffect(() => {
+    if (pendingPayloadRef) pendingPayloadRef.current = getPendingPayload;
+  });
   return (
     <>
       <AutosaveIndicator status={status} savedAt={savedAt} retryAt={retryAt} />
@@ -218,6 +240,100 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     expect(save).toHaveBeenNthCalledWith(2, 'fixed-B');
   });
 
+  it('does not fire onDirty for the initial baseline payload', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onDirty = vi.fn<(p: string) => void>();
+    render(<Harness save={save} onDirty={onDirty} />);
+
+    await advance(DEBOUNCE_MS + 100);
+
+    expect(onDirty).not.toHaveBeenCalled();
+  });
+
+  it('fires onDirty with the payload on each dirty change', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onDirty = vi.fn<(p: string) => void>();
+    render(<Harness save={save} onDirty={onDirty} />);
+
+    clickButton('EditA');
+    // Fires before the debounce elapses.
+    expect(onDirty).toHaveBeenCalledTimes(1);
+    expect(onDirty).toHaveBeenCalledWith('fixed-A');
+
+    clickButton('EditB');
+    expect(onDirty).toHaveBeenCalledTimes(2);
+    expect(onDirty).toHaveBeenLastCalledWith('fixed-B');
+  });
+
+  it('fires onSaved with the saved payload after a successful save', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onSaved = vi.fn<(p: string) => void>();
+    render(<Harness save={save} onSaved={onSaved} />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS + 100);
+    await advance(0);
+
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith('fixed-A');
+  });
+
+  it('suppresses onSaved when an edit arrived during the in-flight save, then fires it after the follow-up save', async () => {
+    let resolveFirst: (() => void) | null = null;
+    const save = vi
+      .fn<(p: string) => Promise<void>>()
+      .mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            resolveFirst = () => resolve();
+          }),
+      )
+      .mockResolvedValue(undefined);
+    const onSaved = vi.fn<(p: string) => void>();
+
+    render(<Harness save={save} onSaved={onSaved} />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS);
+    expect(save).toHaveBeenCalledTimes(1);
+
+    // Edit while the first save is in flight.
+    clickButton('EditB');
+
+    await act(async () => {
+      resolveFirst!();
+    });
+    // First save resolved with no newer *unsaved* payload relative to itself?
+    // Actually a follow-up is pending (payload changed to fixed-B), so onSaved
+    // must NOT fire yet for the first save.
+    expect(onSaved).not.toHaveBeenCalled();
+
+    await advance(DEBOUNCE_MS + 100);
+    expect(save).toHaveBeenCalledTimes(2);
+    expect(save).toHaveBeenNthCalledWith(2, 'fixed-B');
+
+    await advance(0);
+    expect(onSaved).toHaveBeenCalledTimes(1);
+    expect(onSaved).toHaveBeenCalledWith('fixed-B');
+  });
+
+  it('getPendingPayload returns the dirty payload during the debounce window and null after a confirmed save', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const pendingPayloadRef: { current: (() => string | null) | null } = { current: null };
+    render(<Harness save={save} pendingPayloadRef={pendingPayloadRef} />);
+
+    // Baseline — nothing pending.
+    expect(pendingPayloadRef.current?.()).toBeNull();
+
+    clickButton('EditA');
+    expect(pendingPayloadRef.current?.()).toBe('fixed-A');
+
+    await advance(DEBOUNCE_MS + 100);
+    await advance(0);
+
+    expect(pendingPayloadRef.current?.()).toBeNull();
+  });
+
   it('flushes a pending debounce against the previous save fn when resetKey changes', async () => {
     // Regression: switching chapters inside the 4s debounce window used to
     // drop the typed-but-unsaved edit. The hook now flushes the pending
@@ -273,6 +389,71 @@ describe('useAutosave + AutosaveIndicator (F9)', () => {
     await advance(DEBOUNCE_MS + 200);
     expect(saveA).toHaveBeenCalledTimes(1);
     expect(saveB).not.toHaveBeenCalled();
+  });
+
+  it('suppresses scheduled server saves while suspended but keeps onDirty firing and getPendingPayload null (conflict-window safety net)', async () => {
+    // Regression for the story-editor-tyh finding: typing after a conflict is
+    // detected must keep flowing into the local draft layer (onDirty) while
+    // the network autosave — and therefore the unload-flush's view of "is
+    // there anything pending" — stays suppressed.
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const onDirty = vi.fn<(p: string) => void>();
+    const pendingPayloadRef: { current: (() => string | null) | null } = { current: null };
+    render(
+      <Harness save={save} onDirty={onDirty} suspended pendingPayloadRef={pendingPayloadRef} />,
+    );
+
+    clickButton('EditA');
+    expect(onDirty).toHaveBeenCalledTimes(1);
+    expect(onDirty).toHaveBeenCalledWith('fixed-A');
+    // getPendingPayload must not surface the dirty payload while suspended —
+    // useUnloadFlush's keepalive PATCH must not fire during a conflict.
+    expect(pendingPayloadRef.current?.()).toBeNull();
+
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).not.toHaveBeenCalled();
+
+    clickButton('EditB');
+    expect(onDirty).toHaveBeenCalledTimes(2);
+    expect(onDirty).toHaveBeenCalledWith('fixed-B');
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it('does not fire an already-scheduled retry once suspended flips true before it elapses', async () => {
+    // The exact race from the finding: the failing save that trips the
+    // conflict schedules a one-shot retry BEFORE the caller has a chance to
+    // flip `suspended`. That retry must not turn into a real save once
+    // suspended is true.
+    const save = vi.fn<(p: string) => Promise<void>>().mockRejectedValueOnce(new Error('boom'));
+    const { rerender } = render(<Harness save={save} suspended={false} />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS);
+    await advance(0); // let the rejection settle and schedule the retry
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status')).toHaveTextContent(/^Save failed — retrying/);
+
+    // Caller (EditorPage) flips suspended synchronously on the 409 catch.
+    rerender(<Harness save={save} suspended />);
+
+    await advance(DEBOUNCE_MS * 2 + 200);
+    expect(save).toHaveBeenCalledTimes(1);
+  });
+
+  it('resumes scheduling normal debounced saves once suspended flips back to false', async () => {
+    const save = vi.fn<(p: string) => Promise<void>>().mockResolvedValue(undefined);
+    const { rerender } = render(<Harness save={save} suspended />);
+
+    clickButton('EditA');
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).not.toHaveBeenCalled();
+
+    rerender(<Harness save={save} suspended={false} />);
+    clickButton('EditB');
+    await advance(DEBOUNCE_MS + 200);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(save).toHaveBeenCalledWith('fixed-B');
   });
 
   it('does not misroute a follow-up to the new save fn when chapter switches mid-flight', async () => {

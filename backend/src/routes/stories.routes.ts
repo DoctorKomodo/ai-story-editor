@@ -21,6 +21,7 @@ import {
   storyResponseSchema,
   storyUpdateSchema,
 } from 'story-editor-shared';
+import { notFound } from '../lib/http-errors';
 import { respond } from '../lib/respond';
 import { serializeStory } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -91,10 +92,7 @@ export function createStoriesRouter() {
       // Should be unreachable — ownership middleware already confirmed the row
       // exists for this user. Treat a null here as a race (concurrent delete)
       // and respond 404 so the client sees something sensible.
-      if (!story) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!story) throw notFound();
       respond(storyResponseSchema, res, { story: serializeStory(story) });
     } catch (err) {
       next(err);
@@ -123,10 +121,7 @@ export function createStoriesRouter() {
       const story = await createStoryRepo(req).update(id, input);
       // Race: ownership middleware confirmed ownership, then the row disappeared
       // before the update landed. Return 404 rather than masking it as success.
-      if (!story) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!story) throw notFound();
       respond(storyResponseSchema, res, { story: serializeStory(story) });
     }),
   );
@@ -136,10 +131,7 @@ export function createStoriesRouter() {
     const id = req.params.id as string;
     try {
       const ok = await createStoryRepo(req).remove(id);
-      if (!ok) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!ok) throw notFound();
       res.status(204).send();
     } catch (err) {
       next(err);

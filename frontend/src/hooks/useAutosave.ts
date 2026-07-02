@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 /**
  * [F9] Autosave primitive.
@@ -31,18 +31,54 @@ export interface UseAutosaveOptions<T> {
    * timer or pending follow-up for the previous key is cancelled.
    */
   resetKey?: string | number | null;
+  /**
+   * Fired on every payload change that differs from the last-saved baseline
+   * (i.e. whenever a debounce is (re)scheduled, a follow-up is queued, or an
+   * edit lands during a retry wait). NOT fired for the baseline seed.
+   */
+  onDirty?: (payload: T) => void;
+  /**
+   * Fired after a successful save IFF no newer edit is pending (the
+   * follow-up branch in runSave suppresses it — the newer edit re-fires
+   * onDirty and onSaved comes with ITS save).
+   */
+  onSaved?: (payload: T) => void;
+  /**
+   * When `true`, suppresses scheduling or firing any SERVER save (debounce,
+   * retry, and in-flight follow-up) while still tracking `payload` changes
+   * and firing `onDirty` normally — e.g. during an unresolved chapter
+   * conflict, where the local draft must keep absorbing keystrokes but no
+   * automatic PATCH may go out until the caller resolves the conflict.
+   * `getPendingPayload()` also returns `null` while suspended, so a
+   * best-effort unload flush doesn't race an unresolved conflict.
+   */
+  suspended?: boolean;
 }
 
-export interface UseAutosaveResult {
+export interface UseAutosaveResult<T> {
   status: AutosaveStatus;
   /** Wall-clock ms (Date.now()) of the last successful save, or null. */
   savedAt: number | null;
   /** Wall-clock ms (Date.now()) at which the next retry will fire, or null. */
   retryAt: number | null;
+  /**
+   * Latest payload if it differs from the last successfully-saved one (or a
+   * save is in flight for it), else null. Stable identity (reads refs).
+   */
+  getPendingPayload: () => T | null;
 }
 
-export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
-  const { payload, save, debounceMs = 4000, equals = Object.is, resetKey } = opts;
+export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult<T> {
+  const {
+    payload,
+    save,
+    debounceMs = 4000,
+    equals = Object.is,
+    resetKey,
+    onDirty,
+    onSaved,
+    suspended = false,
+  } = opts;
 
   const [status, setStatus] = useState<AutosaveStatus>('idle');
   const [savedAt, setSavedAt] = useState<number | null>(null);
@@ -52,6 +88,9 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
   const saveRef = useRef(save);
   const equalsRef = useRef(equals);
   const debounceMsRef = useRef(debounceMs);
+  const onDirtyRef = useRef(onDirty);
+  const onSavedRef = useRef(onSaved);
+  const suspendedRef = useRef(suspended);
 
   // Track the most recent payload we've observed and the last one saved
   // (so we can diff), and whether we've seen the baseline yet.
@@ -80,6 +119,15 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
   useEffect(() => {
     debounceMsRef.current = debounceMs;
   }, [debounceMs]);
+  useEffect(() => {
+    onDirtyRef.current = onDirty;
+  }, [onDirty]);
+  useEffect(() => {
+    onSavedRef.current = onSaved;
+  }, [onSaved]);
+  useEffect(() => {
+    suspendedRef.current = suspended;
+  }, [suspended]);
 
   // Reset baseline state when `resetKey` changes (e.g. chapter switch in the
   // editor). Declared *before* the payload effect so that on a render where
@@ -167,7 +215,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     // when it was scheduled.
     const runSave = async (saveFn: (p: T) => Promise<void>): Promise<void> => {
       const payloadToSave = latestPayloadRef.current;
-      if (payloadToSave === null) return;
+      // Guards a retry/follow-up timer that was scheduled before `suspended`
+      // flipped true (e.g. the very save whose 409 trips a conflict) — by
+      // the time the timer fires, suspension has propagated.
+      if (payloadToSave === null || suspendedRef.current) return;
 
       savingRef.current = true;
       safeSetStatus('saving');
@@ -200,6 +251,7 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
           scheduleDebouncedSave(saveFn);
         } else {
           pendingFollowupRef.current = false;
+          onSavedRef.current?.(payloadToSave);
         }
       } catch {
         if (!mountedRef.current) return;
@@ -240,6 +292,10 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     const scheduleDebouncedSave = (overrideSave?: (p: T) => Promise<void>): void => {
       clearDebounce();
       clearRetry();
+      // While suspended, no SERVER save may be scheduled — `onDirty` above
+      // has already persisted the edit to the local draft layer, which is
+      // the only guaranteed persistence while suspended.
+      if (suspendedRef.current) return;
       // Caller can pass an explicit save fn to keep a follow-up locked to the
       // chapter the original save was scheduled for; otherwise re-snapshot.
       const snapshotSave = overrideSave ?? saveRef.current;
@@ -269,6 +325,8 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
       return;
     }
 
+    onDirtyRef.current?.(payload);
+
     // Edit during an in-flight save: queue a follow-up (handled in runSave).
     if (savingRef.current) {
       pendingFollowupRef.current = true;
@@ -297,5 +355,18 @@ export function useAutosave<T>(opts: UseAutosaveOptions<T>): UseAutosaveResult {
     };
   }, []);
 
-  return { status, savedAt, retryAt };
+  const getPendingPayload = useCallback((): T | null => {
+    // Suspended means no SERVER save may go out — including a best-effort
+    // unload-time keepalive flush, which would otherwise race an unresolved
+    // conflict. The local draft (via onDirty) is the only guaranteed layer.
+    if (suspendedRef.current) return null;
+    const latest = latestPayloadRef.current;
+    if (latest === null || !baselineSetRef.current) return null;
+    if (savingRef.current) return latest;
+    const lastSaved = lastSavedPayloadRef.current;
+    if (lastSaved === null || !equalsRef.current(latest, lastSaved)) return latest;
+    return null;
+  }, []);
+
+  return { status, savedAt, retryAt, getPendingPayload };
 }

@@ -204,6 +204,35 @@ export async function apiStream(path: string, init?: ApiRequestInit): Promise<Re
   return doRequest(path, init);
 }
 
+/** Headroom under the spec's 64 KiB `fetch({ keepalive: true })` body cap. */
+export const KEEPALIVE_MAX_BYTES = 60_000;
+
+/**
+ * Fire-and-forget PATCH that outlives the page (`fetch` with
+ * `keepalive: true`). Used only by `useUnloadFlush` on `pagehide` /
+ * `visibilitychange` — there is no response to observe and no 401 flow at
+ * unload time, so this deliberately bypasses `doRequest`.
+ *
+ * Takes the already-serialized JSON body (the caller needs the same string
+ * for its own dedupe key, so serializing once here avoids doing it twice per
+ * flush). Returns `false` without sending when it exceeds `KEEPALIVE_MAX_BYTES`
+ * (the caller falls back to the local draft, which is the guaranteed
+ * persistence layer regardless). Never throws.
+ */
+export function apiKeepalivePatch(path: string, json: string): boolean {
+  const byteLength = new TextEncoder().encode(json).length;
+  if (byteLength > KEEPALIVE_MAX_BYTES) return false;
+
+  void fetch(buildUrl(path), {
+    method: 'PATCH',
+    keepalive: true,
+    credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: json,
+  }).catch(() => {});
+  return true;
+}
+
 // ─── Export / Import API client functions ────────────────────────────────────
 
 export async function fetchExportBlob(): Promise<{ blob: Blob; filename: string }> {

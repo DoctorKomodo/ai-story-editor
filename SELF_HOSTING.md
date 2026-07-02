@@ -174,10 +174,10 @@ open http://localhost:3000
 
 The first user you register is **just a user** — Inkwell has no admin role today. Sign up, then immediately save the recovery code shown on the post-signup screen (see "Key backup and user recovery" → "Content DEKs" above).
 
-If you run the stack on a host other than `localhost`, rebuild the frontend image with the API URL baked in:
+The frontend image's nginx reverse-proxies `/api` to the backend same-origin, so running the stack on a host other than `localhost` needs **no** rebuild — the SPA calls `/api` relative to wherever it's served. Only if you serve the API from a **different origin** than the SPA, bake that origin in at build time (and set the backend's `FRONTEND_URL` to your SPA origin):
 
 ```bash
-VITE_API_URL=https://api.example.com docker compose build frontend
+VITE_API_BASE_URL=https://api.example.com docker compose build frontend
 docker compose up -d frontend
 ```
 

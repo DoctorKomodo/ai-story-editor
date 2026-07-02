@@ -249,8 +249,9 @@ All Venice-related error responses share the shape `{ error: { code, message, re
 | 402 | `venice_insufficient_balance` | Venice returns 402 | `null` (present, always null) | "Top up at venice.ai →" link |
 | 502 | `venice_unavailable` | Venice returns 502/503/504 | absent | Retry only |
 | 400/404/422/502 | `venice_error` | Forwarded Venice 400/404/422; fallback for unexpected non-2xx and transport failures | absent | Retry only |
+| 400 | `unknown_model` | Client-supplied `modelId` isn't in the cached `/v1/models` list for this user; mapped centrally from `UnknownModelError` (`venice.models.service.ts`) before any Venice call | absent | inline validation error |
 
-`details.veniceMessage` passes through (sanitised) on every row except `venice_key_required`. Error mapping lives in `mapVeniceError` / `mapVeniceErrorToSse` (`backend/src/lib/venice-errors.ts`), which branch on the `openai` SDK's `APIError` subclasses. Every Venice error path emits one `[venice.error]` log line:
+`details.veniceMessage` passes through (sanitised) on every row except `venice_key_required` and `unknown_model` (the latter has no `details` field at all — its `message` is `Unknown Venice model: <modelId>`, not the shared Venice-error shape). Error mapping lives in `mapVeniceError` / `mapVeniceErrorToSse` (`backend/src/lib/venice-errors.ts`), which branch on the `openai` SDK's `APIError` subclasses. Every Venice error path emits one `[venice.error]` log line:
 
 ```json
 { "route": "ai-complete", "userId": "...", "code": "venice_rate_limited",

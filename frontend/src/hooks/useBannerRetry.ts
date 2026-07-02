@@ -11,7 +11,7 @@ export interface UseBannerRetryOptions {
   selectedModelId: string | null;
   mutation: ReturnType<typeof useSendChatMessageMutation>;
   lastSendArgsRef: RefObject<ChatSendArgs | null>;
-  onSend: (args: ChatSendArgs) => Promise<void>;
+  onSend: (args: ChatSendArgs) => Promise<unknown>;
 }
 
 export interface UseBannerRetryResult {

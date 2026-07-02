@@ -1,12 +1,12 @@
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
-import express, { type NextFunction, type Request, type Response } from 'express';
+import express from 'express';
 import rateLimit from 'express-rate-limit';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { validateEncryptionEnv } from './boot/env-validation';
 import { prisma } from './lib/prisma';
-import { NoVeniceKeyError } from './lib/venice';
+import { globalErrorHandler } from './middleware/error-handler';
 import { requireAllowedOrigin } from './middleware/origin-check.middleware';
 import { createAiRouter } from './routes/ai.routes';
 import { createAiDefaultsRouter } from './routes/ai-defaults.routes';
@@ -167,46 +167,6 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
-// Global error handler. Keeps stack traces out of production responses and
-// gives clients a consistent JSON shape when a route hands an error to next().
-// Exported so tests can mount the exact same handler on a disposable app
-// instead of duplicating the logic.
-export function globalErrorHandler(
-  err: unknown,
-  _req: Request,
-  res: Response,
-  _next: NextFunction,
-): void {
-  // [V17] Per-user Venice client signals "user has no stored key" via
-  // NoVeniceKeyError. Map to 409 so the frontend can prompt the user to set
-  // one in /settings#venice. Keep this above the catch-all 500 below.
-  if (err instanceof NoVeniceKeyError) {
-    res.status(409).json({
-      error: {
-        message: 'No Venice API key is stored. Add yours in Settings to enable AI features.',
-        code: 'venice_key_required',
-      },
-    });
-    return;
-  }
-  const isProd = process.env.NODE_ENV === 'production';
-  if (!isProd) {
-    console.error('[error-handler.dev]', err);
-  }
-  const message = isProd
-    ? 'Internal server error'
-    : err instanceof Error
-      ? err.message
-      : 'Internal server error';
-  const body: { error: { message: string; code: string; stack?: string } } = {
-    error: { message, code: 'internal_error' },
-  };
-  if (!isProd && err instanceof Error && typeof err.stack === 'string') {
-    body.error.stack = err.stack;
-  }
-  res.status(500).json(body);
-}
-
 app.use(globalErrorHandler);
 
 const port = Number(process.env.PORT ?? 4000);
@@ -217,4 +177,7 @@ if (require.main === module) {
   });
 }
 
-export { app };
+// Re-exported so existing tests that import `{ globalErrorHandler } from
+// '../../src/index'` keep resolving after the handler moved to
+// middleware/error-handler.ts.
+export { app, globalErrorHandler };
