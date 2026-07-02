@@ -1,6 +1,6 @@
 # Tests / E2E
 
-Tier-2 Playwright specs that run against the live `make dev` Docker Compose stack (frontend :3000, backend :4000, postgres :5432). Two specs gate PRs (`smoke.spec.ts`, `full-flow.spec.ts`) and one is developer-run only (`visual.spec.ts`).
+Tier-2 Playwright specs that run against the live `make dev` Docker Compose stack (frontend :3000, backend :4000, postgres :5432). Two specs make up the default suite (`smoke.spec.ts`, `full-flow.spec.ts`) and one is developer-run only (`visual.spec.ts`). **CI runs this suite on manual trigger only** — `.github/workflows/e2e.yml` is `workflow_dispatch`-only; whether it should also gate PRs is an open CI-policy decision tracked in bd issue `story-editor-7ns`. Do not describe these specs as PR-blocking until that issue lands.
 
 ## Running the default suite
 

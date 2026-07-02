@@ -6,9 +6,9 @@ name: E2E (Playwright)
 # smoke specs) — see docs/done/done-T.md.
 #
 # This workflow currently runs on manual trigger (workflow_dispatch) only.
-# Whether it should also gate PRs (done-T.md and playwright.config.ts both
-# describe T8 as "tier-2 PR-blocking") is an open CI-policy decision tracked
-# in story-editor-7ns — do not flip the triggers without resolving that.
+# Whether it should also gate PRs (the historical done-T.md archive describes
+# T8 as "tier-2 PR-blocking") is an open CI-policy decision tracked in
+# story-editor-7ns — do not flip the triggers without resolving that.
 
 on:
   workflow_dispatch:
