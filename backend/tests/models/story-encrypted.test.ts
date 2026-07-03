@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
-import { createUser, resetNarrativeTables, SENTINEL } from './_helpers';
+import { createUser, SENTINEL } from './_helpers';
 
 describe('[E4] Story — ciphertext columns', () => {
-  beforeEach(resetNarrativeTables);
-  afterEach(resetNarrativeTables);
+  beforeEach(resetUsers);
+  afterEach(resetUsers);
 
   it('persists title/synopsis/worldNotes ciphertext triples', async () => {
     const user = await createUser();

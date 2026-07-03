@@ -261,9 +261,11 @@ describe('auth routes', () => {
         password: PASSWORD,
         name: NAME,
       });
-      // Delete the user from the DB; the in-memory session still exists, so
-      // requireAuth passes, but the /me handler finds no user row and 401s.
-      await resetUsers();
+      // Delete the user from the DB directly — NOT via resetUsers(), which
+      // also evicts the in-memory session. The session must stay alive so
+      // requireAuth passes and the /me handler's "no user row → 401" branch
+      // is the one exercised.
+      await prisma.user.deleteMany();
 
       const res = await agent.get('/api/auth/me');
       expect(res.status).toBe(401);
