@@ -18,6 +18,8 @@ export const INTENTIONAL_LOG_PATTERNS: RegExp[] = [
   /^\[chapter\.repo\]/,
   /^\[V15\] Failed to persist assistant message/,
   /^\[error-handler\.dev\]/,
+  /^import_story_failed index=/,
+  /^\[import\.dev\]/,
 ];
 
 export function isIntentionalLog(log: string): boolean {
