@@ -9,18 +9,17 @@ import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
+import { registerAndLogin, TEST_ORIGIN } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 import {
   jsonResponse,
   MODEL_ID,
   MODEL_LIST_BODY,
   makeFakeReq,
   queueSseResponse,
-  registerAndLogin,
-  resetAll,
   sseStreamResponse,
   storeKey,
   stubVeniceFetch,
-  TEST_ORIGIN,
 } from './_chat-test-helpers';
 
 // Returns a supertest agent (with session cookie set), a chapterId, and the
@@ -28,7 +27,7 @@ import {
 async function setup(
   username: string,
 ): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; sessionId: string }> {
-  const { agent, sessionId } = await registerAndLogin(username);
+  const { agent, sessionId } = await registerAndLogin({ username });
   const req = makeFakeReq(sessionId);
 
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
@@ -50,12 +49,12 @@ async function setup(
 describe('POST /api/chapters/:chapterId/chats — kind', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('creates a scene-kind chat when kind="scene" is provided', async () => {
@@ -99,12 +98,12 @@ describe('POST /api/chapters/:chapterId/chats — kind', () => {
 describe('GET /api/chapters/:chapterId/chats — kind filter', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('returns only kind=scene rows when ?kind=scene', async () => {
@@ -228,14 +227,14 @@ async function sendMessage(
 describe('POST /api/chats/:chatId/messages — retry flag', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('does not persist a new user message on retry=true; prior assistant is replaced with new content', async () => {
@@ -528,12 +527,12 @@ async function setupAsDifferentUser(
 describe('PATCH /api/chats/:id', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('updates the title', async () => {
@@ -645,14 +644,14 @@ describe('PATCH /api/chats/:id', () => {
 describe('DELETE /api/chats/:id', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('deletes the chat and cascades messages', async () => {
@@ -697,14 +696,14 @@ describe('DELETE /api/chats/:id', () => {
 describe('POST /api/chats/:chatId/messages — kind=scene routing', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('builds the prompt with action="scene" when chat.kind="scene"', async () => {
@@ -784,7 +783,7 @@ async function setupTwoChaptersWithChat(
   chatId: string;
   fetchSpy: ReturnType<typeof vi.fn>;
 }> {
-  const { agent, sessionId } = await registerAndLogin(username);
+  const { agent, sessionId } = await registerAndLogin({ username });
   const req = makeFakeReq(sessionId);
 
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
@@ -835,14 +834,14 @@ async function setupTwoChaptersWithChat(
 describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('system message contains <previous_chapters> when toggle=true and prior chapter has a summary', async () => {
@@ -978,14 +977,14 @@ async function setupTwoTurnChat(
 describe('POST resend via fromMessageId', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('drops everything after the anchor user message and regenerates', async () => {
@@ -1133,14 +1132,14 @@ describe('POST resend via fromMessageId', () => {
 describe('PATCH /api/chats/:chatId/messages/:id (edit)', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
   });
 
   afterEach(async () => {
     vi.unstubAllGlobals();
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   // Creates a chat with one user message + one assistant message, returning

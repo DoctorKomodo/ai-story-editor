@@ -28,14 +28,9 @@ import {
   type VeniceChatMessage,
   type VeniceStreamChunk,
 } from '../../src/services/venice-stream.service';
-import {
-  jsonResponse,
-  registerAndLogin,
-  resetAll,
-  storeKey,
-  stubVeniceFetch,
-  type TestSession,
-} from '../routes/_chat-test-helpers';
+import { registerAndLogin, type TestAuthSession } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
+import { jsonResponse, storeKey, stubVeniceFetch } from '../routes/_chat-test-helpers';
 
 const PLAIN_MODEL_ID = 'plain-model';
 const REASONING_MODEL_ID = 'reasoning-model';
@@ -78,14 +73,14 @@ const MESSAGES: VeniceChatMessage[] = [
 ];
 
 describe('prepareVeniceCall', () => {
-  let session: TestSession;
+  let session: TestAuthSession;
   let userId: string;
   let dek: Buffer;
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     fetchSpy = stubVeniceFetch();
-    session = await registerAndLogin('venice-stream-user');
+    session = await registerAndLogin({ username: 'venice-stream-user' });
     await storeKey(session.agent, fetchSpy);
     const stored = getSession(session.sessionId);
     userId = stored!.userId;
@@ -98,7 +93,7 @@ describe('prepareVeniceCall', () => {
   afterEach(async () => {
     vi.unstubAllGlobals();
     veniceModelsService.resetCache();
-    await resetAll();
+    await resetDb();
   });
 
   it('plain complete-shape input: prompt_cache_key top-level, no stream_options/response_format/reasoning', () => {
