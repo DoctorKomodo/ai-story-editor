@@ -6,41 +6,14 @@ import { characterResponseSchema, charactersResponseSchema } from 'story-editor-
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 
 const TEST_ORIGIN = 'http://localhost:3000';
-
-interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
-async function registerAndLogin(
-  username: string,
-  password = 'characters-pw',
-  name = 'Character Route User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -48,17 +21,6 @@ function makeFakeReq(sessionId: string): Request {
   const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
-}
-
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 const FAKE_ID = '00000000-0000-0000-0000-000000000000';
@@ -74,12 +36,12 @@ function assertNoCiphertextKeys(obj: Record<string, unknown>): void {
 describe('Character routes [B5]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   // ── Auth gates ────────────────────────────────────────────────────────────
@@ -125,8 +87,8 @@ describe('Character routes [B5]', () => {
   // ── POST ownership / Zod ──────────────────────────────────────────────────
 
   it('POST returns 403 when :storyId does not belong to the caller', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('characters-owner-a');
-    const { agent: agentB } = await registerAndLogin('characters-owner-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'characters-owner-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'characters-owner-b' });
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
 
@@ -139,7 +101,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('POST returns 400 on empty name', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-empty-name');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-empty-name' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'My Story' });
 
@@ -152,7 +114,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('POST returns 400 on missing name', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-missing-name');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-missing-name' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'My Story' });
 
@@ -165,7 +127,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('POST returns 400 when an unknown key is passed', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-strict-post');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-strict-post' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
 
@@ -180,7 +142,7 @@ describe('Character routes [B5]', () => {
   // ── POST happy path ───────────────────────────────────────────────────────
 
   it('POST 201 returns decrypted fields with no ciphertext keys', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-create');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-create' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Characters Home' });
     const storyId = story.id as string;
@@ -222,7 +184,7 @@ describe('Character routes [B5]', () => {
   // ── GET /:characterId ─────────────────────────────────────────────────────
 
   it('GET /:characterId returns 200 with decrypted fields', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-get-one');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-get-one' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Readable' });
     const storyId = story.id as string;
@@ -247,7 +209,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('GET /:characterId returns 404 when characterId is under a different story', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-path-integrity');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-path-integrity' });
     const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
@@ -266,8 +228,8 @@ describe('Character routes [B5]', () => {
   });
 
   it('GET /:characterId returns 403 when character belongs to another user', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('characters-xuser-a');
-    const { agent: agentB } = await registerAndLogin('characters-xuser-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'characters-xuser-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'characters-xuser-b' });
 
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
@@ -286,7 +248,7 @@ describe('Character routes [B5]', () => {
   // ── GET list ──────────────────────────────────────────────────────────────
 
   it('GET list returns 200 ordered by createdAt asc with no ciphertext', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-list');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-list' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Ordered' });
     const storyId = story.id as string;
@@ -315,8 +277,8 @@ describe('Character routes [B5]', () => {
   });
 
   it("GET list returns 403 when storyId is not the caller's", async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('characters-list-a');
-    const { agent: agentB } = await registerAndLogin('characters-list-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'characters-list-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'characters-list-b' });
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A' });
 
@@ -327,7 +289,7 @@ describe('Character routes [B5]', () => {
   // ── PATCH /:characterId ───────────────────────────────────────────────────
 
   it('PATCH 200 updating one field does not touch others; clearing null works', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-patch');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-patch' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Patchable' });
     const storyId = story.id as string;
@@ -370,7 +332,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('PATCH returns 400 on an unknown key', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-patch-strict');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-patch-strict' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
     const storyId = story.id as string;
@@ -389,7 +351,7 @@ describe('Character routes [B5]', () => {
   });
 
   it('PATCH returns 400 on overlong name (>200)', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-patch-overlong');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-patch-overlong' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
     const storyId = story.id as string;
@@ -415,7 +377,7 @@ describe('Character routes [B5]', () => {
   // ── DELETE /:characterId ──────────────────────────────────────────────────
 
   it('DELETE /:characterId returns 204 and follow-up GET is 403', async () => {
-    const { agent, sessionId } = await registerAndLogin('characters-delete');
+    const { agent, sessionId } = await registerAndLogin({ username: 'characters-delete' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Home' });
     const storyId = story.id as string;
@@ -440,7 +402,7 @@ describe('Character routes [B5]', () => {
 
   describe('POST + DELETE + PATCH /reorder integration', () => {
     it('POST allocates sequential orderIndex starting at 0', async () => {
-      const { agent, sessionId } = await registerAndLogin('cr-post-seq');
+      const { agent, sessionId } = await registerAndLogin({ username: 'cr-post-seq' });
       const req = makeFakeReq(sessionId);
       const story = await createStoryRepo(req).create({ title: 's' });
       const storyId = story.id as string;
@@ -461,7 +423,7 @@ describe('Character routes [B5]', () => {
     });
 
     it('DELETE /:characterId reassigns sequential orderIndex on the remaining list', async () => {
-      const { agent, sessionId } = await registerAndLogin('cr-del-reseq');
+      const { agent, sessionId } = await registerAndLogin({ username: 'cr-del-reseq' });
       const req = makeFakeReq(sessionId);
       const story = await createStoryRepo(req).create({ title: 's' });
       const storyId = story.id as string;
@@ -485,7 +447,7 @@ describe('Character routes [B5]', () => {
     });
 
     it('PATCH /reorder returns 204 and the next GET reflects the new order', async () => {
-      const { agent, sessionId } = await registerAndLogin('cr-reorder');
+      const { agent, sessionId } = await registerAndLogin({ username: 'cr-reorder' });
       const req = makeFakeReq(sessionId);
       const story = await createStoryRepo(req).create({ title: 's' });
       const storyId = story.id as string;
@@ -516,7 +478,7 @@ describe('Character routes [B5]', () => {
     });
 
     it('PATCH /reorder returns 400 on duplicate orderIndex values', async () => {
-      const { agent, sessionId } = await registerAndLogin('cr-dup-ord');
+      const { agent, sessionId } = await registerAndLogin({ username: 'cr-dup-ord' });
       const req = makeFakeReq(sessionId);
       const story = await createStoryRepo(req).create({ title: 's' });
       const storyId = story.id as string;
@@ -540,7 +502,7 @@ describe('Character routes [B5]', () => {
     });
 
     it('PATCH /reorder returns 400 on duplicate character id values', async () => {
-      const { agent, sessionId } = await registerAndLogin('cr-dup-id');
+      const { agent, sessionId } = await registerAndLogin({ username: 'cr-dup-id' });
       const req = makeFakeReq(sessionId);
       const story = await createStoryRepo(req).create({ title: 's' });
       const storyId = story.id as string;
@@ -563,8 +525,10 @@ describe('Character routes [B5]', () => {
     });
 
     it('PATCH /reorder returns 403 when one of the ids belongs to another user', async () => {
-      const { sessionId: aliceSessionId } = await registerAndLogin('cr-alice');
-      const { agent: bobAgent, sessionId: bobSessionId } = await registerAndLogin('cr-bob');
+      const { sessionId: aliceSessionId } = await registerAndLogin({ username: 'cr-alice' });
+      const { agent: bobAgent, sessionId: bobSessionId } = await registerAndLogin({
+        username: 'cr-bob',
+      });
       const aliceReq = makeFakeReq(aliceSessionId);
       const bobReq = makeFakeReq(bobSessionId);
       const aliceStory = await createStoryRepo(aliceReq).create({ title: 's' });

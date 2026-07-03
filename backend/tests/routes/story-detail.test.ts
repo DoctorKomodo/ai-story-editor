@@ -11,43 +11,17 @@ import type { Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const TEST_ORIGIN = 'http://localhost:3000';
-
-interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
-async function registerAndLogin(
-  username: string,
-  password = 'story-detail-pw',
-  name = 'Story Detail User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -57,17 +31,6 @@ function makeFakeReq(sessionId: string): Request {
   return req;
 }
 
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
-}
-
 const FAKE_ID = '00000000-0000-0000-0000-000000000000';
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -75,12 +38,12 @@ const FAKE_ID = '00000000-0000-0000-0000-000000000000';
 describe('Story detail routes [B2]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   // ── GET /api/stories/:id ─────────────────────────────────────────────────
@@ -91,15 +54,15 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('GET /:id returns 403 when the story does not exist', async () => {
-    const { agent } = await registerAndLogin('story-detail-get-missing');
+    const { agent } = await registerAndLogin({ username: 'story-detail-get-missing' });
     const res = await agent.get(`/api/stories/${FAKE_ID}`);
     expect(res.status).toBe(403);
     expect(res.body.error.code).toBe('forbidden');
   });
 
   it('GET /:id returns 403 when the story belongs to another user', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('story-detail-owner-a');
-    const { agent: agentB } = await registerAndLogin('story-detail-owner-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'story-detail-owner-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'story-detail-owner-b' });
 
     const reqA = makeFakeReq(sessionIdA);
     const created = await createStoryRepo(reqA).create({ title: 'A-only' });
@@ -110,7 +73,7 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('GET /:id returns 200 with decrypted story and no ciphertext fields', async () => {
-    const { agent, sessionId } = await registerAndLogin('story-detail-get-owner');
+    const { agent, sessionId } = await registerAndLogin({ username: 'story-detail-get-owner' });
     const req = makeFakeReq(sessionId);
     const created = await createStoryRepo(req).create({
       title: 'Gettable Story',
@@ -151,8 +114,8 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('PATCH /:id returns 403 for a non-owner', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('story-detail-patch-a');
-    const { agent: agentB } = await registerAndLogin('story-detail-patch-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'story-detail-patch-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'story-detail-patch-b' });
 
     const reqA = makeFakeReq(sessionIdA);
     const created = await createStoryRepo(reqA).create({ title: 'A-only' });
@@ -165,7 +128,7 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('PATCH /:id returns 400 when an unknown key is present (strict schema)', async () => {
-    const { agent, sessionId } = await registerAndLogin('story-detail-patch-strict');
+    const { agent, sessionId } = await registerAndLogin({ username: 'story-detail-patch-strict' });
     const req = makeFakeReq(sessionId);
     const created = await createStoryRepo(req).create({ title: 'strict' });
 
@@ -178,7 +141,7 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('PATCH /:id updates only the provided fields', async () => {
-    const { agent, sessionId } = await registerAndLogin('story-detail-patch-partial');
+    const { agent, sessionId } = await registerAndLogin({ username: 'story-detail-patch-partial' });
     const req = makeFakeReq(sessionId);
     const created = await createStoryRepo(req).create({
       title: 'Original',
@@ -218,7 +181,7 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('PATCH /:id clears a nullable field when null is passed', async () => {
-    const { agent, sessionId } = await registerAndLogin('story-detail-patch-null');
+    const { agent, sessionId } = await registerAndLogin({ username: 'story-detail-patch-null' });
     const req = makeFakeReq(sessionId);
     const created = await createStoryRepo(req).create({
       title: 'Has Synopsis',
@@ -254,8 +217,8 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('DELETE /:id returns 403 for a non-owner', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('story-detail-delete-a');
-    const { agent: agentB } = await registerAndLogin('story-detail-delete-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'story-detail-delete-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'story-detail-delete-b' });
 
     const reqA = makeFakeReq(sessionIdA);
     const created = await createStoryRepo(reqA).create({ title: 'A-only' });
@@ -267,7 +230,7 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('DELETE /:id returns 204 and subsequent GET is 403', async () => {
-    const { agent, sessionId } = await registerAndLogin('story-detail-delete-owner');
+    const { agent, sessionId } = await registerAndLogin({ username: 'story-detail-delete-owner' });
     const req = makeFakeReq(sessionId);
     const created = await createStoryRepo(req).create({ title: 'Doomed' });
 
@@ -284,7 +247,9 @@ describe('Story detail routes [B2]', () => {
   });
 
   it('DELETE /:id cascades chapters via schema onDelete: Cascade', async () => {
-    const { agent, sessionId } = await registerAndLogin('story-detail-delete-cascade');
+    const { agent, sessionId } = await registerAndLogin({
+      username: 'story-detail-delete-cascade',
+    });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Parent' });
     const storyId = story.id as string;

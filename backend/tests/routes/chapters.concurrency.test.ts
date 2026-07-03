@@ -8,44 +8,15 @@
 //   - the 409 response never contains ciphertext keys
 
 import type { Request } from 'express';
-import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 
 const TEST_ORIGIN = 'http://localhost:3000';
-
-interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
-async function registerAndLogin(
-  username: string,
-  password = 'chapters-concurrency-pw',
-  name = 'Chapter Concurrency User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -53,17 +24,6 @@ function makeFakeReq(sessionId: string): Request {
   const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
-}
-
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 function paragraphDoc(text: string): unknown {
@@ -89,16 +49,16 @@ function assertNoCiphertextKeys(obj: Record<string, unknown>): void {
 describe('Chapter PATCH optimistic-concurrency [story-editor-tyh]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('PATCH with matching expectedUpdatedAt succeeds and returns the new updatedAt', async () => {
-    const { agent, sessionId } = await registerAndLogin('concurrency-match');
+    const { agent, sessionId } = await registerAndLogin({ username: 'concurrency-match' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Concurrency Match' });
     const storyId = story.id as string;
@@ -131,7 +91,7 @@ describe('Chapter PATCH optimistic-concurrency [story-editor-tyh]', () => {
   });
 
   it('PATCH with stale expectedUpdatedAt returns 409 conflict and does not write', async () => {
-    const { agent, sessionId } = await registerAndLogin('concurrency-stale');
+    const { agent, sessionId } = await registerAndLogin({ username: 'concurrency-stale' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Concurrency Stale' });
     const storyId = story.id as string;
@@ -171,7 +131,7 @@ describe('Chapter PATCH optimistic-concurrency [story-editor-tyh]', () => {
   });
 
   it('PATCH without expectedUpdatedAt keeps last-write-wins (back-compat)', async () => {
-    const { agent, sessionId } = await registerAndLogin('concurrency-backcompat');
+    const { agent, sessionId } = await registerAndLogin({ username: 'concurrency-backcompat' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Back Compat' });
     const storyId = story.id as string;
@@ -196,7 +156,7 @@ describe('Chapter PATCH optimistic-concurrency [story-editor-tyh]', () => {
   });
 
   it('PATCH with expectedUpdatedAt on a chapter deleted mid-flight returns 404, not 409', async () => {
-    const { agent, sessionId } = await registerAndLogin('concurrency-deleted');
+    const { agent, sessionId } = await registerAndLogin({ username: 'concurrency-deleted' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Deleted Mid Flight' });
     const storyId = story.id as string;
@@ -222,7 +182,7 @@ describe('Chapter PATCH optimistic-concurrency [story-editor-tyh]', () => {
   });
 
   it('the 409 conflict response never contains ciphertext keys', async () => {
-    const { agent, sessionId } = await registerAndLogin('concurrency-no-ciphertext');
+    const { agent, sessionId } = await registerAndLogin({ username: 'concurrency-no-ciphertext' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'No Ciphertext' });
     const storyId = story.id as string;
