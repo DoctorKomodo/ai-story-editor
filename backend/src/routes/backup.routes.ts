@@ -5,8 +5,8 @@ import {
   exportSchema,
   importPlanRequestSchema,
   importPlanResponseSchema,
+  importRequestSchema,
   importResultSchema,
-  importSchema,
 } from 'story-editor-shared';
 import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
@@ -61,7 +61,7 @@ export function createImportRouter(): Router {
   );
   router.post(
     '/',
-    validateBody(importSchema, async (body, req, res) => {
+    validateBody(importRequestSchema, async (body, req, res) => {
       const result = await runImport(req, body);
       return respond(importResultSchema, res, result);
     }),

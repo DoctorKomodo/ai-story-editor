@@ -67,7 +67,7 @@ export function SettingsDataTab(): JSX.Element {
     }
 
     try {
-      await importer.mutateAsync(staged);
+      await importer.mutateAsync({ file: staged });
     } catch (err) {
       setRestoreError(
         err instanceof Error && err.message

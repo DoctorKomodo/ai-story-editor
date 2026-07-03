@@ -238,9 +238,19 @@ For each entry: an `id` with no live story owned by the caller (unknown, or owne
 Response `200`: `{ "stories": [{ "id", "status": "new" | "unchanged" | "conflict" }] }`.
 
 ### `POST /import` — rate-limited 5 req/min/user
-Body: currently the same shape as the `GET /export` payload (`importSchema` aliases `exportSchema`) — replaces the caller's entire story library with the file's contents in one transaction. Legacy files (no `id`/`snapshotUpdatedAt`) are always safe to import this way. **This endpoint's body and behavior are changing** to a per-story `create`/`replace`/`skip` resolution model driven by the `/import/plan` result; this entry describes the shape as of this document's last update, not the post-change contract.
-Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" } }` (counts).
-Errors: `400 validation_error` (unknown `formatVersion` or malformed file).
+Additive by default, never a whole-library wipe. Body: `{ "file": <same shape as GET /export>, "resolutions"?: { [fileStoryId]: "create" | "replace" | "skip" } }`.
+
+Each file story is resolved independently, in file order:
+- No `id` on the file story, or an `id` with no entry in `resolutions`, defaults to **`create`** — always imports as a brand-new story, never touching any live story.
+- **`replace`** deletes and recreates the matched story in one atomic step, but only when `resolutions`' key names a live story that exists **and is owned by the caller** — the delete is owner-scoped at the data layer, so an id belonging to another user (or no live story at all) silently falls back to `create` instead of deleting anything.
+- **`skip`** does nothing for that story.
+
+Each non-skipped story runs in its own `$transaction` (`replace`'s delete + recreate share one transaction, so a failed recreate rolls back the delete). Whole-file atomicity is **not** guaranteed: if a story's transaction fails, it rolls back cleanly, that story is reported `failed`, and every story after it in the file is aborted (not attempted, absent from `outcomes`) — but every story processed before the failure stays committed. There are no compensating deletes.
+
+**Behavior change:** unlike the previous whole-file-replace contract, this endpoint never deletes a live story that's simply absent from the file — leftover stories not mentioned in the import survive and must be deleted manually.
+
+Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
+Errors: `400 validation_error` (unknown `formatVersion` or malformed file/body).
 
 ---
 

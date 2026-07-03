@@ -1,10 +1,33 @@
 import request from 'supertest';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { registerAndLogin } from '../helpers/auth';
 import { resetDb } from '../helpers/db';
 
 const TEST_ORIGIN = 'http://localhost:3000';
+
+// The mid-file-failure test needs a deterministic, non-timing-based way to
+// blow up exactly one story's transaction. `computeWordCount` runs inside
+// `importOneStory`'s $transaction right before the chapter write — a marker
+// field on a crafted bodyJson (itself `z.unknown()` on the wire, so any shape
+// passes validation) lets the test trigger a real throw without touching
+// prisma internals or fragile timing.
+vi.mock('../../src/services/tiptap-text', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../src/services/tiptap-text')>();
+  return {
+    ...actual,
+    computeWordCount: (bodyJson: unknown): number => {
+      if (
+        bodyJson &&
+        typeof bodyJson === 'object' &&
+        (bodyJson as Record<string, unknown>).__importCrash === true
+      ) {
+        throw new Error('synthetic import failure');
+      }
+      return actual.computeWordCount(bodyJson);
+    },
+  };
+});
 
 describe('GET /api/users/me/export', () => {
   beforeEach(resetDb);
@@ -56,8 +79,8 @@ describe('POST /api/users/me/import', () => {
     expect(res.status).toBe(401);
   });
 
-  it('replace-all: wipes existing content and recreates from the file (round-trip parity)', async () => {
-    const { agent } = await registerAndLogin({ username: 'import-user' });
+  it('additive default: creates a fresh copy of every file story and leaves the live library untouched', async () => {
+    const { agent } = await registerAndLogin({ username: 'additive-user' });
     const story = await agent
       .post('/api/stories')
       .set('Origin', TEST_ORIGIN)
@@ -72,30 +95,247 @@ describe('POST /api/users/me/import', () => {
           content: [{ type: 'paragraph', content: [{ type: 'text', text: 'alpha beta' }] }],
         },
       });
-    const firstExport = (await agent.get('/api/users/me/export')).body;
+    const file = (await agent.get('/api/users/me/export')).body;
 
-    await agent.post('/api/stories').set('Origin', TEST_ORIGIN).send({ title: 'TO BE DELETED' });
+    // Content written after the backup was taken — must survive the import.
+    const sibling = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Written after backup' });
+
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.stories).toBe(1);
+    expect(imp.body.imported.chapters).toBe(1);
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'created' }]);
+
+    const after = (await agent.get('/api/users/me/export')).body;
+    expect(after.stories).toHaveLength(3);
+    const titles = after.stories.map((s: { title: string }) => s.title).sort();
+    expect(titles).toEqual(['Original', 'Original', 'Written after backup']);
+    // Both the original story and the post-backup sibling are untouched.
+    expect(after.stories.some((s: { id: string }) => s.id === story.body.story.id)).toBe(true);
+    expect(after.stories.some((s: { id: string }) => s.id === sibling.body.story.id)).toBe(true);
+  });
+
+  it('explicit replace: deletes and recreates exactly the matched story, leaves siblings untouched', async () => {
+    const { agent } = await registerAndLogin({ username: 'replace-user' });
+    const story = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Original', worldNotes: 'v1' });
+    const storyId = story.body.story.id as string;
+    const file = (await agent.get('/api/users/me/export')).body;
+
+    const sibling = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Sibling' });
+
+    // Drift since the backup was taken — replace should blow this away.
+    await agent
+      .patch(`/api/stories/${storyId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ worldNotes: 'v2-drifted' });
 
     const imp = await agent
       .post('/api/users/me/import')
       .set('Origin', TEST_ORIGIN)
-      .send(firstExport);
+      .send({ file, resolutions: { [storyId]: 'replace' } });
     expect(imp.status).toBe(200);
     expect(imp.body.imported.stories).toBe(1);
-    expect(imp.body.imported.chapters).toBe(1);
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'replaced' }]);
 
-    const secondExport = (await agent.get('/api/users/me/export')).body;
-    expect(secondExport.stories.map((s: { title: string }) => s.title)).toEqual(['Original']);
-    expect(secondExport.stories[0].worldNotes).toBe('lore-A');
-    // Import (pre-Task-3/4 conflict detection) always recreates a fresh story
-    // row, so `id` and `snapshotUpdatedAt` legitimately differ across the
-    // cycle — strip them before asserting content-parity of everything else.
-    const stripVolatile = (file: { exportedAt: string; stories: Record<string, unknown>[] }) => ({
-      ...file,
-      exportedAt: 0,
-      stories: file.stories.map((s) => ({ ...s, id: undefined, snapshotUpdatedAt: undefined })),
-    });
-    expect(stripVolatile(secondExport)).toEqual(stripVolatile(firstExport));
+    const after = (await agent.get('/api/users/me/export')).body;
+    expect(after.stories).toHaveLength(2);
+    expect(after.stories.some((s: { id: string }) => s.id === storyId)).toBe(false);
+    const recreated = after.stories.find((s: { title: string }) => s.title === 'Original');
+    expect(recreated.worldNotes).toBe('v1');
+    expect(after.stories.some((s: { id: string }) => s.id === sibling.body.story.id)).toBe(true);
+  });
+
+  it('skip: does nothing for that story and records skipped', async () => {
+    const { agent } = await registerAndLogin({ username: 'skip-user' });
+    const storyA = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Story A' });
+    const storyB = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Story B' });
+    const storyAId = storyA.body.story.id as string;
+    const file = (await agent.get('/api/users/me/export')).body;
+    const indexA = file.stories.findIndex((s: { id: string }) => s.id === storyAId);
+
+    const imp = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({ file, resolutions: { [storyAId]: 'skip' } });
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.stories).toBe(1);
+    expect(imp.body.outcomes).toContainEqual({ index: indexA, action: 'skipped' });
+    expect(imp.body.outcomes).toHaveLength(2);
+
+    const after = (await agent.get('/api/users/me/export')).body;
+    // Story A: only the original (no copy). Story B: original + one imported copy.
+    expect(after.stories.filter((s: { title: string }) => s.title === 'Story A')).toHaveLength(1);
+    expect(after.stories.filter((s: { title: string }) => s.title === 'Story B')).toHaveLength(2);
+    expect(after.stories).toHaveLength(3);
+    expect(storyB.body.story.id).toBeDefined();
+  });
+
+  it('legacy file (no ids) imports every story as new, live library untouched', async () => {
+    const { agent } = await registerAndLogin({ username: 'legacy-user' });
+    const existing = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Pre-existing', worldNotes: 'kept-as-is' });
+
+    const legacyFile = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          title: 'Legacy Story',
+          chapters: [],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({ file: legacyFile });
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.stories).toBe(1);
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'created' }]);
+
+    const after = (await agent.get('/api/users/me/export')).body;
+    expect(after.stories).toHaveLength(2);
+    const preExisting = after.stories.find((s: { id: string }) => s.id === existing.body.story.id);
+    expect(preExisting.title).toBe('Pre-existing');
+    expect(preExisting.worldNotes).toBe('kept-as-is');
+    expect(after.stories.some((s: { title: string }) => s.title === 'Legacy Story')).toBe(true);
+  });
+
+  it('a resolution for an id with no live match falls back to create', async () => {
+    const { agent } = await registerAndLogin({ username: 'fallback-user' });
+    const file = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          id: 'does-not-exist-anywhere',
+          title: 'Ghost Story',
+          chapters: [],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({ file, resolutions: { 'does-not-exist-anywhere': 'replace' } });
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.stories).toBe(1);
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'created' }]);
+
+    const after = (await agent.get('/api/users/me/export')).body;
+    expect(after.stories).toHaveLength(1);
+    expect(after.stories[0].title).toBe('Ghost Story');
+  });
+
+  it("another user's story id in resolutions cannot delete that user's data", async () => {
+    const owner = await registerAndLogin({ username: 'victim-owner' });
+    const ownerStory = await owner.agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: "Owner's Story", worldNotes: 'owner-lore' });
+    const ownerStoryId = ownerStory.body.story.id as string;
+
+    const attacker = await registerAndLogin({ username: 'attacker-user' });
+    const forgedFile = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          id: ownerStoryId,
+          title: 'Forged Story',
+          chapters: [],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await attacker.agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({ file: forgedFile, resolutions: { [ownerStoryId]: 'replace' } });
+    expect(imp.status).toBe(200);
+    // Falls back to create — the owner's story could never be matched by the
+    // attacker's owner-scoped delete, so nothing was replaced.
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'created' }]);
+    expect(imp.body.imported.stories).toBe(1);
+
+    const ownerAfter = (await owner.agent.get('/api/users/me/export')).body;
+    expect(ownerAfter.stories).toHaveLength(1);
+    expect(ownerAfter.stories[0].id).toBe(ownerStoryId);
+    expect(ownerAfter.stories[0].title).toBe("Owner's Story");
+    expect(ownerAfter.stories[0].worldNotes).toBe('owner-lore');
+
+    const attackerAfter = (await attacker.agent.get('/api/users/me/export')).body;
+    expect(attackerAfter.stories).toHaveLength(1);
+    expect(attackerAfter.stories[0].id).not.toBe(ownerStoryId);
+    expect(attackerAfter.stories[0].title).toBe('Forged Story');
+  });
+
+  it('mid-file failure: rolls back only the failing story, keeps prior commits, aborts the rest', async () => {
+    const { agent } = await registerAndLogin({ username: 'midfail-user' });
+    const file = {
+      formatVersion: 1,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        { title: 'Good One', chapters: [], characters: [], outlineItems: [] },
+        {
+          title: 'Boom Story',
+          chapters: [
+            {
+              title: 'Ch',
+              status: 'draft',
+              orderIndex: 0,
+              bodyJson: { type: 'doc', content: [], __importCrash: true },
+              summary: null,
+              chats: [],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+        { title: 'Never Attempted', chapters: [], characters: [], outlineItems: [] },
+      ],
+    };
+
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
+    expect(imp.status).toBe(200);
+    expect(imp.body.outcomes).toEqual([
+      { index: 0, action: 'created' },
+      { index: 1, action: 'failed' },
+    ]);
+    expect(imp.body.imported.stories).toBe(1);
+    expect(imp.body.imported.chapters).toBe(0);
+
+    const after = (await agent.get('/api/users/me/export')).body;
+    expect(after.stories.map((s: { title: string }) => s.title)).toEqual(['Good One']);
   });
 
   it('re-sequences orderIndex/order from a gappy file', async () => {
@@ -130,7 +370,7 @@ describe('POST /api/users/me/import', () => {
         },
       ],
     };
-    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send(file);
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
     expect(imp.status).toBe(200);
     const out = (await agent.get('/api/users/me/export')).body;
     expect(
@@ -157,9 +397,10 @@ describe('POST /api/users/me/import', () => {
     const exp = (await agent.get('/api/users/me/export')).body;
     expect(exp.stories[0].includePreviousChaptersInPrompt).toBe(false);
 
-    await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send(exp);
+    await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file: exp });
     const exp2 = (await agent.get('/api/users/me/export')).body;
-    expect(exp2.stories[0].includePreviousChaptersInPrompt).toBe(false);
+    const imported = exp2.stories.find((s: { id: string }) => s.id !== story.body.story.id);
+    expect(imported.includePreviousChaptersInPrompt).toBe(false);
   });
 
   it('round-trips a chapter summary and a chat with a message', async () => {
@@ -214,7 +455,7 @@ describe('POST /api/users/me/import', () => {
       ],
     };
 
-    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send(file);
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
     expect(imp.status).toBe(200);
     expect(imp.body.imported.chats).toBe(1);
     expect(imp.body.imported.messages).toBe(1);
@@ -230,12 +471,17 @@ describe('POST /api/users/me/import', () => {
 
   it('rejects an unknown formatVersion with 400', async () => {
     const { agent } = await registerAndLogin({ username: 'badver-user' });
-    const res = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({
-      formatVersion: 99,
-      app: 'inkwell',
-      exportedAt: '2026-06-24T12:00:00.000Z',
-      stories: [],
-    });
+    const res = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({
+        file: {
+          formatVersion: 99,
+          app: 'inkwell',
+          exportedAt: '2026-06-24T12:00:00.000Z',
+          stories: [],
+        },
+      });
     expect(res.status).toBe(400);
   });
 
@@ -244,10 +490,12 @@ describe('POST /api/users/me/import', () => {
     // interfere with other import tests that use different usernames.
     const { agent } = await registerAndLogin({ username: 'ratelimit-user' });
     const minimalPayload = {
-      formatVersion: 1,
-      app: 'inkwell',
-      exportedAt: '2026-06-24T12:00:00.000Z',
-      stories: [],
+      file: {
+        formatVersion: 1,
+        app: 'inkwell',
+        exportedAt: '2026-06-24T12:00:00.000Z',
+        stories: [],
+      },
     };
     // Limit is 5; the 6th request in the same 60s window must be 429.
     for (let i = 0; i < 5; i++) {

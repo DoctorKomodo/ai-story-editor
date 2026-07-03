@@ -4,6 +4,8 @@ import type {
   ImportFile,
   ImportPlanRequest,
   ImportPlanResponse,
+  ImportRequest,
+  ImportResolution,
   ImportResult,
 } from 'story-editor-shared';
 import { prisma } from '../lib/prisma';
@@ -39,15 +41,28 @@ export async function planImport(
   return { stories };
 }
 
-export async function runImport(req: Request, file: ImportFile): Promise<ImportResult> {
-  const userId = req.user!.id;
-  const counts = { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 };
+type StoryFile = ImportFile['stories'][number];
+type ImportCounts = ImportResult['imported'];
+type StoryOutcomeAction = NonNullable<ImportResult['outcomes']>[number]['action'];
 
-  await prisma.$transaction(
+function zeroCounts(): ImportCounts {
+  return { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 };
+}
+
+/**
+ * Create (and, for `replace`, first delete) one story inside its own
+ * transaction. `replace` only deletes when `s.id` names a story the caller
+ * actually owns — `storyRepo.remove` is owner-scoped (`deleteMany({ id,
+ * userId })`), so an id belonging to another user, or no live story at all,
+ * simply deletes nothing and this falls back to a plain create.
+ */
+async function importOneStory(
+  req: Request,
+  s: StoryFile,
+  resolution: 'create' | 'replace',
+): Promise<{ action: 'created' | 'replaced'; counts: ImportCounts }> {
+  return prisma.$transaction(
     async (tx) => {
-      // Structural wipe (no narrative columns); cascade removes the whole subtree.
-      await tx.story.deleteMany({ where: { userId } });
-
       // The repo create() methods do not open their own $transaction, so the tx
       // client substitutes for PrismaClient at runtime. Messages use createWithin()
       // because their create() does self-transact and cannot nest. One cast:
@@ -61,103 +76,145 @@ export async function runImport(req: Request, file: ImportFile): Promise<ImportR
       // explicitly (create() self-transacts and must not be used inside the outer tx).
       const messageRepo = createMessageRepo(req);
 
-      for (const s of file.stories) {
-        const story = await storyRepo.create({
-          title: s.title,
-          synopsis: s.synopsis ?? null,
-          genre: s.genre ?? null,
-          worldNotes: s.worldNotes ?? null,
-          targetWords: s.targetWords ?? null,
+      const counts = zeroCounts();
+      let action: 'created' | 'replaced' = 'created';
+      if (resolution === 'replace' && s.id) {
+        const removed = await storyRepo.remove(s.id);
+        if (removed) action = 'replaced';
+      }
+
+      const story = await storyRepo.create({
+        title: s.title,
+        synopsis: s.synopsis ?? null,
+        genre: s.genre ?? null,
+        worldNotes: s.worldNotes ?? null,
+        targetWords: s.targetWords ?? null,
+      });
+      counts.stories++;
+
+      // storyRepo.create() does not write includePreviousChaptersInPrompt — the
+      // column has @default(true) and create() ignores the field. Set it via
+      // update() so the flag round-trips faithfully (a false would re-import as true).
+      if (typeof s.includePreviousChaptersInPrompt === 'boolean') {
+        await storyRepo.update(story.id, {
+          includePreviousChaptersInPrompt: s.includePreviousChaptersInPrompt,
         });
-        counts.stories++;
+      }
 
-        // storyRepo.create() does not write includePreviousChaptersInPrompt — the
-        // column has @default(true) and create() ignores the field. Set it via
-        // update() so the flag round-trips faithfully (a false would re-import as true).
-        if (typeof s.includePreviousChaptersInPrompt === 'boolean') {
-          await storyRepo.update(story.id, {
-            includePreviousChaptersInPrompt: s.includePreviousChaptersInPrompt,
-          });
+      const chapters = [...s.chapters].sort((a, b) => a.orderIndex - b.orderIndex);
+      for (let i = 0; i < chapters.length; i++) {
+        const ch = chapters[i]!;
+        const created = await chapterRepo.create({
+          storyId: story.id,
+          title: ch.title,
+          bodyJson: ch.bodyJson,
+          status: ch.status,
+          orderIndex: i,
+          wordCount: computeWordCount(ch.bodyJson),
+        });
+        counts.chapters++;
+
+        if (ch.summary) {
+          await chapterRepo.update(created.id, { summaryJson: ch.summary });
         }
 
-        const chapters = [...s.chapters].sort((a, b) => a.orderIndex - b.orderIndex);
-        for (let i = 0; i < chapters.length; i++) {
-          const ch = chapters[i]!;
-          const created = await chapterRepo.create({
-            storyId: story.id,
-            title: ch.title,
-            bodyJson: ch.bodyJson,
-            status: ch.status,
-            orderIndex: i,
-            wordCount: computeWordCount(ch.bodyJson),
+        for (const c of ch.chats) {
+          const chat = await chatRepo.create({
+            chapterId: created.id,
+            title: c.title ?? null,
+            kind: c.kind,
           });
-          counts.chapters++;
+          counts.chats++;
 
-          if (ch.summary) {
-            await chapterRepo.update(created.id, { summaryJson: ch.summary });
-          }
-
-          for (const c of ch.chats) {
-            const chat = await chatRepo.create({
-              chapterId: created.id,
-              title: c.title ?? null,
-              kind: c.kind,
+          for (const m of c.messages) {
+            await messageRepo.createWithin(tx, {
+              chatId: chat.id,
+              role: m.role,
+              content: m.content,
+              attachmentJson: m.attachmentJson,
+              citationsJson: m.citationsJson,
+              model: m.model,
+              tokens: m.tokens,
+              latencyMs: m.latencyMs,
             });
-            counts.chats++;
-
-            for (const m of c.messages) {
-              await messageRepo.createWithin(tx, {
-                chatId: chat.id,
-                role: m.role,
-                content: m.content,
-                attachmentJson: m.attachmentJson,
-                citationsJson: m.citationsJson,
-                model: m.model,
-                tokens: m.tokens,
-                latencyMs: m.latencyMs,
-              });
-              counts.messages++;
-            }
+            counts.messages++;
           }
-        }
-
-        const chars = [...s.characters].sort((a, b) => a.orderIndex - b.orderIndex);
-        for (let i = 0; i < chars.length; i++) {
-          const c = chars[i]!;
-          await characterRepo.create({
-            storyId: story.id,
-            orderIndex: i,
-            name: c.name,
-            role: c.role,
-            age: c.age,
-            appearance: c.appearance,
-            personality: c.personality,
-            voice: c.voice,
-            backstory: c.backstory,
-            arc: c.arc,
-            relationships: c.relationships,
-            color: c.color,
-            initial: c.initial,
-          });
-          counts.characters++;
-        }
-
-        const items = [...s.outlineItems].sort((a, b) => a.order - b.order);
-        for (let i = 0; i < items.length; i++) {
-          const it = items[i]!;
-          await outlineRepo.create({
-            storyId: story.id,
-            order: i,
-            title: it.title,
-            sub: it.sub ?? null,
-            status: it.status,
-          });
-          counts.outlineItems++;
         }
       }
+
+      const chars = [...s.characters].sort((a, b) => a.orderIndex - b.orderIndex);
+      for (let i = 0; i < chars.length; i++) {
+        const c = chars[i]!;
+        await characterRepo.create({
+          storyId: story.id,
+          orderIndex: i,
+          name: c.name,
+          role: c.role,
+          age: c.age,
+          appearance: c.appearance,
+          personality: c.personality,
+          voice: c.voice,
+          backstory: c.backstory,
+          arc: c.arc,
+          relationships: c.relationships,
+          color: c.color,
+          initial: c.initial,
+        });
+        counts.characters++;
+      }
+
+      const items = [...s.outlineItems].sort((a, b) => a.order - b.order);
+      for (let i = 0; i < items.length; i++) {
+        const it = items[i]!;
+        await outlineRepo.create({
+          storyId: story.id,
+          order: i,
+          title: it.title,
+          sub: it.sub ?? null,
+          status: it.status,
+        });
+        counts.outlineItems++;
+      }
+
+      return { action, counts };
     },
     { maxWait: 5_000, timeout: 120_000 },
   );
+}
 
-  return { imported: counts };
+export async function runImport(
+  req: Request,
+  { file, resolutions }: ImportRequest,
+): Promise<ImportResult> {
+  const counts = zeroCounts();
+  const outcomes: { index: number; action: StoryOutcomeAction }[] = [];
+
+  for (let index = 0; index < file.stories.length; index++) {
+    const s = file.stories[index]!;
+    const resolution: ImportResolution = s.id ? (resolutions?.[s.id] ?? 'create') : 'create';
+
+    if (resolution === 'skip') {
+      outcomes.push({ index, action: 'skipped' });
+      continue;
+    }
+
+    try {
+      const { action, counts: storyCounts } = await importOneStory(req, s, resolution);
+      counts.stories += storyCounts.stories;
+      counts.chapters += storyCounts.chapters;
+      counts.characters += storyCounts.characters;
+      counts.outlineItems += storyCounts.outlineItems;
+      counts.chats += storyCounts.chats;
+      counts.messages += storyCounts.messages;
+      outcomes.push({ index, action });
+    } catch {
+      // The story's own $transaction has already rolled back. Report the
+      // failure by index only (never title/content, per the no-leak rule)
+      // and abort — remaining stories get no outcome entry at all.
+      outcomes.push({ index, action: 'failed' });
+      break;
+    }
+  }
+
+  return { imported: counts, outcomes };
 }
