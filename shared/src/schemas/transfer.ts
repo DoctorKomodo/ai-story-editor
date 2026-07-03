@@ -45,6 +45,13 @@ const outlineExportSchema = outlineCreateSchema.extend({
 });
 
 const storyExportSchema = storyCreateSchema.extend({
+  // The live story's id and the max `updatedAt` across its subtree (story,
+  // chapters, characters, outline items, chats, messages) at export time —
+  // used by the preflight plan to match a file-story against a live story and
+  // detect drift since the export was taken. Both are absent from legacy
+  // (pre-conflict-detection) export files, which always plan as `new`.
+  id: z.string().optional(),
+  snapshotUpdatedAt: z.string().datetime().optional(),
   chapters: z.array(chapterExportSchema).default([]),
   characters: z.array(characterExportSchema).default([]),
   outlineItems: z.array(outlineExportSchema).default([]),
@@ -62,6 +69,49 @@ export type ExportFile = z.infer<typeof exportSchema>;
 export const importSchema = exportSchema;
 export type ImportFile = z.infer<typeof importSchema>;
 
+/** Per-file-story status against the caller's live stories, keyed by `id`. */
+const importPlanStoryStatusSchema = z.enum(['new', 'unchanged', 'conflict']);
+
+/** POST /users/me/import/plan request body — preflight, no mutation. */
+export const importPlanRequestSchema = z.strictObject({
+  stories: z
+    .array(
+      z.strictObject({
+        id: z.string(),
+        snapshotUpdatedAt: z.string().datetime(),
+      }),
+    )
+    .max(1000),
+});
+export type ImportPlanRequest = z.infer<typeof importPlanRequestSchema>;
+
+export const importPlanResponseSchema = z.strictObject({
+  stories: z.array(
+    z.strictObject({
+      id: z.string(),
+      status: importPlanStoryStatusSchema,
+    }),
+  ),
+});
+export type ImportPlanResponse = z.infer<typeof importPlanResponseSchema>;
+
+/** Per-file-story resolution chosen by the caller after reviewing the plan. */
+export const importResolutionSchema = z.enum(['create', 'replace', 'skip']);
+export type ImportResolution = z.infer<typeof importResolutionSchema>;
+
+/**
+ * POST /users/me/import request body. `resolutions` is keyed by file-story
+ * `id`; a story without an `id`, or whose `id` has no entry, defaults to
+ * `create`.
+ */
+export const importRequestSchema = z.strictObject({
+  file: importSchema,
+  resolutions: z.record(z.string(), importResolutionSchema).optional(),
+});
+export type ImportRequest = z.infer<typeof importRequestSchema>;
+
+const importOutcomeActionSchema = z.enum(['created', 'replaced', 'skipped', 'failed']);
+
 export const importResultSchema = z.strictObject({
   imported: z.strictObject({
     stories: z.number().int().nonnegative(),
@@ -71,5 +121,16 @@ export const importResultSchema = z.strictObject({
     chats: z.number().int().nonnegative(),
     messages: z.number().int().nonnegative(),
   }),
+  // Per-story outcome, indexed into `file.stories` (no titles — import errors
+  // must carry story index, not narrative content, per the no-leak rule).
+  // Optional: absent from the legacy whole-file-replace response shape.
+  outcomes: z
+    .array(
+      z.strictObject({
+        index: z.number().int().nonnegative(),
+        action: importOutcomeActionSchema,
+      }),
+    )
+    .optional(),
 });
 export type ImportResult = z.infer<typeof importResultSchema>;
