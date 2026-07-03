@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Post-[E11] the mockup-card narrative fields (name, role, age, appearance,
@@ -18,11 +19,11 @@ async function makeStory(email = 'char-mockup-author@example.com') {
 
 describe('Character plaintext shape (post-E11)', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('defaults initial + color to null', async () => {

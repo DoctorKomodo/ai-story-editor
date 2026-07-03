@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createStoryRepo } from '../../src/repos/story.repo';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
-import { makeUserContext, rawCiphertextMustNotEqual, resetAllTables } from './_req';
+import { makeUserContext, rawCiphertextMustNotEqual } from './_req';
 
 describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('create() writes ciphertext triples and returns decrypted plaintext without ciphertext fields', async () => {
     const ctx = await makeUserContext();

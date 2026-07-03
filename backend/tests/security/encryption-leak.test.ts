@@ -20,7 +20,8 @@ import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import { makeUserContext, resetAllTables } from '../repos/_req';
+import { resetDb } from '../helpers/db';
+import { makeUserContext } from '../repos/_req';
 import { prisma, testDatabaseUrl } from '../setup';
 
 const SENTINEL = 'SENTINEL_E12_DO_NOT_LEAK';
@@ -40,14 +41,14 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
   let pg: Client;
 
   beforeEach(async () => {
-    await resetAllTables();
+    await resetDb();
     pg = new Client({ connectionString: testDatabaseUrl });
     await pg.connect();
   });
 
   afterEach(async () => {
     await pg.end();
-    await resetAllTables();
+    await resetDb();
   });
 
   afterAll(async () => {
@@ -312,7 +313,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       ).toBeGreaterThan(0);
     }
 
-    // Tidy up so subsequent tests start clean. resetAllTables in afterEach
+    // Tidy up so subsequent tests start clean. resetDb in afterEach
     // will also cover this, but be explicit — the seed created a real user
     // row we don't want bleeding into the leak summary of an unrelated test.
     await prisma.user.deleteMany({ where: { username: 'demo' } });

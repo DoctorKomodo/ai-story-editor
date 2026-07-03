@@ -16,6 +16,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { forceRecoveryRotation } from '../../prisma/scripts/force-recovery-rotation';
 import { createAuthService } from '../../src/services/auth.service';
 import { _sessionCount } from '../../src/services/session-store';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const PASSWORD = 'correct-horse-battery';
@@ -107,13 +108,11 @@ async function seedFakeStory(userId: string): Promise<{
 
 describe('[E14] forceRecoveryRotation (admin-triggered recovery wrap invalidation)', () => {
   beforeEach(async () => {
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('happy path: nulls the four recovery columns, leaves password wrap + password hash + narrative ciphertext untouched', async () => {

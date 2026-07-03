@@ -39,18 +39,6 @@ export async function makeUserContext(
   return { user: { id: user.id, username: user.username }, req, dek: gen.dek };
 }
 
-export async function resetAllTables(): Promise<void> {
-  // Delete order matters: children before parents — we could also rely on
-  // cascade, but explicit is faster and safer across test runs.
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
-}
-
 export function rawCiphertextMustNotEqual(value: string, plaintext: string): void {
   // Sanity check — ciphertext should not simply be the plaintext stored in
   // base64. A broken implementation that forgot to actually encrypt would

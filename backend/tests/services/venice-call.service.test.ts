@@ -9,6 +9,7 @@ import {
   resolveReasoningEnabled,
   resolveTextGenWithFallback,
 } from '../../src/services/venice-call.service';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 describe('promptCacheKey', () => {
@@ -31,7 +32,7 @@ describe('hydrateUserSettings', () => {
   let userId: string;
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('null settingsJson → defaults (includeVeniceSystemPrompt true, empty userPrompts, empty chat)', async () => {

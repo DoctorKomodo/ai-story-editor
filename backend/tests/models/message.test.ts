@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Post-[E11] Message.content + Message.attachmentJson are ciphertext-only
@@ -21,11 +22,11 @@ async function makeChat(email = 'msg-author@example.com') {
 
 describe('Message model', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates a message with role + required chat ref (content is ciphertext-only)', async () => {

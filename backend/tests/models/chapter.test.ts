@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Post-[E11] chapter narrative fields (title, bodyJson, content) are
@@ -15,11 +16,11 @@ async function makeStory(email = 'ch-author@example.com') {
 
 describe('Chapter model', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates a chapter with defaults', async () => {

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Post-[E11] Chat.title is ciphertext-only. Schema-shape + cascade tests.
@@ -15,11 +16,11 @@ async function makeChapter(email = 'chat-author@example.com') {
 
 describe('Chat model', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates a chat with a nullable ciphertext title', async () => {

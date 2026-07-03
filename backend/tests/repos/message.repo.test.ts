@@ -4,8 +4,9 @@ import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
-import { makeUserContext, resetAllTables } from './_req';
+import { makeUserContext } from './_req';
 
 async function createUserWithChapter() {
   const ctx = await makeUserContext();
@@ -19,8 +20,8 @@ async function createUserWithChapter() {
 }
 
 describe('[E9] message.repo', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('round-trips content + attachmentJson + citationsJson (plain string + JSON payloads)', async () => {
     const ctx = await makeUserContext();
@@ -130,8 +131,8 @@ describe('[E9] message.repo', () => {
 });
 
 describe('MessageRepo.deleteAllAfter', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('deletes only rows whose createdAt > reference.createdAt', async () => {
     const { user, chapterId } = await createUserWithChapter();
@@ -273,8 +274,8 @@ async function setupChatFixture() {
 }
 
 describe('messageRepo.createWithin — tx-aware insert (story-editor-wy6)', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('createWithin inserts inside an outer transaction without nesting $transaction', async () => {
     const { req, chatId } = await setupChatFixture();
@@ -293,8 +294,8 @@ describe('messageRepo.createWithin — tx-aware insert (story-editor-wy6)', () =
 });
 
 describe('messageRepo.create — Chat.lastActivityAt bump (story-editor-loj)', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it("bumps the parent chat's lastActivityAt when a message is created", async () => {
     const { req, chatId } = await setupChatFixture();
