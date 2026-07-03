@@ -317,5 +317,8 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     // will also cover this, but be explicit — the seed created a real user
     // row we don't want bleeding into the leak summary of an unrelated test.
     await prisma.user.deleteMany({ where: { username: 'demo' } });
-  });
+    // Explicit vitest timeout: the `npx tsx` cold boot is CPU-contention
+    // sensitive and can blow the 5s default when 4 workers share few cores
+    // (e.g. 2-vCPU CI runners). spawnSync has its own 120s guard above.
+  }, 60_000);
 });
