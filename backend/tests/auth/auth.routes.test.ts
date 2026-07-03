@@ -2,7 +2,8 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { sessionCookieName } from '../../src/lib/session-cookie';
-import { _resetSessionStore } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const NAME = 'Routes User';
@@ -14,37 +15,13 @@ function getSessionCookie(setCookieHeader: string[] | undefined): string | undef
   return setCookieHeader?.find((c) => c.startsWith(`${name}=`));
 }
 
-async function registerAndLogin(): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  sessionCookie: string | undefined;
-}> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', 'http://localhost:3000')
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const loginRes = await agent
-    .post('/api/auth/login')
-    .set('Origin', 'http://localhost:3000')
-    .send({ username: USERNAME, password: PASSWORD });
-  expect(loginRes.status).toBe(200);
-  return {
-    agent,
-    sessionCookie: getSessionCookie(
-      loginRes.headers['set-cookie'] as unknown as string[] | undefined,
-    ),
-  };
-}
-
 describe('auth routes', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   describe('POST /api/auth/register', () => {
@@ -155,7 +132,11 @@ describe('auth routes', () => {
 
   describe('POST /api/auth/logout', () => {
     it('clears the session cookie and evicts the session', async () => {
-      const { agent, sessionCookie } = await registerAndLogin();
+      const { agent, sessionCookie } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       expect(sessionCookie).toBeDefined();
 
       const res = await agent.post('/api/auth/logout').set('Origin', 'http://localhost:3000');
@@ -193,7 +174,11 @@ describe('auth routes', () => {
 
   describe('POST /api/auth/change-password', () => {
     it('returns 204 and re-sets the session cookie with a fresh session id', async () => {
-      const { agent, sessionCookie } = await registerAndLogin();
+      const { agent, sessionCookie } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       expect(sessionCookie).toBeDefined();
 
       const res = await agent
@@ -215,7 +200,11 @@ describe('auth routes', () => {
     });
 
     it('returns 401 on wrong old password', async () => {
-      const { agent } = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
 
       const res = await agent
         .post('/api/auth/change-password')
@@ -253,7 +242,11 @@ describe('auth routes', () => {
     });
 
     it('returns the user record with a valid session cookie', async () => {
-      const { agent } = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       const res = await agent.get('/api/auth/me');
 
       expect(res.status).toBe(200);
@@ -263,10 +256,14 @@ describe('auth routes', () => {
     });
 
     it('returns 401 when the referenced user has been deleted', async () => {
-      const { agent } = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       // Delete the user from the DB; the in-memory session still exists, so
       // requireAuth passes, but the /me handler finds no user row and 401s.
-      await prisma.user.deleteMany();
+      await resetUsers();
 
       const res = await agent.get('/api/auth/me');
       expect(res.status).toBe(401);

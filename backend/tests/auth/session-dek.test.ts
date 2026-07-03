@@ -17,7 +17,8 @@ import {
   hasDekForRequest,
 } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 
 const USERNAME = 'dek-session-user';
 const PASSWORD = 'correct-horse-battery';
@@ -47,48 +48,21 @@ function buildProbeApp() {
 
 describe('[E3] session / DEK end-to-end via httpOnly cookie auth', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
-  async function registerAndLogin(): Promise<{
-    agent: ReturnType<typeof request.agent>;
-    sessionId: string;
-  }> {
-    const agent = request.agent(app);
-    const reg = await agent
-      .post('/api/auth/register')
-      .set('Origin', TEST_ORIGIN)
-      .send({ name: 'DEK', username: USERNAME, password: PASSWORD });
-    expect(reg.status).toBe(201);
-
-    const login = await agent
-      .post('/api/auth/login')
-      .set('Origin', TEST_ORIGIN)
-      .send({ username: USERNAME, password: PASSWORD });
-    expect(login.status).toBe(200);
-
-    const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-    const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-    expect(cookie).toBeDefined();
-    const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-
-    return { agent, sessionId };
-  }
-
   it('login creates an in-memory session with a valid sessionId', async () => {
-    const { sessionId } = await registerAndLogin();
+    const { sessionId } = await registerAndLogin({ username: USERNAME, password: PASSWORD });
     const session = getSession(sessionId);
     expect(session).not.toBeNull();
   });
 
   it('middleware attaches a DEK to the request; encrypt + decrypt round-trip', async () => {
-    const { sessionId } = await registerAndLogin();
+    const { sessionId } = await registerAndLogin({ username: USERNAME, password: PASSWORD });
     // The probe app is a separate Express instance so the supertest agent's
     // cookie jar doesn't carry over — pass the session cookie manually.
     const probeRes = await request(buildProbeApp())
@@ -100,7 +74,10 @@ describe('[E3] session / DEK end-to-end via httpOnly cookie auth', () => {
   });
 
   it('different users get different DEKs (encrypted ciphertext does NOT cross-decrypt)', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin();
+    const { sessionId: sessionIdA } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+    });
 
     // Register and log in second user
     await request(app)
@@ -127,7 +104,7 @@ describe('[E3] session / DEK end-to-end via httpOnly cookie auth', () => {
   });
 
   it('logout destroys the session; subsequent requests get 401 session_expired', async () => {
-    const { agent, sessionId } = await registerAndLogin();
+    const { agent, sessionId } = await registerAndLogin({ username: USERNAME, password: PASSWORD });
 
     const logout = await agent.post('/api/auth/logout').set('Origin', TEST_ORIGIN);
     expect(logout.status).toBe(204);
@@ -144,7 +121,7 @@ describe('[E3] session / DEK end-to-end via httpOnly cookie auth', () => {
   });
 
   it('restart simulation: wiping the session store forces 401 session_expired', async () => {
-    const { sessionId } = await registerAndLogin();
+    const { sessionId } = await registerAndLogin({ username: USERNAME, password: PASSWORD });
     _resetSessionStore();
 
     const probeRes = await request(buildProbeApp())

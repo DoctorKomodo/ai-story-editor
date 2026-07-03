@@ -11,7 +11,8 @@ vi.mock('argon2', async (importOriginal) => {
 
 import * as argon2 from 'argon2';
 import { createAuthService, InvalidCredentialsError } from '../../src/services/auth.service';
-import { _resetSessionStore, _sessionCount } from '../../src/services/session-store';
+import { _sessionCount } from '../../src/services/session-store';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const authService = createAuthService(prisma);
@@ -26,14 +27,12 @@ async function registerDefault(): Promise<void> {
 
 describe('auth.service login()', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('returns a public user and a sessionId on valid credentials', async () => {

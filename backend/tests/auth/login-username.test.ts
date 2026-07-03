@@ -13,7 +13,7 @@ vi.mock('argon2', async (importOriginal) => {
 
 import * as argon2 from 'argon2';
 import { app } from '../../src/index';
-import { prisma } from '../setup';
+import { resetUsers } from '../helpers/db';
 
 const USERNAME = 'login-supersede';
 const PASSWORD = 'correct-horse-battery';
@@ -29,12 +29,12 @@ async function registerUser(): Promise<void> {
 
 describe('[AU10] POST /api/auth/login — username-based supersede', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('accepts { username, password } and sets the session cookie', async () => {

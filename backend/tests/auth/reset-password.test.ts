@@ -9,7 +9,7 @@ import {
   unwrapDekWithPassword,
   unwrapDekWithRecoveryCode,
 } from '../../src/services/content-crypto.service';
-import { _resetSessionStore } from '../../src/services/session-store';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const NAME = 'Reset User';
@@ -30,13 +30,11 @@ async function registerAndCaptureRecovery(): Promise<string> {
 
 describe('[AU16] POST /api/auth/reset-password', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('returns 400 on missing or malformed body', async () => {

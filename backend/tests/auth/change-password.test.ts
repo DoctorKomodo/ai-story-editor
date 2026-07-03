@@ -6,7 +6,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { sessionCookieName } from '../../src/lib/session-cookie';
 import { unwrapDekWithPassword } from '../../src/services/content-crypto.service';
-import { _resetSessionStore, _sessionCount } from '../../src/services/session-store';
+import { _sessionCount } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const NAME = 'Change Password User';
@@ -15,38 +17,13 @@ const PASSWORD = 'correct-horse-battery';
 const NEW_PASSWORD = 'new-horse-battery-staple';
 const TEST_ORIGIN = 'http://localhost:3000';
 
-async function registerAndLogin(): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-  userId: string;
-}> {
-  const agent = request.agent(app);
-  const reg = await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  expect(reg.status).toBe(201);
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username: USERNAME, password: PASSWORD });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId, userId: login.body.user.id as string };
-}
-
 describe('[AU15] POST /api/auth/change-password', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -59,7 +36,11 @@ describe('[AU15] POST /api/auth/change-password', () => {
   });
 
   it('returns 400 on missing or malformed body', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const missing = await agent
       .post('/api/auth/change-password')
       .set('Origin', TEST_ORIGIN)
@@ -74,7 +55,11 @@ describe('[AU15] POST /api/auth/change-password', () => {
   });
 
   it('returns 401 on wrong old password', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const res = await agent
       .post('/api/auth/change-password')
       .set('Origin', TEST_ORIGIN)
@@ -84,7 +69,11 @@ describe('[AU15] POST /api/auth/change-password', () => {
   });
 
   it('happy path: 204, passwordHash + password wrap rotate, new password unwraps DEK, old does not', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     const before = await prisma.user.findUniqueOrThrow({ where: { username: USERNAME } });
     const originalDek = await unwrapDekWithPassword(before, PASSWORD);
@@ -107,7 +96,11 @@ describe('[AU15] POST /api/auth/change-password', () => {
   });
 
   it('leaves the recovery wrap unchanged (recovery code still unlocks the same DEK)', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const before = await prisma.user.findUniqueOrThrow({ where: { username: USERNAME } });
 
     const res = await agent
@@ -124,7 +117,11 @@ describe('[AU15] POST /api/auth/change-password', () => {
   });
 
   it('evicts all other sessions and opens exactly one new session for the user', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     // Open a second session from a different "device".
     const agent2 = request.agent(app);
     const login2 = await agent2
@@ -147,7 +144,11 @@ describe('[AU15] POST /api/auth/change-password', () => {
   });
 
   it('does not echo either password in the body', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const res = await agent
       .post('/api/auth/change-password')
       .set('Origin', TEST_ORIGIN)
@@ -166,7 +167,11 @@ describe('[AU15] POST /api/auth/change-password', () => {
   });
 
   it('does not touch any narrative ciphertext on other rows for the user', async () => {
-    const { agent, userId } = await registerAndLogin();
+    const { agent, userId } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     // Insert a Story row with sentinel ciphertext values. The repo layer is
     // not used here intentionally — we want to assert the raw bytes are
