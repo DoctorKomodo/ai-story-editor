@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { importSchema } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SettingsDataTab } from '@/components/SettingsDataTab';
 import type { ApiRequestInit } from '@/lib/api';
@@ -115,6 +116,77 @@ describe('SettingsDataTab', () => {
     expect(apiSpy).not.toHaveBeenCalled();
   });
 
+  it('ignores a stale plan response from a previously picked file', async () => {
+    const fileA = {
+      ...LEGACY_BACKUP,
+      stories: [{ title: 'Story A', id: 'a1', snapshotUpdatedAt: '2026-06-24T12:00:00.000Z' }],
+    };
+    const fileB = {
+      ...LEGACY_BACKUP,
+      stories: [{ title: 'Story B', id: 'b1', snapshotUpdatedAt: '2026-06-24T12:00:00.000Z' }],
+    };
+
+    let resolveAPlan: (value: unknown) => void = () => {};
+    const aPlanPromise = new Promise((resolve) => {
+      resolveAPlan = resolve;
+    });
+
+    vi.spyOn(apiModule, 'api').mockImplementation(async (path: string, init?: ApiRequestInit) => {
+      if (path === '/users/me/import/plan') {
+        const body = init?.body as { stories: Array<{ id: string }> };
+        if (body.stories[0]?.id === 'a1') return aPlanPromise;
+        return { stories: [{ id: 'b1', status: 'new' }] };
+      }
+      if (path === '/users/me/import') return IMPORT_RESULT_EMPTY;
+      throw new Error(`unexpected call: ${path}`);
+    });
+
+    renderTab();
+
+    // Pick file A — its plan call is deliberately left unresolved.
+    fireEvent.change(screen.getByTestId('data-restore-file'), {
+      target: { files: [makeFile(fileA, 'a.json')] },
+    });
+    await waitFor(() =>
+      expect(screen.getByTestId('data-restore-plan-pending')).toBeInTheDocument(),
+    );
+
+    // Pick file B before A's plan round-trip settles.
+    fireEvent.change(screen.getByTestId('data-restore-file'), {
+      target: { files: [makeFile(fileB, 'b.json')] },
+    });
+    await waitFor(() => expect(screen.getByTestId('data-restore-row-0')).toBeInTheDocument());
+    expect(screen.getByText('Story B')).toBeInTheDocument();
+    expect(screen.queryByText('Story A')).not.toBeInTheDocument();
+
+    // Now let A's stale plan resolve — it must not clobber B's staged rows.
+    await act(async () => {
+      resolveAPlan({ stories: [{ id: 'a1', status: 'new' }] });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText('Story B')).toBeInTheDocument();
+    expect(screen.queryByText('Story A')).not.toBeInTheDocument();
+    expect(screen.getByTestId('data-restore-summary')).toHaveTextContent('1 story');
+
+    const apiSpy = vi.mocked(apiModule.api);
+    apiSpy.mockClear();
+    apiSpy.mockImplementation(async (path: string, init?: ApiRequestInit) => {
+      if (path === '/users/me/import') {
+        expect(init?.body).toEqual({
+          file: importSchema.parse(fileB),
+          resolutions: { b1: 'create' },
+        });
+        return IMPORT_RESULT_EMPTY;
+      }
+      throw new Error(`unexpected call: ${path}`);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await waitFor(() => expect(screen.getByTestId('data-restore-result')).toBeInTheDocument());
+  });
+
   it('defaults each bucket to the documented resolution', async () => {
     vi.spyOn(apiModule, 'api').mockImplementation(async (path: string) => {
       if (path === '/users/me/import/plan') {
@@ -150,13 +222,19 @@ describe('SettingsDataTab', () => {
     await waitFor(() => expect(screen.getByTestId('data-restore-row-2')).toBeInTheDocument());
 
     expect(screen.getByTestId('data-restore-bucket-0')).toHaveTextContent('New');
-    expect(screen.getByTestId('data-restore-resolution-0')).toHaveValue('create');
+    expect(screen.getByRole('combobox', { name: 'Resolution for "New Story"' })).toHaveValue(
+      'create',
+    );
 
     expect(screen.getByTestId('data-restore-bucket-1')).toHaveTextContent('Unchanged');
-    expect(screen.getByTestId('data-restore-resolution-1')).toHaveValue('skip');
+    expect(screen.getByRole('combobox', { name: 'Resolution for "Unchanged Story"' })).toHaveValue(
+      'skip',
+    );
 
     expect(screen.getByTestId('data-restore-bucket-2')).toHaveTextContent('Conflict');
-    expect(screen.getByTestId('data-restore-resolution-2')).toHaveValue('create');
+    expect(
+      screen.getByRole('combobox', { name: 'Resolution for "Conflicting Story"' }),
+    ).toHaveValue('create');
   });
 
   it('shows the typed-phrase gate only once a replace is selected', async () => {
@@ -182,7 +260,7 @@ describe('SettingsDataTab', () => {
     expect(screen.queryByTestId('data-restore-safety')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /restore/i })).toBeEnabled();
 
-    fireEvent.change(screen.getByTestId('data-restore-resolution-0'), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Resolution for "Conflicting Story"' }), {
       target: { value: 'replace' },
     });
 
@@ -196,7 +274,7 @@ describe('SettingsDataTab', () => {
     expect(screen.getByRole('button', { name: /restore/i })).toBeEnabled();
 
     // Switching back off replace removes the gate again and re-enables Restore.
-    fireEvent.change(screen.getByTestId('data-restore-resolution-0'), {
+    fireEvent.change(screen.getByRole('combobox', { name: 'Resolution for "Conflicting Story"' }), {
       target: { value: 'skip' },
     });
     expect(screen.queryByTestId('data-restore-phrase')).not.toBeInTheDocument();
@@ -305,9 +383,12 @@ describe('SettingsDataTab', () => {
         ],
       });
       await waitFor(() => expect(screen.getByTestId('data-restore-row-0')).toBeInTheDocument());
-      fireEvent.change(screen.getByTestId('data-restore-resolution-0'), {
-        target: { value: 'replace' },
-      });
+      fireEvent.change(
+        screen.getByRole('combobox', { name: 'Resolution for "Conflicting Story"' }),
+        {
+          target: { value: 'replace' },
+        },
+      );
       fireEvent.change(screen.getByTestId('data-restore-phrase'), {
         target: { value: 'replace these stories' },
       });

@@ -48,6 +48,11 @@ export function SettingsDataTab(): JSX.Element {
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
 
+  // Guards a late plan/parse resolve landing after a newer file has already
+  // been picked — same pattern as EditorPage's `seededForChapterIdRef` /
+  // useChapterDraft's `currentChapterKeyRef`.
+  const fileSelectionRef = useRef(0);
+
   // Clear the displayed filename and reset the native input so re-picking the
   // same (rejected) file still re-fires onChange.
   function clearFileSelection(): void {
@@ -67,6 +72,7 @@ export function SettingsDataTab(): JSX.Element {
   }
 
   async function onFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    const selection = ++fileSelectionRef.current;
     resetForNewFile();
     const f = e.target.files?.[0];
     if (!f) {
@@ -78,6 +84,7 @@ export function SettingsDataTab(): JSX.Element {
     let parsed: ImportFile;
     try {
       const parseResult = importSchema.safeParse(JSON.parse(await f.text()));
+      if (selection !== fileSelectionRef.current) return;
       if (!parseResult.success) {
         setFileError('That file is not a valid Inkwell backup.');
         clearFileSelection();
@@ -85,6 +92,7 @@ export function SettingsDataTab(): JSX.Element {
       }
       parsed = parseResult.data;
     } catch {
+      if (selection !== fileSelectionRef.current) return;
       setFileError('Could not read that file as JSON.');
       clearFileSelection();
       return;
@@ -108,8 +116,10 @@ export function SettingsDataTab(): JSX.Element {
         const plan = await importPlan.mutateAsync({
           stories: planCandidates.map(({ id, snapshotUpdatedAt }) => ({ id, snapshotUpdatedAt })),
         });
+        if (selection !== fileSelectionRef.current) return;
         statusById = new Map(plan.stories.map((s) => [s.id, s.status]));
       } catch {
+        if (selection !== fileSelectionRef.current) return;
         setFileError('Could not check this file against your existing stories. Please try again.');
         clearFileSelection();
         setStaged(null);
@@ -300,6 +310,7 @@ export function SettingsDataTab(): JSX.Element {
                   </div>
                   <select
                     data-testid={`data-restore-resolution-${row.index}`}
+                    aria-label={`Resolution for "${row.title}"`}
                     value={resolutions[row.index] ?? defaultResolutionFor(row.bucket)}
                     onChange={(e) => {
                       setResolutionFor(row.index, e.target.value as ImportResolution);
