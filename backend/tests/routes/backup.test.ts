@@ -41,6 +41,9 @@ describe('GET /api/users/me/export', () => {
     expect(res.body.stories[0].title).toBe('My Story');
     expect(res.body.stories[0].worldNotes).toBe('secret lore');
     expect(res.body.stories[0].chapters[0].bodyJson.content[0].content[0].text).toBe('hello world');
+    expect(res.body.stories[0].id).toBe(story.body.story.id);
+    expect(res.body.stories[0].snapshotUpdatedAt).toEqual(expect.any(String));
+    expect(() => new Date(res.body.stories[0].snapshotUpdatedAt).toISOString()).not.toThrow();
   });
 });
 
@@ -84,7 +87,15 @@ describe('POST /api/users/me/import', () => {
     const secondExport = (await agent.get('/api/users/me/export')).body;
     expect(secondExport.stories.map((s: { title: string }) => s.title)).toEqual(['Original']);
     expect(secondExport.stories[0].worldNotes).toBe('lore-A');
-    expect({ ...secondExport, exportedAt: 0 }).toEqual({ ...firstExport, exportedAt: 0 });
+    // Import (pre-Task-3/4 conflict detection) always recreates a fresh story
+    // row, so `id` and `snapshotUpdatedAt` legitimately differ across the
+    // cycle — strip them before asserting content-parity of everything else.
+    const stripVolatile = (file: { exportedAt: string; stories: Record<string, unknown>[] }) => ({
+      ...file,
+      exportedAt: 0,
+      stories: file.stories.map((s) => ({ ...s, id: undefined, snapshotUpdatedAt: undefined })),
+    });
+    expect(stripVolatile(secondExport)).toEqual(stripVolatile(firstExport));
   });
 
   it('re-sequences orderIndex/order from a gappy file', async () => {
