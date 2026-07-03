@@ -207,10 +207,17 @@ export async function runImport(
       counts.chats += storyCounts.chats;
       counts.messages += storyCounts.messages;
       outcomes.push({ index, action });
-    } catch {
+    } catch (err) {
       // The story's own $transaction has already rolled back. Report the
       // failure by index only (never title/content, per the no-leak rule)
-      // and abort — remaining stories get no outcome entry at all.
+      // and abort — remaining stories get no outcome entry at all. The
+      // exception itself may embed decrypted narrative content (e.g. a
+      // parse error over a crafted bodyJson) so it's never logged outside
+      // the dev-only gate below.
+      console.error(`import_story_failed index=${index}`);
+      if (process.env.NODE_ENV !== 'production') {
+        console.error('[import.dev]', err);
+      }
       outcomes.push({ index, action: 'failed' });
       break;
     }

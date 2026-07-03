@@ -154,6 +154,45 @@ describe('POST /api/users/me/import', () => {
     expect(after.stories.some((s: { id: string }) => s.id === sibling.body.story.id)).toBe(true);
   });
 
+  it('failed recreate rolls back the delete: replace failure leaves the live story and its content intact', async () => {
+    const { agent } = await registerAndLogin({ username: 'replace-fail-user' });
+    const story = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Original', worldNotes: 'irreplaceable-lore' });
+    const storyId = story.body.story.id as string;
+    const file = (await agent.get('/api/users/me/export')).body;
+
+    // Crash recreation partway through, after storyRepo.remove() has already
+    // run inside the same $transaction as the create — if the delete weren't
+    // rolled back with the rest of the transaction, the live story would be
+    // gone even though the import reports 'failed'.
+    file.stories[0].chapters = [
+      {
+        title: 'Ch',
+        status: 'draft',
+        orderIndex: 0,
+        bodyJson: { type: 'doc', content: [], __importCrash: true },
+        summary: null,
+        chats: [],
+      },
+    ];
+
+    const imp = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({ file, resolutions: { [storyId]: 'replace' } });
+    expect(imp.status).toBe(200);
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'failed' }]);
+    expect(imp.body.imported.stories).toBe(0);
+
+    const after = (await agent.get('/api/users/me/export')).body;
+    expect(after.stories).toHaveLength(1);
+    expect(after.stories[0].id).toBe(storyId);
+    expect(after.stories[0].title).toBe('Original');
+    expect(after.stories[0].worldNotes).toBe('irreplaceable-lore');
+  });
+
   it('skip: does nothing for that story and records skipped', async () => {
     const { agent } = await registerAndLogin({ username: 'skip-user' });
     const storyA = await agent
