@@ -386,7 +386,11 @@ describe('GET /api/users/me/venice-account [X32]', () => {
     testApp.use('/api/users/me/venice-key', createVeniceKeyRouter());
     testApp.use(
       '/api/users/me/venice-account',
-      createVeniceAccountRouter({ accountRateLimitWindowMs: 200 }),
+      // Window must comfortably outlast the 30 warm-up requests under a
+      // contended CI box (4 parallel workers on few cores) — a short window
+      // lets early requests expire out of it and #31 sails through as 200.
+      // Nothing below waits for expiry, so bigger is strictly safer.
+      createVeniceAccountRouter({ accountRateLimitWindowMs: 60_000 }),
     );
     testApp.use(globalErrorHandler);
 
