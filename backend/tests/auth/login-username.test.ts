@@ -127,29 +127,45 @@ describe('[AU10] POST /api/auth/login — username-based supersede', () => {
       .set('Origin', TEST_ORIGIN)
       .send({ username: 'warmup-user', password: PASSWORD });
 
-    const tsUnknown = process.hrtime.bigint();
-    await request(app)
-      .post('/api/auth/login')
-      .set('Origin', TEST_ORIGIN)
-      .send({ username: 'ghost', password: PASSWORD });
-    const unknownDuration = Number(process.hrtime.bigint() - tsUnknown) / 1_000_000;
+    // Median-of-N per branch, interleaved: with the suite's fast argon2
+    // params each login is only a few ms, so a single sample is at the
+    // mercy of scheduler noise on a contended CI box (4 parallel workers).
+    // Medians keep the assertion meaningful — a missing compare on the
+    // unknown branch still shows up as an order-of-magnitude gap.
+    const samples = 5;
+    const unknowns: number[] = [];
+    const wrongs: number[] = [];
+    for (let i = 0; i < samples; i += 1) {
+      const tsUnknown = process.hrtime.bigint();
+      await request(app)
+        .post('/api/auth/login')
+        .set('Origin', TEST_ORIGIN)
+        .send({ username: `ghost-${i}`, password: PASSWORD });
+      unknowns.push(Number(process.hrtime.bigint() - tsUnknown) / 1_000_000);
 
-    const tsWrong = process.hrtime.bigint();
-    await request(app)
-      .post('/api/auth/login')
-      .set('Origin', TEST_ORIGIN)
-      .send({ username: USERNAME, password: 'incorrect' });
-    const wrongDuration = Number(process.hrtime.bigint() - tsWrong) / 1_000_000;
+      const tsWrong = process.hrtime.bigint();
+      await request(app)
+        .post('/api/auth/login')
+        .set('Origin', TEST_ORIGIN)
+        .send({ username: USERNAME, password: 'incorrect' });
+      wrongs.push(Number(process.hrtime.bigint() - tsWrong) / 1_000_000);
+    }
+    const median = (xs: number[]): number =>
+      xs.slice().sort((a, b) => a - b)[Math.floor(xs.length / 2)] as number;
+    const unknownDuration = median(unknowns);
+    const wrongDuration = median(wrongs);
 
-    // Both branches execute one bcrypt.compare against a 12-round hash (~200ms).
-    // Require the two durations to be within a generous window — we're guarding
-    // against a 10x-order gap (no compare at all on the unknown branch), not
-    // sub-ms noise.
+    // Both branches execute one argon2.verify. Require the two medians to be
+    // within a generous window — we're guarding against a 10x-order gap (no
+    // compare at all on the unknown branch), not sub-ms noise.
     const ratio =
       Math.max(unknownDuration, wrongDuration) /
       Math.max(1, Math.min(unknownDuration, wrongDuration));
+    if (ratio >= 3) {
+      console.log('unknown ms:', unknowns, 'wrong ms:', wrongs);
+    }
     expect(ratio).toBeLessThan(3);
-  });
+  }, 15_000);
 
   it('returns 400 for malformed username (zod validation before compare)', async () => {
     const res = await request(app)
