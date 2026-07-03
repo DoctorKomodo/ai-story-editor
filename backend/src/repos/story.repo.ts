@@ -123,12 +123,24 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     if (!story) throw new Error('story.repo: story not owned by caller');
 
     const [chapterMax, characterMax, outlineMax, chatMax, messageMax] = await Promise.all([
-      client.chapter.aggregate({ where: { storyId }, _max: { updatedAt: true } }),
-      client.character.aggregate({ where: { storyId }, _max: { updatedAt: true } }),
-      client.outlineItem.aggregate({ where: { storyId }, _max: { updatedAt: true } }),
-      client.chat.aggregate({ where: { chapter: { storyId } }, _max: { updatedAt: true } }),
+      client.chapter.aggregate({
+        where: { storyId, story: { userId } },
+        _max: { updatedAt: true },
+      }),
+      client.character.aggregate({
+        where: { storyId, story: { userId } },
+        _max: { updatedAt: true },
+      }),
+      client.outlineItem.aggregate({
+        where: { storyId, story: { userId } },
+        _max: { updatedAt: true },
+      }),
+      client.chat.aggregate({
+        where: { chapter: { storyId, story: { userId } } },
+        _max: { updatedAt: true },
+      }),
       client.message.aggregate({
-        where: { chat: { chapter: { storyId } } },
+        where: { chat: { chapter: { storyId, story: { userId } } } },
         _max: { createdAt: true, updatedAt: true },
       }),
     ]);
