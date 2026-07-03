@@ -187,32 +187,70 @@ describe('SettingsDataTab', () => {
     await waitFor(() => expect(screen.getByTestId('data-restore-result')).toBeInTheDocument());
   });
 
-  it('disables the file picker and per-story selects while a restore is in flight', async () => {
-    let resolveImport: (value: unknown) => void = () => {};
-    const importPromise = new Promise((resolve) => {
-      resolveImport = resolve;
+  it('disables restore controls during the safety-export phase, and a second click does not double-submit', async () => {
+    let resolveExport: (value: { blob: Blob; filename: string }) => void = () => {};
+    const exportPromise = new Promise<{ blob: Blob; filename: string }>((resolve) => {
+      resolveExport = resolve;
     });
+    vi.spyOn(apiModule, 'fetchExportBlob').mockReturnValue(exportPromise);
+    vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:x');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+
+    let importCallCount = 0;
     vi.spyOn(apiModule, 'api').mockImplementation(async (path: string) => {
-      if (path === '/users/me/import') return importPromise;
+      if (path === '/users/me/import/plan') {
+        return { stories: [{ id: 'c1', status: 'conflict' }] };
+      }
+      if (path === '/users/me/import') {
+        importCallCount += 1;
+        return IMPORT_RESULT_EMPTY;
+      }
       throw new Error(`unexpected call: ${path}`);
     });
 
     renderTab();
-    await stageFile({ ...LEGACY_BACKUP, stories: [{ title: 'Story A' }] });
+    await stageFile({
+      ...LEGACY_BACKUP,
+      stories: [
+        { title: 'Conflicting Story', id: 'c1', snapshotUpdatedAt: '2026-06-24T12:00:00.000Z' },
+      ],
+    });
+    await waitFor(() => expect(screen.getByTestId('data-restore-row-0')).toBeInTheDocument());
+    fireEvent.change(screen.getByRole('combobox', { name: 'Resolution for "Conflicting Story"' }), {
+      target: { value: 'replace' },
+    });
+    fireEvent.change(screen.getByTestId('data-restore-phrase'), {
+      target: { value: 'replace these stories' },
+    });
 
+    // Safety backup stays on (default) so onRestore awaits exporter.download()
+    // before the import call — this is the window that used to leave every
+    // control (including Restore itself) enabled.
     fireEvent.click(screen.getByRole('button', { name: /restore/i }));
 
     await waitFor(() => expect(screen.getByTestId('data-restore-file')).toBeDisabled());
     expect(screen.getByTestId('data-restore-browse')).toBeDisabled();
-    expect(screen.getByRole('combobox', { name: 'Resolution for "Story A"' })).toBeDisabled();
+    expect(
+      screen.getByRole('combobox', { name: 'Resolution for "Conflicting Story"' }),
+    ).toBeDisabled();
+    expect(screen.getByTestId('data-restore-btn')).toBeDisabled();
+
+    // A second click landing in this window (e.g. an impatient double-click)
+    // must not fire a second restore — fireEvent bypasses the `disabled`
+    // attribute, so this exercises the re-entrancy guard directly, not just
+    // the DOM's own disabled-click suppression.
+    fireEvent.click(screen.getByTestId('data-restore-btn'));
 
     await act(async () => {
-      resolveImport(IMPORT_RESULT_EMPTY);
+      resolveExport({ blob: new Blob(['{}']), filename: 'inkwell-backup.json' });
       await Promise.resolve();
       await Promise.resolve();
     });
 
-    await waitFor(() => expect(screen.getByTestId('data-restore-file')).not.toBeDisabled());
+    await waitFor(() => expect(screen.getByTestId('data-restore-result')).toBeInTheDocument());
+    expect(importCallCount).toBe(1);
+
+    expect(screen.getByTestId('data-restore-file')).not.toBeDisabled();
   });
 
   it('ignores a stale restore continuation after a mid-flight file re-pick', async () => {

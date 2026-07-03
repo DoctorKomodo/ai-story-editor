@@ -43,6 +43,7 @@ export function SettingsDataTab(): JSX.Element {
   const [phrase, setPhrase] = useState('');
   const [safetyBackup, setSafetyBackup] = useState(true);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [restoring, setRestoring] = useState(false);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [resultTitles, setResultTitles] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -145,62 +146,73 @@ export function SettingsDataTab(): JSX.Element {
 
   const hasReplace = Object.values(resolutions).some((r) => r === 'replace');
 
+  // Re-entrancy guard for the whole restore span (safety export + import),
+  // not just `importer.isPending` — the safety export can run for seconds
+  // before the import call even starts, and a second Restore click landing
+  // in that window must not fire a second submission.
   async function onRestore(): Promise<void> {
+    if (restoring) return;
     if (!staged) return;
-    setRestoreError(null);
+    setRestoring(true);
+    try {
+      setRestoreError(null);
 
-    // Guards against a re-pick landing while this restore is still in flight —
-    // same pattern as `fileSelectionRef` in `onFileChange`. The picker controls
-    // are disabled on `importer.isPending`, so this is defense in depth for a
-    // path that bypasses the disabled control (keyboard, programmatic).
-    const generation = fileSelectionRef.current;
+      // Guards against a re-pick landing while this restore is still in flight —
+      // same pattern as `fileSelectionRef` in `onFileChange`. The picker controls
+      // are disabled on `restoring`, so this is defense in depth for a
+      // path that bypasses the disabled control (keyboard, programmatic).
+      const generation = fileSelectionRef.current;
 
-    // A failed safety export aborts the restore — never delete content we couldn't back up.
-    // Only relevant when a replace is in play; create/skip never delete anything.
-    if (hasReplace && safetyBackup) {
+      // A failed safety export aborts the restore — never delete content we couldn't back up.
+      // Only relevant when a replace is in play; create/skip never delete anything.
+      if (hasReplace && safetyBackup) {
+        try {
+          await exporter.download();
+        } catch {
+          setRestoreError(
+            'Could not download the safety backup, so the restore was cancelled. Your content was not changed.',
+          );
+          return;
+        }
+      }
+
+      const resolutionsPayload: Record<string, ImportResolution> = {};
+      for (const row of rows) {
+        if (row.id)
+          resolutionsPayload[row.id] = resolutions[row.index] ?? defaultResolutionFor(row.bucket);
+      }
+
+      let outcome: ImportResult;
       try {
-        await exporter.download();
-      } catch {
+        outcome = await importer.mutateAsync({ file: staged, resolutions: resolutionsPayload });
+      } catch (err) {
         setRestoreError(
-          'Could not download the safety backup, so the restore was cancelled. Your content was not changed.',
+          err instanceof Error && err.message
+            ? `Restore failed: ${err.message}`
+            : 'Restore failed. Please try again.',
         );
         return;
       }
-    }
 
-    const resolutionsPayload: Record<string, ImportResolution> = {};
-    for (const row of rows) {
-      if (row.id)
-        resolutionsPayload[row.id] = resolutions[row.index] ?? defaultResolutionFor(row.bucket);
+      setResult(outcome);
+      setResultTitles(rows.map((r) => r.title));
+      // A newer file selection happened while this restore was in flight — leave
+      // its already-staged rows/resolutions/filename alone.
+      if (generation !== fileSelectionRef.current) return;
+      setStaged(null);
+      setRows([]);
+      setResolutions({});
+      setFileName('');
+      setPhrase('');
+      if (fileRef.current) fileRef.current.value = '';
+    } finally {
+      setRestoring(false);
     }
-
-    let outcome: ImportResult;
-    try {
-      outcome = await importer.mutateAsync({ file: staged, resolutions: resolutionsPayload });
-    } catch (err) {
-      setRestoreError(
-        err instanceof Error && err.message
-          ? `Restore failed: ${err.message}`
-          : 'Restore failed. Please try again.',
-      );
-      return;
-    }
-
-    setResult(outcome);
-    setResultTitles(rows.map((r) => r.title));
-    // A newer file selection happened while this restore was in flight — leave
-    // its already-staged rows/resolutions/filename alone.
-    if (generation !== fileSelectionRef.current) return;
-    setStaged(null);
-    setRows([]);
-    setResolutions({});
-    setFileName('');
-    setPhrase('');
-    if (fileRef.current) fileRef.current.value = '';
   }
 
   const canRestore =
     staged !== null &&
+    !restoring &&
     !importPlan.isPending &&
     !importer.isPending &&
     (!hasReplace || phrase === CONFIRM_PHRASE);
@@ -253,7 +265,7 @@ export function SettingsDataTab(): JSX.Element {
               type="file"
               accept="application/json"
               data-testid="data-restore-file"
-              disabled={importer.isPending}
+              disabled={restoring || importer.isPending}
               onChange={(e) => {
                 void onFileChange(e);
               }}
@@ -263,7 +275,7 @@ export function SettingsDataTab(): JSX.Element {
               <button
                 type="button"
                 data-testid="data-restore-browse"
-                disabled={importer.isPending}
+                disabled={restoring || importer.isPending}
                 onClick={() => fileRef.current?.click()}
                 className="w-fit px-3 py-1.5 text-[12px] rounded-[var(--radius)] border border-line text-ink-2 bg-bg hover:bg-[color:var(--surface-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -323,7 +335,7 @@ export function SettingsDataTab(): JSX.Element {
                     data-testid={`data-restore-resolution-${row.index}`}
                     aria-label={`Resolution for "${row.title}"`}
                     value={resolutions[row.index] ?? defaultResolutionFor(row.bucket)}
-                    disabled={importer.isPending}
+                    disabled={restoring || importer.isPending}
                     onChange={(e) => {
                       setResolutionFor(row.index, e.target.value as ImportResolution);
                     }}
@@ -349,6 +361,7 @@ export function SettingsDataTab(): JSX.Element {
                   type="checkbox"
                   data-testid="data-restore-safety"
                   checked={safetyBackup}
+                  disabled={restoring || importer.isPending}
                   onChange={(e) => {
                     setSafetyBackup(e.target.checked);
                   }}
@@ -375,10 +388,11 @@ export function SettingsDataTab(): JSX.Element {
                   autoComplete="off"
                   spellCheck={false}
                   placeholder={CONFIRM_PHRASE}
+                  disabled={restoring || importer.isPending}
                   onChange={(e) => {
                     setPhrase(e.target.value);
                   }}
-                  className="w-64 px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
+                  className="w-64 px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3 disabled:opacity-50 disabled:cursor-not-allowed"
                 />
               </div>
             </>
@@ -393,7 +407,7 @@ export function SettingsDataTab(): JSX.Element {
             }}
             className="w-fit px-3 py-1.5 text-[12px] rounded-[var(--radius)] border border-line text-[color:var(--danger)] hover:bg-[var(--surface-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {importer.isPending ? 'Restoring…' : 'Restore'}
+            {restoring ? 'Restoring…' : 'Restore'}
           </button>
 
           {restoreError ? (
