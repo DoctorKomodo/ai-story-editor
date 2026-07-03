@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { prisma, testDatabaseUrl } from './setup';
+import { workerDatabaseName } from './worker-db';
 
 describe('test setup', () => {
   it('sets NODE_ENV to test', () => {
@@ -10,7 +11,9 @@ describe('test setup', () => {
     expect(testDatabaseUrl).toMatch(/^postgresql:\/\//);
     expect(process.env.DATABASE_URL).toBe(testDatabaseUrl);
     const poolId = process.env.VITEST_POOL_ID ?? '1';
-    expect(new URL(testDatabaseUrl).pathname).toBe(`/storyeditor_test_w${poolId}`);
+    // Derive the expected name via worker-db so the TEST_DATABASE_URL
+    // escape hatch (custom template name) keeps this check honest.
+    expect(new URL(testDatabaseUrl).pathname).toBe(`/${workerDatabaseName(poolId)}`);
   });
 
   it('exposes a connected Prisma client', async () => {
