@@ -149,6 +149,12 @@ export function SettingsDataTab(): JSX.Element {
     if (!staged) return;
     setRestoreError(null);
 
+    // Guards against a re-pick landing while this restore is still in flight —
+    // same pattern as `fileSelectionRef` in `onFileChange`. The picker controls
+    // are disabled on `importer.isPending`, so this is defense in depth for a
+    // path that bypasses the disabled control (keyboard, programmatic).
+    const generation = fileSelectionRef.current;
+
     // A failed safety export aborts the restore — never delete content we couldn't back up.
     // Only relevant when a replace is in play; create/skip never delete anything.
     if (hasReplace && safetyBackup) {
@@ -182,6 +188,9 @@ export function SettingsDataTab(): JSX.Element {
 
     setResult(outcome);
     setResultTitles(rows.map((r) => r.title));
+    // A newer file selection happened while this restore was in flight — leave
+    // its already-staged rows/resolutions/filename alone.
+    if (generation !== fileSelectionRef.current) return;
     setStaged(null);
     setRows([]);
     setResolutions({});
@@ -244,6 +253,7 @@ export function SettingsDataTab(): JSX.Element {
               type="file"
               accept="application/json"
               data-testid="data-restore-file"
+              disabled={importer.isPending}
               onChange={(e) => {
                 void onFileChange(e);
               }}
@@ -253,8 +263,9 @@ export function SettingsDataTab(): JSX.Element {
               <button
                 type="button"
                 data-testid="data-restore-browse"
+                disabled={importer.isPending}
                 onClick={() => fileRef.current?.click()}
-                className="w-fit px-3 py-1.5 text-[12px] rounded-[var(--radius)] border border-line text-ink-2 bg-bg hover:bg-[color:var(--surface-hover)] transition-colors"
+                className="w-fit px-3 py-1.5 text-[12px] rounded-[var(--radius)] border border-line text-ink-2 bg-bg hover:bg-[color:var(--surface-hover)] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Choose file…
               </button>
@@ -312,10 +323,11 @@ export function SettingsDataTab(): JSX.Element {
                     data-testid={`data-restore-resolution-${row.index}`}
                     aria-label={`Resolution for "${row.title}"`}
                     value={resolutions[row.index] ?? defaultResolutionFor(row.bucket)}
+                    disabled={importer.isPending}
                     onChange={(e) => {
                       setResolutionFor(row.index, e.target.value as ImportResolution);
                     }}
-                    className="px-2 py-1 text-[12px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
+                    className="px-2 py-1 text-[12px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="create">
                       {row.bucket === 'conflict' ? 'Keep both' : 'Import as new'}

@@ -187,6 +187,88 @@ describe('SettingsDataTab', () => {
     await waitFor(() => expect(screen.getByTestId('data-restore-result')).toBeInTheDocument());
   });
 
+  it('disables the file picker and per-story selects while a restore is in flight', async () => {
+    let resolveImport: (value: unknown) => void = () => {};
+    const importPromise = new Promise((resolve) => {
+      resolveImport = resolve;
+    });
+    vi.spyOn(apiModule, 'api').mockImplementation(async (path: string) => {
+      if (path === '/users/me/import') return importPromise;
+      throw new Error(`unexpected call: ${path}`);
+    });
+
+    renderTab();
+    await stageFile({ ...LEGACY_BACKUP, stories: [{ title: 'Story A' }] });
+
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+
+    await waitFor(() => expect(screen.getByTestId('data-restore-file')).toBeDisabled());
+    expect(screen.getByTestId('data-restore-browse')).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Resolution for "Story A"' })).toBeDisabled();
+
+    await act(async () => {
+      resolveImport(IMPORT_RESULT_EMPTY);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    await waitFor(() => expect(screen.getByTestId('data-restore-file')).not.toBeDisabled());
+  });
+
+  it('ignores a stale restore continuation after a mid-flight file re-pick', async () => {
+    const fileA = { ...LEGACY_BACKUP, stories: [{ title: 'Story A' }] };
+    const fileB = { ...LEGACY_BACKUP, stories: [{ title: 'Story B' }] };
+
+    let resolveImportA: (value: unknown) => void = () => {};
+    const importAPromise = new Promise((resolve) => {
+      resolveImportA = resolve;
+    });
+
+    vi.spyOn(apiModule, 'api').mockImplementation(async (path: string) => {
+      if (path === '/users/me/import') return importAPromise;
+      throw new Error(`unexpected call: ${path}`);
+    });
+
+    renderTab();
+    await stageFile(fileA);
+
+    fireEvent.click(screen.getByRole('button', { name: /restore/i }));
+    await waitFor(() => expect(screen.getByTestId('data-restore-file')).toBeDisabled());
+
+    // Simulate a re-pick landing anyway (e.g. drag-drop, or a path that
+    // bypasses the disabled control) while A's restore is still in flight.
+    fireEvent.change(screen.getByTestId('data-restore-file'), {
+      target: { files: [makeFile(fileB, 'b.json')] },
+    });
+    await waitFor(() => expect(screen.getByTestId('data-restore-row-0')).toBeInTheDocument());
+    expect(screen.getByText('Story B')).toBeInTheDocument();
+    expect(screen.queryByText('Story A')).not.toBeInTheDocument();
+
+    // Now let A's restore resolve — its continuation must not clobber B's
+    // freshly-staged picker state, though the result panel for A still shows.
+    await act(async () => {
+      resolveImportA({
+        imported: {
+          stories: 1,
+          chapters: 0,
+          characters: 0,
+          outlineItems: 0,
+          chats: 0,
+          messages: 0,
+        },
+        outcomes: [{ index: 0, action: 'created' }],
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.getByTestId('data-restore-result')).toBeInTheDocument();
+    expect(screen.getByText('Story B')).toBeInTheDocument();
+    expect(screen.queryByText('Story A')).not.toBeInTheDocument();
+    expect(screen.getByTestId('data-restore-summary')).toHaveTextContent('1 story');
+    expect(screen.getByText('b.json')).toBeInTheDocument();
+  });
+
   it('defaults each bucket to the documented resolution', async () => {
     vi.spyOn(apiModule, 'api').mockImplementation(async (path: string) => {
       if (path === '/users/me/import/plan') {
