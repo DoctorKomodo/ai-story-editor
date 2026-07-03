@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 describe('User profile (name, settingsJson)', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('defaults name and settingsJson to null', async () => {

@@ -23,6 +23,11 @@ jobs:
 
     services:
       postgres:
+        # The backend suite clones per-worker databases from storyeditor_test
+        # (CREATE DATABASE ... TEMPLATE — see backend/tests/worker-db.ts).
+        # That needs CREATEDB plus access to the built-in `postgres`
+        # maintenance DB; POSTGRES_USER is the image's bootstrap SUPERUSER,
+        # so both hold without extra provisioning.
         image: postgres:16-alpine
         env:
           POSTGRES_USER: storyeditor

@@ -16,42 +16,20 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { _resetSessionStore } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 
 const TEST_ORIGIN = 'http://localhost:3000';
-
-async function registerAndLogin(
-  username = 'settings-user',
-  password = 'settings-password',
-  name = 'Settings User',
-): Promise<ReturnType<typeof request.agent>> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  return agent;
-}
-
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.user.deleteMany();
-}
 
 describe('User settings routes [B11]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetUsers();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetUsers();
   });
 
   // ── Auth gates ────────────────────────────────────────────────────────────
@@ -74,7 +52,7 @@ describe('User settings routes [B11]', () => {
   // ── GET defaults ──────────────────────────────────────────────────────────
 
   it('GET returns full defaults for a new user', async () => {
-    const agent = await registerAndLogin('defaults-user');
+    const { agent } = await registerAndLogin({ username: 'defaults-user' });
     const res = await agent.get('/api/users/me/settings');
 
     expect(res.status).toBe(200);
@@ -110,7 +88,7 @@ describe('User settings routes [B11]', () => {
   // ── PATCH partial + merge ─────────────────────────────────────────────────
 
   it('PATCH with a partial payload stores and returns the merged result', async () => {
-    const agent = await registerAndLogin('partial-user');
+    const { agent } = await registerAndLogin({ username: 'partial-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -124,7 +102,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it("PATCH theme: 'dark' then GET returns dark + defaults for everything else", async () => {
-    const agent = await registerAndLogin('dark-user');
+    const { agent } = await registerAndLogin({ username: 'dark-user' });
 
     await agent.patch('/api/users/me/settings').set('Origin', TEST_ORIGIN).send({ theme: 'dark' });
 
@@ -139,7 +117,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('PATCH preserves ai.includeVeniceSystemPrompt across subsequent unrelated PATCHes (deep merge)', async () => {
-    const agent = await registerAndLogin('merge-user');
+    const { agent } = await registerAndLogin({ username: 'merge-user' });
 
     // First set the AI flag to false.
     await agent
@@ -169,7 +147,7 @@ describe('User settings routes [B11]', () => {
   // ── PATCH validation ──────────────────────────────────────────────────────
 
   it('PATCH returns 400 on an unknown top-level key', async () => {
-    const agent = await registerAndLogin('unk-top-user');
+    const { agent } = await registerAndLogin({ username: 'unk-top-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -180,7 +158,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('PATCH returns 400 on an unknown nested key', async () => {
-    const agent = await registerAndLogin('unk-nested-user');
+    const { agent } = await registerAndLogin({ username: 'unk-nested-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -191,7 +169,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('PATCH returns 400 on out-of-range prose.size', async () => {
-    const agent = await registerAndLogin('size-oor-user');
+    const { agent } = await registerAndLogin({ username: 'size-oor-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -202,7 +180,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('[F66] PATCH writing.smartQuotes / emDashExpansion persists', async () => {
-    const agent = await registerAndLogin('typo-user');
+    const { agent } = await registerAndLogin({ username: 'typo-user' });
 
     await agent
       .patch('/api/users/me/settings')
@@ -218,7 +196,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('PATCH returns 400 on negative writing.dailyWordGoal', async () => {
-    const agent = await registerAndLogin('goal-neg-user');
+    const { agent } = await registerAndLogin({ username: 'goal-neg-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -231,7 +209,7 @@ describe('User settings routes [B11]', () => {
   // ── Leakage / shape ───────────────────────────────────────────────────────
 
   it('GET response shape is exactly { settings } with no sensitive fields leaked', async () => {
-    const agent = await registerAndLogin('shape-user');
+    const { agent } = await registerAndLogin({ username: 'shape-user' });
     const res = await agent.get('/api/users/me/settings');
 
     expect(res.status).toBe(200);
@@ -247,7 +225,7 @@ describe('User settings routes [B11]', () => {
   // ── Boundary ──────────────────────────────────────────────────────────────
 
   it('PATCH accepts chat.overrides temperature: 0 (boundary)', async () => {
-    const agent = await registerAndLogin('temp-zero-user');
+    const { agent } = await registerAndLogin({ username: 'temp-zero-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -258,7 +236,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('accepts chat.overrides maxTokens above the previous 32_768 ceiling (up to 1_000_000)', async () => {
-    const agent = await registerAndLogin('max-tokens-high-user');
+    const { agent } = await registerAndLogin({ username: 'max-tokens-high-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -268,7 +246,7 @@ describe('User settings routes [B11]', () => {
   });
 
   it('rejects chat.overrides maxTokens above the 1_000_000 sanity ceiling', async () => {
-    const agent = await registerAndLogin('max-tokens-tooHigh-user');
+    const { agent } = await registerAndLogin({ username: 'max-tokens-tooHigh-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -282,16 +260,16 @@ describe('User settings routes [B11]', () => {
 describe('[X29] settingsJson.prompts slice', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetUsers();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetUsers();
   });
 
   it('GET defaults: prompts.{key} = null for all keys when never written', async () => {
-    const agent = await registerAndLogin('prompts-defaults-user');
+    const { agent } = await registerAndLogin({ username: 'prompts-defaults-user' });
     const res = await agent.get('/api/users/me/settings');
     expect(res.status).toBe(200);
     expect(res.body.settings.prompts).toEqual({
@@ -308,7 +286,7 @@ describe('[X29] settingsJson.prompts slice', () => {
   });
 
   it('PATCH { prompts: { scene: "X" } } round-trips, and { scene: null } clears it', async () => {
-    const agent = await registerAndLogin('prompts-scene-user');
+    const { agent } = await registerAndLogin({ username: 'prompts-scene-user' });
     const set = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -325,7 +303,7 @@ describe('[X29] settingsJson.prompts slice', () => {
   });
 
   it('PATCH { prompts: { system: "X" } } round-trips', async () => {
-    const agent = await registerAndLogin('prompts-roundtrip-user');
+    const { agent } = await registerAndLogin({ username: 'prompts-roundtrip-user' });
     const patch = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -339,7 +317,7 @@ describe('[X29] settingsJson.prompts slice', () => {
   });
 
   it('two PATCHes deep-merge: setting prompts.system then prompts.continue keeps both', async () => {
-    const agent = await registerAndLogin('prompts-merge-user');
+    const { agent } = await registerAndLogin({ username: 'prompts-merge-user' });
     await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -355,7 +333,7 @@ describe('[X29] settingsJson.prompts slice', () => {
   });
 
   it('PATCH { prompts: { system: null } } clears the override', async () => {
-    const agent = await registerAndLogin('prompts-clear-user');
+    const { agent } = await registerAndLogin({ username: 'prompts-clear-user' });
     await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -370,7 +348,7 @@ describe('[X29] settingsJson.prompts slice', () => {
   });
 
   it('rejects strings longer than 10 000 chars', async () => {
-    const agent = await registerAndLogin('prompts-toolong-user');
+    const { agent } = await registerAndLogin({ username: 'prompts-toolong-user' });
     const tooLong = 'x'.repeat(10_001);
     const res = await agent
       .patch('/api/users/me/settings')
@@ -380,7 +358,7 @@ describe('[X29] settingsJson.prompts slice', () => {
   });
 
   it('rejects unknown keys under prompts (.strict())', async () => {
-    const agent = await registerAndLogin('prompts-unknown-user');
+    const { agent } = await registerAndLogin({ username: 'prompts-unknown-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -394,16 +372,16 @@ describe('[X29] settingsJson.prompts slice', () => {
 describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetUsers();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetUsers();
   });
 
   it('accepts a chat.overrides patch with one model', async () => {
-    const agent = await registerAndLogin('x28-one-model-user');
+    const { agent } = await registerAndLogin({ username: 'x28-one-model-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -413,7 +391,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   });
 
   it('accepts partial overrides — only set fields are persisted', async () => {
-    const agent = await registerAndLogin('x28-partial-user');
+    const { agent } = await registerAndLogin({ username: 'x28-partial-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -423,7 +401,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   });
 
   it('rejects unknown fields inside an override', async () => {
-    const agent = await registerAndLogin('x28-unknown-field-user');
+    const { agent } = await registerAndLogin({ username: 'x28-unknown-field-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -432,7 +410,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   });
 
   it('rejects the legacy flat chat.temperature field', async () => {
-    const agent = await registerAndLogin('x28-legacy-flat-user');
+    const { agent } = await registerAndLogin({ username: 'x28-legacy-flat-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -441,7 +419,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   });
 
   it('rejects out-of-range override values', async () => {
-    const agent = await registerAndLogin('x28-oor-user');
+    const { agent } = await registerAndLogin({ username: 'x28-oor-user' });
     const res = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)
@@ -455,7 +433,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   // SettingsModelsTab Reset button is a no-op and the sliders snap back to the
   // override values right after flashing to defaults.
   it('treats chat.overrides[modelId] as atomic — empty entry clears overrides', async () => {
-    const agent = await registerAndLogin('x28-reset-user');
+    const { agent } = await registerAndLogin({ username: 'x28-reset-user' });
 
     // First set an override.
     const set = await agent
@@ -475,7 +453,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   });
 
   it('reset of one model does not affect overrides for other models', async () => {
-    const agent = await registerAndLogin('x28-reset-isolated-user');
+    const { agent } = await registerAndLogin({ username: 'x28-reset-isolated-user' });
 
     const seed = await agent
       .patch('/api/users/me/settings')
@@ -501,7 +479,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   // Sending { m1: { temperature: 0.4 } } after { m1: { temperature: 1.5, topP: 0.8 } }
   // must yield { temperature: 0.4 } only — no stale topP.
   it('replaces a populated per-model entry wholesale (no field leakage)', async () => {
-    const agent = await registerAndLogin('x28-replace-user');
+    const { agent } = await registerAndLogin({ username: 'x28-replace-user' });
 
     const set = await agent
       .patch('/api/users/me/settings')
@@ -518,7 +496,7 @@ describe('PATCH /api/users/me/settings — chat.overrides shape (X28)', () => {
   });
 
   it('accepts and round-trips a per-model reasoning override', async () => {
-    const agent = await registerAndLogin('x28-reasoning-user');
+    const { agent } = await registerAndLogin({ username: 'x28-reasoning-user' });
     const patch = await agent
       .patch('/api/users/me/settings')
       .set('Origin', TEST_ORIGIN)

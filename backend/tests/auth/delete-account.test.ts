@@ -5,45 +5,21 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { sessionCookieName } from '../../src/lib/session-cookie';
-import { _resetSessionStore, _sessionCount } from '../../src/services/session-store';
+import { _sessionCount } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const PASSWORD = 'correct-horse-battery';
 const TEST_ORIGIN = 'http://localhost:3000';
 
-async function registerAndLogin(username: string): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-  userId: string;
-}> {
-  const agent = request.agent(app);
-  const reg = await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name: username, username, password: PASSWORD });
-  expect(reg.status).toBe(201);
-
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password: PASSWORD });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId, userId: login.body.user.id as string };
-}
-
 describe('[X3] DELETE /api/auth/delete-account', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('returns 401 without a session cookie', async () => {
@@ -55,7 +31,7 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
   });
 
   it('returns 400 when the password is missing from the body', async () => {
-    const alice = await registerAndLogin('alice');
+    const alice = await registerAndLogin({ username: 'alice', password: PASSWORD });
     const res = await alice.agent
       .delete('/api/auth/delete-account')
       .set('Origin', TEST_ORIGIN)
@@ -65,7 +41,7 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
   });
 
   it('returns 401 with the same body shape as change-password on wrong password', async () => {
-    const alice = await registerAndLogin('alice');
+    const alice = await registerAndLogin({ username: 'alice', password: PASSWORD });
     const res = await alice.agent
       .delete('/api/auth/delete-account')
       .set('Origin', TEST_ORIGIN)
@@ -79,8 +55,8 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
   });
 
   it('204 on success — deletes the user, cascades to stories/chapters/characters/outline/chats/messages, drops sessions, leaves other users untouched, and clears the cookie', async () => {
-    const alice = await registerAndLogin('alice');
-    const bob = await registerAndLogin('bob');
+    const alice = await registerAndLogin({ username: 'alice', password: PASSWORD });
+    const bob = await registerAndLogin({ username: 'bob', password: PASSWORD });
 
     // Seed alice with one of every narrative entity to confirm the cascade.
     // Post-[E11]: narrative columns are nullable ciphertext-only — minimal

@@ -5,32 +5,18 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { sessionCookieName } from '../../src/lib/session-cookie';
-import { _resetSessionStore, _sessionCount } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { _sessionCount } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 
 const PASSWORD = 'correct-horse-battery';
 const TEST_ORIGIN = 'http://localhost:3000';
 
-async function registerAndLoginTwice(username: string): Promise<{
+async function loginOnTwoDevices(username: string): Promise<{
   agent: ReturnType<typeof request.agent>;
   sessionId: string;
 }> {
-  const agent = request.agent(app);
-  const reg = await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name: username, username, password: PASSWORD });
-  expect(reg.status).toBe(201);
-
-  const login1 = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password: PASSWORD });
-  expect(login1.status).toBe(200);
-  const raw = login1.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
+  const { agent, sessionId } = await registerAndLogin({ username, password: PASSWORD });
 
   // Second login simulates a second tab/device (separate agent, separate cookie jar).
   const agent2 = request.agent(app);
@@ -45,13 +31,11 @@ async function registerAndLoginTwice(username: string): Promise<{
 
 describe('[B12] POST /api/auth/sign-out-everywhere', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('returns 401 without a session cookie', async () => {
@@ -60,8 +44,8 @@ describe('[B12] POST /api/auth/sign-out-everywhere', () => {
   });
 
   it("204 on success — deletes all of the caller's sessions, clears the session cookie, leaves other users untouched", async () => {
-    const alice = await registerAndLoginTwice('alice');
-    await registerAndLoginTwice('bob');
+    const alice = await loginOnTwoDevices('alice');
+    await loginOnTwoDevices('bob');
 
     // At this point alice has 2 sessions and bob has 2.
     const sessionsBefore = _sessionCount();
@@ -89,7 +73,7 @@ describe('[B12] POST /api/auth/sign-out-everywhere', () => {
   });
 
   it('idempotent: after sign-out-everywhere the session is gone, so a second call returns 401', async () => {
-    const carol = await registerAndLoginTwice('carol');
+    const carol = await loginOnTwoDevices('carol');
 
     const first = await carol.agent
       .post('/api/auth/sign-out-everywhere')
@@ -106,7 +90,7 @@ describe('[B12] POST /api/auth/sign-out-everywhere', () => {
   });
 
   it("after sign-out-everywhere, alice's agent gets 401 on any authenticated route", async () => {
-    const dave = await registerAndLoginTwice('dave');
+    const dave = await loginOnTwoDevices('dave');
 
     const res = await dave.agent.post('/api/auth/sign-out-everywhere').set('Origin', TEST_ORIGIN);
     expect(res.status).toBe(204);

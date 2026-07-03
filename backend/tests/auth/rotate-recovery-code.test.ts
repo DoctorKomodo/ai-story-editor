@@ -5,13 +5,13 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import {
   InvalidRecoveryCodeError,
   unwrapDekWithPassword,
   unwrapDekWithRecoveryCode,
 } from '../../src/services/content-crypto.service';
-import { _resetSessionStore } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const NAME = 'Rotate Recovery User';
@@ -19,40 +19,13 @@ const USERNAME = 'rotate-recovery-user';
 const PASSWORD = 'correct-horse-battery';
 const TEST_ORIGIN = 'http://localhost:3000';
 
-async function registerAndLogin(): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  recoveryCode: string;
-  userId: string;
-}> {
-  const agent = request.agent(app);
-  const reg = await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  expect(reg.status).toBe(201);
-  const recoveryCode = reg.body.recoveryCode as string;
-  expect(typeof recoveryCode).toBe('string');
-
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username: USERNAME, password: PASSWORD });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  return { agent, recoveryCode, userId: login.body.user.id as string };
-}
-
 describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('returns 401 without a session cookie', async () => {
@@ -64,7 +37,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('returns 400 on missing or malformed body', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const missing = await agent
       .post('/api/auth/rotate-recovery-code')
       .set('Origin', TEST_ORIGIN)
@@ -73,7 +50,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('returns 401 on wrong password', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const res = await agent
       .post('/api/auth/rotate-recovery-code')
       .set('Origin', TEST_ORIGIN)
@@ -83,7 +64,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('happy path: 200, returns a fresh recoveryCode + warning, recovery wrap rotates, new code unwraps to the same DEK, old code no longer works', async () => {
-    const { agent, recoveryCode: oldRecoveryCode } = await registerAndLogin();
+    const { agent, recoveryCode: oldRecoveryCode } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     const before = await prisma.user.findUniqueOrThrow({ where: { username: USERNAME } });
     const dekBefore = await unwrapDekWithRecoveryCode(before, oldRecoveryCode);
@@ -117,7 +102,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('leaves the password wrap and password hash untouched', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const before = await prisma.user.findUniqueOrThrow({ where: { username: USERNAME } });
 
     const res = await agent
@@ -137,7 +126,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('does not log out the caller — sessions for the user remain intact after rotation', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     // Open a second session from a different "device" so we can assert both
     // survive the rotation.
     const agent2 = request.agent(app);
@@ -161,7 +154,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('does not echo the password and does not set a new cookie', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const res = await agent
       .post('/api/auth/rotate-recovery-code')
       .set('Origin', TEST_ORIGIN)
@@ -173,7 +170,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('does not touch narrative ciphertext on existing story rows for the user', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const user = await prisma.user.findUniqueOrThrow({ where: { username: USERNAME } });
 
     const story = await prisma.story.create({
@@ -212,7 +213,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
     // express-rate-limit with standardHeaders: 'draft-7' sets a combined
     // 'RateLimit' header (lowercase 'ratelimit' in supertest) and a
     // 'RateLimit-Policy' header ('ratelimit-policy' in supertest).
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
     const res = await agent
       .post('/api/auth/rotate-recovery-code')
       .set('Origin', TEST_ORIGIN)
@@ -223,7 +228,11 @@ describe('[AU17] POST /api/auth/rotate-recovery-code', () => {
   });
 
   it('a second rotation invalidates the first freshly-issued code', async () => {
-    const { agent } = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     const first = await agent
       .post('/api/auth/rotate-recovery-code')

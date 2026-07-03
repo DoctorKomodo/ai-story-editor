@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
-import { makeUserContext, resetAllTables } from './_req';
+import { makeUserContext } from './_req';
 
 describe('[E9] outline.repo', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('round-trips title + sub; keeps order + status plaintext', async () => {
     const ctx = await makeUserContext();

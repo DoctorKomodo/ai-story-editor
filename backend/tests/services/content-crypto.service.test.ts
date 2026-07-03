@@ -22,6 +22,7 @@ import {
   unwrapDekWithRecoveryCode,
   wrapDek,
 } from '../../src/services/content-crypto.service';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const PASSWORD = 'correct-horse-battery-staple';
@@ -142,7 +143,7 @@ describe('content-crypto.service — generateDekAndWraps', () => {
 
 describe('content-crypto.service — unwrap with DB record', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('unwrapDekWithPassword returns the original DEK', async () => {
@@ -240,7 +241,7 @@ describe('content-crypto.service — unwrap with DB record', () => {
 
 describe('content-crypto.service — rewrap helpers', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('rewrapPasswordWrap rewrites password columns but leaves recovery columns alone', async () => {

@@ -3,12 +3,13 @@ import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
-import { makeUserContext, resetAllTables } from './_req';
+import { makeUserContext } from './_req';
 
 describe('[E9] chat.repo', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('round-trips title; enforces chapter.story.userId ownership', async () => {
     const alice = await makeUserContext('a-chat');
@@ -33,8 +34,8 @@ describe('[E9] chat.repo', () => {
 });
 
 describe('[SC3] chat.repo — kind support', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('creates a chat with kind="scene" when specified', async () => {
     const u = await makeUserContext('sc3-1');
@@ -120,8 +121,8 @@ async function setupTwoChatsFixture(username: string) {
 }
 
 describe('chatRepo.findManyForChapter — most-recent-activity ordering (story-editor-loj)', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('returns chats ordered by lastActivityAt desc — chat with newer message activity comes first', async () => {
     const { req, chapterId, chatAId, chatBId } = await setupTwoChatsFixture('loj-ordering-active');

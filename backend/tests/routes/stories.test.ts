@@ -13,43 +13,16 @@ import type { Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const TEST_ORIGIN = 'http://localhost:3000';
-
-interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
-async function registerAndLogin(
-  username: string,
-  password = 'story-route-pw',
-  name = 'Story Route User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -59,28 +32,17 @@ function makeFakeReq(sessionId: string): Request {
   return req;
 }
 
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
-}
-
 // ─── Tests ────────────────────────────────────────────────────────────────────
 
 describe('Stories routes [B1]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   // ── Auth gates ────────────────────────────────────────────────────────────
@@ -101,7 +63,7 @@ describe('Stories routes [B1]', () => {
   // ── POST validation ──────────────────────────────────────────────────────
 
   it('POST /api/stories returns 400 when title is missing', async () => {
-    const { agent } = await registerAndLogin('stories-zod-user');
+    const { agent } = await registerAndLogin({ username: 'stories-zod-user' });
     const res = await agent
       .post('/api/stories')
       .set('Origin', TEST_ORIGIN)
@@ -112,7 +74,7 @@ describe('Stories routes [B1]', () => {
   });
 
   it('POST /api/stories returns 400 when title is empty', async () => {
-    const { agent } = await registerAndLogin('stories-empty-title-user');
+    const { agent } = await registerAndLogin({ username: 'stories-empty-title-user' });
     const res = await agent.post('/api/stories').set('Origin', TEST_ORIGIN).send({ title: '' });
     expect(res.status).toBe(400);
     expect(res.body.error.code).toBe('validation_error');
@@ -121,7 +83,7 @@ describe('Stories routes [B1]', () => {
   // ── POST happy path ──────────────────────────────────────────────────────
 
   it('POST /api/stories returns 201 with decrypted fields and no ciphertext', async () => {
-    const { agent } = await registerAndLogin('stories-create-user');
+    const { agent } = await registerAndLogin({ username: 'stories-create-user' });
     const res = await agent.post('/api/stories').set('Origin', TEST_ORIGIN).send({
       title: 'The First Draft',
       synopsis: 'A writer meets a deadline.',
@@ -150,7 +112,7 @@ describe('Stories routes [B1]', () => {
   });
 
   it('POST /api/stories accepts minimal body (title only)', async () => {
-    const { agent } = await registerAndLogin('stories-minimal-user');
+    const { agent } = await registerAndLogin({ username: 'stories-minimal-user' });
     const res = await agent
       .post('/api/stories')
       .set('Origin', TEST_ORIGIN)
@@ -167,8 +129,10 @@ describe('Stories routes [B1]', () => {
   // ── GET: owner scoping ───────────────────────────────────────────────────
 
   it("GET /api/stories returns only the caller's stories", async () => {
-    const { agent: agentA, sessionId: sessionIdA } = await registerAndLogin('stories-owner-a');
-    const { sessionId: sessionIdB } = await registerAndLogin('stories-owner-b');
+    const { agent: agentA, sessionId: sessionIdA } = await registerAndLogin({
+      username: 'stories-owner-a',
+    });
+    const { sessionId: sessionIdB } = await registerAndLogin({ username: 'stories-owner-b' });
 
     const reqA = makeFakeReq(sessionIdA);
     const reqB = makeFakeReq(sessionIdB);
@@ -195,7 +159,7 @@ describe('Stories routes [B1]', () => {
   // ── GET: aggregation ─────────────────────────────────────────────────────
 
   it('GET /api/stories returns chapterCount and totalWordCount aggregated correctly', async () => {
-    const { agent, sessionId } = await registerAndLogin('stories-agg-user');
+    const { agent, sessionId } = await registerAndLogin({ username: 'stories-agg-user' });
     const req = makeFakeReq(sessionId);
 
     const storyWithChapters = await createStoryRepo(req).create({
@@ -245,7 +209,7 @@ describe('Stories routes [B1]', () => {
   // ── PATCH /:id ───────────────────────────────────────────────────────────
 
   it('PATCH /api/stories/:id accepts includePreviousChaptersInPrompt and persists it', async () => {
-    const { agent, sessionId } = await registerAndLogin('stories-pcs-toggle');
+    const { agent, sessionId } = await registerAndLogin({ username: 'stories-pcs-toggle' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
 
@@ -264,7 +228,7 @@ describe('Stories routes [B1]', () => {
   // ── GET: ordering ────────────────────────────────────────────────────────
 
   it('GET /api/stories orders by updatedAt desc', async () => {
-    const { agent, sessionId } = await registerAndLogin('stories-order-user');
+    const { agent, sessionId } = await registerAndLogin({ username: 'stories-order-user' });
     const req = makeFakeReq(sessionId);
 
     const s1 = await createStoryRepo(req).create({ title: 'Oldest' });

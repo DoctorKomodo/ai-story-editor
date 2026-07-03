@@ -4,16 +4,15 @@ import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
+import { registerAndLogin, TEST_ORIGIN } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 import {
   jsonResponse,
   MODEL_ID,
   MODEL_LIST_BODY,
   makeFakeReq,
-  registerAndLogin,
-  resetAll,
   storeKey,
   stubVeniceFetch,
-  TEST_ORIGIN,
 } from './_chat-test-helpers';
 
 const MODEL_LIST_BODY_REASONING = {
@@ -41,7 +40,7 @@ async function setup(
   username: string,
   body: string | null = 'A sentence of prose.',
 ): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; storyId: string }> {
-  const { agent, sessionId } = await registerAndLogin(username);
+  const { agent, sessionId } = await registerAndLogin({ username });
   const req = makeFakeReq(sessionId);
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
   const chapter = await createChapterRepo(req).create({
@@ -77,14 +76,14 @@ const MODEL_LIST_BODY_NO_SCHEMA = {
 describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
     vi.unstubAllGlobals();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
     vi.unstubAllGlobals();
   });
@@ -161,14 +160,14 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
 describe('summarise honors model settings + sends persona', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
     vi.unstubAllGlobals();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
     veniceModelsService.resetCache();
     vi.unstubAllGlobals();
   });

@@ -5,18 +5,19 @@ import {
   InvalidCredentialsError,
   UsernameUnavailableError,
 } from '../../src/services/auth.service';
-import { _resetSessionStore, _sessionCount, getSession } from '../../src/services/session-store';
+import { _sessionCount, getSession } from '../../src/services/session-store';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const authService = createAuthService(prisma);
 
 describe('auth.service register()', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates a user with an argon2id password hash (post-[AU14])', async () => {
@@ -111,13 +112,11 @@ describe('auth.service register()', () => {
 
 describe('auth.service login()', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('login opens an in-memory session and returns only the user + sessionId', async () => {
@@ -161,13 +160,11 @@ describe('auth.service login()', () => {
 
 describe('auth.service changePassword()', () => {
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('changePassword evicts all sessions then opens exactly one fresh session for the caller', async () => {

@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 describe('User model', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates a user with cuid id and timestamps', async () => {

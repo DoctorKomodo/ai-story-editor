@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Post-[E11] chapter body (TipTap JSON) is ciphertext-only in
@@ -17,11 +18,11 @@ async function makeStory(email = 'body-json-author@example.com') {
 
 describe('Chapter plaintext shape (post-E11)', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('defaults status to "draft" and wordCount to 0', async () => {

@@ -20,43 +20,17 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { prisma as appPrisma } from '../../src/lib/prisma';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
 
 const TEST_ORIGIN = 'http://localhost:3000';
 
-interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function registerAndLogin(
-  username: string,
-  password = 'chapters-pw',
-  name = 'Chapter Route User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -64,17 +38,6 @@ function makeFakeReq(sessionId: string): Request {
   const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
-}
-
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 const FAKE_ID = '00000000-0000-0000-0000-000000000000';
@@ -104,12 +67,12 @@ function assertNoCiphertextKeys(obj: Record<string, unknown>): void {
 describe('Chapter routes [B3]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   // ── Auth gates ────────────────────────────────────────────────────────────
@@ -155,8 +118,8 @@ describe('Chapter routes [B3]', () => {
   // ── POST ownership / Zod ──────────────────────────────────────────────────
 
   it('POST returns 403 when :storyId does not belong to the caller', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('chapters-owner-a');
-    const { agent: agentB } = await registerAndLogin('chapters-owner-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'chapters-owner-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'chapters-owner-b' });
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
 
@@ -169,7 +132,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('POST returns 400 on empty title', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-empty-title');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-empty-title' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'My Story' });
 
@@ -182,7 +145,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('POST returns 400 when an unknown key (wordCount) is passed', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-strict-post');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-strict-post' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict Story' });
 
@@ -195,7 +158,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('POST returns 400 when an unknown key (orderIndex) is passed', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-strict-order');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-strict-order' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict Story' });
 
@@ -210,7 +173,7 @@ describe('Chapter routes [B3]', () => {
   // ── POST happy path: wordCount + orderIndex ───────────────────────────────
 
   it('POST with bodyJson computes wordCount from the tree and auto-assigns orderIndex', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-body');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-body' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Has Chapters' });
     const storyId = story.id as string;
@@ -245,7 +208,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('POST without bodyJson sets wordCount to 0 and still auto-assigns orderIndex', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-no-body');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-no-body' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Bare Chapters' });
     const storyId = story.id as string;
@@ -270,7 +233,7 @@ describe('Chapter routes [B3]', () => {
   // ── [D16] POST race: aggregate+insert must retry on unique-constraint P2002
 
   it('POST retries on P2002 when the aggregate returns a stale _max (race simulation)', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-race');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-race' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Racing' });
     const storyId = story.id as string;
@@ -317,7 +280,7 @@ describe('Chapter routes [B3]', () => {
   it('POST surfaces a non-P2002 error without retrying indefinitely', async () => {
     // Defence-in-depth: the retry loop only catches P2002. Any other error
     // must propagate out of the first attempt unchanged.
-    const { agent, sessionId } = await registerAndLogin('chapters-nonp2002');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-nonp2002' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Boom' });
     const storyId = story.id as string;
@@ -339,7 +302,7 @@ describe('Chapter routes [B3]', () => {
   // ── GET /:chapterId ───────────────────────────────────────────────────────
 
   it('GET /:chapterId returns 200 with decrypted fields and body parsed as a tree', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-get-one');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-get-one' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Readable' });
     const storyId = story.id as string;
@@ -366,7 +329,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('GET /:chapterId returns 404 when chapterId is under a different story (path integrity)', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-path-integrity');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-path-integrity' });
     const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
@@ -387,8 +350,8 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('GET /:chapterId returns 403 when chapter belongs to another user', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('chapters-xuser-a');
-    const { agent: agentB } = await registerAndLogin('chapters-xuser-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'chapters-xuser-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'chapters-xuser-b' });
 
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
@@ -407,7 +370,7 @@ describe('Chapter routes [B3]', () => {
   // ── GET list ──────────────────────────────────────────────────────────────
 
   it('GET list returns 200 sorted by orderIndex asc with no ciphertext', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-list');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-list' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Ordered' });
     const storyId = story.id as string;
@@ -436,8 +399,8 @@ describe('Chapter routes [B3]', () => {
   });
 
   it("GET list returns 403 when storyId is not the caller's", async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('chapters-list-a');
-    const { agent: agentB } = await registerAndLogin('chapters-list-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'chapters-list-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'chapters-list-b' });
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A' });
 
@@ -448,7 +411,7 @@ describe('Chapter routes [B3]', () => {
   // ── PATCH /:chapterId ─────────────────────────────────────────────────────
 
   it('PATCH title-only does not touch body; bodyJson recomputes wordCount', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-patch');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-patch' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Patchable' });
     const storyId = story.id as string;
@@ -488,7 +451,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('PATCH with bodyJson: null clears the body and sets wordCount to 0', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-patch-null-body');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-patch-null-body' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Clearable' });
     const storyId = story.id as string;
@@ -528,7 +491,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('PATCH returns 400 on an unknown key', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-patch-strict');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-patch-strict' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
     const storyId = story.id as string;
@@ -547,7 +510,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('PATCH returns 400 on unknown key (foo)', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-patch-strict-foo');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-patch-strict-foo' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
     const storyId = story.id as string;
@@ -568,7 +531,7 @@ describe('Chapter routes [B3]', () => {
   // ── DELETE /:chapterId ────────────────────────────────────────────────────
 
   it('DELETE /:chapterId returns 204 and follow-up GET is 403', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-delete');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-delete' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Doomed Parent' });
     const storyId = story.id as string;
@@ -591,7 +554,7 @@ describe('Chapter routes [B3]', () => {
   });
 
   it('DELETE /:chapterId reassigns sequential orderIndex 0..N-1 on the remaining list', async () => {
-    const { agent, sessionId } = await registerAndLogin('chapters-delete-reseq');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chapters-delete-reseq' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Reseq' });
     const storyId = story.id as string;

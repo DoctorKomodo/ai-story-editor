@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CharacterNotOwnedError, createCharacterRepo } from '../../src/repos/character.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import { makeUserContext, resetAllTables } from './_req';
+import { resetDb } from '../helpers/db';
+import { makeUserContext } from './_req';
 
 describe('character.repo — orderIndex', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   describe('create()', () => {
     it('assigns orderIndex starting at 0 for the first character in a story', async () => {

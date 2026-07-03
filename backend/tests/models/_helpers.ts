@@ -25,11 +25,6 @@ export async function createChatRow(chapterId: string) {
   return prisma.chat.create({ data: { chapterId } });
 }
 
-export async function resetNarrativeTables(): Promise<void> {
-  // Narrative entities cascade from Story, so wiping users is enough.
-  await prisma.user.deleteMany();
-}
-
 // A sentinel ciphertext triple for schema-shape tests. The repo layer ([E9])
 // handles real encrypt/decrypt; here we just confirm Prisma accepts the new
 // columns and Postgres persists them.

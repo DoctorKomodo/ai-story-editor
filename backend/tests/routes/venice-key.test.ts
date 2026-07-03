@@ -1,8 +1,9 @@
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { _resetSessionStore } from '../../src/services/session-store';
 import { DEFAULT_VENICE_ENDPOINT } from '../../src/services/venice-key.service';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const TEST_ORIGIN = 'http://localhost:3000';
@@ -10,20 +11,6 @@ const NAME = 'BYOK User';
 const USERNAME = 'byok-user';
 const PASSWORD = 'byok-password';
 const VALID_KEY = 'sk-venice-abcdefghijklmnopqrstuvwxy-ZLAST6';
-
-async function registerAndLogin(): Promise<ReturnType<typeof request.agent>> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const loginRes = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username: USERNAME, password: PASSWORD });
-  expect(loginRes.status).toBe(200);
-  return agent;
-}
 
 function mockFetchResponse(status: number, body: unknown = {}): Response {
   return new Response(JSON.stringify(body), {
@@ -37,8 +24,7 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
 
     fetchSpy = vi.fn();
     vi.stubGlobal('fetch', fetchSpy);
@@ -46,8 +32,7 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    _resetSessionStore();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   describe('authentication', () => {
@@ -72,7 +57,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   describe('GET — returns only { hasKey, lastSix, endpoint } and never the key', () => {
     it('returns { hasKey: false } when no key is stored', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
 
       const res = await agent.get('/api/users/me/venice-key');
 
@@ -81,7 +70,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns { hasKey: true, lastSix, endpoint } after storing, and never returns the key', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
       await agent
@@ -107,7 +100,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   describe('PUT — validates key against Venice before storing', () => {
     it('calls Venice GET /models with the Bearer key and stores on 200', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
       const res = await agent
@@ -135,7 +132,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('accepts a custom endpoint override, uses it for validation, and stores it', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
       const customEndpoint = 'https://proxy.example.com/venice/v1';
@@ -152,7 +153,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 400 { error.code: "venice_key_invalid" } on a 401 from Venice and does NOT store', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(401, { error: 'invalid' }));
 
       const res = await agent
@@ -170,7 +175,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 502 when Venice is unreachable', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
 
       const res = await agent
@@ -183,7 +192,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 400 on empty apiKey', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
 
       const res = await agent
         .put('/api/users/me/venice-key')
@@ -196,7 +209,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('returns 400 on malformed endpoint URL', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
 
       const res = await agent
         .put('/api/users/me/venice-key')
@@ -210,7 +227,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   describe('DELETE — nulls all BYOK columns', () => {
     it('returns { status: "removed" } and clears all four BYOK columns', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
       await agent
@@ -231,7 +252,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
     });
 
     it('is idempotent — DELETE with no stored key still returns 200', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       const res = await agent.delete('/api/users/me/venice-key').set('Origin', TEST_ORIGIN);
       expect(res.status).toBe(200);
     });
@@ -239,7 +264,11 @@ describe('BYOK Venice-key endpoints ([AU12])', () => {
 
   describe('key leakage through endpoints', () => {
     it('encrypted ciphertext in the DB is unrelated to the plaintext key', async () => {
-      const agent = await registerAndLogin();
+      const { agent } = await registerAndLogin({
+        username: USERNAME,
+        password: PASSWORD,
+        name: NAME,
+      });
       fetchSpy.mockResolvedValueOnce(mockFetchResponse(200, { data: [] }));
 
       await agent
