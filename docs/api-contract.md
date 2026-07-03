@@ -226,6 +226,24 @@ Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds
 
 ---
 
+## Backup — `/api/users/me`
+
+### `GET /export`
+Streams the caller's full narrative tree (all stories → chapters → chats/messages, characters, outline items), decrypted, as a downloadable JSON file (`Content-Disposition: attachment`).
+Response `200`: `{ "formatVersion": 1, "app": "inkwell", "exportedAt", "stories": [ … ] }`. Each story carries its live `id` and `snapshotUpdatedAt` — the max `updatedAt` across the story's own row and its entire subtree (chapters, characters, outline items, chats, messages) at export time — used by `POST /import/plan` to detect drift since the file was taken.
+
+### `POST /import/plan` — rate-limited 5 req/min/user (shared bucket with `POST /import`)
+Preflight, read-only — no mutation. Body: `{ "stories": [{ "id", "snapshotUpdatedAt" }] }` (max 1000 entries).
+For each entry: an `id` with no live story owned by the caller (unknown, or owned by a different user) reports `new` — ownership never leaks via `unchanged`/`conflict` on someone else's id. Otherwise the caller's live subtree max is compared against `snapshotUpdatedAt`: `<=` → `unchanged`; `>` → `conflict`.
+Response `200`: `{ "stories": [{ "id", "status": "new" | "unchanged" | "conflict" }] }`.
+
+### `POST /import` — rate-limited 5 req/min/user
+Body: currently the same shape as the `GET /export` payload (`importSchema` aliases `exportSchema`) — replaces the caller's entire story library with the file's contents in one transaction. Legacy files (no `id`/`snapshotUpdatedAt`) are always safe to import this way. **This endpoint's body and behavior are changing** to a per-story `create`/`replace`/`skip` resolution model driven by the `/import/plan` result; this entry describes the shape as of this document's last update, not the post-change contract.
+Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" } }` (counts).
+Errors: `400 validation_error` (unknown `formatVersion` or malformed file).
+
+---
+
 ## Health — `/api/health` — Public
 Response `200`: `{ "status": "ok", "db": "connected" }`; `503 { "status": "degraded", "db": "unreachable" }` when Postgres is unreachable. Shape is intentionally outside the `{ error: {…} }` envelope.
 
@@ -235,4 +253,5 @@ Response `200`: `{ "status": "ok", "db": "connected" }`; `503 { "status": "degra
 
 - `/api/ai/*`: 20 req/min/IP.
 - `/api/users/me/venice-account`: 30 req/min/user.
+- `/api/users/me/import` and `/api/users/me/import/plan`: 5 req/min/user, shared bucket.
 - Sensitive auth routes (`change-password`, `update-profile`, `rotate-recovery-code`, `sign-out-everywhere`, `delete-account`, `reset-password`) carry their own per-route limiters.

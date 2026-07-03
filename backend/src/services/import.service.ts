@@ -1,6 +1,11 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
-import type { ImportFile, ImportResult } from 'story-editor-shared';
+import type {
+  ImportFile,
+  ImportPlanRequest,
+  ImportPlanResponse,
+  ImportResult,
+} from 'story-editor-shared';
 import { prisma } from '../lib/prisma';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
@@ -9,6 +14,30 @@ import { createMessageRepo } from '../repos/message.repo';
 import { createOutlineRepo } from '../repos/outline.repo';
 import { createStoryRepo } from '../repos/story.repo';
 import { computeWordCount } from './tiptap-text';
+
+/**
+ * Preflight: bucket each file-story id against the caller's live stories
+ * without mutating anything. `findById` is owner-scoped and returns `null`
+ * for both an unknown id and one owned by another user — so a story that
+ * isn't live-and-owned always reports `new`, never leaking its existence.
+ */
+export async function planImport(
+  req: Request,
+  plan: ImportPlanRequest,
+): Promise<ImportPlanResponse> {
+  const storyRepo = createStoryRepo(req);
+  const stories = await Promise.all(
+    plan.stories.map(async ({ id, snapshotUpdatedAt }) => {
+      const live = await storyRepo.findById(id);
+      if (!live) return { id, status: 'new' as const };
+      const liveMax = await storyRepo.contentUpdatedAtMax(id);
+      const status: ImportPlanResponse['stories'][number]['status'] =
+        liveMax.getTime() <= new Date(snapshotUpdatedAt).getTime() ? 'unchanged' : 'conflict';
+      return { id, status };
+    }),
+  );
+  return { stories };
+}
 
 export async function runImport(req: Request, file: ImportFile): Promise<ImportResult> {
   const userId = req.user!.id;

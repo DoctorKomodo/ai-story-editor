@@ -264,3 +264,97 @@ describe('POST /api/users/me/import', () => {
     expect(sixth.status).toBe(429);
   });
 });
+
+describe('POST /api/users/me/import/plan', () => {
+  beforeEach(resetDb);
+  afterEach(resetDb);
+
+  it('401s without a session', async () => {
+    const res = await request(app)
+      .post('/api/users/me/import/plan')
+      .set('Origin', TEST_ORIGIN)
+      .send({ stories: [] });
+    expect(res.status).toBe(401);
+  });
+
+  it('reports new for an id with no live match', async () => {
+    const { agent } = await registerAndLogin({ username: 'plan-new-user' });
+    const res = await agent
+      .post('/api/users/me/import/plan')
+      .set('Origin', TEST_ORIGIN)
+      .send({
+        stories: [{ id: 'does-not-exist-anywhere', snapshotUpdatedAt: '2026-06-24T12:00:00.000Z' }],
+      });
+    expect(res.status).toBe(200);
+    expect(res.body.stories).toEqual([{ id: 'does-not-exist-anywhere', status: 'new' }]);
+  });
+
+  it('reports unchanged when the snapshot matches the live subtree max, conflict once it has moved on', async () => {
+    const { agent } = await registerAndLogin({ username: 'plan-buckets-user' });
+    const story = await agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Snapshot Story' });
+    const storyId = story.body.story.id as string;
+    const firstExport = (await agent.get('/api/users/me/export')).body;
+    const snapshotUpdatedAt = firstExport.stories[0].snapshotUpdatedAt as string;
+
+    const unchangedRes = await agent
+      .post('/api/users/me/import/plan')
+      .set('Origin', TEST_ORIGIN)
+      .send({ stories: [{ id: storyId, snapshotUpdatedAt }] });
+    expect(unchangedRes.status).toBe(200);
+    expect(unchangedRes.body.stories).toEqual([{ id: storyId, status: 'unchanged' }]);
+
+    // Ensure a strictly later timestamp on the next write before mutating,
+    // so the subtree max is unambiguously past the stale snapshot.
+    await new Promise((r) => setTimeout(r, 5));
+    await agent
+      .patch(`/api/stories/${storyId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Snapshot Story, edited' });
+
+    const conflictRes = await agent
+      .post('/api/users/me/import/plan')
+      .set('Origin', TEST_ORIGIN)
+      .send({ stories: [{ id: storyId, snapshotUpdatedAt }] });
+    expect(conflictRes.status).toBe(200);
+    expect(conflictRes.body.stories).toEqual([{ id: storyId, status: 'conflict' }]);
+  });
+
+  it("does not leak another user's story id — reports new instead of unchanged/conflict", async () => {
+    const owner = await registerAndLogin({ username: 'plan-owner-user' });
+    const story = await owner.agent
+      .post('/api/stories')
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: "Owner's Story" });
+    const storyId = story.body.story.id as string;
+    const ownerExport = (await owner.agent.get('/api/users/me/export')).body;
+    const snapshotUpdatedAt = ownerExport.stories[0].snapshotUpdatedAt as string;
+
+    const intruder = await registerAndLogin({ username: 'plan-intruder-user' });
+    const res = await intruder.agent
+      .post('/api/users/me/import/plan')
+      .set('Origin', TEST_ORIGIN)
+      .send({ stories: [{ id: storyId, snapshotUpdatedAt }] });
+    expect(res.status).toBe(200);
+    expect(res.body.stories).toEqual([{ id: storyId, status: 'new' }]);
+  });
+
+  it('rate-limiter fires 429 on the 6th plan request within the window (shared with /import)', async () => {
+    const { agent } = await registerAndLogin({ username: 'plan-ratelimit-user' });
+    const payload = { stories: [] };
+    for (let i = 0; i < 5; i++) {
+      const res = await agent
+        .post('/api/users/me/import/plan')
+        .set('Origin', TEST_ORIGIN)
+        .send(payload);
+      expect(res.status).toBe(200);
+    }
+    const sixth = await agent
+      .post('/api/users/me/import/plan')
+      .set('Origin', TEST_ORIGIN)
+      .send(payload);
+    expect(sixth.status).toBe(429);
+  });
+});
