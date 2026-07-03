@@ -1,47 +1,52 @@
 import { type JSX, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { type ImportFile, importSchema } from 'story-editor-shared';
-import { useExportBackup, useImportBackup } from '@/hooks/useBackup';
+import {
+  type ImportFile,
+  type ImportResolution,
+  type ImportResult,
+  importSchema,
+} from 'story-editor-shared';
+import { useExportBackup, useImportBackup, useImportPlan } from '@/hooks/useBackup';
 
-const CONFIRM_PHRASE = 'replace everything';
+const CONFIRM_PHRASE = 'replace these stories';
+
+type Bucket = 'new' | 'unchanged' | 'conflict';
+
+interface StoryRow {
+  index: number;
+  title: string;
+  id: string | undefined;
+  bucket: Bucket;
+}
+
+const BUCKET_LABEL: Record<Bucket, string> = {
+  new: 'New',
+  unchanged: 'Unchanged',
+  conflict: 'Conflict',
+};
+
+function defaultResolutionFor(bucket: Bucket): ImportResolution {
+  return bucket === 'unchanged' ? 'skip' : 'create';
+}
 
 export function SettingsDataTab(): JSX.Element {
   const confirmId = useId();
   const navigate = useNavigate();
   const exporter = useExportBackup();
+  const importPlan = useImportPlan();
   const importer = useImportBackup();
+
   const [staged, setStaged] = useState<ImportFile | null>(null);
-  const [parseError, setParseError] = useState<string | null>(null);
+  const [rows, setRows] = useState<StoryRow[]>([]);
+  const [resolutions, setResolutions] = useState<Record<number, ImportResolution>>({});
+  const [fileError, setFileError] = useState<string | null>(null);
   const [phrase, setPhrase] = useState('');
   const [safetyBackup, setSafetyBackup] = useState(true);
   const [restoreError, setRestoreError] = useState<string | null>(null);
+  const [result, setResult] = useState<ImportResult | null>(null);
+  const [resultTitles, setResultTitles] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [fileName, setFileName] = useState('');
-
-  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
-    setParseError(null);
-    setRestoreError(null);
-    setStaged(null);
-    setPhrase('');
-    const f = e.target.files?.[0];
-    if (!f) {
-      setFileName('');
-      return;
-    }
-    setFileName(f.name);
-    try {
-      const parsed = importSchema.safeParse(JSON.parse(await f.text()));
-      if (!parsed.success) {
-        setParseError('That file is not a valid Inkwell backup.');
-        clearFileSelection();
-        return;
-      }
-      setStaged(parsed.data);
-    } catch {
-      setParseError('Could not read that file as JSON.');
-      clearFileSelection();
-    }
-  }
 
   // Clear the displayed filename and reset the native input so re-picking the
   // same (rejected) file still re-fires onChange.
@@ -50,12 +55,93 @@ export function SettingsDataTab(): JSX.Element {
     if (fileRef.current) fileRef.current.value = '';
   }
 
+  function resetForNewFile(): void {
+    setFileError(null);
+    setRestoreError(null);
+    setResult(null);
+    setResultTitles([]);
+    setStaged(null);
+    setRows([]);
+    setResolutions({});
+    setPhrase('');
+  }
+
+  async function onFileChange(e: React.ChangeEvent<HTMLInputElement>): Promise<void> {
+    resetForNewFile();
+    const f = e.target.files?.[0];
+    if (!f) {
+      setFileName('');
+      return;
+    }
+    setFileName(f.name);
+
+    let parsed: ImportFile;
+    try {
+      const parseResult = importSchema.safeParse(JSON.parse(await f.text()));
+      if (!parseResult.success) {
+        setFileError('That file is not a valid Inkwell backup.');
+        clearFileSelection();
+        return;
+      }
+      parsed = parseResult.data;
+    } catch {
+      setFileError('Could not read that file as JSON.');
+      clearFileSelection();
+      return;
+    }
+
+    setStaged(parsed);
+
+    // Only stories carrying BOTH fields can be matched against live data —
+    // everything else (legacy files, or a story missing one of the two)
+    // buckets as `new` without a round trip.
+    const planCandidates = parsed.stories
+      .map((s, index) => ({ index, id: s.id, snapshotUpdatedAt: s.snapshotUpdatedAt }))
+      .filter(
+        (s): s is { index: number; id: string; snapshotUpdatedAt: string } =>
+          s.id !== undefined && s.snapshotUpdatedAt !== undefined,
+      );
+
+    let statusById = new Map<string, Bucket>();
+    if (planCandidates.length > 0) {
+      try {
+        const plan = await importPlan.mutateAsync({
+          stories: planCandidates.map(({ id, snapshotUpdatedAt }) => ({ id, snapshotUpdatedAt })),
+        });
+        statusById = new Map(plan.stories.map((s) => [s.id, s.status]));
+      } catch {
+        setFileError('Could not check this file against your existing stories. Please try again.');
+        clearFileSelection();
+        setStaged(null);
+        return;
+      }
+    }
+
+    const newRows: StoryRow[] = parsed.stories.map((s, index) => ({
+      index,
+      title: s.title,
+      id: s.id,
+      bucket: s.id ? (statusById.get(s.id) ?? 'new') : 'new',
+    }));
+    setRows(newRows);
+    setResolutions(
+      Object.fromEntries(newRows.map((r) => [r.index, defaultResolutionFor(r.bucket)])),
+    );
+  }
+
+  function setResolutionFor(index: number, value: ImportResolution): void {
+    setResolutions((prev) => ({ ...prev, [index]: value }));
+  }
+
+  const hasReplace = Object.values(resolutions).some((r) => r === 'replace');
+
   async function onRestore(): Promise<void> {
     if (!staged) return;
     setRestoreError(null);
 
     // A failed safety export aborts the restore — never delete content we couldn't back up.
-    if (safetyBackup) {
+    // Only relevant when a replace is in play; create/skip never delete anything.
+    if (hasReplace && safetyBackup) {
       try {
         await exporter.download();
       } catch {
@@ -66,8 +152,15 @@ export function SettingsDataTab(): JSX.Element {
       }
     }
 
+    const resolutionsPayload: Record<string, ImportResolution> = {};
+    for (const row of rows) {
+      if (row.id)
+        resolutionsPayload[row.id] = resolutions[row.index] ?? defaultResolutionFor(row.bucket);
+    }
+
+    let outcome: ImportResult;
     try {
-      await importer.mutateAsync({ file: staged });
+      outcome = await importer.mutateAsync({ file: staged, resolutions: resolutionsPayload });
     } catch (err) {
       setRestoreError(
         err instanceof Error && err.message
@@ -77,20 +170,28 @@ export function SettingsDataTab(): JSX.Element {
       return;
     }
 
+    setResult(outcome);
+    setResultTitles(rows.map((r) => r.title));
     setStaged(null);
+    setRows([]);
+    setResolutions({});
     setFileName('');
     setPhrase('');
     if (fileRef.current) fileRef.current.value = '';
-    navigate('/');
   }
 
-  const canRestore = staged !== null && phrase === CONFIRM_PHRASE && !importer.isPending;
-  const counts = staged
-    ? {
-        stories: staged.stories.length,
-        chapters: staged.stories.reduce((n, s) => n + s.chapters.length, 0),
-      }
-    : null;
+  const canRestore =
+    staged !== null &&
+    !importPlan.isPending &&
+    !importer.isPending &&
+    (!hasReplace || phrase === CONFIRM_PHRASE);
+
+  const outcomes = result?.outcomes ?? [];
+  const createdCount = outcomes.filter((o) => o.action === 'created').length;
+  const replacedCount = outcomes.filter((o) => o.action === 'replaced').length;
+  const skippedCount = outcomes.filter((o) => o.action === 'skipped').length;
+  const failedOutcome = outcomes.find((o) => o.action === 'failed');
+  const notAttemptedCount = result ? resultTitles.length - outcomes.length : 0;
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,12 +218,11 @@ export function SettingsDataTab(): JSX.Element {
 
       <section className="flex flex-col gap-3" data-testid="data-section-restore">
         <header>
-          <h3 className="m-0 font-serif text-[14px] font-medium text-ink">
-            Restore (replaces everything)
-          </h3>
+          <h3 className="m-0 font-serif text-[14px] font-medium text-ink">Import backup</h3>
           <p className="mt-[2px] text-[12px] text-ink-4 font-sans">
-            Import a previously exported Inkwell backup. This permanently deletes all current
-            stories and content first.
+            Import a previously exported Inkwell backup. Importing never deletes stories that
+            aren&rsquo;t in the file — matched stories are imported as a new copy unless you
+            explicitly choose to replace them.
           </p>
         </header>
 
@@ -154,71 +254,112 @@ export function SettingsDataTab(): JSX.Element {
             </div>
           </div>
 
-          {parseError ? (
+          {fileError ? (
             <p
               role="alert"
               data-testid="data-restore-error"
               className="text-[12px] font-mono text-[color:var(--danger)]"
             >
-              {parseError}
+              {fileError}
             </p>
           ) : null}
 
-          {counts ? (
+          {importPlan.isPending ? (
+            <p data-testid="data-restore-plan-pending" className="text-[12px] font-sans text-ink-4">
+              Checking this file against your existing stories…
+            </p>
+          ) : null}
+
+          {staged ? (
             <div
               data-testid="data-restore-summary"
-              className="rounded-[var(--radius)] border border-line bg-bg p-3 flex flex-col gap-1"
+              className="rounded-[var(--radius)] border border-line bg-bg p-3 flex flex-col gap-2"
             >
               <p className="text-[12px] font-sans text-ink-2">
                 This file contains{' '}
                 <strong className="text-ink">
-                  {counts.stories} {counts.stories === 1 ? 'story' : 'stories'}
-                </strong>{' '}
-                and{' '}
-                <strong className="text-ink">
-                  {counts.chapters} {counts.chapters === 1 ? 'chapter' : 'chapters'}
+                  {staged.stories.length} {staged.stories.length === 1 ? 'story' : 'stories'}
                 </strong>
                 .
               </p>
+
+              {rows.map((row) => (
+                <div
+                  key={row.index}
+                  data-testid={`data-restore-row-${row.index}`}
+                  className="flex items-center justify-between gap-3"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-[12px] font-sans text-ink truncate">{row.title}</span>
+                    <span
+                      data-testid={`data-restore-bucket-${row.index}`}
+                      className="text-[11px] font-mono uppercase text-ink-4 px-1.5 py-0.5 rounded-[var(--radius)] border border-line shrink-0"
+                    >
+                      {BUCKET_LABEL[row.bucket]}
+                    </span>
+                  </div>
+                  <select
+                    data-testid={`data-restore-resolution-${row.index}`}
+                    value={resolutions[row.index] ?? defaultResolutionFor(row.bucket)}
+                    onChange={(e) => {
+                      setResolutionFor(row.index, e.target.value as ImportResolution);
+                    }}
+                    className="px-2 py-1 text-[12px] font-sans border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
+                  >
+                    <option value="create">
+                      {row.bucket === 'conflict' ? 'Keep both' : 'Import as new'}
+                    </option>
+                    {row.bucket !== 'new' ? (
+                      <option value="replace">Replace existing story</option>
+                    ) : null}
+                    <option value="skip">Skip</option>
+                  </select>
+                </div>
+              ))}
+            </div>
+          ) : null}
+
+          {hasReplace ? (
+            <>
+              <label className="flex items-center gap-2 text-[12px] text-ink-2 font-sans">
+                <input
+                  type="checkbox"
+                  data-testid="data-restore-safety"
+                  checked={safetyBackup}
+                  onChange={(e) => {
+                    setSafetyBackup(e.target.checked);
+                  }}
+                />
+                Download a safety backup of my current content first
+              </label>
+
               <p className="text-[12px] font-sans text-[color:var(--danger)]">
-                Restoring will permanently delete all current content.
+                Replacing a story permanently deletes its current content first.
                 {safetyBackup
                   ? ' A safety backup of your current content will be downloaded first.'
                   : ''}
               </p>
-            </div>
+
+              <div className="flex flex-col gap-1">
+                <label htmlFor={confirmId} className="text-[12px] font-medium text-ink-2">
+                  Type &ldquo;{CONFIRM_PHRASE}&rdquo; to confirm
+                </label>
+                <input
+                  id={confirmId}
+                  data-testid="data-restore-phrase"
+                  type="text"
+                  value={phrase}
+                  autoComplete="off"
+                  spellCheck={false}
+                  placeholder={CONFIRM_PHRASE}
+                  onChange={(e) => {
+                    setPhrase(e.target.value);
+                  }}
+                  className="w-64 px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
+                />
+              </div>
+            </>
           ) : null}
-
-          <label className="flex items-center gap-2 text-[12px] text-ink-2 font-sans">
-            <input
-              type="checkbox"
-              data-testid="data-restore-safety"
-              checked={safetyBackup}
-              onChange={(e) => {
-                setSafetyBackup(e.target.checked);
-              }}
-            />
-            Download a safety backup of my current content first
-          </label>
-
-          <div className="flex flex-col gap-1">
-            <label htmlFor={confirmId} className="text-[12px] font-medium text-ink-2">
-              Type &ldquo;{CONFIRM_PHRASE}&rdquo; to confirm
-            </label>
-            <input
-              id={confirmId}
-              data-testid="data-restore-phrase"
-              type="text"
-              value={phrase}
-              autoComplete="off"
-              spellCheck={false}
-              placeholder={CONFIRM_PHRASE}
-              onChange={(e) => {
-                setPhrase(e.target.value);
-              }}
-              className="w-48 px-3 py-2 text-[13px] font-mono border border-line rounded-[var(--radius)] bg-bg focus:outline-none focus:border-ink-3"
-            />
-          </div>
 
           <button
             type="button"
@@ -240,6 +381,46 @@ export function SettingsDataTab(): JSX.Element {
             >
               {restoreError}
             </p>
+          ) : null}
+
+          {result ? (
+            <div
+              data-testid="data-restore-result"
+              className="rounded-[var(--radius)] border border-line bg-bg p-3 flex flex-col gap-1"
+            >
+              <p className="text-[12px] font-sans text-ink-2">
+                Import finished: {createdCount} created, {replacedCount} replaced, {skippedCount}{' '}
+                skipped{failedOutcome ? ', 1 failed' : ''}.
+              </p>
+              {failedOutcome ? (
+                <p
+                  role="alert"
+                  data-testid="data-restore-result-failure"
+                  className="text-[12px] font-mono text-[color:var(--danger)]"
+                >
+                  Import stopped after &ldquo;
+                  {resultTitles[failedOutcome.index] ?? `story ${failedOutcome.index + 1}`}
+                  &rdquo; failed to import.
+                </p>
+              ) : null}
+              {notAttemptedCount > 0 ? (
+                <p
+                  data-testid="data-restore-result-not-attempted"
+                  className="text-[12px] font-sans text-ink-4"
+                >
+                  {notAttemptedCount} {notAttemptedCount === 1 ? 'story was' : 'stories were'} not
+                  attempted.
+                </p>
+              ) : null}
+              <button
+                type="button"
+                data-testid="data-restore-result-done"
+                onClick={() => navigate('/')}
+                className="w-fit px-3 py-1.5 text-[12px] rounded-[var(--radius)] bg-ink text-bg hover:bg-ink-2 transition-colors"
+              >
+                Go to library
+              </button>
+            </div>
           ) : null}
         </div>
       </section>

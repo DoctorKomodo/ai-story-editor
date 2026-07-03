@@ -1,7 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
-import type { ImportRequest, ImportResult } from 'story-editor-shared';
-import { importResultSchema } from 'story-editor-shared';
+import type {
+  ImportPlanRequest,
+  ImportPlanResponse,
+  ImportRequest,
+  ImportResult,
+} from 'story-editor-shared';
+import { importPlanResponseSchema, importResultSchema } from 'story-editor-shared';
 import { api, fetchExportBlob } from '@/lib/api';
 
 export function triggerDownload(blob: Blob, filename: string): void {
@@ -25,6 +30,24 @@ export function useExportBackup(): { download: () => Promise<void>; isPending: b
     }
   }
   return { download, isPending };
+}
+
+/**
+ * Preflight plan: matches the file's `{ id, snapshotUpdatedAt }` stories
+ * against the caller's live stories without mutating anything. Called once
+ * per file selection (see `SettingsDataTab`), never per keystroke/render —
+ * it shares its rate-limit bucket with `useImportBackup`.
+ */
+export function useImportPlan() {
+  return useMutation<ImportPlanResponse, Error, ImportPlanRequest>({
+    mutationFn: async (body) => {
+      const raw = await api<unknown>('/users/me/import/plan', {
+        method: 'POST',
+        body,
+      });
+      return importPlanResponseSchema.parse(raw);
+    },
+  });
 }
 
 export function useImportBackup() {
