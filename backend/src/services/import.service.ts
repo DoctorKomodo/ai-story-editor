@@ -83,13 +83,21 @@ async function importOneStory(
         if (removed) action = 'replaced';
       }
 
-      const story = await storyRepo.create({
-        title: s.title,
-        synopsis: s.synopsis ?? null,
-        genre: s.genre ?? null,
-        worldNotes: s.worldNotes ?? null,
-        targetWords: s.targetWords ?? null,
-      });
+      // A replace keeps the live story's id (we just deleted it, same tx), so
+      // an editor open on that story refetches the replaced content instead of
+      // 404ing into the "Could not load story" dead-end ([story-editor-f1t]).
+      // A create — including the forged/unknown-id fallback where remove()
+      // deleted nothing — never adopts the file's id.
+      const story = await storyRepo.create(
+        {
+          title: s.title,
+          synopsis: s.synopsis ?? null,
+          genre: s.genre ?? null,
+          worldNotes: s.worldNotes ?? null,
+          targetWords: s.targetWords ?? null,
+        },
+        action === 'replaced' && s.id ? { id: s.id } : undefined,
+      );
       counts.stories++;
 
       // storyRepo.create() does not write includePreviousChaptersInPrompt — the

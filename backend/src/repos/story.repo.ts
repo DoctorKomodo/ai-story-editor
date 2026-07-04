@@ -25,7 +25,12 @@ function resolveUserId(req: Request): string {
 }
 
 export function createStoryRepo(req: Request, client: PrismaClient = defaultPrisma) {
-  async function create(input: StoryCreateInput) {
+  // `opts.id` is repo-internal (not on any wire schema): the import-replace
+  // path reuses the id of the owned story it just deleted in the same
+  // transaction, so a replaced story keeps its identity — open editors, URLs,
+  // and history stay valid ([story-editor-f1t]; the e2i no-dead-end
+  // guarantee). Callers must never pass a client-supplied id.
+  async function create(input: StoryCreateInput, opts?: { id?: string }) {
     const userId = resolveUserId(req);
     const encCols = {
       ...writeEncrypted(req, 'title', input.title),
@@ -34,6 +39,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     };
     const row = await client.story.create({
       data: {
+        ...(opts?.id ? { id: opts.id } : {}),
         userId,
         genre: input.genre ?? null,
         targetWords: input.targetWords ?? null,

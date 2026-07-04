@@ -148,9 +148,11 @@ describe('POST /api/users/me/import', () => {
 
     const after = (await agent.get('/api/users/me/export')).body;
     expect(after.stories).toHaveLength(2);
-    expect(after.stories.some((s: { id: string }) => s.id === storyId)).toBe(false);
     const recreated = after.stories.find((s: { title: string }) => s.title === 'Original');
     expect(recreated.worldNotes).toBe('v1');
+    // The replaced story KEEPS its id ([story-editor-f1t]): an editor open on
+    // it refetches the replaced content instead of dead-ending on a 404.
+    expect(recreated.id).toBe(storyId);
     expect(after.stories.some((s: { id: string }) => s.id === sibling.body.story.id)).toBe(true);
   });
 
