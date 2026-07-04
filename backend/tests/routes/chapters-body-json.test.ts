@@ -187,6 +187,34 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     expect(p.content[0].text).toBe('one two three four five six seven');
   });
 
+  it('[9wk.4] PATCH bodyJson/expectedUpdatedAt on the CHAPTER route now 400s (cutover contract)', async () => {
+    const { agent, sessionId } = await registerAndLogin({ username: 'b10-cutover-400' });
+    const req = makeFakeReq(sessionId);
+    const story = await createStoryRepo(req).create({ title: 'Cutover contract' });
+    const storyId = story.id as string;
+
+    const created = await createChapterRepo(req).create({
+      storyId,
+      title: 'Chapter',
+      orderIndex: 0,
+    });
+    const chapterId = created.id as string;
+
+    const bodyRes = await agent
+      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ bodyJson: paragraphDoc('no longer accepted here') });
+    expect(bodyRes.status).toBe(400);
+    expect(bodyRes.body.error.code).toBe('validation_error');
+
+    const versionRes = await agent
+      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Fine', expectedUpdatedAt: new Date().toISOString() });
+    expect(versionRes.status).toBe(400);
+    expect(versionRes.body.error.code).toBe('validation_error');
+  });
+
   it('text-only PATCH (title only, no bodyJson) leaves body and wordCount untouched [B3 regression]', async () => {
     const { agent, sessionId } = await registerAndLogin({ username: 'b10-text-only' });
     const req = makeFakeReq(sessionId);

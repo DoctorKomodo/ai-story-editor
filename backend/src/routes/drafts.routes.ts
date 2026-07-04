@@ -126,7 +126,7 @@ export function createActiveDraftRouter() {
 
 // ─── Router 3: draft-level CRUD + summary + summarise ────────────────────────
 
-const SummariseBody = z.object({ modelId: z.string().min(1) });
+const SummariseBody = z.strictObject({ modelId: z.string().min(1) });
 
 export function createDraftCrudRouter() {
   const router = Router();
