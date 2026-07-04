@@ -1,6 +1,6 @@
-import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app } from '../../src/index';
+import { registerAndLogin } from '../helpers/auth';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const NAME = 'Leak Proof';
@@ -23,7 +23,7 @@ describe('[AU13] BYOK no-leak proof', () => {
   let consoleSpy: ReturnType<typeof vi.spyOn>[];
 
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
 
     // Attach a fetch stub so Venice validation succeeds without network IO.
     vi.stubGlobal(
@@ -49,25 +49,15 @@ describe('[AU13] BYOK no-leak proof', () => {
   afterEach(async () => {
     for (const spy of consoleSpy) spy.mockRestore();
     vi.unstubAllGlobals();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
-  async function registerAndLogin(): Promise<ReturnType<typeof request.agent>> {
-    const agent = request.agent(app);
-    await agent
-      .post('/api/auth/register')
-      .set('Origin', 'http://localhost:3000')
-      .send({ name: NAME, username: USERNAME, password: PASSWORD });
-    const loginRes = await agent
-      .post('/api/auth/login')
-      .set('Origin', 'http://localhost:3000')
-      .send({ username: USERNAME, password: PASSWORD });
-    expect(loginRes.status).toBe(200);
-    return agent;
-  }
-
   it('(a) never logs the raw Venice key during the full PUT → GET → DELETE cycle', async () => {
-    const agent = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     await agent
       .put('/api/users/me/venice-key')
@@ -87,7 +77,11 @@ describe('[AU13] BYOK no-leak proof', () => {
   });
 
   it('(b) never leaks the key via any route response (PUT success, GET, DELETE, error paths)', async () => {
-    const agent = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     const putRes = await agent
       .put('/api/users/me/venice-key')
@@ -109,7 +103,11 @@ describe('[AU13] BYOK no-leak proof', () => {
   });
 
   it('(c) never returns ciphertext field names in any response', async () => {
-    const agent = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     await agent
       .put('/api/users/me/venice-key')
@@ -130,7 +128,11 @@ describe('[AU13] BYOK no-leak proof', () => {
   });
 
   it('(d) the stored ciphertext in the DB is unrelated to the plaintext key', async () => {
-    const agent = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     await agent
       .put('/api/users/me/venice-key')
@@ -155,7 +157,11 @@ describe('[AU13] BYOK no-leak proof', () => {
       vi.fn(async () => mockResponse(401, { error: 'invalid' })),
     );
 
-    const agent = await registerAndLogin();
+    const { agent } = await registerAndLogin({
+      username: USERNAME,
+      password: PASSWORD,
+      name: NAME,
+    });
 
     const res = await agent
       .put('/api/users/me/venice-key')

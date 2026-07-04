@@ -15,18 +15,15 @@ import {
 } from 'story-editor-shared';
 import { z } from 'zod';
 import { badRequest } from '../lib/bad-request';
+import { notFound } from '../lib/http-errors';
 import { respond } from '../lib/respond';
 import { serializeChapter, serializeChapterMeta } from '../lib/serialize';
-import {
-  logVeniceErrorDev,
-  mapVeniceError,
-  type VeniceRequestSnapshot,
-} from '../lib/venice-errors';
+import { logVeniceErrorDev, mapVeniceError } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
 import {
-  ChapterNotOwnedError,
+  ChapterVersionConflictError,
   createChapterRepo,
   type RepoChapterUpdateInput,
 } from '../repos/chapter.repo';
@@ -34,15 +31,9 @@ import { getDekFromRequest } from '../services/content-crypto.service';
 import { resolvePrompt } from '../services/prompt.service';
 import { computeWordCount, tipTapJsonToText } from '../services/tiptap-text';
 import { veniceModelsService } from '../services/venice.models.service';
-import {
-  buildVeniceParams,
-  hydrateUserSettings,
-  logVeniceParams,
-  promptCacheKey,
-  resolveReasoningEnabled,
-  resolveTextGenWithFallback,
-} from '../services/venice-call.service';
+import { hydrateUserSettings } from '../services/venice-call.service';
 import { veniceKeyService } from '../services/venice-key.service';
+import { callVeniceCompletion, prepareVeniceCall } from '../services/venice-stream.service';
 
 // [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
 // After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
@@ -148,16 +139,8 @@ export function createChaptersRouter() {
         seenOrders.add(item.orderIndex);
       }
 
-      try {
-        await createChapterRepo(req).reorder(storyId, body.chapters);
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof ChapterNotOwnedError) {
-          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
-          return;
-        }
-        throw err;
-      }
+      await createChapterRepo(req).reorder(storyId, body.chapters);
+      res.status(204).send();
     }),
   );
 
@@ -173,10 +156,7 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
       try {
         const chapter = await createChapterRepo(req).findById(chapterId);
-        if (!chapter || chapter.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!chapter || chapter.storyId !== storyId) throw notFound();
         respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
       } catch (err) {
         next(err);
@@ -193,10 +173,7 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
 
       const existing = await createChapterRepo(req).findById(chapterId);
-      if (!existing || existing.storyId !== storyId) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!existing || existing.storyId !== storyId) throw notFound();
 
       const input: RepoChapterUpdateInput = {};
       if (body.title !== undefined) input.title = body.title;
@@ -206,11 +183,25 @@ export function createChaptersRouter() {
         input.wordCount = computeWordCount(body.bodyJson);
       }
 
-      const chapter = await createChapterRepo(req).update(chapterId, input);
-      if (!chapter) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
+      let chapter: Awaited<ReturnType<ReturnType<typeof createChapterRepo>['update']>>;
+      try {
+        chapter = await createChapterRepo(req).update(
+          chapterId,
+          input,
+          body.expectedUpdatedAt !== undefined
+            ? { expectedUpdatedAt: new Date(body.expectedUpdatedAt) }
+            : undefined,
+        );
+      } catch (err) {
+        if (err instanceof ChapterVersionConflictError) {
+          res
+            .status(409)
+            .json({ error: { message: 'Chapter was modified elsewhere', code: 'conflict' } });
+          return;
+        }
+        throw err;
       }
+      if (!chapter) throw notFound();
       respond(chapterResponseSchema, res, { chapter: serializeChapter(chapter) });
     }),
   );
@@ -224,15 +215,9 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
       try {
         const existing = await createChapterRepo(req).findById(chapterId);
-        if (!existing || existing.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!existing || existing.storyId !== storyId) throw notFound();
         const ok = await createChapterRepo(req).remove(chapterId);
-        if (!ok) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!ok) throw notFound();
         res.status(204).send();
       } catch (err) {
         next(err);
@@ -248,10 +233,7 @@ export function createChaptersRouter() {
       const chapterId = req.params.chapterId as string;
 
       const updated = await createChapterRepo(req).update(chapterId, { summaryJson: body });
-      if (!updated) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
+      if (!updated) throw notFound('Chapter not found');
       respond(chapterSummaryResponseSchema, res, {
         summary: updated.summary!,
         summaryUpdatedAt: updated.summaryUpdatedAt?.toISOString() ?? null,
@@ -271,10 +253,7 @@ export function createChaptersRouter() {
       const storyId = req.params.storyId as string;
 
       const chapter = await createChapterRepo(req).findById(chapterId);
-      if (!chapter || chapter.storyId !== storyId) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
+      if (!chapter || chapter.storyId !== storyId) throw notFound('Chapter not found');
 
       const plaintext = tipTapJsonToText(chapter.bodyJson ?? null).trim();
       if (plaintext.length === 0 || chapter.wordCount === 0) {
@@ -308,69 +287,37 @@ export function createChaptersRouter() {
 
       const systemMessage = `${resolvePrompt(userPrompts, 'system')}\n\n${resolvePrompt(userPrompts, 'summariseChapter')}`;
 
-      const venice_parameters = buildVeniceParams({
-        base: {},
-        supportsReasoning: modelInfo.supportsReasoning === true,
-        includeVeniceSystemPrompt,
-      });
-      const reasoningEnabled = resolveReasoningEnabled(settings, modelInfo);
-
-      const resolved = resolveTextGenWithFallback(
-        settings,
-        modelInfo,
-        modelInfo.maxCompletionTokens,
-      );
-
-      logVeniceParams({
+      const prepared = prepareVeniceCall({
         route: 'chapter-summarise',
         userId,
         modelId: body.modelId,
-        resolved,
+        messages: [
+          { role: 'system', content: systemMessage },
+          { role: 'user', content: plaintext },
+        ],
+        settings,
+        baseVeniceParams: {},
+        fallbackMaxCompletionTokens: modelInfo.maxCompletionTokens,
+        cacheKeyParts: [chapterId, body.modelId],
         action: 'summariseChapter',
         modelCap: modelInfo.maxCompletionTokens,
-        reasoningEnabled,
+        includeVeniceSystemPrompt,
+        responseFormat: {
+          type: 'json_schema',
+          json_schema: {
+            name: 'ChapterSummary',
+            schema: chapterSummaryJsonSchema(),
+            strict: true,
+          },
+        },
+        snapshotResponseFormat: { type: 'json_schema', name: 'ChapterSummary' },
       });
-
-      const cacheKey = promptCacheKey(chapterId, body.modelId);
-
-      const snapshot: VeniceRequestSnapshot = {
-        model: body.modelId,
-        messageCount: 2,
-        systemMessagePreview: systemMessage,
-        userMessagePreview: plaintext,
-        venice_parameters,
-        response_format: { type: 'json_schema', name: 'ChapterSummary' },
-        promptCacheKey: cacheKey,
-        temperature: resolved.temperature,
-        top_p: resolved.top_p,
-        max_completion_tokens: resolved.max_completion_tokens,
-      };
+      const snapshot = prepared.snapshot;
 
       const client = await veniceKeyService.getClient(getDekFromRequest(req), userId);
-      let raw: { choices?: Array<{ message?: { content?: string } }> };
+      let raw: Awaited<ReturnType<typeof callVeniceCompletion>>;
       try {
-        const completion = await client.chat.completions.create({
-          model: body.modelId,
-          messages: [
-            { role: 'system', content: systemMessage },
-            { role: 'user', content: plaintext },
-          ],
-          response_format: {
-            type: 'json_schema',
-            json_schema: {
-              name: 'ChapterSummary',
-              schema: chapterSummaryJsonSchema(),
-              strict: true,
-            },
-          },
-          temperature: resolved.temperature,
-          top_p: resolved.top_p,
-          max_completion_tokens: resolved.max_completion_tokens,
-          prompt_cache_key: cacheKey,
-          venice_parameters,
-          ...(reasoningEnabled ? {} : { reasoning: { enabled: false } }),
-        } as unknown as Parameters<typeof client.chat.completions.create>[0]);
-        raw = completion as unknown as typeof raw;
+        raw = await callVeniceCompletion({ client, prepared });
       } catch (err) {
         logVeniceErrorDev({ err, ctx: { userId, route: 'chapter-summarise' }, request: snapshot });
         if (mapVeniceError(err, res, { userId, route: 'chapter-summarise' })) return;
@@ -398,10 +345,7 @@ export function createChaptersRouter() {
       }
 
       const updated = await createChapterRepo(req).update(chapterId, { summaryJson: parsed });
-      if (!updated) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
+      if (!updated) throw notFound('Chapter not found');
       respond(chapterSummaryResponseSchema, res, {
         summary: updated.summary!,
         summaryUpdatedAt: updated.summaryUpdatedAt?.toISOString() ?? null,

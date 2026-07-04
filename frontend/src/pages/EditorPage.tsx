@@ -32,6 +32,7 @@ import type { Chapter } from 'story-editor-shared';
 import { AccountPrivacyModal } from '@/components/AccountPrivacyModal';
 import { AppShell } from '@/components/AppShell';
 import { CastTab } from '@/components/CastTab';
+import { ChapterConflictBanner } from '@/components/ChapterConflictBanner';
 import { ChapterList } from '@/components/ChapterList';
 import { ChapterSummaryPopover } from '@/components/ChapterSummaryPopover';
 import { ChapterSummarySheet } from '@/components/ChapterSummarySheet';
@@ -43,6 +44,7 @@ import { CharacterSheet } from '@/components/CharacterSheet';
 import { ChatPanel } from '@/components/ChatPanel';
 import { ChatTab } from '@/components/ChatTab';
 import { ContinueWriting } from '@/components/ContinueWriting';
+import { DraftRestoreBanner } from '@/components/DraftRestoreBanner';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
 import { InlineAIResult } from '@/components/InlineAIResult';
@@ -58,14 +60,17 @@ import { TopBar } from '@/components/TopBar';
 import { type RunArgs, useAICompletion } from '@/hooks/useAICompletion';
 import { useAuth } from '@/hooks/useAuth';
 import { useAutosave } from '@/hooks/useAutosave';
+import { useChapterDraft } from '@/hooks/useChapterDraft';
 import {
   chapterQueryKey,
+  isChapterConflictError,
   useChapterQuery,
   useChaptersQuery,
   useUpdateChapterMutation,
 } from '@/hooks/useChapters';
 import { useCharactersQuery } from '@/hooks/useCharacters';
 import { useStoryQuery } from '@/hooks/useStories';
+import { useUnloadFlush } from '@/hooks/useUnloadFlush';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { useVeniceAccountQuery } from '@/hooks/useVeniceAccount';
 import { ApiError, api } from '@/lib/api';
@@ -106,6 +111,7 @@ export function EditorPage(): JSX.Element {
 
   const username = useSessionStore((s) => s.user?.username) ?? '';
   const displayName = useSessionStore((s) => s.user?.name) ?? null;
+  const userId = useSessionStore((s) => s.user?.id) ?? null;
   const { logout } = useAuth();
   const handleSignOut = useCallback((): void => {
     void logout().finally(() => {
@@ -189,6 +195,30 @@ export function EditorPage(): JSX.Element {
   const updateChapter = useUpdateChapterMutation();
   const [draftBodyJson, setDraftBodyJson] = useState<JSONContent | null>(null);
 
+  // Local (device-only, plaintext) chapter-draft persistence — survives tab
+  // close, crash, session expiry, and re-login. See plan "Design decisions"
+  // §1 for the accepted plaintext-on-device trade.
+  const chapterDraft = useChapterDraft({
+    userId,
+    storyId: story?.id ?? null,
+    chapterId: activeChapterId,
+    serverUpdatedAt: chapterQuery.data?.updatedAt ?? null,
+    serverLoaded: chapterQuery.data !== undefined,
+  });
+
+  // Non-null while a restored (or reloaded-after-conflict) draft body must
+  // remount Paper with content that isn't `chapterQuery.data.bodyJson` — the
+  // `key` includes `nonce` so Paper tears down and re-seeds even when
+  // `activeChapterId` hasn't changed.
+  const [restoreSeed, setRestoreSeed] = useState<{
+    nonce: number;
+    bodyJson: JSONContent;
+  } | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChapterId is the reset trigger — the effect must re-run on chapter switch even though it doesn't read the id.
+  useEffect(() => {
+    setRestoreSeed(null);
+  }, [activeChapterId]);
+
   // [T8.1] Seed the local draft exactly once per active-chapter switch — not
   // on every chapterQuery.data reference change. The earlier shape (deps:
   // [activeChapterId, chapterQuery.data]) was racy: typing into a freshly-
@@ -220,6 +250,25 @@ export function EditorPage(): JSX.Element {
     setDraftBodyJson(seed);
   }, [activeChapterId, chapterQuery.data]);
 
+  // Last-seen server `updatedAt` — sent as the PATCH's `expectedUpdatedAt`
+  // precondition. Kept fresh from the single-chapter cache, which
+  // `useUpdateChapterMutation`'s `onSuccess` also writes after every save.
+  const serverUpdatedAtRef = useRef<string | null>(null);
+  useEffect(() => {
+    serverUpdatedAtRef.current = chapterQuery.data?.updatedAt ?? null;
+  }, [chapterQuery.data?.updatedAt]);
+
+  // True when the last save was rejected 409 (another tab/device moved the
+  // chapter since we last read it). While true, autosave is inert — the
+  // local draft (already persisted by `onDirty`) is the safety net, and the
+  // conflict banner offers Reload / Overwrite.
+  const [conflict, setConflict] = useState(false);
+  const [conflictActionBusy, setConflictActionBusy] = useState(false);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChapterId is the reset trigger — the effect must re-run on chapter switch even though it doesn't read the id.
+  useEffect(() => {
+    setConflict(false);
+  }, [activeChapterId]);
+
   const handleSave = useCallback(
     async (value: JSONContent): Promise<void> => {
       if (!story?.id || !activeChapterId) return;
@@ -227,16 +276,29 @@ export function EditorPage(): JSX.Element {
       // schema is `.strict()` and rejects the extra key with 400, and the
       // chapter route already recomputes wordCount server-side from
       // `bodyJson` (see `chapters.routes.ts:242`).
-      await updateChapter.mutateAsync({
-        storyId: story.id,
-        chapterId: activeChapterId,
-        input: { bodyJson: value },
-      });
+      try {
+        await updateChapter.mutateAsync({
+          storyId: story.id,
+          chapterId: activeChapterId,
+          input: {
+            bodyJson: value,
+            ...(serverUpdatedAtRef.current !== null
+              ? { expectedUpdatedAt: serverUpdatedAtRef.current }
+              : {}),
+          },
+        });
+      } catch (err) {
+        if (isChapterConflictError(err)) setConflict(true);
+        throw err;
+      }
     },
     [story?.id, activeChapterId, updateChapter],
   );
 
   const autosave = useAutosave<JSONContent>({
+    // Payload stays live (not forced null) during a conflict — the user's
+    // continued typing must keep flowing into the local draft via `onDirty`
+    // below. `suspended` is what stops the SERVER save; see that option.
     payload: draftBodyJson,
     save: handleSave,
     // Treat each chapter as its own document — switching chapters resets the
@@ -245,7 +307,61 @@ export function EditorPage(): JSX.Element {
     // save was in flight during the switch, could land the new body under the
     // new chapter id via the pending-follow-up branch).
     resetKey: activeChapterId,
+    // Persists a plaintext draft to IndexedDB on every dirty change and
+    // deletes it once a save is confirmed (see useChapterDraft). Keeps firing
+    // while `suspended`, so keystrokes typed during an unresolved conflict
+    // still land on disk.
+    onDirty: chapterDraft.persistDraft,
+    onSaved: chapterDraft.clearDraft,
+    // While a conflict is unresolved, suppress the debounced/retry SERVER
+    // save (and `getPendingPayload`, so the unload-time keepalive flush also
+    // stays suppressed) — the local draft above is the safety net until the
+    // user resolves via Reload or Overwrite. Neither send an unconditional
+    // clobbering PATCH: Reload discards local edits in favor of the server's
+    // version, Overwrite is one explicit user-sanctioned PATCH.
+    suspended: conflict,
   });
+
+  const handleConflictReload = useCallback(async (): Promise<void> => {
+    setConflictActionBusy(true);
+    try {
+      const res = await chapterQuery.refetch();
+      const serverBody = (res.data?.bodyJson as JSONContent | null) ?? {
+        type: 'doc',
+        content: [{ type: 'paragraph' }],
+      };
+      setConflict(false);
+      setRestoreSeed({ nonce: Date.now(), bodyJson: serverBody });
+      setDraftBodyJson(serverBody);
+    } finally {
+      setConflictActionBusy(false);
+    }
+  }, [chapterQuery]);
+
+  const handleConflictOverwrite = useCallback(async (): Promise<void> => {
+    if (!story?.id || activeChapterId === null || draftBodyJson === null) return;
+    setConflictActionBusy(true);
+    try {
+      // Deliberately WITHOUT `expectedUpdatedAt` — explicit user-sanctioned
+      // last-write-wins.
+      await updateChapter.mutateAsync({
+        storyId: story.id,
+        chapterId: activeChapterId,
+        input: { bodyJson: draftBodyJson },
+      });
+      setConflict(false);
+    } finally {
+      setConflictActionBusy(false);
+    }
+  }, [story?.id, activeChapterId, draftBodyJson, updateChapter]);
+
+  useUnloadFlush(
+    useCallback(() => {
+      const pending = autosave.getPendingPayload();
+      if (pending === null || !story?.id || activeChapterId === null) return null;
+      return { storyId: story.id, chapterId: activeChapterId, bodyJson: pending };
+    }, [autosave.getPendingPayload, story?.id, activeChapterId]),
+  );
 
   const handlePaperUpdate = useCallback(
     ({ bodyJson }: { bodyJson: JSONContent; wordCount: number }): void => {
@@ -572,26 +688,67 @@ export function EditorPage(): JSX.Element {
             <FormatBar editor={editor} />
             <div className="flex-1 overflow-y-auto">
               {activeChapterId ? (
-                <Paper
-                  // Key on chapterId so switching chapters tears down the
-                  // previous TipTap editor and mounts a fresh one seeded
-                  // with the new chapter's body. Without this, useEditor
-                  // retains its initial content across chapter switches and
-                  // the in-place setContent effect skips empty bodies — the
-                  // user sees the old chapter's text under the new title.
-                  key={activeChapterId}
-                  storyId={story.id}
-                  storyTitle={story.title}
-                  storyGenre={story.genre}
-                  storyWordCount={totalWordCount}
-                  chapterId={activeChapterId}
-                  chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
-                  chapterTitle={activeChapter?.title ?? null}
-                  initialBodyJson={(chapterQuery.data?.bodyJson as JSONContent | null) ?? null}
-                  onUpdate={handlePaperUpdate}
-                  onReady={handleEditorReady}
-                  onChapterTitleChange={handleChapterTitleChange}
-                />
+                <>
+                  {conflict ? (
+                    <div className="mx-auto w-full max-w-[720px] px-6 pt-4">
+                      <ChapterConflictBanner
+                        onReload={() => {
+                          void handleConflictReload();
+                        }}
+                        onOverwrite={() => {
+                          void handleConflictOverwrite();
+                        }}
+                        busy={conflictActionBusy}
+                      />
+                    </div>
+                  ) : chapterDraft.pendingDraft !== null ? (
+                    <div className="mx-auto w-full max-w-[720px] px-6 pt-4">
+                      <DraftRestoreBanner
+                        savedAt={chapterDraft.pendingDraft.savedAt}
+                        onRestore={() => {
+                          const d = chapterDraft.acceptDraft();
+                          if (d === null) return;
+                          const bodyJson = d.bodyJson as JSONContent;
+                          setRestoreSeed({ nonce: Date.now(), bodyJson });
+                          // Feeds the dirty payload straight into autosave —
+                          // it differs from the server baseline and schedules
+                          // the PATCH that re-saves the restored text.
+                          setDraftBodyJson(bodyJson);
+                        }}
+                        onDiscard={chapterDraft.discardDraft}
+                      />
+                    </div>
+                  ) : null}
+                  <Paper
+                    // Key on chapterId (plus a restore nonce) so switching
+                    // chapters — or restoring a local draft — tears down the
+                    // previous TipTap editor and mounts a fresh one seeded
+                    // with the right body. Without this, useEditor retains
+                    // its initial content across chapter switches and the
+                    // in-place setContent effect skips empty bodies — the
+                    // user sees the old chapter's text under the new title.
+                    key={
+                      restoreSeed !== null
+                        ? `${activeChapterId}:r${restoreSeed.nonce}`
+                        : activeChapterId
+                    }
+                    storyId={story.id}
+                    storyTitle={story.title}
+                    storyGenre={story.genre}
+                    storyWordCount={totalWordCount}
+                    chapterId={activeChapterId}
+                    chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
+                    chapterTitle={activeChapter?.title ?? null}
+                    initialBodyJson={
+                      restoreSeed?.bodyJson ??
+                      (chapterQuery.data?.bodyJson as JSONContent | null) ??
+                      null
+                    }
+                    onUpdate={handlePaperUpdate}
+                    onReady={handleEditorReady}
+                    onChapterTitleChange={handleChapterTitleChange}
+                  />
+                </>
               ) : (
                 <div
                   data-testid="editor-empty-state"

@@ -3,22 +3,18 @@
 // and that raw Venice error bodies / stack traces are never exposed.
 
 import type { Request } from 'express';
-import request from 'supertest';
+import type request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NAME = 'Error Handling User';
-const USERNAME = 'ai-error-user';
-const PASSWORD = 'ai-error-password';
 // The key sentinel — must never appear in a log from [V11] error paths
 const VALID_KEY = 'sk-venice-SECRET-ERROR-TEST-KEY';
 
@@ -80,27 +76,6 @@ function errorResponse(
   });
 }
 
-async function registerAndLogin(): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', 'http://localhost:3000')
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', 'http://localhost:3000')
-    .send({ username: USERNAME, password: PASSWORD });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
-
 async function storeKey(
   agent: ReturnType<typeof request.agent>,
   fetchSpy: ReturnType<typeof vi.fn>,
@@ -143,14 +118,7 @@ describe('Venice error handling [V11]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
     veniceModelsService.resetCache();
 
     fetchSpy = vi.fn();
@@ -159,14 +127,7 @@ describe('Venice error handling [V11]', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    _resetSessionStore();
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
   });
 
   // ── /complete error mapping ─────────────────────────────────────────────────

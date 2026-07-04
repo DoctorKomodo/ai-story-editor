@@ -21,43 +21,16 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { prisma as appPrisma } from '../../src/lib/prisma';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 
 const TEST_ORIGIN = 'http://localhost:3000';
 
-interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function registerAndLogin(
-  username: string,
-  password = 'outline-pw',
-  name = 'Outline Route User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -65,17 +38,6 @@ function makeFakeReq(sessionId: string): Request {
   const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
-}
-
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 const FAKE_ID = '00000000-0000-0000-0000-000000000000';
@@ -126,12 +88,12 @@ async function createThreeOutlineItems(
 describe('Outline routes [B8]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   // ── Auth gates ────────────────────────────────────────────────────────────
@@ -186,8 +148,8 @@ describe('Outline routes [B8]', () => {
   // ── POST ownership / Zod ──────────────────────────────────────────────────
 
   it('POST returns 403 when :storyId does not belong to the caller', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('outline-owner-a');
-    const { agent: agentB } = await registerAndLogin('outline-owner-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'outline-owner-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'outline-owner-b' });
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
 
@@ -200,7 +162,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('POST returns 400 on empty title', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-empty-title');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-empty-title' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'My Story' });
 
@@ -213,7 +175,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('POST returns 400 on missing status', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-missing-status');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-missing-status' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'My Story' });
 
@@ -226,7 +188,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('POST returns 400 when an unknown key is passed', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-strict-post');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-strict-post' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
 
@@ -239,7 +201,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('POST returns 400 when order is included (server assigns)', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-post-order');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-post-order' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
 
@@ -254,7 +216,7 @@ describe('Outline routes [B8]', () => {
   // ── POST happy path ───────────────────────────────────────────────────────
 
   it('POST 201 auto-assigns order=0 for first item and 1 for second', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-create');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-create' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Outline Home' });
     const storyId = story.id as string;
@@ -284,7 +246,7 @@ describe('Outline routes [B8]', () => {
   // ── [D16] POST race: aggregate+insert must retry on P2002 ────────────────
 
   it('POST retries on P2002 when the aggregate returns a stale _max', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-race');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-race' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Racing outline' });
     const storyId = story.id as string;
@@ -319,7 +281,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('POST surfaces a non-P2002 error without retrying', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-nonp2002');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-nonp2002' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Boom' });
     const storyId = story.id as string;
@@ -342,7 +304,7 @@ describe('Outline routes [B8]', () => {
   // ── GET list ──────────────────────────────────────────────────────────────
 
   it('GET list returns 200 ordered by order asc, no ciphertext', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-list');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-list' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Ordered' });
     const storyId = story.id as string;
@@ -382,8 +344,8 @@ describe('Outline routes [B8]', () => {
   });
 
   it("GET list returns 403 when :storyId is not the caller's", async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('outline-list-a');
-    const { agent: agentB } = await registerAndLogin('outline-list-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'outline-list-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'outline-list-b' });
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A' });
 
@@ -394,7 +356,7 @@ describe('Outline routes [B8]', () => {
   // ── GET /:outlineId ───────────────────────────────────────────────────────
 
   it('GET /:outlineId returns 404 when outlineId is under a different story (same user)', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-path-integrity');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-path-integrity' });
     const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
@@ -414,8 +376,8 @@ describe('Outline routes [B8]', () => {
   });
 
   it('GET /:outlineId returns 403 when item belongs to another user', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('outline-xuser-a');
-    const { agent: agentB } = await registerAndLogin('outline-xuser-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'outline-xuser-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'outline-xuser-b' });
 
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
@@ -433,7 +395,7 @@ describe('Outline routes [B8]', () => {
   // ── PATCH /:outlineId ─────────────────────────────────────────────────────
 
   it('PATCH 200 partial update; null clears sub; leaves others unchanged', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-patch');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-patch' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Patchable' });
     const storyId = story.id as string;
@@ -471,7 +433,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('PATCH returns 400 on an unknown key', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-patch-strict');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-patch-strict' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Strict' });
     const storyId = story.id as string;
@@ -491,7 +453,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('PATCH returns 404 when outlineId belongs to a different story (path integrity)', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-patch-path');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-patch-path' });
     const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
@@ -513,7 +475,7 @@ describe('Outline routes [B8]', () => {
   // ── DELETE /:outlineId ────────────────────────────────────────────────────
 
   it('DELETE /:outlineId returns 204 and follow-up GET is 403', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-delete');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-delete' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Home' });
     const storyId = story.id as string;
@@ -538,7 +500,7 @@ describe('Outline routes [B8]', () => {
   // ── PATCH /reorder ────────────────────────────────────────────────────────
 
   it('reorder returns 400 when items array is empty', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-empty');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-empty' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -551,7 +513,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 400 on negative order', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-neg');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-neg' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -564,7 +526,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 400 on unknown key inside item', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-unknown');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-unknown' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -577,7 +539,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 400 when items exceed max length', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-max');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-max' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -592,7 +554,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 400 on duplicate id in payload', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-dup-id');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-dup-id' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Dup' });
     const storyId = story.id as string;
@@ -615,7 +577,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 400 on duplicate order in payload', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-dup-order');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-dup-order' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Dup Order' });
     const storyId = story.id as string;
@@ -638,7 +600,9 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 403 when an id belongs to a different story (same user)', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-cross-story');
+    const { agent, sessionId } = await registerAndLogin({
+      username: 'outline-reorder-cross-story',
+    });
     const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
@@ -670,9 +634,12 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 403 when an id belongs to another user', async () => {
-    const { agent: agentA, sessionId: sessionIdA } =
-      await registerAndLogin('outline-reorder-xuser-a');
-    const { sessionId: sessionIdB } = await registerAndLogin('outline-reorder-xuser-b');
+    const { agent: agentA, sessionId: sessionIdA } = await registerAndLogin({
+      username: 'outline-reorder-xuser-a',
+    });
+    const { sessionId: sessionIdB } = await registerAndLogin({
+      username: 'outline-reorder-xuser-b',
+    });
     const reqA = makeFakeReq(sessionIdA);
     const reqB = makeFakeReq(sessionIdB);
 
@@ -697,7 +664,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 204 on a full 3-item reorder; follow-up list reflects new order', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-happy');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-happy' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Happy' });
     const storyId = story.id as string;
@@ -730,7 +697,7 @@ describe('Outline routes [B8]', () => {
   });
 
   it('reorder returns 204 on a partial reorder; non-listed items unchanged', async () => {
-    const { agent, sessionId } = await registerAndLogin('outline-reorder-partial');
+    const { agent, sessionId } = await registerAndLogin({ username: 'outline-reorder-partial' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Partial' });
     const storyId = story.id as string;

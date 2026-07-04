@@ -15,6 +15,7 @@ vi.mock('argon2', async (importOriginal) => {
 import * as argon2 from 'argon2';
 import { app } from '../../src/index';
 import { createAuthService, UsernameUnavailableError } from '../../src/services/auth.service';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 const authService = createAuthService(prisma);
@@ -23,12 +24,12 @@ const TEST_ORIGIN = 'http://localhost:3000';
 
 describe('[AU9] register() — username-based signup supersede', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
     vi.restoreAllMocks();
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   describe('input contract', () => {

@@ -11,16 +11,13 @@ import {
   outlineUpdateSchema,
 } from 'story-editor-shared';
 import { badRequest } from '../lib/bad-request';
+import { notFound } from '../lib/http-errors';
 import { respond } from '../lib/respond';
 import { serializeOutlineItem } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
-import {
-  createOutlineRepo,
-  OutlineNotOwnedError,
-  type OutlineUpdateInput,
-} from '../repos/outline.repo';
+import { createOutlineRepo, type OutlineUpdateInput } from '../repos/outline.repo';
 
 // [D16] See chapters.routes.ts for the full rationale — mirror constant here
 // so both POST handlers behave identically under the race.
@@ -113,16 +110,8 @@ export function createOutlineRouter() {
         seenOrders.add(item.order);
       }
 
-      try {
-        await createOutlineRepo(req).reorder(storyId, body.items);
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof OutlineNotOwnedError) {
-          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
-          return;
-        }
-        throw err;
-      }
+      await createOutlineRepo(req).reorder(storyId, body.items);
+      res.status(204).send();
     }),
   );
 
@@ -138,10 +127,7 @@ export function createOutlineRouter() {
       const outlineId = req.params.outlineId as string;
       try {
         const row = await createOutlineRepo(req).findById(outlineId);
-        if (!row || row.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!row || row.storyId !== storyId) throw notFound();
         respond(outlineItemResponseSchema, res, { outlineItem: serializeOutlineItem(row) });
       } catch (err) {
         next(err);
@@ -158,10 +144,7 @@ export function createOutlineRouter() {
       const outlineId = req.params.outlineId as string;
 
       const existing = await createOutlineRepo(req).findById(outlineId);
-      if (!existing || existing.storyId !== storyId) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!existing || existing.storyId !== storyId) throw notFound();
 
       const input: OutlineUpdateInput = {};
       // Only forward explicitly present keys so `null` clears a field and
@@ -172,10 +155,7 @@ export function createOutlineRouter() {
       if ('order' in body) input.order = body.order;
 
       const updated = await createOutlineRepo(req).update(outlineId, input);
-      if (!updated) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!updated) throw notFound();
       respond(outlineItemResponseSchema, res, { outlineItem: serializeOutlineItem(updated) });
     }),
   );
@@ -189,15 +169,9 @@ export function createOutlineRouter() {
       const outlineId = req.params.outlineId as string;
       try {
         const existing = await createOutlineRepo(req).findById(outlineId);
-        if (!existing || existing.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!existing || existing.storyId !== storyId) throw notFound();
         const ok = await createOutlineRepo(req).remove(outlineId);
-        if (!ok) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!ok) throw notFound();
         res.status(204).send();
       } catch (err) {
         next(err);

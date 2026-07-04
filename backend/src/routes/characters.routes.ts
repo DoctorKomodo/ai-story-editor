@@ -11,12 +11,13 @@ import {
   characterUpdateSchema,
 } from 'story-editor-shared';
 import { badRequest } from '../lib/bad-request';
+import { notFound } from '../lib/http-errors';
 import { respond } from '../lib/respond';
 import { serializeCharacter } from '../lib/serialize';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
-import { CharacterNotOwnedError, createCharacterRepo } from '../repos/character.repo';
+import { createCharacterRepo } from '../repos/character.repo';
 
 // [D16] Number of attempts to auto-assign `orderIndex` under concurrent POSTs.
 // After the @@unique([storyId, orderIndex]) constraint landed, two simultaneous
@@ -118,16 +119,8 @@ export function createCharactersRouter() {
         seenOrders.add(item.orderIndex);
       }
 
-      try {
-        await createCharacterRepo(req).reorder(storyId, body.characters);
-        res.status(204).send();
-      } catch (err) {
-        if (err instanceof CharacterNotOwnedError) {
-          res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
-          return;
-        }
-        throw err;
-      }
+      await createCharacterRepo(req).reorder(storyId, body.characters);
+      res.status(204).send();
     }),
   );
 
@@ -143,10 +136,7 @@ export function createCharactersRouter() {
       const characterId = req.params.characterId as string;
       try {
         const character = await createCharacterRepo(req).findById(characterId);
-        if (!character || character.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!character || character.storyId !== storyId) throw notFound();
         respond(characterResponseSchema, res, { character: serializeCharacter(character) });
       } catch (err) {
         next(err);
@@ -163,16 +153,10 @@ export function createCharactersRouter() {
       const characterId = req.params.characterId as string;
 
       const existing = await createCharacterRepo(req).findById(characterId);
-      if (!existing || existing.storyId !== storyId) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!existing || existing.storyId !== storyId) throw notFound();
 
       const character = await createCharacterRepo(req).update(characterId, body);
-      if (!character) {
-        res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-        return;
-      }
+      if (!character) throw notFound();
       respond(characterResponseSchema, res, { character: serializeCharacter(character) });
     }),
   );
@@ -186,15 +170,9 @@ export function createCharactersRouter() {
       const characterId = req.params.characterId as string;
       try {
         const existing = await createCharacterRepo(req).findById(characterId);
-        if (!existing || existing.storyId !== storyId) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!existing || existing.storyId !== storyId) throw notFound();
         const ok = await createCharacterRepo(req).remove(characterId);
-        if (!ok) {
-          res.status(404).json({ error: { message: 'Not found', code: 'not_found' } });
-          return;
-        }
+        if (!ok) throw notFound();
         res.status(204).send();
       } catch (err) {
         next(err);

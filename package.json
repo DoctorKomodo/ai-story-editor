@@ -24,10 +24,10 @@
     "*.{ts,tsx,js,jsx,json,jsonc}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.4.16",
-    "@playwright/test": "^1.60.0",
-    "lint-staged": "17.0.7",
+    "@biomejs/biome": "2.5.1",
+    "@playwright/test": "^1.61.1",
+    "lint-staged": "17.0.8",
     "simple-git-hooks": "2.13.1",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.9"
   }
 }

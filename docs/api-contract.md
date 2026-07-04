@@ -128,7 +128,7 @@ Body: `{ "title", "bodyJson?" }`. Backend assigns `orderIndex` and computes `wor
 Response `200`: `{ "chapter": { "id", "storyId", "title", "bodyJson", "wordCount", "orderIndex", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "summary", "summaryUpdatedAt" } }`. `bodyJson` is the decrypted TipTap tree; `summary` is the structured summary (or `null`).
 
 ### `PATCH /:chapterId`
-Body: any subset of `{ "title", "bodyJson", "orderIndex" }`. If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`.
+Body: any subset of `{ "title", "bodyJson", "orderIndex" }`, plus optional `"expectedUpdatedAt"` (ISO datetime — optimistic-concurrency precondition; omitted = unconditional last-write-wins, which is what old clients and import send). If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`. Response `409` `{ "error": { "message", "code": "conflict" } }` when `expectedUpdatedAt` is sent and no longer matches the chapter's `updatedAt` (edited elsewhere — client should refetch, or resend without the precondition to overwrite).
 
 ### `DELETE /:chapterId`
 Response `204` (remaining chapters are re-packed to sequential `orderIndex`).
@@ -203,7 +203,7 @@ Body is one of three modes:
 - **resend**: `{ "fromMessageId", "modelId" }` (regenerate from a specific user turn)
 
 `enableWebSearch: true` sets the three Venice web-search params for the turn; when results come back, the stream opens with one `event: citations\ndata: {"citations":[…]}\n\n` frame before the content frames, then `data: [DONE]`. Forwards the `x-venice-remaining/limit/reset-{requests,tokens}` headers. Persists the user message, streams the assistant tokens, then persists the assistant message with `tokens`/`latencyMs`/`citationsJson`.
-Errors (pre-stream JSON): `404 not_found`, `400 attachment_chapter_mismatch`, `400 retry_invalid_state`, `400 resend_invalid_state`, `409 venice_key_required`. Mid-stream failures are written as a terminal SSE frame (`mapVeniceErrorToSse`, fallback `code: "stream_error"`).
+Errors (pre-stream JSON): `404 not_found`, `400 attachment_chapter_mismatch`, `400 retry_invalid_state`, `400 resend_invalid_state`, `409 venice_key_required`, `400 unknown_model`. Mid-stream failures are written as a terminal SSE frame (`mapVeniceErrorToSse`, fallback `code: "stream_error"`).
 
 ### `PATCH /api/chats/:chatId/messages/:id`
 Edit a **user** message in place. Body: `{ "content" }`. Response `200`: `{ "message" }` with `updatedAt` now set. Error: `404 not_found` (missing / not owned / not a user message).
@@ -222,7 +222,35 @@ Response `200`: `{ "defaults": { … } }` — the nine default templates (`syste
 Body: `{ "action", "selectedText", "chapterId", "storyId", "modelId" }`, where `action` ∈ `continue | rephrase | expand | summarise | rewrite | describe`. `selectedText` and `chapterId` are required.
 **Web search is not accepted here** — the schema omits `enableWebSearch`; web search is chat-only (citations have no inline UI). The route loads story/chapter/characters via the repo (decrypted), calls the prompt builder, and streams Venice tokens back as SSE (`data: <chunk>` … `data: [DONE]`). Sets `include_venice_system_prompt` from the user setting and `strip_thinking_response` / `prompt_cache_key` (top-level) as applicable; never sets the web-search params.
 Response headers: `x-venice-remaining/limit/reset-{requests,tokens}`.
-Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds`), `402 venice_insufficient_balance`, `400 venice_key_invalid`, `502 venice_unavailable`.
+Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds`), `402 venice_insufficient_balance`, `400 venice_key_invalid`, `502 venice_unavailable`, `400 unknown_model`.
+
+---
+
+## Backup — `/api/users/me`
+
+### `GET /export`
+Streams the caller's full narrative tree (all stories → chapters → chats/messages, characters, outline items), decrypted, as a downloadable JSON file (`Content-Disposition: attachment`).
+Response `200`: `{ "formatVersion": 2, "app": "inkwell", "exportedAt", "stories": [ … ] }`. Each story carries its live `id` and `snapshotUpdatedAt` — the max `updatedAt` across the story's own row and its entire subtree (chapters, characters, outline items, chats, messages) at export time — used by `POST /import/plan` to detect drift since the file was taken.
+
+### `POST /import/plan` — rate-limited 5 req/min/user (shared bucket with `POST /import`)
+Preflight, read-only — no mutation. Body: `{ "stories": [{ "id", "snapshotUpdatedAt" }] }` (max 1000 entries).
+For each entry: an `id` with no live story owned by the caller (unknown, or owned by a different user) reports `new` — ownership never leaks via `unchanged`/`conflict` on someone else's id. Otherwise the caller's live subtree max is compared against `snapshotUpdatedAt`: `<=` → `unchanged`; `>` → `conflict`.
+Response `200`: `{ "stories": [{ "id", "status": "new" | "unchanged" | "conflict" }] }`.
+
+### `POST /import` — rate-limited 5 req/min/user
+Additive by default, never a whole-library wipe. Body: `{ "file": <same shape as GET /export>, "resolutions"?: { [fileStoryId]: "create" | "replace" | "skip" } }`.
+
+Each file story is resolved independently, in file order:
+- No `id` on the file story, or an `id` with no entry in `resolutions`, defaults to **`create`** — always imports as a brand-new story, never touching any live story.
+- **`replace`** deletes and recreates the matched story in one atomic step, but only when `resolutions`' key names a live story that exists **and is owned by the caller** — the delete is owner-scoped at the data layer, so an id belonging to another user (or no live story at all) silently falls back to `create` instead of deleting anything.
+- **`skip`** does nothing for that story.
+
+Each non-skipped story runs in its own `$transaction` (`replace`'s delete + recreate share one transaction, so a failed recreate rolls back the delete). Whole-file atomicity is **not** guaranteed: if a story's transaction fails, it rolls back cleanly, that story is reported `failed`, and every story after it in the file is aborted (not attempted, absent from `outcomes`) — but every story processed before the failure stays committed. There are no compensating deletes.
+
+**Behavior change:** unlike the previous whole-file-replace contract, this endpoint never deletes a live story that's simply absent from the file — leftover stories not mentioned in the import survive and must be deleted manually.
+
+Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
+Errors: `400 validation_error` (unknown `formatVersion` or malformed file/body).
 
 ---
 
@@ -235,4 +263,5 @@ Response `200`: `{ "status": "ok", "db": "connected" }`; `503 { "status": "degra
 
 - `/api/ai/*`: 20 req/min/IP.
 - `/api/users/me/venice-account`: 30 req/min/user.
+- `/api/users/me/import` and `/api/users/me/import/plan`: 5 req/min/user, shared bucket.
 - Sensitive auth routes (`change-password`, `update-profile`, `rotate-recovery-code`, `sign-out-everywhere`, `delete-account`, `reset-password`) carry their own per-route limiters.

@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Post-[E11] the narrative columns (title, synopsis, worldNotes) are
@@ -17,11 +18,11 @@ async function makeUser(email = 'author@example.com') {
 
 describe('Story model', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates a story owned by a user (plaintext non-narrative fields only)', async () => {

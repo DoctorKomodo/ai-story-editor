@@ -3,15 +3,16 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
+import { resetDb } from '../helpers/db';
 import { testDatabaseUrl } from '../setup';
-import { makeUserContext, rawCiphertextMustNotEqual, resetAllTables } from './_req';
+import { makeUserContext, rawCiphertextMustNotEqual } from './_req';
 
 describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
   beforeEach(async () => {
-    await resetAllTables();
+    await resetDb();
   });
   afterEach(async () => {
-    await resetAllTables();
+    await resetDb();
   });
 
   it('round-trips body, summary, and label through the DEK', async () => {

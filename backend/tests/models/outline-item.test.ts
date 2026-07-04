@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Post-[E11] outline narrative fields (title, sub) are ciphertext-only.
@@ -15,11 +16,11 @@ async function makeStory(email = 'outline-author@example.com') {
 
 describe('OutlineItem model', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates an outline item with required plaintext fields', async () => {

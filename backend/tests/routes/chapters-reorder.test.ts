@@ -15,43 +15,16 @@ import type { Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 
 const TEST_ORIGIN = 'http://localhost:3000';
 
-interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function registerAndLogin(
-  username: string,
-  password = 'reorder-pw',
-  name = 'Reorder User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -59,17 +32,6 @@ function makeFakeReq(sessionId: string): Request {
   const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
-}
-
-async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 const FAKE_ID = '00000000-0000-0000-0000-000000000000';
@@ -109,12 +71,12 @@ async function createThreeChapters(
 describe('Chapter reorder route [B4]', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -127,8 +89,8 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 403 when :storyId belongs to another user', async () => {
-    const { sessionId: sessionIdA } = await registerAndLogin('reorder-owner-a');
-    const { agent: agentB } = await registerAndLogin('reorder-owner-b');
+    const { sessionId: sessionIdA } = await registerAndLogin({ username: 'reorder-owner-a' });
+    const { agent: agentB } = await registerAndLogin({ username: 'reorder-owner-b' });
     const reqA = makeFakeReq(sessionIdA);
     const story = await createStoryRepo(reqA).create({ title: 'A only' });
 
@@ -141,7 +103,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 when chapters array is empty', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-empty');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-empty' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -154,7 +116,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 when an entry is missing orderIndex', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-missing-order');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-missing-order' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -167,7 +129,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 on a negative orderIndex', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-neg');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-neg' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -180,7 +142,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 on an unknown root key', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-unknown-root');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-unknown-root' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -193,7 +155,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 on an unknown key inside a chapter entry', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-unknown-entry');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-unknown-entry' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -206,7 +168,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 when chapters array exceeds max length', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-too-many');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-too-many' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'S' });
 
@@ -221,7 +183,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 on duplicate id in payload', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-dup-id');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-dup-id' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Dup' });
     const storyId = story.id as string;
@@ -245,7 +207,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 400 on duplicate orderIndex in payload', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-dup-order');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-dup-order' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Dup Order' });
     const storyId = story.id as string;
@@ -269,7 +231,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 403 when an id belongs to a different story (same user)', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-cross-story');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-cross-story' });
     const req = makeFakeReq(sessionId);
     const storyA = await createStoryRepo(req).create({ title: 'A' });
     const storyB = await createStoryRepo(req).create({ title: 'B' });
@@ -303,8 +265,10 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 403 when an id belongs to another user', async () => {
-    const { agent: agentA, sessionId: sessionIdA } = await registerAndLogin('reorder-xuser-a');
-    const { sessionId: sessionIdB } = await registerAndLogin('reorder-xuser-b');
+    const { agent: agentA, sessionId: sessionIdA } = await registerAndLogin({
+      username: 'reorder-xuser-a',
+    });
+    const { sessionId: sessionIdB } = await registerAndLogin({ username: 'reorder-xuser-b' });
     const reqA = makeFakeReq(sessionIdA);
     const reqB = makeFakeReq(sessionIdB);
 
@@ -329,7 +293,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 204 on success and reorders 3 chapters', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-happy');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-happy' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Happy' });
     const storyId = story.id as string;
@@ -365,7 +329,7 @@ describe('Chapter reorder route [B4]', () => {
   // under @@unique([storyId, orderIndex]) raises P2002 mid-transaction as
   // soon as the first UPDATE tries to set A.orderIndex=1 (still held by B).
   it('handles a direct two-chapter swap without tripping the unique constraint [D16]', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-swap-d16');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-swap-d16' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Swap' });
     const storyId = story.id as string;
@@ -398,7 +362,7 @@ describe('Chapter reorder route [B4]', () => {
   });
 
   it('returns 204 for a partial reorder — non-included chapter keeps its orderIndex', async () => {
-    const { agent, sessionId } = await registerAndLogin('reorder-partial');
+    const { agent, sessionId } = await registerAndLogin({ username: 'reorder-partial' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Partial' });
     const storyId = story.id as string;

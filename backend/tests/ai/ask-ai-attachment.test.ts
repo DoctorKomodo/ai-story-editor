@@ -9,24 +9,21 @@
 //   - Attachment-less path still works (re-assertion from V15)
 
 import type { Request } from 'express';
-import request from 'supertest';
+import type request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NAME = 'Attachment Test User';
-const USERNAME = 'attachment-test-user';
-const PASSWORD = 'attachment-test-password';
 const VALID_KEY = 'sk-venice-attachment-test-key-WXYZ';
 
 const BASE_MODEL_ID = 'llama-3.3-70b';
@@ -87,27 +84,6 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function registerAndLogin(): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', 'http://localhost:3000')
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', 'http://localhost:3000')
-    .send({ username: USERNAME, password: PASSWORD });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 async function storeKey(
   agent: ReturnType<typeof request.agent>,
@@ -179,14 +155,7 @@ describe('Ask-AI attachment payload [V16]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
     veniceModelsService.resetCache();
 
     fetchSpy = vi.fn();
@@ -195,14 +164,7 @@ describe('Ask-AI attachment payload [V16]', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    _resetSessionStore();
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
   });
 
   it('persists attachmentJson and Venice content includes attached selection label', async () => {

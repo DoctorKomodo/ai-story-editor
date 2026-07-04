@@ -8,19 +8,17 @@ import type { Request } from 'express';
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { _resetSessionStore, getSession } from '../../src/services/session-store';
+import { getSession } from '../../src/services/session-store';
 import { veniceModelsService } from '../../src/services/venice.models.service';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const NAME = 'Complete Test User';
-const USERNAME = 'ai-complete-user';
-const PASSWORD = 'complete-test-password';
 const VALID_KEY = 'sk-venice-complete-test-key-XYZW';
 
 const BASE_MODEL_ID = 'llama-3.3-70b';
@@ -100,27 +98,6 @@ function jsonResponse(status: number, body: unknown): Response {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-
-async function registerAndLogin(): Promise<{
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', 'http://localhost:3000')
-    .send({ name: NAME, username: USERNAME, password: PASSWORD });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', 'http://localhost:3000')
-    .send({ username: USERNAME, password: PASSWORD });
-  expect(login.status).toBe(200);
-  const raw = login.headers['set-cookie'] as unknown as string[] | undefined;
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${sessionCookieName()}=`));
-  expect(cookie).toBeDefined();
-  const sessionId = decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-  return { agent, sessionId };
-}
 
 async function storeKey(
   agent: ReturnType<typeof request.agent>,
@@ -229,14 +206,7 @@ describe('POST /api/ai/complete [V5]', () => {
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
-    _resetSessionStore();
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
     veniceModelsService.resetCache();
 
     fetchSpy = vi.fn();
@@ -245,14 +215,7 @@ describe('POST /api/ai/complete [V5]', () => {
 
   afterEach(async () => {
     vi.unstubAllGlobals();
-    _resetSessionStore();
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
   });
 
   it('returns 401 without an auth cookie', async () => {
@@ -353,6 +316,23 @@ describe('POST /api/ai/complete [V5]', () => {
     });
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
+  });
+
+  it('returns 400 unknown_model when modelId is not in the Venice model list', async () => {
+    const { agent } = await registerAndLogin();
+    await storeKey(agent, fetchSpy);
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+
+    const res = await agent.post('/api/ai/complete').set('Origin', 'http://localhost:3000').send({
+      action: 'continue',
+      selectedText: '',
+      chapterId: 'nonexistent-chapter',
+      storyId: 'nonexistent-story',
+      modelId: 'model-not-in-list',
+    });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('unknown_model');
   });
 
   it('streams SSE with at least one data chunk and a [DONE] terminator', async () => {

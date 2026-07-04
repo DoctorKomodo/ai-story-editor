@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
 
 // Lane note: this file uses raw Prisma deliberately. It asserts SCHEMA
@@ -22,11 +23,11 @@ async function makeStory(email = 'char-author@example.com') {
 
 describe('Character model', () => {
   beforeEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   afterEach(async () => {
-    await prisma.user.deleteMany();
+    await resetUsers();
   });
 
   it('creates a character with nullable ciphertext fields', async () => {

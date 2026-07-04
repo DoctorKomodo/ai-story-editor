@@ -2,6 +2,7 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type OwnedResource, requireOwnership } from '../../src/middleware/ownership.middleware';
+import { resetDb } from '../helpers/db';
 import { makeUser } from '../helpers/makeUser';
 import { prisma } from '../setup';
 
@@ -68,23 +69,11 @@ async function seedTwoUsersAndAStory(): Promise<{
 
 describe('requireOwnership middleware', () => {
   beforeEach(async () => {
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
   });
 
   afterEach(async () => {
-    await prisma.message.deleteMany();
-    await prisma.chat.deleteMany();
-    await prisma.outlineItem.deleteMany();
-    await prisma.character.deleteMany();
-    await prisma.chapter.deleteMany();
-    await prisma.story.deleteMany();
-    await prisma.user.deleteMany();
+    await resetDb();
   });
 
   it('returns 401 when req.user is absent', async () => {

@@ -231,6 +231,20 @@ Three steps, used by every CRUD route:
   `globalSetup` resets + migrates the DB against the running compose
   stack on **every** invocation (even a single-file run), so a backend
   test always needs `make dev` up first.
+- **The suite is parallel across per-worker database clones — do not
+  hand-serialize it.** `.env.test` / `db:test:reset` govern the
+  **template** DB (`storyeditor_test`): `globalSetup` migrates it, drops
+  stale `storyeditor_test_w*` clones, and recreates one clone per vitest
+  worker; `tests/setup.ts` pins each worker's `DATABASE_URL` to its
+  clone via `VITEST_POOL_ID` **before** the Prisma client is
+  constructed. Files in different workers never share a database; files
+  in the same worker share a clone **sequentially**, which is safe only
+  because every file's beforeEach/afterEach wipes via the canonical
+  helpers (`tests/helpers/db.ts`) — never remove a file's wipe hooks,
+  and keep `sequence.concurrent: false` (tests within a file assume
+  exclusive DB state). Worker cap + clone naming live in
+  `backend/tests/worker-db.ts` (`TEST_WORKER_COUNT`); change it there,
+  not via CLI `--maxWorkers`.
 - **Integration tests against narrative entities go through the repo
   layer**, not raw Prisma. Otherwise the test doesn't exercise the
   encrypt/decrypt path and is unrepresentative.

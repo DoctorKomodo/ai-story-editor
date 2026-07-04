@@ -87,6 +87,10 @@ export const chapterUpdateSchema = z.strictObject({
   title: z.string().min(CHAPTER_TITLE_MIN).max(CHAPTER_TITLE_MAX).optional(),
   bodyJson: z.unknown().optional(),
   orderIndex: z.number().int().nonnegative().optional(),
+  // Optimistic-concurrency precondition: the chapter's updatedAt the client
+  // last saw. When present and stale, the PATCH is rejected 409 'conflict'.
+  // Optional — absent keeps legacy last-write-wins (old clients, import).
+  expectedUpdatedAt: z.string().datetime().optional(),
 });
 
 /**

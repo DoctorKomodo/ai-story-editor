@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
-import { makeUserContext, resetAllTables } from './_req';
+import { makeUserContext } from './_req';
 
 describe('[E9] character.repo', () => {
-  beforeEach(resetAllTables);
-  afterEach(resetAllTables);
+  beforeEach(resetDb);
+  afterEach(resetDb);
 
   it('round-trips every narrative field; keeps color + initial plaintext', async () => {
     const ctx = await makeUserContext();

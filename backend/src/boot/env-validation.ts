@@ -41,4 +41,22 @@ export function validateEncryptionEnv(opts: ValidateOptions = {}): void {
         'opaque httpOnly session cookies — no token signing. Remove it from your .env.',
     );
   }
+
+  if (env.TEST_FAST_ARGON2) {
+    if (env.NODE_ENV === 'production') {
+      throw new Error(
+        '[boot] TEST_FAST_ARGON2 is set with NODE_ENV=production. It weakens the ' +
+          'argon2id parameters and exists only for the test suite ' +
+          '(.env.test.example) — remove it before starting the server.',
+      );
+    }
+    if (env.NODE_ENV !== 'test') {
+      warn(
+        '[boot] TEST_FAST_ARGON2 is set outside a test environment ' +
+          `(NODE_ENV=${env.NODE_ENV ?? 'unset'}). It weakens the argon2id parameters and ` +
+          'belongs only in the test suite env (.env.test.example) — remove it. ' +
+          'It has no effect unless NODE_ENV=test, but its presence here is a misconfiguration.',
+      );
+    }
+  }
 }

@@ -1,17 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
-import {
-  createChapterRow,
-  createChatRow,
-  createStoryRow,
-  createUser,
-  resetNarrativeTables,
-  SENTINEL,
-} from './_helpers';
+import { createChapterRow, createChatRow, createStoryRow, createUser, SENTINEL } from './_helpers';
 
 describe('[E8] Chat + Message — ciphertext columns', () => {
-  beforeEach(resetNarrativeTables);
-  afterEach(resetNarrativeTables);
+  beforeEach(resetUsers);
+  afterEach(resetUsers);
 
   it('Chat persists title ciphertext triple', async () => {
     const user = await createUser();

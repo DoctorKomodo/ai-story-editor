@@ -42,7 +42,11 @@ export interface SendArgs {
 }
 
 export interface ChatComposerProps {
-  onSend: (args: SendArgs) => void | Promise<void>;
+  // `void` in the union is deliberate: handlers that return nothing (and
+  // async handlers returning Promise<void>) must stay assignable — only an
+  // explicit `false` means "not consumed, restore the draft".
+  // biome-ignore lint/suspicious/noConfusingVoidType: back-compat acceptance contract, see comment above.
+  onSend: (args: SendArgs) => void | boolean | Promise<void | boolean>;
   disabled?: boolean;
   state?: 'idle' | 'streaming';
   onStop?: () => void;
@@ -159,12 +163,31 @@ export function ChatComposer({
       attachment,
       enableWebSearch: useWebSearch,
     };
-    void onSend(args);
+    // Optimistic clear (unchanged feel for accepted sends)…
     setValue('');
     clearAttachment();
     // [F50] Per-turn semantics: reset the toggle so the next message
     // does not inadvertently re-trigger web search.
     setUseWebSearch(false);
+    // …then restore the draft iff the send was explicitly not consumed
+    // (pre-send guard). Failed sends resolve true — their content lives on
+    // in the draft row + banner retry, so restoring would duplicate it.
+    void Promise.resolve(onSend(args)).then(
+      (accepted) => {
+        if (accepted !== false) return;
+        setValue((cur) => (cur.length === 0 ? args.content : cur));
+        if (
+          args.attachment !== null &&
+          useAttachedSelectionStore.getState().attachedSelection === null
+        ) {
+          useAttachedSelectionStore.getState().setAttachedSelection(args.attachment);
+        }
+      },
+      () => {
+        // onSend rejections are handled upstream (banner/error store) — never
+        // let the composer re-introduce an unhandled rejection.
+      },
+    );
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>): void {

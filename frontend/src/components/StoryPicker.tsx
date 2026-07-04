@@ -9,11 +9,24 @@
 // [X22] Ported onto the `<Modal>` primitive — backdrop, Escape, click-outside,
 // focus management, and close-X chrome all live in the primitive now. Embedded
 // mode (F58 — dashboard surface) passes `embedded` through to the primitive.
-import type { JSX } from 'react';
-import { useId } from 'react';
+//
+// [story-editor-0wz] Per-row delete: a hover-revealed trash icon (mirrors
+// ChatSceneTab/SessionPicker's row-icon idiom) opens a Modal confirm dialog;
+// confirming schedules a 5s soft-delete/undo (useSoftDelete, same shape as
+// ChatSceneTab's) before the real DELETE fires.
+import { type JSX, useId, useState } from 'react';
 import { StoryPickerEmpty } from '@/components/StoryPickerEmpty';
-import { Button, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
-import { useStoriesQuery } from '@/hooks/useStories';
+import { UndoToast } from '@/components/UndoToast';
+import {
+  Button,
+  IconButton,
+  Modal,
+  ModalBody,
+  ModalFooter,
+  ModalHeader,
+} from '@/design/primitives';
+import { useSoftDelete } from '@/hooks/useSoftDelete';
+import { useDeleteStoryMutation, useStoriesQuery } from '@/hooks/useStories';
 
 export interface StoryPickerProps {
   open: boolean;
@@ -25,6 +38,13 @@ export interface StoryPickerProps {
   onCreateStory?: () => void;
   /** TODO(future): no backend import endpoint yet; the button stays hidden until an onImportDocx handler is wired. */
   onImportDocx?: () => void;
+  /**
+   * Fires once a story's real DELETE has resolved. A parent that also knows
+   * which story id is currently open (e.g. the route) can compare and
+   * navigate away — this component has no notion of "currently open" beyond
+   * the `activeStoryId` prop it already renders the pill from.
+   */
+  onStoryDeleted?: (id: string) => void;
   /**
    * [F58] When true, render only the inner card (no backdrop, no Close
    * button, no Escape registration). Used by the dashboard to surface the
@@ -39,6 +59,28 @@ function initialOf(title: string): string {
   return t[0]?.toUpperCase() ?? 'U';
 }
 
+function TrashIcon(): JSX.Element {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+    </svg>
+  );
+}
+
 export function StoryPicker({
   open,
   onClose,
@@ -46,10 +88,24 @@ export function StoryPicker({
   onSelectStory,
   onCreateStory,
   onImportDocx,
+  onStoryDeleted,
   embedded = false,
 }: StoryPickerProps): JSX.Element | null {
   const headingId = useId();
+  const confirmHeadingId = useId();
   const { data: stories, isLoading, isError, error } = useStoriesQuery();
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+
+  const deleteStoryMutation = useDeleteStoryMutation();
+  const {
+    pending: pendingDeletes,
+    isPending: isDeletePending,
+    scheduleDelete,
+    undo: undoDelete,
+  } = useSoftDelete(
+    (id: string) => deleteStoryMutation.mutateAsync(id).then(() => onStoryDeleted?.(id)),
+    { timeoutMs: 5_000 },
+  );
 
   const handleSelect = (id: string): void => {
     onSelectStory(id);
@@ -57,6 +113,16 @@ export function StoryPicker({
   };
 
   const count = stories?.length ?? 0;
+  const visibleStories = (stories ?? []).filter((s) => !isDeletePending(s.id));
+  const confirmingStory = stories?.find((s) => s.id === confirmingId) ?? null;
+  const pendingEntries = Array.from(pendingDeletes.entries());
+  const lastPending = pendingEntries.length > 0 ? pendingEntries[pendingEntries.length - 1] : null;
+
+  const handleConfirmDelete = (): void => {
+    if (confirmingId === null) return;
+    scheduleDelete(confirmingId, confirmingStory?.title || 'Untitled');
+    setConfirmingId(null);
+  };
 
   return (
     <Modal
@@ -64,6 +130,7 @@ export function StoryPicker({
       onClose={onClose}
       labelledBy={headingId}
       size="md"
+      dismissable={confirmingStory === null}
       embedded={embedded}
       testId="story-picker"
     >
@@ -89,22 +156,35 @@ export function StoryPicker({
           <StoryPickerEmpty />
         ) : (
           <div className="grid gap-1">
-            {stories?.map((s) => {
+            {visibleStories.map((s) => {
               const active = s.id === activeStoryId;
               const target = s.targetWords;
               const wc = s.totalWordCount ?? 0;
               const genre = s.genre ?? null;
+              const title = s.title || 'Untitled';
               return (
-                <button
+                // biome-ignore lint/a11y/useSemanticElements: a real <button> can't host the nested delete IconButton (no interactive-in-interactive nesting) — mirrors SessionPicker's row idiom.
+                <div
                   key={s.id}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   data-testid={`story-picker-row-${s.id}`}
                   data-active={active ? 'true' : 'false'}
                   onClick={() => {
                     handleSelect(s.id);
                   }}
+                  onKeyDown={(e) => {
+                    // Ignore keydowns bubbling up from the nested delete
+                    // button so focusing/activating it doesn't also select
+                    // the row.
+                    if (e.target !== e.currentTarget) return;
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      handleSelect(s.id);
+                    }
+                  }}
                   className={[
-                    'flex w-full items-center gap-3 px-3 py-2.5 rounded-[var(--radius)] cursor-pointer text-left transition-colors',
+                    'group flex w-full items-center gap-3 px-3 py-2.5 rounded-[var(--radius)] cursor-pointer text-left transition-colors',
                     'hover:bg-[var(--surface-hover)]',
                     active ? 'border border-ink bg-bg-elevated' : 'border border-line bg-bg',
                   ].join(' ')}
@@ -116,9 +196,7 @@ export function StoryPicker({
                     {initialOf(s.title)}
                   </span>
                   <span className="flex-1 min-w-0">
-                    <span className="block font-serif text-[15px] text-ink truncate">
-                      {s.title || 'Untitled'}
-                    </span>
+                    <span className="block font-serif text-[15px] text-ink truncate">{title}</span>
                     <span className="mt-[2px] block font-mono text-[11px] text-ink-4 truncate">
                       {genre ? `${genre} · ` : ''}
                       {wc.toLocaleString()}
@@ -134,31 +212,93 @@ export function StoryPicker({
                       open
                     </span>
                   ) : null}
-                </button>
+                  <IconButton
+                    ariaLabel={`Delete "${title}"`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setConfirmingId(s.id);
+                    }}
+                    testId={`story-picker-row-${s.id}-delete`}
+                    className="flex-shrink-0 opacity-0 group-hover:opacity-100"
+                  >
+                    <TrashIcon />
+                  </IconButton>
+                </div>
               );
             })}
           </div>
         )}
       </ModalBody>
 
-      <ModalFooter
-        leading={
-          <span data-testid="story-picker-count">
-            {count} {count === 1 ? 'story' : 'stories'} in vault
-          </span>
-        }
-      >
-        {onImportDocx ? (
-          <Button variant="ghost" onClick={onImportDocx} data-testid="story-picker-import">
-            Import .docx
-          </Button>
+      <div className="relative">
+        {lastPending !== null ? (
+          <div className="absolute left-3 right-3 bottom-[calc(100%+8px)] z-20">
+            <UndoToast
+              key={lastPending[0]}
+              title={lastPending[1].title}
+              onUndo={() => {
+                undoDelete(lastPending[0]);
+              }}
+              timeoutMs={5000}
+            />
+          </div>
         ) : null}
-        {onCreateStory ? (
-          <Button variant="primary" onClick={onCreateStory} data-testid="story-picker-new">
-            New story
-          </Button>
-        ) : null}
-      </ModalFooter>
+        <ModalFooter
+          leading={
+            <span data-testid="story-picker-count">
+              {count} {count === 1 ? 'story' : 'stories'} in vault
+            </span>
+          }
+        >
+          {onImportDocx ? (
+            <Button variant="ghost" onClick={onImportDocx} data-testid="story-picker-import">
+              Import .docx
+            </Button>
+          ) : null}
+          {onCreateStory ? (
+            <Button variant="primary" onClick={onCreateStory} data-testid="story-picker-new">
+              New story
+            </Button>
+          ) : null}
+        </ModalFooter>
+      </div>
+
+      {confirmingStory ? (
+        <Modal
+          open
+          onClose={() => {
+            setConfirmingId(null);
+          }}
+          labelledBy={confirmHeadingId}
+          size="sm"
+          role="alertdialog"
+          testId="story-picker-delete-confirm"
+        >
+          <ModalHeader
+            titleId={confirmHeadingId}
+            title={`Delete "${confirmingStory.title || 'Untitled'}"?`}
+          />
+          <ModalBody>
+            <p className="font-serif text-[13.5px] leading-[1.55] text-ink-2">
+              This permanently removes the story and all its chapters, characters, outline, and
+              chats.
+            </p>
+          </ModalBody>
+          <ModalFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setConfirmingId(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button variant="danger" onClick={handleConfirmDelete}>
+              Delete
+            </Button>
+          </ModalFooter>
+        </Modal>
+      ) : null}
     </Modal>
   );
 }

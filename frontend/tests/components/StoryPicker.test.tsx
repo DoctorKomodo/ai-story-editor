@@ -3,7 +3,7 @@
 // + onClose wiring, footer count, primary New story / Import .docx callbacks,
 // and modal-close behaviour (X button, Escape, backdrop).
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactElement } from 'react';
 import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
@@ -338,5 +338,218 @@ describe('StoryPicker (F30)', () => {
 
     expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toBeInTheDocument();
     expect(screen.queryByTestId('story-picker-row-s1')).toBeNull();
+  });
+});
+
+// [story-editor-0wz] Per-row delete: confirm dialog + 5s soft-delete/undo.
+describe('StoryPicker delete (story-editor-0wz)', () => {
+  let fetchMock: FetchMock;
+  let onClose: Mock<() => void>;
+  let onSelectStory: Mock<(id: string) => void>;
+  let onStoryDeleted: Mock<(id: string) => void>;
+
+  function deleteCalls(): unknown[] {
+    return fetchMock.mock.calls.filter(
+      ([, init]) => (init as RequestInit | undefined)?.method === 'DELETE',
+    );
+  }
+
+  /** Serves GET /stories from `stories` and 204s any DELETE /stories/:id. */
+  function mockFetchWithStories(stories: unknown[]): void {
+    fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      const method = init?.method ?? 'GET';
+      if (/\/api\/stories\/[^/]+$/.test(url) && method === 'DELETE') {
+        // A 204 response must have a null body (jsonResponse's
+        // JSON.stringify(null) would give a "null" string body, which throws).
+        return new Response(null, { status: 204 });
+      }
+      if (url.endsWith('/api/stories')) {
+        return jsonResponse(200, { stories });
+      }
+      return jsonResponse(404, { error: 'not_mocked' });
+    });
+  }
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    setUnauthorizedHandler(() => {
+      useSessionStore.getState().clearSession();
+    });
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+    onClose = vi.fn<() => void>();
+    onSelectStory = vi.fn<(id: string) => void>();
+    onStoryDeleted = vi.fn<(id: string) => void>();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
+    setUnauthorizedHandler(null);
+    resetApiClientForTests();
+    useSessionStore.setState({ user: null, status: 'idle' });
+  });
+
+  it('the delete icon has the accessible name Delete "<title>"', async () => {
+    mockFetchWithStories([makeStory('s1', { title: 'Dune' })]);
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+    expect(await screen.findByRole('button', { name: 'Delete "Dune"' })).toBeInTheDocument();
+  });
+
+  it('opens a confirm dialog naming the story and describing the cascade delete', async () => {
+    mockFetchWithStories([makeStory('s1', { title: 'Dune' })]);
+    const user = userEvent.setup();
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Delete "Dune"' }));
+
+    const dialog = await screen.findByRole('alertdialog', { name: /delete "dune"/i });
+    expect(dialog).toHaveTextContent(
+      /permanently removes the story and all its chapters, characters, outline, and chats/i,
+    );
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeInTheDocument();
+  });
+
+  it('Cancel closes the dialog and fires no delete', async () => {
+    mockFetchWithStories([makeStory('s1', { title: 'Dune' })]);
+    const user = userEvent.setup();
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Delete "Dune"' }));
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByTestId('story-picker-row-s1')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  it('Escape cancels the confirm dialog (and leaves the picker itself open)', async () => {
+    mockFetchWithStories([makeStory('s1', { title: 'Dune' })]);
+    const user = userEvent.setup();
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Delete "Dune"' }));
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByRole('alertdialog')).toBeNull();
+    expect(screen.getByTestId('story-picker-row-s1')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  it('confirming hides the row immediately and shows the undo toast', async () => {
+    mockFetchWithStories([makeStory('s1', { title: 'Dune' })]);
+    const user = userEvent.setup();
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Delete "Dune"' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(screen.queryByTestId('story-picker-row-s1')).toBeNull();
+    const toast = screen.getByRole('status');
+    expect(toast).toHaveTextContent(/deleted/i);
+    expect(toast).toHaveTextContent(/dune/i);
+    expect(screen.getByRole('button', { name: /undo/i })).toBeInTheDocument();
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  it('undo restores the row and no delete ever fires', async () => {
+    mockFetchWithStories([makeStory('s1', { title: 'Dune' })]);
+    const user = userEvent.setup();
+    renderPicker(
+      <StoryPicker open onClose={onClose} activeStoryId={null} onSelectStory={onSelectStory} />,
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Delete "Dune"' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(screen.getByRole('button', { name: /undo/i }));
+
+    expect(await screen.findByTestId('story-picker-row-s1')).toBeInTheDocument();
+    expect(screen.queryByRole('status')).toBeNull();
+    // The soft-delete timer was cancelled by undo(); nothing left to fire.
+    expect(deleteCalls()).toHaveLength(0);
+  });
+
+  it('timer expiry fires the real DELETE exactly once and reports it via onStoryDeleted', async () => {
+    mockFetchWithStories([makeStory('s1', { title: 'Dune' })]);
+    renderPicker(
+      <StoryPicker
+        open
+        onClose={onClose}
+        activeStoryId="s1"
+        onSelectStory={onSelectStory}
+        onStoryDeleted={onStoryDeleted}
+      />,
+    );
+    const deleteIcon = await screen.findByRole('button', { name: 'Delete "Dune"' });
+
+    // fireEvent-style .click() (not userEvent) from here on — userEvent's
+    // internal delay pipeline fights fake timers (see RecoveryCodeCard.test.tsx).
+    vi.useFakeTimers();
+    await act(async () => {
+      deleteIcon.click();
+    });
+    await act(async () => {
+      screen.getByRole('button', { name: 'Delete' }).click();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(deleteCalls()).toHaveLength(1);
+    expect(onStoryDeleted).toHaveBeenCalledTimes(1);
+    expect(onStoryDeleted).toHaveBeenCalledWith('s1');
+  });
+
+  it('scheduling delete for a story other than activeStoryId still reports it via onStoryDeleted', async () => {
+    // onStoryDeleted always fires on real-delete resolution for whichever id
+    // was removed — it's the parent's job (StoryBrowser) to compare against
+    // activeStoryId and decide whether to navigate.
+    mockFetchWithStories([
+      makeStory('s1', { title: 'Dune' }),
+      makeStory('s2', { title: 'Foundry' }),
+    ]);
+    renderPicker(
+      <StoryPicker
+        open
+        onClose={onClose}
+        activeStoryId="s1"
+        onSelectStory={onSelectStory}
+        onStoryDeleted={onStoryDeleted}
+      />,
+    );
+    const deleteIcon = await screen.findByRole('button', { name: 'Delete "Foundry"' });
+
+    vi.useFakeTimers();
+    await act(async () => {
+      deleteIcon.click();
+    });
+    await act(async () => {
+      screen.getByRole('button', { name: 'Delete' }).click();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+
+    expect(onStoryDeleted).toHaveBeenCalledWith('s2');
+    // The still-open story's row is untouched.
+    expect(screen.getByTestId('story-picker-row-s1')).toBeInTheDocument();
   });
 });

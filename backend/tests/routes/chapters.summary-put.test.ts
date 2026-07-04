@@ -3,12 +3,14 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
-import { makeFakeReq, registerAndLogin, resetAll, TEST_ORIGIN } from './_chat-test-helpers';
+import { registerAndLogin, TEST_ORIGIN } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
+import { makeFakeReq } from './_chat-test-helpers';
 
 async function setup(
   username: string,
 ): Promise<{ agent: ReturnType<typeof request.agent>; storyId: string; chapterId: string }> {
-  const { agent, sessionId } = await registerAndLogin(username);
+  const { agent, sessionId } = await registerAndLogin({ username });
   const req = makeFakeReq(sessionId);
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
   const chapter = await createChapterRepo(req).create({
@@ -27,12 +29,12 @@ async function setup(
 describe('PUT /api/stories/:storyId/chapters/:chapterId/summary', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('persists a user-edited summary', async () => {

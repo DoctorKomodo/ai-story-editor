@@ -1,48 +1,12 @@
-// Shared Venice-fetch + auth helpers for chat route integration tests.
+// Shared Venice-fetch fixtures for chat route integration tests.
+// Auth + DB teardown helpers live in ../helpers/auth and ../helpers/db.
 
 import type { Request } from 'express';
-import request from 'supertest';
+import type request from 'supertest';
 import { expect, vi } from 'vitest';
-import { app } from '../../src/index';
-import { sessionCookieName } from '../../src/lib/session-cookie';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
-import { _resetSessionStore, getSession } from '../../src/services/session-store';
-import { prisma } from '../setup';
-
-// ─── Auth helpers ─────────────────────────────────────────────────────────────
-
-export const TEST_ORIGIN = 'http://localhost:3000';
-
-export interface TestSession {
-  agent: ReturnType<typeof request.agent>;
-  sessionId: string;
-}
-
-function extractSessionId(res: request.Response): string {
-  const raw = res.headers['set-cookie'] as unknown as string[] | undefined;
-  const name = sessionCookieName();
-  const cookie = (raw ?? []).find((c) => c.startsWith(`${name}=`));
-  expect(cookie).toBeDefined();
-  return decodeURIComponent(cookie!.split(';')[0].split('=')[1]);
-}
-
-export async function registerAndLogin(
-  username: string,
-  password = 'chat-route-pw',
-  name = 'Chat Route User',
-): Promise<TestSession> {
-  const agent = request.agent(app);
-  await agent
-    .post('/api/auth/register')
-    .set('Origin', TEST_ORIGIN)
-    .send({ name, username, password });
-  const login = await agent
-    .post('/api/auth/login')
-    .set('Origin', TEST_ORIGIN)
-    .send({ username, password });
-  expect(login.status).toBe(200);
-  return { agent, sessionId: extractSessionId(login) };
-}
+import { getSession } from '../../src/services/session-store';
+import { TEST_ORIGIN } from '../helpers/auth';
 
 export function makeFakeReq(sessionId: string): Request {
   const session = getSession(sessionId);
@@ -50,19 +14,6 @@ export function makeFakeReq(sessionId: string): Request {
   const req = { user: { id: session!.userId, sessionId } } as unknown as Request;
   attachDekToRequest(req, session!.dek);
   return req;
-}
-
-// ─── DB teardown ──────────────────────────────────────────────────────────────
-
-export async function resetAll(): Promise<void> {
-  _resetSessionStore();
-  await prisma.message.deleteMany();
-  await prisma.chat.deleteMany();
-  await prisma.outlineItem.deleteMany();
-  await prisma.character.deleteMany();
-  await prisma.chapter.deleteMany();
-  await prisma.story.deleteMany();
-  await prisma.user.deleteMany();
 }
 
 // ─── Venice fetch fixtures ────────────────────────────────────────────────────

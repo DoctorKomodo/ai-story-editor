@@ -92,6 +92,20 @@ export class ChapterNotOwnedError extends Error {
   }
 }
 
+/**
+ * Thrown by `update` when `opts.expectedUpdatedAt` was supplied and no
+ * longer matches the row's current `updatedAt` (the row exists but was
+ * modified elsewhere since the caller last read it). The route maps this to
+ * 409 `conflict`. Distinguished from a plain not-found `null` return, which
+ * still means 404 (row missing / not owned).
+ */
+export class ChapterVersionConflictError extends Error {
+  constructor(message = 'chapter.repo: expectedUpdatedAt no longer matches the current row') {
+    super(message);
+    this.name = 'ChapterVersionConflictError';
+  }
+}
+
 export function createChapterRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: RepoChapterCreateInput) {
     const userId = resolveUserId(req);
@@ -201,7 +215,11 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     return rows.map((r) => shapeMeta(r, req));
   }
 
-  async function update(id: string, input: RepoChapterUpdateInput) {
+  async function update(
+    id: string,
+    input: RepoChapterUpdateInput,
+    opts?: { expectedUpdatedAt?: Date },
+  ) {
     const userId = resolveUserId(req);
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) {
@@ -230,10 +248,26 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     if (input.wordCount !== undefined) data.wordCount = input.wordCount;
 
     const updated = await client.chapter.updateMany({
-      where: { id, story: { userId } },
+      where: {
+        id,
+        story: { userId },
+        ...(opts?.expectedUpdatedAt !== undefined ? { updatedAt: opts.expectedUpdatedAt } : {}),
+      },
       data,
     });
-    if (updated.count === 0) return null;
+    if (updated.count === 0) {
+      if (opts?.expectedUpdatedAt !== undefined) {
+        // Disambiguate: the precondition can fail either because the row
+        // moved (real conflict) or because it no longer exists / isn't
+        // owned (plain not-found). Only the former is a 409.
+        const exists = await client.chapter.findFirst({
+          where: { id, story: { userId } },
+          select: { id: true },
+        });
+        if (exists) throw new ChapterVersionConflictError();
+      }
+      return null;
+    }
     const row = await client.chapter.findFirst({
       where: { id, story: { userId } },
     });

@@ -34,6 +34,14 @@ export function StoryBrowser({
         onSelectStory={(id) => {
           navigate(`/stories/${id}`);
         }}
+        onStoryDeleted={(id) => {
+          // [story-editor-0wz] The [story-editor-f1t] dead-end: if the
+          // deleted story is the one currently open in the editor, leave for
+          // the library before EditorPage's storyQuery 404s.
+          if (id === activeStoryId) {
+            navigate('/');
+          }
+        }}
         onCreateStory={() => {
           onClose();
           setCreateOpen(true);

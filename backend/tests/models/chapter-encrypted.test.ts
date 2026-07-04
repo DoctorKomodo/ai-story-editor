@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { resetUsers } from '../helpers/db';
 import { prisma } from '../setup';
-import { createStoryRow, createUser, resetNarrativeTables, SENTINEL } from './_helpers';
+import { createStoryRow, createUser, SENTINEL } from './_helpers';
 
 // Post-[E11]: plaintext title/content/bodyJson on Chapter are dropped. Only
 // the ciphertext triples remain for narrative fields. Schema-shape tests.
 
 describe('[E5] Chapter — ciphertext columns (post-E11)', () => {
-  beforeEach(resetNarrativeTables);
-  afterEach(resetNarrativeTables);
+  beforeEach(resetUsers);
+  afterEach(resetUsers);
 
   it('persists title + body ciphertext triples', async () => {
     const user = await createUser();

@@ -18,8 +18,10 @@ import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { _resetSessionStore } from '../../src/services/session-store';
+import { registerAndLogin } from '../helpers/auth';
+import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
-import { makeFakeReq, registerAndLogin, resetAll } from './_chat-test-helpers';
+import { makeFakeReq } from './_chat-test-helpers';
 
 async function setupStoryChapterChat(
   req: Request,
@@ -44,11 +46,11 @@ async function setupStoryChapterChat(
 describe('[V21] GET /api/chats/:chatId/messages', () => {
   beforeEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
   afterEach(async () => {
     _resetSessionStore();
-    await resetAll();
+    await resetDb();
   });
 
   it('returns 401 when unauthenticated', async () => {
@@ -58,25 +60,25 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
   });
 
   it('returns 404 for a nonexistent chat', async () => {
-    const { agent } = await registerAndLogin('chat-msg-u1');
+    const { agent } = await registerAndLogin({ username: 'chat-msg-u1' });
     const res = await agent.get('/api/chats/does-not-exist/messages');
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   it("returns 404 for another user's chat", async () => {
-    const { sessionId: ownerSessionId } = await registerAndLogin('chat-msg-owner');
+    const { sessionId: ownerSessionId } = await registerAndLogin({ username: 'chat-msg-owner' });
     const ownerReq = makeFakeReq(ownerSessionId);
     const { chatId } = await setupStoryChapterChat(ownerReq);
 
-    const { agent: intruderAgent } = await registerAndLogin('chat-msg-intruder');
+    const { agent: intruderAgent } = await registerAndLogin({ username: 'chat-msg-intruder' });
     const res = await intruderAgent.get(`/api/chats/${chatId}/messages`);
     expect(res.status).toBe(404);
     expect(res.body.error.code).toBe('not_found');
   });
 
   it('returns 200 with empty messages array for a new chat', async () => {
-    const { agent, sessionId } = await registerAndLogin('chat-msg-u2');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chat-msg-u2' });
     const req = makeFakeReq(sessionId);
     const { chatId } = await setupStoryChapterChat(req);
 
@@ -86,7 +88,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
   });
 
   it('returns decrypted messages ordered by createdAt asc with contract-shaped fields', async () => {
-    const { agent, sessionId } = await registerAndLogin('chat-msg-u3');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chat-msg-u3' });
     const req = makeFakeReq(sessionId);
     const { chatId } = await setupStoryChapterChat(req);
     const messageRepo = createMessageRepo(req);
@@ -145,7 +147,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
   });
 
   it('returns 500 when repo row has null content (egress schema rejects it)', async () => {
-    const { agent, sessionId } = await registerAndLogin('chat-msg-u4');
+    const { agent, sessionId } = await registerAndLogin({ username: 'chat-msg-u4' });
     const req = makeFakeReq(sessionId);
     const { chatId } = await setupStoryChapterChat(req);
 
@@ -158,7 +160,10 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     const res = await agent.get(`/api/chats/${chatId}/messages`);
     expect(res.status).toBe(500);
     // `error.stack` is only populated when NODE_ENV !== 'production' (test env).
+    // respond() wraps the raw ZodError in EgressSchemaDriftError so the central
+    // ZodError -> 400 mapping branch doesn't misclassify this server-side
+    // egress-contract drift as a client 400 (see lib/respond.ts).
     expect(res.body.error.stack).toBeDefined();
-    expect(res.body.error.stack).toMatch(/ZodError/);
+    expect(res.body.error.stack).toMatch(/EgressSchemaDriftError/);
   });
 });

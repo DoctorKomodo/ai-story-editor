@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
-import { makeUserContext, resetAllTables } from '../repos/_req';
+import { resetDb } from '../helpers/db';
+import { makeUserContext } from '../repos/_req';
 import { prisma } from '../setup';
 
 // The three idempotent backfill statements from the drafts_expand migration,
@@ -48,10 +49,10 @@ async function runBackfill() {
 
 describe('[9wk.2] drafts expand backfill — verbatim ciphertext relocation', () => {
   beforeEach(async () => {
-    await resetAllTables();
+    await resetDb();
   });
   afterEach(async () => {
-    await resetAllTables();
+    await resetDb();
   });
 
   it('creates one draft per draftless chapter, copies ciphertext byte-for-byte, sets pointers', async () => {

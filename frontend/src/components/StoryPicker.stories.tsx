@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { StoryListItem } from 'story-editor-shared';
+import { userEvent, within } from 'storybook/test';
 import { Button } from '@/design/primitives';
 import { storiesQueryKey } from '@/hooks/useStories';
 import { StoryPicker } from './StoryPicker';
@@ -120,4 +121,30 @@ export const Empty: Story = {
  */
 export const Embedded: Story = {
   args: { stories: SAMPLE_STORIES, embedded: true, activeStoryId: 's2' },
+};
+
+/**
+ * [story-editor-0wz] Clicking a row's delete icon opens the confirm dialog —
+ * title names the story, body warns about the full cascade (chapters,
+ * characters, outline, chats), Cancel / destructive Delete.
+ */
+export const DeleteConfirm: Story = {
+  args: { stories: SAMPLE_STORIES, activeStoryId: 's1' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Delete "The Cartographer"' }));
+  },
+};
+
+/**
+ * [story-editor-0wz] Confirming schedules the 5s soft-delete: the row hides
+ * immediately and the undo toast appears (same shape as ChatSceneTab's).
+ */
+export const Deleting: Story = {
+  args: { stories: SAMPLE_STORIES, activeStoryId: 's1' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByRole('button', { name: 'Delete "The Cartographer"' }));
+    await userEvent.click(canvas.getByRole('button', { name: 'Delete' }));
+  },
 };
