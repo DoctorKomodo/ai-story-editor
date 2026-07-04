@@ -1,10 +1,12 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
-import { type ChapterSummary, chapterSummarySchema } from 'story-editor-shared';
+import {
+  type ChapterSummary,
+  chapterSummarySchema,
+  DRAFT_ENCRYPTED_FIELD_KEYS,
+} from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
-
-const DRAFT_ENCRYPTED_FIELD_KEYS = ['body', 'summaryJson', 'label'] as const;
 
 export interface RepoDraftCreateInput {
   chapterId: string;

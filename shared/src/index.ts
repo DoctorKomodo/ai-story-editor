@@ -62,6 +62,24 @@ export {
   chatsResponseSchema,
   chatUpdateSchema,
 } from './schemas/chat';
+export type {
+  Draft,
+  DraftCreateInput,
+  DraftEncryptedFieldKey,
+  DraftMeta,
+  DraftUpdateInput,
+} from './schemas/draft';
+export {
+  activeDraftPutSchema,
+  DRAFT_ENCRYPTED_FIELD_KEYS,
+  DRAFT_LABEL_MAX,
+  draftCreateSchema,
+  draftMetaSchema,
+  draftResponseSchema,
+  draftSchema,
+  draftsResponseSchema,
+  draftUpdateSchema,
+} from './schemas/draft';
 
 export type {
   Citation,
