@@ -4,6 +4,15 @@
 **Status:** Draft (awaiting review)
 **Topic:** Multiple drafts per chapter, each with its own chat/scene history
 
+> **Revision 2026-07-04** — re-based against `main` PRs #150–#154 (merged into
+> `feature/chapter-drafts` after step 2). Design decisions unchanged. Updated for:
+> chat/scene tab unification (`ChatSceneTab.tsx`), the chapter-PATCH
+> optimistic-concurrency guard (`expectedUpdatedAt` → 409), the IndexedDB
+> local-draft-recovery layer (`chapterDrafts.ts` — **must re-key per draft**, see §8),
+> the central `HttpError` convention, the rewritten non-destructive import
+> (per-story transactions + plan/resolutions, PR #153), and the canonical test
+> helpers (`resetDb` in `tests/helpers/db.ts`, per-worker DBs, PR #152).
+
 ---
 
 ## 1. Overview
@@ -105,6 +114,12 @@ the active draft outright — see §7.)
 > create payload to **`draftId`**. Update the repo type, serializer, shared schema, and the
 > create-input — and the Storybook fixtures that pass `chapterId` (`ChatTab.stories.tsx`,
 > `SceneTab.stories.tsx`). Message keys stay chat-scoped and are unaffected.
+>
+> *Post-#150 note:* the frontend chat orchestration was unified into a single
+> **`ChatSceneTab.tsx`** shell (`ChatTab.tsx`/`SceneTab.tsx` are now thin `kind` wrappers; their
+> stories files remain the fixture sites). The re-key therefore happens **once**, in
+> `ChatSceneTab.tsx` + `useChat.ts` — and `useChat.ts` has **two** keys to re-point:
+> `chatsQueryKey` *and* `chatsBaseQueryKey`, plus the invalidation sites that moved into the shell.
 
 ### Resulting shape
 ```
@@ -262,6 +277,15 @@ operate on a **draft**, not the chapter:
 
 - Body load/save: target `:draftId` (the editor loads/saves whichever draft is being viewed).
 - `summary` (PUT) + `summarise` (POST): target `:draftId`.
+- **The optimistic-concurrency guard moves with the body (post-#150).** The chapter PATCH now
+  accepts `expectedUpdatedAt` and 409s via `ChapterVersionConflictError` when stale. When the body
+  PATCH becomes draft-scoped, the precondition re-targets **`Draft.updatedAt`** (rename/port the
+  error class), and `backend/tests/routes/chapters.concurrency.test.ts` ports to the draft endpoint.
+- **Error idiom (post-#150):** all new draft routes use the central `HttpError` convention
+  (`backend/src/lib/http-errors.ts` + the error-handler `instanceof` table) — no hand-rolled
+  `{ error: { … } }` literals. There is no `conflict()` helper yet; step 4 adds one for the
+  409 guards and folds the version-conflict catch (currently a route-level literal in
+  `chapters.routes.ts`) into the central table.
 
 `chapters.routes.ts` `GET (list)` (`findManyForStory` / `RepoChapterMeta` / `chapterMetaSchema`)
 today reads only `Chapter` columns. It must now **join each chapter's active draft** to source
@@ -312,16 +336,37 @@ oldest-truncated under the token budget. Specifics:
   `chats[]` moves **under** its draft (chats are draft-scoped now). This preserves "nothing is
   destroyed" (§1) across an export/import round-trip — non-active drafts and their chat history
   survive. (This is the schema change driving the `EXPORT_FORMAT_VERSION` 1→2 bump in §4.)
-  `importResultSchema` gains a `drafts` count alongside the existing chats/messages counts.
-- **Import is a three-phase per-chapter write** (the whole import already runs in one `$transaction`):
-  1. create the chapter with `activeDraftId = null`;
-  2. create its drafts **in `orderIndex` order** via `draft.repo` — and **re-densify `drafts[].orderIndex`
-     from the loop index** (the same convention import already uses for chapter/character/outline order),
-     so a hand-edited file can't violate `@@unique([chapterId, orderIndex])`;
-  3. `update` the chapter to point `activeDraftId` at the draft whose `isActive === true`.
+  `importResultSchema.imported` gains a `drafts` count alongside the existing chats/messages counts.
+  Export also keeps emitting the story `id` + `snapshotUpdatedAt` fields added by the
+  non-destructive-import work (#153) — the active-draft rewrite must not drop them.
+- **Import architecture (re-based on #153).** Import is no longer one whole-file transaction: the
+  request is an **envelope** `{ file, resolutions? }`, a `POST /import/plan` endpoint buckets each
+  file-story `new`/`unchanged`/`conflict`, per-story resolutions are `create`/`replace`/`skip`, and
+  `importOneStory` runs **one `$transaction` per story** (a failing story rolls back alone, records
+  `outcome: 'failed'`, and aborts the remainder). Consequences for drafts:
+  - The **three-phase per-chapter write nests inside each story's transaction**:
+    1. create the chapter with `activeDraftId = null`;
+    2. create its drafts **in `orderIndex` order** via `draft.repo` — **re-densify
+       `drafts[].orderIndex` from the loop index** (the same convention import already uses for
+       chapter/character/outline order), so a hand-edited file can't violate
+       `@@unique([chapterId, orderIndex])`; each draft's `chats[]` are created under it;
+    3. `update` the chapter to point `activeDraftId` at the draft whose `isActive === true`.
+  - A `replace` resolution deletes the live story first (owner-scoped); its drafts subtree goes via
+    the existing chapter→draft cascade — no extra handling needed.
+  - The **round-trip parity guard** (`backend/tests/services/backup-roundtrip.test.ts`) derives
+    `chatExportSchema` from `chapterExportSchema.shape.chats`; moving chats under drafts breaks that
+    derivation. Step 5 adds a `draftExportSchema` layer (`chapterExportSchema.shape.drafts…`),
+    adds `drafts` to the CHAPTER allowlist + a DRAFT allowlist for its nested `chats`, and extends
+    the `imported` deep-equal with the `drafts` count.
+  - The **conflict-resolution UI** in `SettingsDataTab.tsx` (file-pick parse → plan call → per-story
+    resolution selects) is the surface draft round-tripping layers onto — not the pre-#153
+    whole-file-replace UI.
 - **Exactly-one-active integrity.** Zod can't express "exactly one `isActive` per chapter" structurally
   — add a `.refine` on `chapterExportSchema` (exactly one `isActive: true` in `drafts[]`) so a malformed
   file can't import a chapter with zero/ambiguous active drafts (which would break the app invariant).
+  The refine runs both server-side and in the frontend's file-pick `importSchema.safeParse`, so a bad
+  file is rejected before the plan call; server-side, a malformed story now fails **just that story**
+  (per-story transaction), not the whole file.
 
 ---
 
@@ -367,6 +412,15 @@ oldest-truncated under the token budget. Specifics:
   baseline must re-seed whenever the **viewed draft** changes; otherwise switching from Draft A to
   Draft B can flush A's buffered edits into B — a data-corruption-class bug. This is the single
   highest-risk frontend change.
+- **The local draft-recovery layer must re-key per draft (post-#150 — same severity as the
+  baseline re-seed).** `frontend/src/lib/chapterDrafts.ts` persists the dirty editor body to
+  IndexedDB keyed **`[userId, chapterId]`**, with `baseUpdatedAt` = the server chapter's
+  `updatedAt` (consumed by `useChapterDraft.ts`, `DraftRestoreBanner`, and the `useUnloadFlush`
+  keepalive PATCH). Under multiple drafts, that chapter-level key cross-contaminates: edit draft A,
+  switch to B, and B's session can be offered (or unload-flush) A's buffered body. Required
+  changes: extend the store key with the draft id, source `baseUpdatedAt` from the **viewed
+  draft's** `updatedAt`, point the keepalive flush at the draft-scoped body endpoint, and send the
+  viewed draft's version as the `expectedUpdatedAt` precondition (`ChapterConflictBanner` path).
 - Chat hooks/query keys re-key from `chapterId` to `draftId` (`['draft', draftId, 'chats', kind]`,
   and the create/invalidate sites in `useChat.ts`). **Message keys stay chat-scoped**
   (`['chat', chatId, 'messages']`) and do not change. The `chatDraft` optimistic-UI store keys on
@@ -390,7 +444,8 @@ oldest-truncated under the token budget. Specifics:
   "Draft D"). Confirms → POST create → select the new draft.
 
 ### Chat panel
-- Scoped to `selectedDraft` (Ask/Scene history follows the viewed draft).
+- Scoped to `selectedDraft` (Ask/Scene history follows the viewed draft). Post-#150 this is one
+  component — `ChatSceneTab.tsx` (the `ChatTab`/`SceneTab` wrappers just pass `kind`).
 
 ---
 
@@ -421,7 +476,12 @@ oldest-truncated under the token budget. Specifics:
 - **E12 leak test:** extended to `Draft`.
 - **Frontend:** sidebar expand/collapse + subtle affordance; draft switch swaps body + chat; new-draft
   dialog; sub-row label binding. **Autosave: switching A→B with unsaved edits in A must not write A's
-  buffer into B** (baseline re-seed regression).
+  buffer into B** (baseline re-seed regression). **Same scenario against the IndexedDB recovery
+  layer: after editing A and switching to B, no restore offer (or unload flush) may surface A's
+  buffered body under B** (per-draft store key regression).
+- **Concurrency:** the draft-scoped body PATCH honors `expectedUpdatedAt` against `Draft.updatedAt`
+  (port of `chapters.concurrency.test.ts`: matching / stale / no-precondition / deleted-mid-flight /
+  no-ciphertext-egress).
 - **Prompt:** previous-chapter context pulls each prior chapter's **active draft** summary; viewing a
   non-active draft of the current chapter doesn't change prior-chapter context; unsummarised active
   draft is skipped.
@@ -451,19 +511,29 @@ epic merges to `main`.**
    (repo-boundary-reviewer.)
 3. **Ownership-chain + chat/message re-point** — rewrite the nested `where` clauses in
    `chat.repo.ts`, `message.repo.ts`, `ownership.middleware.ts`; flip the `Chat` wire contract
-   (`chapterId`→`draftId`) in `RepoChat`/serializer/shared schema/create-input/stories; **CONTRACT
-   migration: `Chat.draftId` non-null + FK, drop `Chat.chapterId`.** (**security-reviewer** gate.)
+   (`chapterId`→`draftId`) in `RepoChat`/serializer/shared schema/create-input/stories — frontend
+   flip lands once in `ChatSceneTab.tsx` + `useChat.ts` (both `chatsQueryKey` and
+   `chatsBaseQueryKey`); **CONTRACT migration: `Chat.draftId` non-null + FK, drop
+   `Chat.chapterId`.** (**security-reviewer** gate.)
 4. **`draft.repo.ts` + draft routes** (list/create-fork-blank/rename/delete-with-reindex/set-active);
-   re-scope chat routes to draft; move body + summary/summarise endpoints to draft scope.
+   re-scope chat routes to draft; move body + summary/summarise endpoints to draft scope. 409 guards
+   via the central `HttpError` idiom (add a `conflict()` helper; fold `ChapterVersionConflictError`
+   into the central table); carry the `expectedUpdatedAt` optimistic-concurrency precondition to the
+   draft body PATCH (re-target `Draft.updatedAt`; port `chapters.concurrency.test.ts`).
 5. **Prompt + export/import + aggregates** — prompt previous-chapter context via the active-draft
    summary (metadata join); rewrite `aggregateForStories` to total active-draft word counts (raw/
    reduce, not `groupBy._sum`) + fix its test; export/import round-trips all drafts (`drafts[]` +
-   per-draft chats, three-phase import write with `activeDraftId` restore + orderIndex densification +
-   exactly-one-`isActive` refine, format version 2, `importResultSchema` draft count). **CONTRACT
-   migration: drop `Chapter.body*/summaryJson*/summaryJsonUpdatedAt/wordCount`.**
-6. **Frontend state** — `selectedDraft` + autosave-baseline re-seed + chat query re-keying.
+   per-draft chats, three-phase write **inside the per-story import transaction** with
+   `activeDraftId` restore + orderIndex densification + exactly-one-`isActive` refine, format
+   version 2, `importResultSchema.imported` draft count; extend the round-trip parity guard with a
+   `draftExportSchema` layer; layer draft round-tripping onto the plan/resolutions conflict UI).
+   **CONTRACT migration: drop `Chapter.body*/summaryJson*/summaryJsonUpdatedAt/wordCount`.**
+6. **Frontend state** — `selectedDraft` + autosave-baseline re-seed + **IndexedDB draft-recovery
+   re-key by draft (chapterDrafts.ts / useChapterDraft / DraftRestoreBanner / useUnloadFlush /
+   ChapterConflictBanner — see §8)** + chat query re-keying.
 7. **Sidebar tree** — draft children, hover actions, subtle single-draft affordance + new-draft
-   dialog.
+   dialog. Delete UX reuses the shared `useSoftDelete` 5s-undo hook (the established pattern —
+   `ChatSceneTab`, `StoryPicker`).
 8. **Editor sub-row label binding** to the viewed draft.
 9. **Squash migrations + consolidation gate (pre-merge)** — replace the step-2/3/5 scaffolding
    migrations with one consolidated migration (§5b); validate with the `prisma migrate diff`
