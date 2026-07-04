@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { registerAndLogin } from '../helpers/auth';
 import { resetDb } from '../helpers/db';
+import { prisma } from '../setup';
 
 const TEST_ORIGIN = 'http://localhost:3000';
 
@@ -375,6 +376,60 @@ describe('POST /api/users/me/import', () => {
 
     const after = (await agent.get('/api/users/me/export')).body;
     expect(after.stories.map((s: { title: string }) => s.title)).toEqual(['Good One']);
+  });
+
+  it('mid-chapter failure rolls back a completed chapter+draft mint from an earlier chapter in the same story', async () => {
+    // Regression proof for the [story-editor-9wk.3] claim in import.service.ts
+    // (~lines 66-70): chapterRepo.create's own $transaction — which mints a
+    // Chapter row + its initial Draft + the activeDraftId pointer — must join
+    // the outer per-story transaction rather than escaping it. Ch1 below
+    // completes chapterRepo.create (and thus its inner mint-transaction) fully
+    // before Ch2's computeWordCount throws and aborts the outer transaction.
+    // If the inner transaction didn't join the outer one, Ch1's Chapter+Draft
+    // would survive the rollback even though the story import reports 'failed'.
+    const { agent, userId } = await registerAndLogin({ username: 'midchapter-mint-user' });
+    const file = {
+      formatVersion: 2,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          title: 'Two Chapters',
+          chapters: [
+            {
+              title: 'Ch1 - completes',
+              orderIndex: 0,
+              bodyJson: {
+                type: 'doc',
+                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hello' }] }],
+              },
+              summary: null,
+              chats: [],
+            },
+            {
+              title: 'Ch2 - crashes',
+              orderIndex: 1,
+              bodyJson: { type: 'doc', content: [], __importCrash: true },
+              summary: null,
+              chats: [],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
+    expect(imp.status).toBe(200);
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'failed' }]);
+    expect(imp.body.imported.stories).toBe(0);
+    expect(imp.body.imported.chapters).toBe(0);
+
+    // Zero Chapter and Draft rows survive for this user — Ch1's completed
+    // mint was rolled back along with the rest of the failed story.
+    expect(await prisma.chapter.count({ where: { story: { userId } } })).toBe(0);
+    expect(await prisma.draft.count({ where: { chapter: { story: { userId } } } })).toBe(0);
   });
 
   it('re-sequences orderIndex/order from a gappy file', async () => {
