@@ -122,7 +122,7 @@ describe('SceneTab — [7] soft-delete with undo', () => {
             {
               id: 's1',
               title: 'Veranda confrontation',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               kind: 'scene',
               messageCount: 0,
               createdAt: new Date().toISOString(),
@@ -224,7 +224,7 @@ describe('SceneTab — [1] session picker integration', () => {
               {
                 id: 's1',
                 title: 'Opening scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
                 createdAt: new Date().toISOString(),
@@ -260,7 +260,7 @@ describe('SceneTab — [1] session picker integration', () => {
               {
                 id: 's1',
                 title: 'First scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
                 createdAt: olderTime,
@@ -270,7 +270,7 @@ describe('SceneTab — [1] session picker integration', () => {
               {
                 id: 's2',
                 title: 'Second scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
                 createdAt: olderTime,
@@ -327,7 +327,7 @@ describe('SceneTab — [2] auto-rename on first turn', () => {
     const now = new Date().toISOString();
     const newChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: null,
       kind: 'scene',
       createdAt: now,
@@ -431,7 +431,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 id: 's1',
                 kind: 'scene',
                 title: 'Veranda',
-                chapterId: 'c1',
+                draftId: 'c1',
                 messageCount: 0,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -471,7 +471,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 id: 's1',
                 kind: 'scene',
                 title: 'Veranda',
-                chapterId: 'c1',
+                draftId: 'c1',
                 messageCount: 0,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -562,7 +562,7 @@ describe('SceneTab — [4] insert-at-end', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 2,
         createdAt: now,
@@ -582,7 +582,7 @@ describe('SceneTab — [4] insert-at-end', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 2,
                 createdAt: now,
@@ -671,7 +671,7 @@ describe('SceneTab — [5] retry semantics', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 2,
         createdAt: now,
@@ -691,7 +691,7 @@ describe('SceneTab — [5] retry semantics', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 2,
                 createdAt: now,
@@ -753,7 +753,7 @@ describe('SceneTab — [6] stop during streaming', () => {
     const now = new Date().toISOString();
     const newChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: 'Existing scene',
       kind: 'scene',
       messageCount: 0,
@@ -827,7 +827,7 @@ describe('SceneTab — [8] enableWebSearch propagation', () => {
     const now = new Date().toISOString();
     const newChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: null,
       kind: 'scene',
       createdAt: now,
@@ -920,7 +920,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
 
     const existingChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: 'Existing',
       kind: 'scene',
       messageCount: 1,
@@ -974,7 +974,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
 
     const existingChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: 'Existing',
       kind: 'scene',
       messageCount: 1,
@@ -1122,7 +1122,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 4,
         createdAt: now,
@@ -1142,7 +1142,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 4,
                 createdAt: now,
@@ -1208,7 +1208,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 2,
         createdAt: now,
@@ -1228,7 +1228,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 2,
                 createdAt: now,

@@ -103,11 +103,11 @@ export function useCreateChatMutation(): UseMutationResult<Chat, Error, CreateCh
     },
     onSuccess: (chat, vars) => {
       const summary: ChatSummary = { ...chat, messageCount: 0 };
-      const key = chatsQueryKey(chat.chapterId, vars.kind);
+      const key = chatsQueryKey(vars.chapterId, vars.kind);
       qc.setQueryData<ChatSummary[]>(key, (prev) => [summary, ...(prev ?? [])]);
       // Invalidate by the 3-element prefix so ALL kind variants
       // (ask, scene, undefined) are swept — not just the undefined slot.
-      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chat.chapterId) });
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(vars.chapterId) });
     },
   });
 }

@@ -25,7 +25,9 @@ export interface ChatUpdateInput {
 // `Record<string, unknown>` constraint on `projectDecrypted<T>`.
 export type RepoChat = {
   id: string;
-  chapterId: string;
+  // Nullable in the DB until Task 5's contract migration; non-null at runtime
+  // for every row (dual-write + backfill). serializeChat asserts.
+  draftId: string | null;
   title: string | null;
   kind: 'ask' | 'scene';
   createdAt: Date;

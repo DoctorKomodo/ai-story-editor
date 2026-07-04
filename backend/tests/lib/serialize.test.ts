@@ -204,7 +204,7 @@ describe('serializeOutlineItem()', () => {
 describe('serializeChat()', () => {
   const baseRow = {
     id: 'cm0chat00000001',
-    chapterId: 'cm0chap00000001',
+    draftId: 'cm0chap00000001',
     title: 'Brainstorming',
     kind: 'ask' as const,
     createdAt: new Date('2026-05-15T00:00:00.000Z'),

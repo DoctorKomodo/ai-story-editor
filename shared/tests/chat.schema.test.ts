@@ -13,7 +13,7 @@ import {
 
 const validChat = {
   id: 'cm0chat00000001',
-  chapterId: 'cm0chap00000001',
+  draftId: 'cm0chap00000001',
   title: 'First-draft brainstorm',
   kind: 'ask' as const,
   createdAt: '2026-05-15T00:00:00.000Z',

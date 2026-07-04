@@ -416,7 +416,7 @@ describe('useSendChatMessageMutation — invalidates chats list (story-editor-lo
     qc.setQueryData(chatsBaseQueryKey('chapter-1'), [
       {
         id: 'chat-1',
-        chapterId: 'chapter-1',
+        draftId: 'chapter-1',
         title: 't',
         kind: 'ask',
         createdAt: '2026-05-01T00:00:00Z',
@@ -499,7 +499,7 @@ describe('useCreateChatMutation cache invalidation', () => {
     // Arrange: POST /chapters/:id/chats returns a new chat row.
     const newChat = {
       id: 'chat-new',
-      chapterId: CHAPTER_ID,
+      draftId: CHAPTER_ID,
       title: null,
       kind: 'scene' as const,
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -545,7 +545,7 @@ describe('useCreateChatMutation cache invalidation', () => {
   it('useCreateChatMutation optimistically prepends to cache', async () => {
     const newChat = {
       id: 'chat-new',
-      chapterId: CHAPTER_ID,
+      draftId: CHAPTER_ID,
       title: null,
       kind: 'ask' as const,
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -565,7 +565,7 @@ describe('useCreateChatMutation cache invalidation', () => {
     const askKey = chatsQueryKey(CHAPTER_ID, 'ask');
     const existingChat: ChatSummary = {
       id: 'chat-old',
-      chapterId: CHAPTER_ID,
+      draftId: CHAPTER_ID,
       title: 'Old',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -621,7 +621,7 @@ describe('useRenameChatMutation', () => {
     const serverNormalisedTitle = 'Server-Normalized Title';
     const updatedChat: Chat = {
       id: 'chat-1',
-      chapterId: CHAPTER_ID,
+      draftId: CHAPTER_ID,
       title: serverNormalisedTitle,
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -641,7 +641,7 @@ describe('useRenameChatMutation', () => {
     const askKey = chatsQueryKey(CHAPTER_ID, 'ask');
     const existingChat: ChatSummary = {
       id: 'chat-1',
-      chapterId: CHAPTER_ID,
+      draftId: CHAPTER_ID,
       title: 'Original Title',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -699,7 +699,7 @@ describe('useRemoveChatMutation', () => {
     const askKey = chatsQueryKey(CHAPTER_ID, 'ask');
     const chatToKeep: ChatSummary = {
       id: 'chat-keep',
-      chapterId: CHAPTER_ID,
+      draftId: CHAPTER_ID,
       title: 'Keep Me',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -709,7 +709,7 @@ describe('useRemoveChatMutation', () => {
     };
     const chatToDelete: ChatSummary = {
       id: 'chat-delete',
-      chapterId: CHAPTER_ID,
+      draftId: CHAPTER_ID,
       title: 'Delete Me',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -749,7 +749,7 @@ describe('useChat schema drift', () => {
 
   const validChat = {
     id: 'cm0chat00000001',
-    chapterId: CHAPTER_ID,
+    draftId: CHAPTER_ID,
     title: 'First-draft brainstorm',
     kind: 'ask' as const,
     createdAt: '2026-05-15T00:00:00.000Z',

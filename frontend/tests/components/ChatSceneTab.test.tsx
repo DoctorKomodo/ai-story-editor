@@ -105,7 +105,7 @@ describe('ChatSceneTab — bug regressions', () => {
           chats: [
             {
               id: 'c1',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               title: 'Existing chat',
               kind: 'ask',
               messageCount: 0,
@@ -166,7 +166,7 @@ describe('ChatSceneTab — bug regressions', () => {
           chats: [
             {
               id: 'sc1',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               title: 'Existing scene',
               kind: 'scene',
               messageCount: 1,
@@ -218,7 +218,7 @@ describe('ChatSceneTab — bug regressions', () => {
           chats: [
             {
               id: 'c1',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               title: 'Existing chat',
               kind: 'ask',
               messageCount: 0,

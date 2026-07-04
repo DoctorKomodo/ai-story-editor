@@ -57,12 +57,21 @@ export function serializeMessage(row: RepoMessage): Message {
   };
 }
 
+// [9wk.3] draftId is nullable in the DB until the chat contract migration
+// lands (same task-group); at runtime every row has it (dual-write +
+// backfill). Zod would reject null anyway — this just fails with a clearer
+// message and satisfies the compiler without a blind cast.
+function assertDraftId(v: string | null): string {
+  if (v === null) throw new Error('serializeChat: chat row has no draftId');
+  return v;
+}
+
 // Explicit pick (not spread): forces the compiler to surface any repo field
 // the wire shape does NOT carry (matches serializeMessage / serializeOutlineItem).
 export function serializeChat(row: RepoChat): Chat {
   return {
     id: row.id,
-    chapterId: row.chapterId,
+    draftId: assertDraftId(row.draftId),
     title: row.title,
     kind: row.kind,
     createdAt: row.createdAt.toISOString(),

@@ -110,7 +110,7 @@ describe('ChatTab — smoke', () => {
             {
               id: 'c1',
               title: 'How do I describe rain?',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               kind: 'ask',
               messageCount: 0,
               createdAt: new Date().toISOString(),
@@ -186,7 +186,7 @@ describe('ChatTab — smoke', () => {
     // POST /chats returns a Chat (no messageCount — chatResponseSchema is strict).
     const newChat = {
       id: 'c1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: null,
       kind: 'ask',
       createdAt: now,
@@ -300,7 +300,7 @@ describe('ChatTab — smoke', () => {
           chats: [
             {
               id: 'c1',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               title: 'Existing chat',
               kind: 'ask',
               messageCount: 0,
@@ -399,7 +399,7 @@ function standardFetchMock(chatId: string, chapterId: string): FetchMock {
           {
             id: chatId,
             title: 'Test chat',
-            chapterId,
+            draftId: chapterId,
             kind: 'ask',
             messageCount: 4,
             createdAt: new Date().toISOString(),
@@ -456,7 +456,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 4,
         createdAt: now,
@@ -511,7 +511,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 2,
         createdAt: now,
@@ -562,7 +562,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 2,
         createdAt: now,
@@ -603,7 +603,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 4,
         createdAt: now,
@@ -652,7 +652,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 2,
         createdAt: now,

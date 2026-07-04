@@ -37,6 +37,7 @@ import { validateBody, validateQuery } from '../middleware/validate';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
+import { createDraftRepo } from '../repos/draft.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createStoryRepo } from '../repos/story.repo';
 import { getDekFromRequest } from '../services/content-crypto.service';
@@ -230,7 +231,14 @@ export function createChatMessagesRouter() {
           res.status(404).json({ error: { message: 'Chat not found', code: 'not_found' } });
           return;
         }
-        const chatChapterId = chat.chapterId as string;
+        // [9wk.3] Chats are draft-scoped; the chapter is reached through the
+        // draft. draft.repo.findById is owner-filtered, and the chat itself was
+        // ownership-checked above — a miss here is an invariant violation.
+        const chatDraft = await createDraftRepo(req).findById(chat.draftId as string);
+        if (!chatDraft) {
+          throw new Error('chat.routes: chat draft not resolvable (invariant violation)');
+        }
+        const chatChapterId = chatDraft.chapterId;
 
         // ── [V16] Attachment chapter mismatch guard ───────────────────────────
         if (body.attachment && body.attachment.chapterId !== chatChapterId) {

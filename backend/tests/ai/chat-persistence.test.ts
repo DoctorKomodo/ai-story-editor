@@ -170,7 +170,8 @@ describe('Chat persistence [V15]', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.chat.title).toBe('My Chat');
-    expect(res.body.chat.chapterId).toBe(chapterId);
+    const persistedChapter = await prisma.chapter.findUniqueOrThrow({ where: { id: chapterId } });
+    expect(res.body.chat.draftId).toBe(persistedChapter.activeDraftId);
     expect(typeof res.body.chat.id).toBe('string');
   });
 
