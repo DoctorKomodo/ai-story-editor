@@ -76,7 +76,11 @@ export async function buildExport(req: Request): Promise<ExportFile> {
       order: o.order,
     }));
 
+    const snapshotUpdatedAt = await storyRepo.contentUpdatedAtMax(s.id);
+
     out.push({
+      id: s.id,
+      snapshotUpdatedAt: snapshotUpdatedAt.toISOString(),
       title: s.title,
       synopsis: s.synopsis ?? undefined,
       genre: s.genre ?? undefined,

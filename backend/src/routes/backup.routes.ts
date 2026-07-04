@@ -1,13 +1,19 @@
 import type { Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
-import { exportSchema, importResultSchema, importSchema } from 'story-editor-shared';
+import {
+  exportSchema,
+  importPlanRequestSchema,
+  importPlanResponseSchema,
+  importRequestSchema,
+  importResultSchema,
+} from 'story-editor-shared';
 import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
 import { requireAuth } from '../middleware/auth.middleware';
 import { validateBody } from '../middleware/validate';
 import { buildExport } from '../services/export.service';
-import { runImport } from '../services/import.service';
+import { planImport, runImport } from '../services/import.service';
 
 function yyyymmdd(d: Date): string {
   return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
@@ -47,8 +53,15 @@ export function createImportRouter(): Router {
   router.use(requireAuth);
   router.use(importLimiter);
   router.post(
+    '/plan',
+    validateBody(importPlanRequestSchema, async (body, req, res) => {
+      const result = await planImport(req, body);
+      return respond(importPlanResponseSchema, res, result);
+    }),
+  );
+  router.post(
     '/',
-    validateBody(importSchema, async (body, req, res) => {
+    validateBody(importRequestSchema, async (body, req, res) => {
       const result = await runImport(req, body);
       return respond(importResultSchema, res, result);
     }),

@@ -25,7 +25,12 @@ function resolveUserId(req: Request): string {
 }
 
 export function createStoryRepo(req: Request, client: PrismaClient = defaultPrisma) {
-  async function create(input: StoryCreateInput) {
+  // `opts.id` is repo-internal (not on any wire schema): the import-replace
+  // path reuses the id of the owned story it just deleted in the same
+  // transaction, so a replaced story keeps its identity — open editors, URLs,
+  // and history stay valid ([story-editor-f1t]; the e2i no-dead-end
+  // guarantee). Callers must never pass a client-supplied id.
+  async function create(input: StoryCreateInput, opts?: { id?: string }) {
     const userId = resolveUserId(req);
     const encCols = {
       ...writeEncrypted(req, 'title', input.title),
@@ -34,6 +39,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     };
     const row = await client.story.create({
       data: {
+        ...(opts?.id ? { id: opts.id } : {}),
         userId,
         genre: input.genre ?? null,
         targetWords: input.targetWords ?? null,
@@ -112,5 +118,51 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForUser, update, remove };
+  // Max `updatedAt` across the story row and its entire subtree (chapters,
+  // characters, outline items, chats, messages) — "the last time anything in
+  // this story changed." Timestamps only, no narrative column is read or
+  // decrypted. Messages use `createdAt` (append time) plus `updatedAt` when
+  // the edit path has set it (null = never edited).
+  async function contentUpdatedAtMax(storyId: string): Promise<Date> {
+    const userId = resolveUserId(req);
+    const story = await client.story.findFirst({ where: { id: storyId, userId } });
+    if (!story) throw new Error('story.repo: story not owned by caller');
+
+    const [chapterMax, characterMax, outlineMax, chatMax, messageMax] = await Promise.all([
+      client.chapter.aggregate({
+        where: { storyId, story: { userId } },
+        _max: { updatedAt: true },
+      }),
+      client.character.aggregate({
+        where: { storyId, story: { userId } },
+        _max: { updatedAt: true },
+      }),
+      client.outlineItem.aggregate({
+        where: { storyId, story: { userId } },
+        _max: { updatedAt: true },
+      }),
+      client.chat.aggregate({
+        where: { chapter: { storyId, story: { userId } } },
+        _max: { updatedAt: true },
+      }),
+      client.message.aggregate({
+        where: { chat: { chapter: { storyId, story: { userId } } } },
+        _max: { createdAt: true, updatedAt: true },
+      }),
+    ]);
+
+    const candidates = [
+      story.updatedAt,
+      chapterMax._max.updatedAt,
+      characterMax._max.updatedAt,
+      outlineMax._max.updatedAt,
+      chatMax._max.updatedAt,
+      messageMax._max.createdAt,
+      messageMax._max.updatedAt,
+    ].filter((d): d is Date => d != null);
+
+    return candidates.reduce((max, d) => (d > max ? d : max));
+  }
+
+  return { create, findById, findManyForUser, update, remove, contentUpdatedAtMax };
 }

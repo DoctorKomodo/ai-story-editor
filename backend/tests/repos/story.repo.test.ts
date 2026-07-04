@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createChatRepo } from '../../src/repos/chat.repo';
+import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
@@ -119,5 +122,63 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
     expect(nope).toBe(false);
     const yep = await aliceRepo.remove(s.id as string);
     expect(yep).toBe(true);
+  });
+
+  describe('contentUpdatedAtMax()', () => {
+    it('returns the story row updatedAt when the subtree is empty', async () => {
+      const ctx = await makeUserContext();
+      const repo = createStoryRepo(ctx.req);
+      const s = await repo.create({ title: 'Lonely story' });
+
+      const max = await repo.contentUpdatedAtMax(s.id as string);
+      expect(max.getTime()).toBe((s.updatedAt as Date).getTime());
+    });
+
+    it('bumps when a deep child (message) is edited after the story itself last changed', async () => {
+      const ctx = await makeUserContext();
+      const storyRepo = createStoryRepo(ctx.req);
+      const chapterRepo = createChapterRepo(ctx.req);
+      const chatRepo = createChatRepo(ctx.req);
+      const messageRepo = createMessageRepo(ctx.req);
+
+      const s = await storyRepo.create({ title: 'Deep subtree' });
+      const chapter = await chapterRepo.create({
+        storyId: s.id as string,
+        title: 'Ch1',
+        orderIndex: 0,
+      });
+      const chat = await chatRepo.create({ chapterId: chapter.id });
+      const message = await messageRepo.create({
+        chatId: chat.id,
+        role: 'user',
+        content: 'hello',
+      });
+
+      const beforeEdit = await storyRepo.contentUpdatedAtMax(s.id as string);
+
+      // Ensure a strictly later timestamp on the next write.
+      await new Promise((r) => setTimeout(r, 5));
+      const edited = await messageRepo.update(message.id, chat.id, { content: 'hello, edited' });
+      expect(edited?.updatedAt).not.toBeNull();
+
+      // Prisma's `@updatedAt` bumps Chat.updatedAt on ANY row write (the same
+      // message-edit transaction also touches Chat.lastActivityAt), so the
+      // max may land on the chat row rather than the message row itself —
+      // assert the subtree-max invariant (it moved forward), not which
+      // specific row supplied it.
+      const afterEdit = await storyRepo.contentUpdatedAtMax(s.id as string);
+      expect(afterEdit.getTime()).toBeGreaterThan(beforeEdit.getTime());
+      expect(afterEdit.getTime()).toBeGreaterThanOrEqual((edited?.updatedAt as Date).getTime());
+    });
+
+    it('throws when the story is not owned by the caller', async () => {
+      const alice = await makeUserContext('alice-max');
+      const bob = await makeUserContext('bob-max');
+      const aliceRepo = createStoryRepo(alice.req);
+      const bobRepo = createStoryRepo(bob.req);
+
+      const s = await aliceRepo.create({ title: 'alice-only' });
+      await expect(bobRepo.contentUpdatedAtMax(s.id as string)).rejects.toThrow();
+    });
   });
 });

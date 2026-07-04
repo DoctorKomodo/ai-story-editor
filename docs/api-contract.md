@@ -226,6 +226,34 @@ Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds
 
 ---
 
+## Backup — `/api/users/me`
+
+### `GET /export`
+Streams the caller's full narrative tree (all stories → chapters → chats/messages, characters, outline items), decrypted, as a downloadable JSON file (`Content-Disposition: attachment`).
+Response `200`: `{ "formatVersion": 1, "app": "inkwell", "exportedAt", "stories": [ … ] }`. Each story carries its live `id` and `snapshotUpdatedAt` — the max `updatedAt` across the story's own row and its entire subtree (chapters, characters, outline items, chats, messages) at export time — used by `POST /import/plan` to detect drift since the file was taken.
+
+### `POST /import/plan` — rate-limited 5 req/min/user (shared bucket with `POST /import`)
+Preflight, read-only — no mutation. Body: `{ "stories": [{ "id", "snapshotUpdatedAt" }] }` (max 1000 entries).
+For each entry: an `id` with no live story owned by the caller (unknown, or owned by a different user) reports `new` — ownership never leaks via `unchanged`/`conflict` on someone else's id. Otherwise the caller's live subtree max is compared against `snapshotUpdatedAt`: `<=` → `unchanged`; `>` → `conflict`.
+Response `200`: `{ "stories": [{ "id", "status": "new" | "unchanged" | "conflict" }] }`.
+
+### `POST /import` — rate-limited 5 req/min/user
+Additive by default, never a whole-library wipe. Body: `{ "file": <same shape as GET /export>, "resolutions"?: { [fileStoryId]: "create" | "replace" | "skip" } }`.
+
+Each file story is resolved independently, in file order:
+- No `id` on the file story, or an `id` with no entry in `resolutions`, defaults to **`create`** — always imports as a brand-new story, never touching any live story.
+- **`replace`** deletes and recreates the matched story in one atomic step, but only when `resolutions`' key names a live story that exists **and is owned by the caller** — the delete is owner-scoped at the data layer, so an id belonging to another user (or no live story at all) silently falls back to `create` instead of deleting anything.
+- **`skip`** does nothing for that story.
+
+Each non-skipped story runs in its own `$transaction` (`replace`'s delete + recreate share one transaction, so a failed recreate rolls back the delete). Whole-file atomicity is **not** guaranteed: if a story's transaction fails, it rolls back cleanly, that story is reported `failed`, and every story after it in the file is aborted (not attempted, absent from `outcomes`) — but every story processed before the failure stays committed. There are no compensating deletes.
+
+**Behavior change:** unlike the previous whole-file-replace contract, this endpoint never deletes a live story that's simply absent from the file — leftover stories not mentioned in the import survive and must be deleted manually.
+
+Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
+Errors: `400 validation_error` (unknown `formatVersion` or malformed file/body).
+
+---
+
 ## Health — `/api/health` — Public
 Response `200`: `{ "status": "ok", "db": "connected" }`; `503 { "status": "degraded", "db": "unreachable" }` when Postgres is unreachable. Shape is intentionally outside the `{ error: {…} }` envelope.
 
@@ -235,4 +263,5 @@ Response `200`: `{ "status": "ok", "db": "connected" }`; `503 { "status": "degra
 
 - `/api/ai/*`: 20 req/min/IP.
 - `/api/users/me/venice-account`: 30 req/min/user.
+- `/api/users/me/import` and `/api/users/me/import/plan`: 5 req/min/user, shared bucket.
 - Sensitive auth routes (`change-password`, `update-profile`, `rotate-recovery-code`, `sign-out-everywhere`, `delete-account`, `reset-password`) carry their own per-route limiters.
