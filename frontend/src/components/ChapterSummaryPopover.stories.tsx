@@ -19,6 +19,8 @@ const baseMeta: ChapterMeta = {
   summaryIsStale: false,
   createdAt: '2026-04-01T12:00:00Z',
   updatedAt: '2026-04-30T12:00:00Z',
+  draftCount: 1,
+  activeDraftId: 'draft-c1',
 };
 
 const sampleSummary = {

@@ -15,9 +15,9 @@ import { createExportRouter, createImportRouter } from './routes/backup.routes';
 import { createChaptersRouter } from './routes/chapters.routes';
 import { createCharactersRouter } from './routes/characters.routes';
 import {
-  createChapterChatsRouter,
   createChatCrudRouter,
   createChatMessagesRouter,
+  createDraftChatsRouter,
 } from './routes/chat.routes';
 import {
   createActiveDraftRouter,
@@ -149,17 +149,17 @@ app.use('/api/stories', createStoriesRouter());
 // router exposes :storyId to its handlers.
 app.use('/api/stories/:storyId/chapters', createChaptersRouter());
 // [9wk.4] Draft CRUD + active-draft pointer nested under a parent chapter.
-// Lives alongside the chapter-mounted body/summary endpoints above until the
-// step-5 cutover removes them.
 app.use('/api/chapters/:chapterId/drafts', createChapterDraftsRouter());
 app.use('/api/chapters/:chapterId/active-draft', createActiveDraftRouter());
+// [9wk.4] Chats are draft-scoped. Mounted BEFORE /api/drafts so the
+// :draftId/chats segment doesn't collide with the draft CRUD router.
+app.use('/api/drafts/:draftId/chats', createDraftChatsRouter());
 app.use('/api/drafts', createDraftCrudRouter());
 // [B5] Character CRUD nested under a parent story.
 app.use('/api/stories/:storyId/characters', createCharactersRouter());
 // [B8] Outline CRUD + reorder nested under a parent story.
 app.use('/api/stories/:storyId/outline', createOutlineRouter());
-// [V15] Chat + message routes — two separate router mounts (option A: mergeParams).
-app.use('/api/chapters/:chapterId/chats', createChapterChatsRouter());
+// [V15] Chat + message routes.
 // [SC7] Mount messages before CRUD so /:chatId/messages doesn't collide with /:id.
 app.use('/api/chats/:chatId/messages', createChatMessagesRouter());
 app.use('/api/chats', createChatCrudRouter());

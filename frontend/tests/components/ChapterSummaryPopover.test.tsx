@@ -14,6 +14,8 @@ const META = {
   wordCount: 10,
   createdAt: '2026-05-18T00:00:00.000Z',
   updatedAt: '2026-05-18T00:00:00.000Z',
+  draftCount: 1,
+  activeDraftId: 'draft-1',
 };
 
 const anchorEls: HTMLElement[] = [];

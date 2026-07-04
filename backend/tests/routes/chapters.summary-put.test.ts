@@ -9,7 +9,7 @@ import { makeFakeReq } from './_chat-test-helpers';
 
 async function setup(
   username: string,
-): Promise<{ agent: ReturnType<typeof request.agent>; storyId: string; chapterId: string }> {
+): Promise<{ agent: ReturnType<typeof request.agent>; storyId: string; draftId: string }> {
   const { agent, sessionId } = await registerAndLogin({ username });
   const req = makeFakeReq(sessionId);
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
@@ -23,10 +23,12 @@ async function setup(
     orderIndex: 0,
     wordCount: 3,
   });
-  return { agent, storyId: story.id as string, chapterId: chapter.id as string };
+  return { agent, storyId: story.id as string, draftId: chapter.activeDraftId as string };
 }
 
-describe('PUT /api/stories/:storyId/chapters/:chapterId/summary', () => {
+// [9wk.4] Summary lives on the draft; the endpoint moved from the
+// chapter-mounted PUT to PUT /api/drafts/:draftId/summary.
+describe('PUT /api/drafts/:draftId/summary', () => {
   beforeEach(async () => {
     _resetSessionStore();
     await resetDb();
@@ -38,10 +40,10 @@ describe('PUT /api/stories/:storyId/chapters/:chapterId/summary', () => {
   });
 
   it('persists a user-edited summary', async () => {
-    const { agent, storyId, chapterId } = await setup('put-summary-happy');
+    const { agent, draftId } = await setup('put-summary-happy');
     const payload = { events: 'a', stateAtEnd: 'b', openThreads: 'c' };
     const res = await agent
-      .put(`/api/stories/${storyId}/chapters/${chapterId}/summary`)
+      .put(`/api/drafts/${draftId}/summary`)
       .set('Origin', TEST_ORIGIN)
       .send(payload);
     expect(res.status).toBe(200);
@@ -49,9 +51,9 @@ describe('PUT /api/stories/:storyId/chapters/:chapterId/summary', () => {
   });
 
   it('rejects invalid shape (missing required fields)', async () => {
-    const { agent, storyId, chapterId } = await setup('put-summary-invalid');
+    const { agent, draftId } = await setup('put-summary-invalid');
     const res = await agent
-      .put(`/api/stories/${storyId}/chapters/${chapterId}/summary`)
+      .put(`/api/drafts/${draftId}/summary`)
       .set('Origin', TEST_ORIGIN)
       .send({ events: 'only one field' });
     expect(res.status).toBe(400);
@@ -63,7 +65,7 @@ describe('PUT /api/stories/:storyId/chapters/:chapterId/summary', () => {
     const a = await setup('put-summary-owner-a');
     const b = await setup('put-summary-owner-b');
     const res = await b.agent
-      .put(`/api/stories/${a.storyId}/chapters/${a.chapterId}/summary`)
+      .put(`/api/drafts/${a.draftId}/summary`)
       .set('Origin', TEST_ORIGIN)
       .send({ events: 'a', stateAtEnd: 'b', openThreads: 'c' });
     expect(res.status).toBe(403);

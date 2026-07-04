@@ -36,6 +36,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
@@ -123,6 +124,7 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
     const outlineRepo = createOutlineRepo(ctx.req);
     const chatRepo = createChatRepo(ctx.req);
     const messageRepo = createMessageRepo(ctx.req);
+    const draftRepo = createDraftRepo(ctx.req);
 
     // --- Build a maximal library through the repo layer: every entity,
     // every exportable field set to a non-default value. ---
@@ -146,7 +148,10 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
       },
       orderIndex: 0,
     });
-    await chapterRepo.update(chapter.id, {
+    // [9wk.4] Summary writes go through draft.repo; export reads summaries
+    // through the draft-backed metadata join, so seeding the chapter column
+    // would silently stale this parity assertion.
+    await draftRepo.update(chapter.activeDraftId as string, {
       summaryJson: {
         events: 'The hero crosses the threshold.',
         stateAtEnd: 'Alone at the gate.',

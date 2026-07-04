@@ -230,7 +230,12 @@ export function useChapterQuery(
 export interface UpdateChapterArgs {
   storyId: string;
   chapterId: string;
-  input: ChapterUpdateInput;
+  // [9wk.4] `bodyJson` + `expectedUpdatedAt` no longer live on
+  // `chapterUpdateSchema` (moved to the draft-scoped PATCH), but EditorPage
+  // still sends them at this call site pending the step-6 URL cutover — widen
+  // rather than narrow so the hook and its caller keep compiling. The
+  // request 400s server-side until EditorPage is repointed.
+  input: ChapterUpdateInput & { bodyJson?: unknown; expectedUpdatedAt?: string };
 }
 
 export interface DeleteChapterArgs {

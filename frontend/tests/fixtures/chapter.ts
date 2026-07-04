@@ -15,6 +15,8 @@ export function makeChapterMeta(overrides: Partial<ChapterMeta> = {}): ChapterMe
     summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T00:00:00.000Z',
+    draftCount: 1,
+    activeDraftId: 'draft-1',
     ...overrides,
   };
 }

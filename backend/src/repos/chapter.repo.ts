@@ -1,11 +1,6 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
-import {
-  CHAPTER_ENCRYPTED_FIELD_KEYS,
-  CHAPTER_META_ENCRYPTED_FIELD_KEYS,
-  type ChapterSummary,
-  chapterSummarySchema,
-} from 'story-editor-shared';
+import { CHAPTER_META_ENCRYPTED_FIELD_KEYS, type ChapterSummary } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import {
   decodeJsonField,
@@ -35,12 +30,11 @@ export interface RepoChapterCreateInput {
   wordCount?: number;
 }
 
+// [9wk.4] Narrowed to structural fields only — body/summary/wordCount writes
+// go through draft.repo now (the active draft IS the chapter downstream).
 export interface RepoChapterUpdateInput {
   title?: string;
-  bodyJson?: unknown;
-  summaryJson?: ChapterSummary | null;
   orderIndex?: number;
-  wordCount?: number;
 }
 
 /**
@@ -62,12 +56,11 @@ export type RepoChapter = {
   orderIndex: number;
   createdAt: Date;
   updatedAt: Date;
-  // [9wk.3] Active-draft pointer. Non-null for every repo-created chapter
-  // (create mints the initial draft in the same transaction). Nullable in
-  // the type because the DB column is nullable (create-time chicken-and-egg).
-  // NOT exposed on the wire — serializeChapter/serializeChapterMeta pick
-  // explicitly and do not include it (step 4 adds it to the wire contract).
+  // [9wk.4] Sourced from the ACTIVE draft (the active draft IS the chapter
+  // downstream): bodyJson, summary, summaryUpdatedAt, hasSummary,
+  // summaryIsStale, wordCount. title/orderIndex/timestamps stay chapter-own.
   activeDraftId: string | null;
+  draftCount: number;
 };
 
 /**
@@ -91,19 +84,14 @@ export class ChapterNotOwnedError extends Error {
   }
 }
 
-/**
- * Thrown by `update` when `opts.expectedUpdatedAt` was supplied and no
- * longer matches the row's current `updatedAt` (the row exists but was
- * modified elsewhere since the caller last read it). The route maps this to
- * 409 `conflict`. Distinguished from a plain not-found `null` return, which
- * still means 404 (row missing / not owned).
- */
-export class ChapterVersionConflictError extends Error {
-  constructor(message = 'chapter.repo: expectedUpdatedAt no longer matches the current row') {
-    super(message);
-    this.name = 'ChapterVersionConflictError';
-  }
-}
+// Standard include for a single-chapter read: joins the active draft (source
+// of bodyJson/summary/wordCount) and the draft count. `findById`, `create`,
+// and `update` all re-read with this same include so `shape()` can rely on
+// its shape.
+const CHAPTER_WITH_ACTIVE_DRAFT = {
+  activeDraft: true,
+  _count: { select: { drafts: true } },
+} as const;
 
 export function createChapterRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: RepoChapterCreateInput) {
@@ -141,9 +129,15 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         wordCount: input.wordCount ?? 0,
         orderIndex: 0,
       });
-      return tx.chapter.update({
+      await tx.chapter.update({
         where: { id: chapterRow.id },
         data: { activeDraftId: draft.id },
+      });
+      // [9wk.4] Reads are draft-backed now — re-read with the same include
+      // `shape()` expects rather than trusting the bare update() result.
+      return tx.chapter.findFirstOrThrow({
+        where: { id: chapterRow.id },
+        include: CHAPTER_WITH_ACTIVE_DRAFT,
       });
     });
     return shape(row, req);
@@ -153,6 +147,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     const userId = resolveUserId(req, 'chapter.repo');
     const row = await client.chapter.findFirst({
       where: { id, story: { userId } },
+      include: CHAPTER_WITH_ACTIVE_DRAFT,
     });
     if (!row) return null;
     return shape(row, req);
@@ -185,7 +180,6 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         id: true,
         storyId: true,
         orderIndex: true,
-        wordCount: true,
         createdAt: true,
         updatedAt: true,
         activeDraftId: true,
@@ -194,100 +188,69 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         titleCiphertext: true,
         titleIv: true,
         titleAuthTag: true,
-        // summaryJsonCiphertext + summaryJsonUpdatedAt are needed for the
-        // hasSummary / summaryIsStale derived flags on every list response.
+        _count: { select: { drafts: true } },
+        // wordCount / hasSummary / summaryIsStale are sourced from the
+        // ACTIVE DRAFT now, not the chapter row — see chapter.repo shape().
         // Iv + AuthTag are only selected when the caller opts in to decryption.
-        // Iv/AuthTag selection AND the projectDecrypted call below must move together —
-        // decoupling produces CiphertextMissingError on the next read, not a silent leak.
-        summaryJsonCiphertext: true,
-        summaryJsonUpdatedAt: true,
-        ...(opts?.includeSummary ? { summaryJsonIv: true, summaryJsonAuthTag: true } : {}),
+        // Iv/AuthTag selection AND the projectDecrypted call below must move
+        // together — decoupling produces CiphertextMissingError on the next read.
+        activeDraft: {
+          select: {
+            id: true,
+            wordCount: true,
+            updatedAt: true,
+            summaryJsonCiphertext: true,
+            summaryJsonUpdatedAt: true,
+            ...(opts?.includeSummary ? { summaryJsonIv: true, summaryJsonAuthTag: true } : {}),
+          },
+        },
       },
     });
 
     if (opts?.includeSummary) {
       return rows.map((r) => {
+        if (r.activeDraft === null) {
+          throw new Error('chapter.repo: chapter has no active draft (invariant violation)');
+        }
         const meta = shapeMeta(r, req);
-        const summaryRaw = projectDecrypted<{ summaryJson?: string }>(
+        const draftProjected = projectDecrypted<Record<string, unknown>>(
           req,
-          r as Record<string, unknown>,
+          r.activeDraft as Record<string, unknown>,
           ['summaryJson'] as const,
         );
-        let summary: ChapterSummary | null = null;
-        if (typeof summaryRaw.summaryJson === 'string' && summaryRaw.summaryJson.length > 0) {
-          try {
-            summary = chapterSummarySchema.parse(JSON.parse(summaryRaw.summaryJson));
-          } catch {
-            // A ZodError/SyntaxError on a decryptable-but-invalid blob can embed the
-            // decrypted field values, and decrypted narrative content must never reach
-            // logs — log only a static code + the chapter id.
-            console.warn(`[chapter.repo] summary_parse_failed chapter=${meta.id}`);
-            summary = null;
-          }
-        }
-        const summaryUpdatedAt = (r as { summaryJsonUpdatedAt: Date | null }).summaryJsonUpdatedAt;
-        return { ...meta, summary, summaryUpdatedAt };
+        decodeSummaryField(
+          draftProjected,
+          r.activeDraft as { summaryJsonUpdatedAt: Date | null },
+          'chapter.repo',
+        );
+        return {
+          ...meta,
+          summary: draftProjected.summary as ChapterSummary | null,
+          summaryUpdatedAt: draftProjected.summaryUpdatedAt as Date | null,
+        };
       });
     }
 
     return rows.map((r) => shapeMeta(r, req));
   }
 
-  async function update(
-    id: string,
-    input: RepoChapterUpdateInput,
-    opts?: { expectedUpdatedAt?: Date },
-  ) {
+  async function update(id: string, input: RepoChapterUpdateInput) {
     const userId = resolveUserId(req, 'chapter.repo');
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) {
       Object.assign(data, writeEncrypted(req, 'title', input.title));
     }
-    if (input.bodyJson !== undefined) {
-      // `null` clears the body (all-null ciphertext triple); an object tree
-      // is serialised + encrypted. The literal string "null" must never land
-      // in ciphertext.
-      const plaintext = input.bodyJson === null ? null : JSON.stringify(input.bodyJson);
-      Object.assign(data, writeEncrypted(req, 'body', plaintext));
-    }
-    if (input.summaryJson !== undefined) {
-      const plaintext = input.summaryJson === null ? null : JSON.stringify(input.summaryJson);
-      Object.assign(data, writeEncrypted(req, 'summaryJson', plaintext));
-      if (input.summaryJson === null) {
-        data.summaryJsonUpdatedAt = null;
-        // hasSummary=false after clear, so staleness is irrelevant regardless of updatedAt
-      } else {
-        const now = new Date();
-        data.summaryJsonUpdatedAt = now;
-        data.updatedAt = now; // same instant so a fresh summary isn't immediately stale (this write bumps @updatedAt otherwise)
-      }
-    }
     if (input.orderIndex !== undefined) data.orderIndex = input.orderIndex;
-    if (input.wordCount !== undefined) data.wordCount = input.wordCount;
 
     const updated = await client.chapter.updateMany({
-      where: {
-        id,
-        story: { userId },
-        ...(opts?.expectedUpdatedAt !== undefined ? { updatedAt: opts.expectedUpdatedAt } : {}),
-      },
+      where: { id, story: { userId } },
       data,
     });
-    if (updated.count === 0) {
-      if (opts?.expectedUpdatedAt !== undefined) {
-        // Disambiguate: the precondition can fail either because the row
-        // moved (real conflict) or because it no longer exists / isn't
-        // owned (plain not-found). Only the former is a 409.
-        const exists = await client.chapter.findFirst({
-          where: { id, story: { userId } },
-          select: { id: true },
-        });
-        if (exists) throw new ChapterVersionConflictError();
-      }
-      return null;
-    }
+    if (updated.count === 0) return null;
+
     const row = await client.chapter.findFirst({
       where: { id, story: { userId } },
+      include: CHAPTER_WITH_ACTIVE_DRAFT,
     });
     if (!row) return null;
 
@@ -418,51 +381,116 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
 // Metadata-only projection used by `findManyForStory`. Decrypts the title
 // triple only — body ciphertext columns are not selected at the DB layer, so
 // `bodyJson` is intentionally absent from the projected output. Callers that
-// need the body must use `findById`. `summaryJsonCiphertext` and
-// `summaryJsonUpdatedAt` are always selected so we can derive the staleness
-// flags here without decrypting the summary blob.
+// need the body must use `findById`. wordCount / hasSummary / summaryIsStale
+// are sourced from the joined `activeDraft` sub-object, not the chapter row.
 function shapeMeta(row: unknown, req: Request): RepoChapterMeta {
-  const projected = projectDecrypted<RepoChapterMeta>(
+  const r = row as {
+    id: string;
+    storyId: string;
+    orderIndex: number;
+    createdAt: Date;
+    updatedAt: Date;
+    activeDraftId: string | null;
+    _count: { drafts: number };
+    activeDraft: {
+      wordCount: number;
+      updatedAt: Date;
+      summaryJsonCiphertext: string | null;
+      summaryJsonUpdatedAt: Date | null;
+    } | null;
+  };
+  if (r.activeDraft === null) {
+    throw new Error('chapter.repo: chapter has no active draft (invariant violation)');
+  }
+  const projected = projectDecrypted<{ title: string }>(
     req,
     row as Record<string, unknown>,
     CHAPTER_META_ENCRYPTED_FIELD_KEYS,
   );
-  const r = row as {
-    summaryJsonCiphertext: string | null;
-    summaryJsonUpdatedAt: Date | null;
-    updatedAt: Date;
-  };
-  const hasSummary = r.summaryJsonCiphertext != null;
+  const hasSummary = r.activeDraft.summaryJsonCiphertext != null;
   const summaryIsStale =
-    hasSummary && r.summaryJsonUpdatedAt != null && r.summaryJsonUpdatedAt < r.updatedAt;
-  return { ...projected, hasSummary, summaryIsStale } as RepoChapterMeta;
+    hasSummary &&
+    r.activeDraft.summaryJsonUpdatedAt != null &&
+    r.activeDraft.summaryJsonUpdatedAt < r.activeDraft.updatedAt;
+  return {
+    id: r.id,
+    storyId: r.storyId,
+    title: projected.title,
+    wordCount: r.activeDraft.wordCount,
+    orderIndex: r.orderIndex,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    activeDraftId: r.activeDraftId,
+    draftCount: r._count.drafts,
+    hasSummary,
+    summaryIsStale,
+  };
 }
 
+// Two-projection split: the chapter row decrypts `title` only (its
+// bodyCiphertext/summaryJson* columns are dormant post-[9wk.4] — decrypting
+// them here would silently serve a stale copy); bodyJson/summary/wordCount
+// are sourced from the ACTIVE DRAFT, which is the chapter downstream.
 function shape(row: unknown, req: Request): RepoChapter {
-  const projected = projectDecrypted(
+  const r = row as {
+    id: string;
+    storyId: string;
+    orderIndex: number;
+    createdAt: Date;
+    updatedAt: Date;
+    activeDraftId: string | null;
+    activeDraft: Record<string, unknown> | null;
+    _count: { drafts: number };
+  };
+  if (r.activeDraft === null) {
+    throw new Error('chapter.repo: chapter has no active draft (invariant violation)');
+  }
+
+  const projected = projectDecrypted<{ title: string }>(
     req,
     row as Record<string, unknown>,
-    CHAPTER_ENCRYPTED_FIELD_KEYS,
+    CHAPTER_META_ENCRYPTED_FIELD_KEYS,
   );
+
+  const draftProjected = projectDecrypted<Record<string, unknown>>(req, r.activeDraft, [
+    'body',
+    'summaryJson',
+  ] as const);
   // The encrypted column is named `body` (matching `bodyCiphertext/Iv/AuthTag`),
   // but the API contract surfaces the TipTap document tree as `bodyJson`.
-  decodeJsonField(projected, 'body', 'bodyJson');
+  decodeJsonField(draftProjected, 'body', 'bodyJson');
+  decodeSummaryField(
+    draftProjected,
+    r.activeDraft as { summaryJsonUpdatedAt: Date | null },
+    'chapter.repo',
+  );
 
-  decodeSummaryField(projected, row as { summaryJsonUpdatedAt: Date | null }, 'chapter.repo');
-  // Derive hasSummary/summaryIsStale from the raw ciphertext column + timestamps,
-  // identical to shapeMeta(). A corrupt-but-present blob must still report
-  // hasSummary=true so the frontend can surface the corrupted state
-  // (hasSummary === true && summary === null).
-  const rawRow = row as {
+  const activeDraftRaw = r.activeDraft as {
     summaryJsonCiphertext: string | null;
     summaryJsonUpdatedAt: Date | null;
     updatedAt: Date;
+    wordCount: number;
   };
-  projected.hasSummary = rawRow.summaryJsonCiphertext != null;
-  projected.summaryIsStale =
-    projected.hasSummary &&
-    rawRow.summaryJsonUpdatedAt != null &&
-    rawRow.summaryJsonUpdatedAt < rawRow.updatedAt;
+  const hasSummary = activeDraftRaw.summaryJsonCiphertext != null;
+  const summaryIsStale =
+    hasSummary &&
+    activeDraftRaw.summaryJsonUpdatedAt != null &&
+    activeDraftRaw.summaryJsonUpdatedAt < activeDraftRaw.updatedAt;
 
-  return projected as RepoChapter;
+  return {
+    id: r.id,
+    storyId: r.storyId,
+    title: projected.title,
+    bodyJson: draftProjected.bodyJson,
+    summary: draftProjected.summary as ChapterSummary | null,
+    summaryUpdatedAt: draftProjected.summaryUpdatedAt as Date | null,
+    hasSummary,
+    summaryIsStale,
+    wordCount: activeDraftRaw.wordCount,
+    orderIndex: r.orderIndex,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+    activeDraftId: r.activeDraftId,
+    draftCount: r._count.drafts,
+  };
 }

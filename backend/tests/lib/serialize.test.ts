@@ -270,6 +270,7 @@ const REPO_CHAPTER: RepoChapter = {
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
   activeDraftId: 'd1',
+  draftCount: 1,
 };
 
 const REPO_CHAPTER_META: RepoChapterMeta = {
@@ -283,6 +284,7 @@ const REPO_CHAPTER_META: RepoChapterMeta = {
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
   activeDraftId: 'd1',
+  draftCount: 1,
 };
 
 describe('serializeChapter', () => {
@@ -300,6 +302,8 @@ describe('serializeChapter', () => {
       summaryUpdatedAt: null,
       createdAt: ISO,
       updatedAt: ISO,
+      activeDraftId: 'd1',
+      draftCount: 1,
     });
   });
 
@@ -338,6 +342,8 @@ describe('serializeChapterMeta', () => {
       summaryIsStale: false,
       createdAt: ISO,
       updatedAt: ISO,
+      activeDraftId: 'd1',
+      draftCount: 1,
     });
   });
 

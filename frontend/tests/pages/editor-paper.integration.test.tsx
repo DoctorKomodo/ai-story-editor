@@ -37,8 +37,9 @@ function makeStory(): Record<string, unknown> {
 }
 
 function makeChapter(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const id = (overrides.id as string | undefined) ?? 'ch1';
   return {
-    id: 'ch1',
+    id,
     storyId: 'abc123',
     title: 'Opening',
     orderIndex: 0,
@@ -47,6 +48,8 @@ function makeChapter(overrides: Record<string, unknown> = {}): Record<string, un
     summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
+    draftCount: 1,
+    activeDraftId: `draft-${id}`,
     ...overrides,
   };
 }

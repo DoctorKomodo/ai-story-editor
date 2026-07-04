@@ -1,10 +1,11 @@
 // [V15] Chat persistence integration tests.
+// [9wk.4] Chats are draft-scoped — re-mounted under /api/drafts/:draftId/chats.
 //
 // Covers:
-//   - POST /api/chapters/:chapterId/chats — create, 201, decrypted title
-//   - GET  /api/chapters/:chapterId/chats — list sorted by lastActivityAt desc, createdAt desc
+//   - POST /api/drafts/:draftId/chats — create, 201, decrypted title
+//   - GET  /api/drafts/:draftId/chats — list sorted by lastActivityAt desc, createdAt desc
 //   - Auth gates on all three endpoints (401 without session cookie)
-//   - Ownership gates (404 when chapter/chat not owned)
+//   - Ownership gates (403 when draft/chat not owned — requireOwnership convention)
 //   - POST /api/chats/:chatId/messages — SSE streams, both messages persisted
 //   - tokens + latencyMs captured on assistant message
 //   - 409 + no messages when user has no BYOK key (error occurs before persist)
@@ -164,13 +165,13 @@ describe('Chat persistence [V15]', () => {
 
   // ── Create chat ─────────────────────────────────────────────────────────────
 
-  it('POST /api/chapters/:chapterId/chats returns 201 with decrypted title', async () => {
+  it('POST /api/drafts/:draftId/chats returns 201 with decrypted title', async () => {
     const { agent, sessionId } = await registerAndLogin();
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
+    const { chapterId, draftId } = await setupStoryAndChapter(req);
 
     const res = await agent
-      .post(`/api/chapters/${chapterId}/chats`)
+      .post(`/api/drafts/${draftId}/chats`)
       .set('Origin', 'http://localhost:3000')
       .send({ title: 'My Chat' });
 
@@ -181,13 +182,13 @@ describe('Chat persistence [V15]', () => {
     expect(typeof res.body.chat.id).toBe('string');
   });
 
-  it('POST /api/chapters/:chapterId/chats returns 201 with null title when omitted', async () => {
+  it('POST /api/drafts/:draftId/chats returns 201 with null title when omitted', async () => {
     const { agent, sessionId } = await registerAndLogin();
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
+    const { draftId } = await setupStoryAndChapter(req);
 
     const res = await agent
-      .post(`/api/chapters/${chapterId}/chats`)
+      .post(`/api/drafts/${draftId}/chats`)
       .set('Origin', 'http://localhost:3000')
       .send({});
 
@@ -196,13 +197,13 @@ describe('Chat persistence [V15]', () => {
   });
 
   // [V20] strict schema — unknown keys on CreateChatBody are rejected.
-  it('POST /api/chapters/:chapterId/chats returns 400 validation_error on unknown keys', async () => {
+  it('POST /api/drafts/:draftId/chats returns 400 validation_error on unknown keys', async () => {
     const { agent, sessionId } = await registerAndLogin();
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
+    const { draftId } = await setupStoryAndChapter(req);
 
     const res = await agent
-      .post(`/api/chapters/${chapterId}/chats`)
+      .post(`/api/drafts/${draftId}/chats`)
       .set('Origin', 'http://localhost:3000')
       .send({ title: 'ok', extraneous: 'nope' });
 
@@ -211,31 +212,33 @@ describe('Chat persistence [V15]', () => {
     expect(Array.isArray(res.body.error.issues)).toBe(true);
   });
 
-  it('POST /api/chapters/:chapterId/chats returns 401 without session cookie', async () => {
+  it('POST /api/drafts/:draftId/chats returns 401 without session cookie', async () => {
     const res = await request(app)
-      .post('/api/chapters/some-id/chats')
+      .post('/api/drafts/some-id/chats')
       .set('Origin', 'http://localhost:3000')
       .send({ title: 'x' });
     expect(res.status).toBe(401);
   });
 
-  it('POST /api/chapters/:chapterId/chats returns 404 for unowned chapter', async () => {
+  // [9wk.4] requireOwnership('draft', …) pre-checks the draft before the
+  // handler runs, conflating "unknown" and "not owned" into 403 (no
+  // enumeration oracle) — the old chapter-mounted route 404'd this case.
+  it('POST /api/drafts/:draftId/chats returns 403 for a non-owned/unknown draft', async () => {
     const { agent } = await registerAndLogin();
 
     const res = await agent
-      .post('/api/chapters/nonexistent-chapter/chats')
+      .post('/api/drafts/nonexistent-draft/chats')
       .set('Origin', 'http://localhost:3000')
       .send({ title: 'x' });
-    expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('not_found');
+    expect(res.status).toBe(403);
   });
 
   // ── List chats ──────────────────────────────────────────────────────────────
 
-  it('GET /api/chapters/:chapterId/chats returns chats sorted by lastActivityAt desc, createdAt desc', async () => {
+  it('GET /api/drafts/:draftId/chats returns chats sorted by lastActivityAt desc, createdAt desc', async () => {
     const { agent, sessionId } = await registerAndLogin();
     const req = makeFakeReq(sessionId);
-    const { chapterId, draftId } = await setupStoryAndChapter(req);
+    const { draftId } = await setupStoryAndChapter(req);
 
     // Create two dormant chats (no messages). lastActivityAt === createdAt for
     // both, so the tie-breaker (createdAt desc) determines order: the newer
@@ -245,7 +248,7 @@ describe('Chat persistence [V15]', () => {
     await new Promise((r) => setTimeout(r, 20));
     await createChatRepo(req).create({ draftId, title: 'Second Chat' });
 
-    const res = await agent.get(`/api/chapters/${chapterId}/chats`);
+    const res = await agent.get(`/api/drafts/${draftId}/chats`);
 
     expect(res.status).toBe(200);
     expect(res.body.chats).toHaveLength(2);
@@ -256,16 +259,15 @@ describe('Chat persistence [V15]', () => {
     expect(typeof res.body.chats[0].messageCount).toBe('number');
   });
 
-  it('GET /api/chapters/:chapterId/chats returns 401 without session cookie', async () => {
-    const res = await request(app).get('/api/chapters/some-id/chats');
+  it('GET /api/drafts/:draftId/chats returns 401 without session cookie', async () => {
+    const res = await request(app).get('/api/drafts/some-id/chats');
     expect(res.status).toBe(401);
   });
 
-  it('GET /api/chapters/:chapterId/chats returns 404 for unowned chapter', async () => {
+  it('GET /api/drafts/:draftId/chats returns 403 for a non-owned/unknown draft', async () => {
     const { agent } = await registerAndLogin();
-    const res = await agent.get('/api/chapters/nonexistent-chapter/chats');
-    expect(res.status).toBe(404);
-    expect(res.body.error.code).toBe('not_found');
+    const res = await agent.get('/api/drafts/nonexistent-draft/chats');
+    expect(res.status).toBe(403);
   });
 
   // ── Post message — SSE streaming ────────────────────────────────────────────

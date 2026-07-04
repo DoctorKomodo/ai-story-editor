@@ -9,6 +9,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { getSession } from '../../src/services/session-store';
@@ -189,7 +190,7 @@ async function setupTwoChapters(
     },
   });
 
-  await createChapterRepo(req).update(ch0.id as string, {
+  await createDraftRepo(req).update(ch0.activeDraftId as string, {
     summaryJson: {
       events: 'The hero set out on a long journey north.',
       stateAtEnd: 'At the northern gate, alone.',

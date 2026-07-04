@@ -1,7 +1,6 @@
 export type {
   Chapter,
   ChapterCreateInput,
-  ChapterEncryptedFieldKey,
   ChapterMeta,
   ChapterMetaEncryptedFieldKey,
   ChapterReorderInput,
@@ -9,7 +8,6 @@ export type {
   ChapterUpdateInput,
 } from './schemas/chapter';
 export {
-  CHAPTER_ENCRYPTED_FIELD_KEYS,
   CHAPTER_META_ENCRYPTED_FIELD_KEYS,
   CHAPTER_SUMMARY_FIELD_MAX,
   CHAPTER_TITLE_MAX,

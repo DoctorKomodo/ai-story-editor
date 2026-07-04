@@ -12,6 +12,7 @@ import { prisma } from '../lib/prisma';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
+import { createDraftRepo } from '../repos/draft.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createOutlineRepo } from '../repos/outline.repo';
 import { createStoryRepo } from '../repos/story.repo';
@@ -74,6 +75,7 @@ async function importOneStory(
       const characterRepo = createCharacterRepo(req, txc);
       const outlineRepo = createOutlineRepo(req, txc);
       const chatRepo = createChatRepo(req, txc);
+      const draftRepo = createDraftRepo(req, txc);
       // No txc: messages go through createWithin(tx, …), which takes the tx client
       // explicitly (create() self-transacts and must not be used inside the outer tx).
       const messageRepo = createMessageRepo(req);
@@ -123,12 +125,14 @@ async function importOneStory(
         });
         counts.chapters++;
 
-        if (ch.summary) {
-          await chapterRepo.update(created.id, { summaryJson: ch.summary });
-        }
-
         if (created.activeDraftId === null) {
           throw new Error('import: minted chapter has no active draft');
+        }
+
+        if (ch.summary) {
+          // Summary lives on the draft now; attach it to the minted initial
+          // draft (drafts[] in the export format is step 5).
+          await draftRepo.update(created.activeDraftId, { summaryJson: ch.summary });
         }
 
         for (const c of ch.chats) {

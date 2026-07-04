@@ -99,7 +99,10 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       wordCount: 3,
     });
 
-    await chapterRepo.update(chapter.id, {
+    // [9wk.4] Summary writes go through draft.repo now — attach it to the
+    // chapter's minted initial (active) draft.
+    const draftRepo = createDraftRepo(ctx.req);
+    await draftRepo.update(chapter.activeDraftId as string, {
       summaryJson: {
         events: `summary-events ${SENTINEL}`,
         stateAtEnd: `summary-state ${SENTINEL}`,
@@ -109,7 +112,6 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
 
     // [9wk.3] chapter.repo.create already minted a draft at orderIndex 0 for
     // this chapter — this second draft takes the next slot.
-    const draftRepo = createDraftRepo(ctx.req);
     await draftRepo.create({
       chapterId: chapter.id as string,
       bodyJson: {

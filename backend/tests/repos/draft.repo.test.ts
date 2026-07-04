@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { writeEncrypted } from '../../src/repos/_narrative';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createDraftRepo, DraftDeleteActiveError } from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
@@ -148,6 +149,75 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     expect(updated!.summary).toEqual({ events: 'e', stateAtEnd: 's', openThreads: 'o' });
     expect(updated!.summaryUpdatedAt).not.toBeNull();
     expect(updated!.summaryUpdatedAt!.getTime()).toBe(updated!.updatedAt.getTime());
+  });
+
+  it('[9wk.4] update({ summaryJson: null }) clears summary + summaryUpdatedAt', async () => {
+    const ctx = await makeUserContext('draft-repo-summary-clear');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const draftId = chapter.activeDraftId as string;
+
+    await draftRepo.update(draftId, {
+      summaryJson: { events: 'e', stateAtEnd: 's', openThreads: 'o' },
+    });
+    const cleared = await draftRepo.update(draftId, { summaryJson: null });
+    expect(cleared!.summary).toBeNull();
+    expect(cleared!.summaryUpdatedAt).toBeNull();
+  });
+
+  it('[9wk.4] corrupted summary ciphertext: hasSummary=true but summary=null (findById/findManyMetaForChapter report corrupted state)', async () => {
+    const ctx = await makeUserContext('draft-repo-summary-corrupt');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const draftId = chapter.activeDraftId as string;
+
+    // Write a valid summary first so summaryJsonCiphertext is non-null.
+    await draftRepo.update(draftId, {
+      summaryJson: { events: 'x', stateAtEnd: 'y', openThreads: 'z' },
+    });
+    // Overwrite the stored ciphertext with a validly-encrypted blob that
+    // decrypts to non-JSON plaintext. writeEncrypted produces a real AES-GCM
+    // triple (decryptable, no auth error), but JSON.parse will fail, so
+    // summary must come back null. hasSummary must still be true because
+    // summaryJsonCiphertext is non-null — it reflects ciphertext presence,
+    // not parse outcome.
+    const corruptTriple = writeEncrypted(ctx.req, 'summaryJson', 'not-valid-json');
+    await prisma.draft.update({
+      where: { id: draftId },
+      data: {
+        summaryJsonCiphertext: corruptTriple.summaryJsonCiphertext,
+        summaryJsonIv: corruptTriple.summaryJsonIv,
+        summaryJsonAuthTag: corruptTriple.summaryJsonAuthTag,
+      },
+    });
+    const fetched = await draftRepo.findById(draftId);
+    expect(fetched?.summary).toBeNull();
+
+    const metas = await draftRepo.findManyMetaForChapter(chapter.id);
+    const active = metas.find((m) => m.id === draftId);
+    expect(active!.hasSummary).toBe(true);
+    // The raw prisma.draft.update() bump above advances `updatedAt` (Prisma's
+    // @updatedAt) without touching `summaryJsonUpdatedAt` — genuinely stale,
+    // unlike a draftRepo.update() summary write (same-instant, not stale).
+    expect(active!.summaryIsStale).toBe(true);
   });
 
   it('[9wk.4] setActive swaps the chapter pointer; rejects a draft of another chapter', async () => {

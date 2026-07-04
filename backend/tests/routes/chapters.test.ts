@@ -11,7 +11,8 @@
 //   - GET /:chapterId 404 when chapter belongs to a different story (path integrity)
 //   - GET /:chapterId 403 when chapter belongs to another user
 //   - GET list 200 sorted by orderIndex asc, no ciphertext
-//   - PATCH /:chapterId title-only doesn't touch body; bodyJson recomputes wordCount
+//   - PATCH /:chapterId title-only doesn't touch body/wordCount [9wk.4: body
+//     writes moved to PATCH /api/drafts/:draftId]
 //   - PATCH /:chapterId 400 on unknown key
 //   - DELETE /:chapterId 204, follow-up GET 403
 
@@ -325,6 +326,8 @@ describe('Chapter routes [B3]', () => {
     expect(res.body.chapter.wordCount).toBe(2);
     expect(res.body.chapter.orderIndex).toBe(0);
     expect(res.body.chapter.storyId).toBe(storyId);
+    expect(res.body.chapter.draftCount).toBe(1);
+    expect(res.body.chapter.activeDraftId).toBe(created.activeDraftId);
     assertNoCiphertextKeys(res.body.chapter);
   });
 
@@ -395,6 +398,9 @@ describe('Chapter routes [B3]', () => {
       // is shipped over the wire. Single-chapter GET is the body authority.
       expect(Object.keys(ch)).not.toContain('bodyJson');
       expect(Object.keys(ch)).not.toContain('body');
+      // [9wk.4] draft-tree wire fields.
+      expect(typeof ch.draftCount).toBe('number');
+      expect(typeof ch.activeDraftId).toBe('string');
     }
   });
 
@@ -410,7 +416,7 @@ describe('Chapter routes [B3]', () => {
 
   // ── PATCH /:chapterId ─────────────────────────────────────────────────────
 
-  it('PATCH title-only does not touch body; bodyJson recomputes wordCount', async () => {
+  it('PATCH title-only does not touch body or wordCount [9wk.4]', async () => {
     const { agent, sessionId } = await registerAndLogin({ username: 'chapters-patch' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Patchable' });
@@ -426,7 +432,8 @@ describe('Chapter routes [B3]', () => {
     });
     const chapterId = created.id as string;
 
-    // Title-only patch — body and wordCount should remain unchanged.
+    // Title-only patch — body and wordCount should remain unchanged (they
+    // are sourced from the active draft, which this PATCH never touches).
     const r1 = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
       .set('Origin', TEST_ORIGIN)
@@ -438,19 +445,13 @@ describe('Chapter routes [B3]', () => {
     const p = (r1.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>)[0];
     expect(p.content[0].text).toBe('One two three.');
     assertNoCiphertextKeys(r1.body.chapter);
-
-    // bodyJson patch — wordCount recomputed from the new tree.
-    const newTree = paragraphDoc('four five six seven eight'); // 5 words
-    const r2 = await agent
-      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
-      .set('Origin', TEST_ORIGIN)
-      .send({ bodyJson: newTree });
-    expect(r2.status).toBe(200);
-    expect(r2.body.chapter.wordCount).toBe(5);
-    expect(r2.body.chapter.title).toBe('New Title');
   });
 
-  it('PATCH with bodyJson: null clears the body and sets wordCount to 0', async () => {
+  // [9wk.4] Body writes moved to PATCH /api/drafts/:draftId. Response-shape
+  // coverage for the null-clear lives in chapters-body-json.test.ts; this
+  // case additionally proves the DRAFT row's ciphertext triple goes to SQL
+  // NULL (not ciphertext of the literal string "null").
+  it('PATCH /api/drafts/:draftId with bodyJson: null clears the body and sets wordCount to 0', async () => {
     const { agent, sessionId } = await registerAndLogin({ username: 'chapters-patch-null-body' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Clearable' });
@@ -465,14 +466,15 @@ describe('Chapter routes [B3]', () => {
       wordCount: 5,
     });
     const chapterId = created.id as string;
+    const draftId = created.activeDraftId as string;
 
     const r = await agent
-      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .patch(`/api/drafts/${draftId}`)
       .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: null });
     expect(r.status).toBe(200);
-    expect(r.body.chapter.wordCount).toBe(0);
-    expect(r.body.chapter.bodyJson).toBeNull();
+    expect(r.body.draft.wordCount).toBe(0);
+    expect(r.body.draft.bodyJson).toBeNull();
 
     const follow = await agent.get(`/api/stories/${storyId}/chapters/${chapterId}`);
     expect(follow.status).toBe(200);
@@ -480,8 +482,8 @@ describe('Chapter routes [B3]', () => {
     expect(follow.body.chapter.bodyJson).toBeNull();
 
     // Row-level assertion: body triple is SQL NULL, not ciphertext of "null".
-    const row = await prisma.chapter.findUnique({
-      where: { id: chapterId },
+    const row = await prisma.draft.findUnique({
+      where: { id: draftId },
       select: { bodyCiphertext: true, bodyIv: true, bodyAuthTag: true },
     });
     expect(row).not.toBeNull();

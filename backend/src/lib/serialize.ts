@@ -109,6 +109,18 @@ export function serializeOutlineItem(row: RepoOutlineItem): OutlineItem {
   };
 }
 
+// The chapter repo's `activeDraftId` is nullable in the repo type (the DB
+// column is nullable for the create-time chicken-and-egg), but every chapter
+// that survives `shape()`/`shapeMeta()` has one — those throw on a null
+// active draft before returning. A null reaching here is an invariant
+// violation, not a valid wire state.
+function assertActiveDraftId(id: string | null): string {
+  if (id === null) {
+    throw new Error('serialize: chapter has no active draft (invariant violation)');
+  }
+  return id;
+}
+
 // Explicit pick (not spread): forces the compiler to surface any repo field
 // the wire shape does NOT carry. projectDecrypted strips ciphertext triples
 // but nothing else — a future non-ciphertext column on the Prisma row would
@@ -127,6 +139,8 @@ export function serializeChapter(row: RepoChapter): Chapter {
     summaryIsStale: row.summaryIsStale,
     summary: row.summary,
     summaryUpdatedAt: row.summaryUpdatedAt ? row.summaryUpdatedAt.toISOString() : null,
+    draftCount: row.draftCount,
+    activeDraftId: assertActiveDraftId(row.activeDraftId),
   };
 }
 
@@ -144,6 +158,8 @@ export function serializeChapterMeta(row: RepoChapterMeta): ChapterMeta {
     updatedAt: row.updatedAt.toISOString(),
     hasSummary: row.hasSummary,
     summaryIsStale: row.summaryIsStale,
+    draftCount: row.draftCount,
+    activeDraftId: assertActiveDraftId(row.activeDraftId),
   };
 }
 

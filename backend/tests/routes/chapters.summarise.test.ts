@@ -39,7 +39,7 @@ const MODEL_LIST_BODY_REASONING = {
 async function setup(
   username: string,
   body: string | null = 'A sentence of prose.',
-): Promise<{ agent: ReturnType<typeof request.agent>; chapterId: string; storyId: string }> {
+): Promise<{ agent: ReturnType<typeof request.agent>; draftId: string; storyId: string }> {
   const { agent, sessionId } = await registerAndLogin({ username });
   const req = makeFakeReq(sessionId);
   const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
@@ -56,7 +56,7 @@ async function setup(
     orderIndex: 0,
     wordCount: body ? body.split(/\s+/).length : 0,
   });
-  return { agent, chapterId: chapter.id as string, storyId: story.id as string };
+  return { agent, draftId: chapter.activeDraftId as string, storyId: story.id as string };
 }
 
 const MODEL_LIST_BODY_NO_SCHEMA = {
@@ -73,7 +73,7 @@ const MODEL_LIST_BODY_NO_SCHEMA = {
   ],
 };
 
-describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
+describe('POST /api/drafts/:draftId/summarise', () => {
   beforeEach(async () => {
     _resetSessionStore();
     await resetDb();
@@ -90,11 +90,11 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
 
   it('400 empty_chapter when chapter has zero words', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('summarise-empty', null);
+    const { agent, draftId } = await setup('summarise-empty', null);
     await storeKey(agent, fetchSpy);
     const callsAfterSetup = fetchSpy.mock.calls.length;
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(400);
@@ -104,11 +104,11 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
 
   it('400 model_unsupported_for_summarisation when supportsResponseSchema is false', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('summarise-noschema');
+    const { agent, draftId } = await setup('summarise-noschema');
     await storeKey(agent, fetchSpy);
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY_NO_SCHEMA));
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(400);
@@ -117,7 +117,7 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
 
   it('happy path: persists a valid summary returned by Venice', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('summarise-happy');
+    const { agent, draftId } = await setup('summarise-happy');
     await storeKey(agent, fetchSpy);
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
@@ -132,7 +132,7 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
       }),
     );
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
@@ -142,14 +142,14 @@ describe('POST /api/stories/:storyId/chapters/:chapterId/summarise', () => {
 
   it('502 summary_parse_failed on malformed JSON', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('summarise-malformed');
+    const { agent, draftId } = await setup('summarise-malformed');
     await storeKey(agent, fetchSpy);
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
     fetchSpy.mockResolvedValueOnce(
       jsonResponse(200, { choices: [{ message: { content: 'not json at all' } }] }),
     );
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(502);
@@ -174,7 +174,7 @@ describe('summarise honors model settings + sends persona', () => {
 
   it('sends temperature, top_p, max_completion_tokens, venice_parameters, prompt_cache_key, and persona', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('sum-orch-1');
+    const { agent, draftId } = await setup('sum-orch-1');
     await storeKey(agent, fetchSpy);
 
     await agent
@@ -196,7 +196,7 @@ describe('summarise honors model settings + sends persona', () => {
     );
 
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
@@ -228,7 +228,7 @@ describe('summarise honors model settings + sends persona', () => {
 
   it('on reasoning model, sends strip_thinking_response: true', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('sum-orch-2');
+    const { agent, draftId } = await setup('sum-orch-2');
     await storeKey(agent, fetchSpy);
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY_REASONING));
@@ -245,7 +245,7 @@ describe('summarise honors model settings + sends persona', () => {
     );
 
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
@@ -266,7 +266,7 @@ describe('summarise honors model settings + sends persona', () => {
 
   it('sends reasoning:{enabled:false} when reasoning toggled off for a reasoning model', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('sum-orch-reasoning-off');
+    const { agent, draftId } = await setup('sum-orch-reasoning-off');
     await storeKey(agent, fetchSpy);
 
     const settingsRes = await agent
@@ -289,7 +289,7 @@ describe('summarise honors model settings + sends persona', () => {
     );
 
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);
@@ -308,7 +308,7 @@ describe('summarise honors model settings + sends persona', () => {
 
   it('honors include_venice_system_prompt=false (user toggled OFF in settings)', async () => {
     const fetchSpy = stubVeniceFetch();
-    const { agent, chapterId, storyId } = await setup('sum-orch-3');
+    const { agent, draftId } = await setup('sum-orch-3');
     await storeKey(agent, fetchSpy);
 
     await agent
@@ -330,7 +330,7 @@ describe('summarise honors model settings + sends persona', () => {
     );
 
     const res = await agent
-      .post(`/api/stories/${storyId}/chapters/${chapterId}/summarise`)
+      .post(`/api/drafts/${draftId}/summarise`)
       .set('Origin', TEST_ORIGIN)
       .send({ modelId: MODEL_ID });
     expect(res.status).toBe(200);

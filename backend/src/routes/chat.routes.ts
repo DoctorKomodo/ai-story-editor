@@ -1,11 +1,12 @@
 // [V15] Chat persistence routes.
 // [V16] Ask-AI attachment payload on chat messages.
+// [9wk.4] Chats are draft-scoped — re-mounted under /api/drafts/:draftId/chats.
 //
 // Two separate routers (option A from spec):
-//   createChapterChatsRouter() — mounted at /api/chapters/:chapterId/chats
+//   createDraftChatsRouter()   — mounted at /api/drafts/:draftId/chats
 //   createChatMessagesRouter() — mounted at /api/chats/:chatId/messages
 //
-// Both use mergeParams: true so Express passes :chapterId / :chatId from the
+// Both use mergeParams: true so Express passes :draftId / :chatId from the
 // parent mount point down into the handler.
 
 import { type NextFunction, type Request, type Response, Router } from 'express';
@@ -33,6 +34,7 @@ import {
   type VeniceRequestSnapshot,
 } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
+import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody, validateQuery } from '../middleware/validate';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
@@ -52,33 +54,25 @@ import { prepareVeniceCall, streamVeniceToResponse } from '../services/venice-st
 
 const ListChatsQuery = z.strictObject({ kind: chatKindSchema.optional() });
 
-// ─── Router 1: chapter-scoped chat CRUD ──────────────────────────────────────
+// ─── Router 1: draft-scoped chat CRUD ────────────────────────────────────────
 
-export function createChapterChatsRouter() {
+export function createDraftChatsRouter() {
   const router = Router({ mergeParams: true });
   router.use(requireAuth);
+  // Pre-checks the draft exists and is owned before the repo call — matches
+  // the ownership-middleware convention used by every other mount. Without
+  // this, an unknown/cross-user draftId would surface as a repo throw (500)
+  // instead of the standard 403.
+  router.use(requireOwnership('draft', { idParam: 'draftId' }));
 
-  // POST /api/chapters/:chapterId/chats — create a chat for the chapter.
+  // POST /api/drafts/:draftId/chats — create a chat for the draft.
   router.post(
     '/',
     validateBody(chatCreateSchema, async (body, req, res) => {
-      const chapterId = req.params.chapterId as string;
-
-      // Ownership: chapter must exist and belong to req.user.
-      const chapter = await createChapterRepo(req).findById(chapterId);
-      if (!chapter) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
-      // [9wk.3] Chats are draft-scoped; this chapter-mounted route resolves
-      // the ACTIVE draft (step 4 re-mounts chats under /drafts/:draftId).
-      // Null is an invariant violation post-9wk.3 — 500 is correct.
-      if (chapter.activeDraftId === null) {
-        throw new Error('chat.routes: chapter has no active draft (invariant violation)');
-      }
+      const draftId = req.params.draftId as string;
 
       const chat = await createChatRepo(req).create({
-        draftId: chapter.activeDraftId,
+        draftId,
         title: body.title ?? null,
         kind: body.kind ?? 'ask',
       });
@@ -87,27 +81,14 @@ export function createChapterChatsRouter() {
     }),
   );
 
-  // GET /api/chapters/:chapterId/chats — list chats for the chapter.
+  // GET /api/drafts/:draftId/chats — list chats for the draft.
   router.get(
     '/',
     validateQuery(ListChatsQuery, async (query, req, res) => {
-      const chapterId = req.params.chapterId as string;
+      const draftId = req.params.draftId as string;
       const { kind } = query;
 
-      // Ownership: chapter must exist and belong to req.user.
-      const chapter = await createChapterRepo(req).findById(chapterId);
-      if (!chapter) {
-        res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
-        return;
-      }
-      // [9wk.3] Chats are draft-scoped; this chapter-mounted route resolves
-      // the ACTIVE draft (step 4 re-mounts chats under /drafts/:draftId).
-      // Null is an invariant violation post-9wk.3 — 500 is correct.
-      if (chapter.activeDraftId === null) {
-        throw new Error('chat.routes: chapter has no active draft (invariant violation)');
-      }
-
-      const chats = await createChatRepo(req).findManyForDraft(chapter.activeDraftId, { kind });
+      const chats = await createChatRepo(req).findManyForDraft(draftId, { kind });
 
       // Enrich each chat with its message count (via repo layer — ownership enforced).
       const enriched = await Promise.all(

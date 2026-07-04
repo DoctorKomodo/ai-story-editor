@@ -17,6 +17,8 @@ const sampleChapters: ChapterMeta[] = [
     summaryIsStale: false,
     createdAt: '2026-04-01T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
+    draftCount: 1,
+    activeDraftId: 'draft-c1',
   },
   {
     id: 'c2',
@@ -28,6 +30,8 @@ const sampleChapters: ChapterMeta[] = [
     summaryIsStale: false,
     createdAt: '2026-04-02T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
+    draftCount: 1,
+    activeDraftId: 'draft-c2',
   },
   {
     id: 'c3',
@@ -39,6 +43,8 @@ const sampleChapters: ChapterMeta[] = [
     summaryIsStale: false,
     createdAt: '2026-04-03T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
+    draftCount: 1,
+    activeDraftId: 'draft-c3',
   },
   {
     id: 'c4',
@@ -50,6 +56,8 @@ const sampleChapters: ChapterMeta[] = [
     summaryIsStale: true,
     createdAt: '2026-04-04T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
+    draftCount: 1,
+    activeDraftId: 'draft-c4',
   },
   {
     id: 'c5',
@@ -61,6 +69,8 @@ const sampleChapters: ChapterMeta[] = [
     summaryIsStale: false,
     createdAt: '2026-04-05T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
+    draftCount: 1,
+    activeDraftId: 'draft-c5',
   },
   {
     id: 'c6',
@@ -72,6 +82,8 @@ const sampleChapters: ChapterMeta[] = [
     summaryIsStale: false,
     createdAt: '2026-04-06T12:00:00Z',
     updatedAt: '2026-04-30T12:00:00Z',
+    draftCount: 1,
+    activeDraftId: 'draft-c6',
   },
 ];
 
