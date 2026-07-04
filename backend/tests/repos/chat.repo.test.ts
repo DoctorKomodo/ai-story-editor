@@ -120,6 +120,24 @@ async function setupTwoChatsFixture(username: string) {
   return { req: u.req, chapterId, chatAId: chatA.id as string, chatBId: chatB.id as string };
 }
 
+describe('[9wk.3] chat.repo — draftId dual-write', () => {
+  beforeEach(resetDb);
+  afterEach(resetDb);
+
+  it("create writes draftId = the chapter's activeDraftId (dual-write)", async () => {
+    const ctx = await makeUserContext('chat-dualwrite');
+    const story = await createStoryRepo(ctx.req).create({ title: 'S' });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id as string });
+    const row = await prisma.chat.findUniqueOrThrow({ where: { id: chat.id as string } });
+    expect(row.draftId).toBe(chapter.activeDraftId);
+  });
+});
+
 describe('chatRepo.findManyForChapter — most-recent-activity ordering (story-editor-loj)', () => {
   beforeEach(resetDb);
   afterEach(resetDb);

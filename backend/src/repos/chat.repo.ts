@@ -54,9 +54,22 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   async function create(input: ChatCreateInput) {
     const userId = resolveUserId(req);
     await ensureChapterOwned(client, input.chapterId, userId);
+    // [9wk.3] Dual-write during the chat contract transition: resolve the
+    // chapter's active draft and write BOTH FKs. Task 5's contract migration
+    // makes draftId NOT NULL and drops chapterId; until then both columns
+    // exist. A null activeDraftId is an invariant violation (chapter-create
+    // mints the draft since 9wk.3) — fail loudly, never insert a NULL draftId.
+    const chapter = await client.chapter.findUniqueOrThrow({
+      where: { id: input.chapterId },
+      select: { activeDraftId: true },
+    });
+    if (chapter.activeDraftId === null) {
+      throw new Error('chat.repo: chapter has no active draft (invariant violation)');
+    }
     const row = await client.chat.create({
       data: {
         chapterId: input.chapterId,
+        draftId: chapter.activeDraftId,
         kind: input.kind ?? 'ask',
         // Post-[E11]: `title` is ciphertext-only.
         ...writeEncrypted(req, 'title', input.title ?? null),
