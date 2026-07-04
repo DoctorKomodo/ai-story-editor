@@ -53,16 +53,18 @@ async function ensureChapterOwned(
 export function createChatRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: ChatCreateInput) {
     const userId = resolveUserId(req);
-    await ensureChapterOwned(client, input.chapterId, userId);
-    // [9wk.3] Dual-write during the chat contract transition: resolve the
-    // chapter's active draft and write BOTH FKs. Task 5's contract migration
-    // makes draftId NOT NULL and drops chapterId; until then both columns
-    // exist. A null activeDraftId is an invariant violation (chapter-create
-    // mints the draft since 9wk.3) — fail loudly, never insert a NULL draftId.
-    const chapter = await client.chapter.findUniqueOrThrow({
-      where: { id: input.chapterId },
+    // [9wk.3] Dual-write during the chat contract transition: both draftId
+    // and chapterId FKs exist while the migration chain tightens draftId to
+    // NOT NULL and drops chapterId. Resolve the chapter's active draft with
+    // an owner-scoped lookup (every narrative read must be independently
+    // scoped, not rely on a sibling call) and write BOTH FKs. A null
+    // activeDraftId is an invariant violation (chapter-create mints the
+    // draft) — fail loudly, never insert a NULL draftId.
+    const chapter = await client.chapter.findFirst({
+      where: { id: input.chapterId, story: { userId } },
       select: { activeDraftId: true },
     });
+    if (!chapter) throw new Error('chat.repo: chapter not owned by caller');
     if (chapter.activeDraftId === null) {
       throw new Error('chat.repo: chapter has no active draft (invariant violation)');
     }
