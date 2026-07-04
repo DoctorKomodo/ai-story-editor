@@ -1,10 +1,9 @@
-import { Client } from 'pg';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { resetDb } from '../helpers/db';
-import { testDatabaseUrl } from '../setup';
+import { prisma } from '../setup';
 import { makeUserContext, rawCiphertextMustNotEqual } from './_req';
 
 describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
@@ -58,20 +57,11 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     expect(read?.summary).toEqual({ events: 'e', stateAtEnd: 's', openThreads: 'o' });
 
     // Raw columns are actually ciphertext (not naive base64 of plaintext) and
-    // contain no plaintext.
-    const pg = new Client({ connectionString: testDatabaseUrl });
-    await pg.connect();
-    try {
-      const { rows } = await pg.query<{
-        labelCiphertext: string | null;
-        bodyCiphertext: string | null;
-      }>(`SELECT "labelCiphertext", "bodyCiphertext" FROM "Draft" WHERE "id" = $1`, [created.id]);
-      expect(rows).toHaveLength(1);
-      rawCiphertextMustNotEqual(rows[0]!.labelCiphertext as string, 'darker take');
-      expect(rows[0]!.bodyCiphertext).not.toContain('hello drafts');
-    } finally {
-      await pg.end();
-    }
+    // contain no plaintext. Prisma returns the ciphertext columns un-decrypted
+    // (decryption lives in the repo layer), same pattern as chapter.repo.test.
+    const raw = await prisma.draft.findUniqueOrThrow({ where: { id: created.id } });
+    rawCiphertextMustNotEqual(raw.labelCiphertext as string, 'darker take');
+    expect(raw.bodyCiphertext).not.toContain('hello drafts');
   });
 
   it('stores null triples for an absent body/summary/label', async () => {

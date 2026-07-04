@@ -271,6 +271,16 @@ Mounted under the chapter; mirror the existing chapter/chat router patterns.
 All draft reads/writes go through `draft.repo.ts` (encrypt/decrypt symmetry; no controller touches
 Prisma for `Draft` directly — enforced by `repo-boundary-reviewer`).
 
+**Chapter creation mints the initial draft (step 4 — explicitly assigned).** The migration
+backfills a draft for every *existing* chapter, but nothing yet creates one for *new* chapters:
+`chapter.repo.create` / `POST /chapters` / `prisma/seed.ts` all produce draftless chapters today
+(fine during the expand phase — live readers still use `Chapter`'s own columns). **Step 4 must
+wire every chapter-create path to create one empty draft (`orderIndex 0`, `label NULL`) and set
+`activeDraftId` in the same transaction** — route, repo `create()`, and `seed.ts`. (Import is
+separately covered by step 5's three-phase write.) This is a hard prerequisite for step 5's
+contract migration: if `Chapter.body*` is dropped while any create path still yields a draftless
+chapter, new chapters have no body storage at all.
+
 ### Moved: chapter body + summary endpoints → draft-scoped
 The chapter body lives on the draft now, so the body GET/PATCH and the summary/summarise endpoints
 operate on a **draft**, not the chapter:
@@ -520,6 +530,11 @@ epic merges to `main`.**
    via the central `HttpError` idiom (add a `conflict()` helper; fold `ChapterVersionConflictError`
    into the central table); carry the `expectedUpdatedAt` optimistic-concurrency precondition to the
    draft body PATCH (re-target `Draft.updatedAt`; port `chapters.concurrency.test.ts`).
+   **Wire every chapter-create path (route + `chapter.repo.create` + `seed.ts`) to mint the initial
+   draft + set `activeDraftId` in one transaction (§6)** — prerequisite for step 5's contract drop.
+   While fleshing out `draft.repo.ts`, pay down the step-2 shortcuts: hoist the shared repo
+   boilerplate (`resolveUserId`, `ensureChapterOwned`, the body/summary decode blocks in `shape()`)
+   into `_narrative.ts`, and move `DRAFT_ENCRYPTED_FIELD_KEYS` to the new shared draft schema.
 5. **Prompt + export/import + aggregates** — prompt previous-chapter context via the active-draft
    summary (metadata join); rewrite `aggregateForStories` to total active-draft word counts (raw/
    reduce, not `groupBy._sum`) + fix its test; export/import round-trips all drafts (`drafts[]` +

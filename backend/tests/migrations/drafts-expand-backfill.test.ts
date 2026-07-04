@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
@@ -6,41 +8,38 @@ import { resetDb } from '../helpers/db';
 import { makeUserContext } from '../repos/_req';
 import { prisma } from '../setup';
 
-// The three idempotent backfill statements from the drafts_expand migration,
-// as SEPARATE statements. Prisma's $executeRawUnsafe submits one prepared
-// statement per call (a semicolon-joined multi-statement string is rejected),
-// so they run individually inside one transaction. The migration FILE keeps
-// them as a single multi-statement block — the migration engine runs that
-// fine; only this test path needs the split. Keep in sync with the migration.
-const BACKFILL_STATEMENTS = [
-  `INSERT INTO "Draft" (
-  "id", "chapterId",
-  "bodyCiphertext", "bodyIv", "bodyAuthTag",
-  "summaryJsonCiphertext", "summaryJsonIv", "summaryJsonAuthTag", "summaryJsonUpdatedAt",
-  "wordCount",
-  "labelCiphertext", "labelIv", "labelAuthTag",
-  "orderIndex", "createdAt", "updatedAt"
-)
-SELECT
-  gen_random_uuid()::text, c."id",
-  c."bodyCiphertext", c."bodyIv", c."bodyAuthTag",
-  c."summaryJsonCiphertext", c."summaryJsonIv", c."summaryJsonAuthTag", c."summaryJsonUpdatedAt",
-  c."wordCount",
-  NULL, NULL, NULL,
-  0, c."createdAt", c."updatedAt"
-FROM "Chapter" c
-WHERE NOT EXISTS (SELECT 1 FROM "Draft" d WHERE d."chapterId" = c."id")`,
+// The backfill statements are read from the REAL migration file so this test
+// can never drift from the SQL that actually ships. Prisma's $executeRawUnsafe
+// submits one prepared statement per call (a semicolon-joined multi-statement
+// string is rejected), so the block is split on `;` and each statement runs
+// individually inside one transaction — safe here because the backfill SQL
+// contains no semicolons inside string literals.
+const MIGRATION_PATH = join(
+  __dirname,
+  '../../prisma/migrations/20260629185340_drafts_expand/migration.sql',
+);
+const BACKFILL_MARKER = '-- [9wk.2] EXPAND backfill';
 
-  `UPDATE "Chapter" c
-SET "activeDraftId" = d."id"
-FROM "Draft" d
-WHERE d."chapterId" = c."id" AND c."activeDraftId" IS NULL`,
+function loadBackfillStatements(): string[] {
+  const sql = readFileSync(MIGRATION_PATH, 'utf8');
+  const markerAt = sql.indexOf(BACKFILL_MARKER);
+  if (markerAt === -1) {
+    throw new Error(`backfill marker "${BACKFILL_MARKER}" not found in ${MIGRATION_PATH}`);
+  }
+  return sql
+    .slice(markerAt)
+    .split(';')
+    .map((stmt) =>
+      stmt
+        .split('\n')
+        .filter((line) => !line.trimStart().startsWith('--'))
+        .join('\n')
+        .trim(),
+    )
+    .filter((stmt) => stmt.length > 0);
+}
 
-  `UPDATE "Chat" ch
-SET "draftId" = d."id"
-FROM "Draft" d
-WHERE d."chapterId" = ch."chapterId" AND ch."draftId" IS NULL`,
-];
+const BACKFILL_STATEMENTS = loadBackfillStatements();
 
 // Each element is a single prepared statement; run them in one transaction.
 async function runBackfill() {
@@ -53,6 +52,13 @@ describe('[9wk.2] drafts expand backfill — verbatim ciphertext relocation', ()
   });
   afterEach(async () => {
     await resetDb();
+  });
+
+  it('extracts the three backfill statements from the migration file in order', () => {
+    expect(BACKFILL_STATEMENTS).toHaveLength(3);
+    expect(BACKFILL_STATEMENTS[0]).toMatch(/^INSERT INTO "Draft"/);
+    expect(BACKFILL_STATEMENTS[1]).toMatch(/^UPDATE "Chapter" c/);
+    expect(BACKFILL_STATEMENTS[2]).toMatch(/^UPDATE "Chat" ch/);
   });
 
   it('creates one draft per draftless chapter, copies ciphertext byte-for-byte, sets pointers', async () => {
