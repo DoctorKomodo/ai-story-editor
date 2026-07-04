@@ -7,7 +7,7 @@ import {
   type OutlineUpdateInput,
 } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeEncrypted } from './_narrative';
+import { ensureStoryOwned, projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
 
 // Keep the local ENCRYPTED_FIELDS name as the repo-local invariant (same as
 // character.repo.ts) — sourced from the shared tuple.
@@ -33,21 +33,6 @@ export type RepoOutlineItem = Omit<OutlineItem, 'createdAt' | 'updatedAt'> & {
   updatedAt: Date;
 };
 
-function resolveUserId(req: Request): string {
-  const id = req.user?.id;
-  if (!id) throw new Error('outline.repo: req.user.id is not set');
-  return id;
-}
-
-async function ensureStoryOwned(
-  client: PrismaClient,
-  storyId: string,
-  userId: string,
-): Promise<void> {
-  const ok = await client.story.findFirst({ where: { id: storyId, userId } });
-  if (!ok) throw new Error('outline.repo: story not owned by caller');
-}
-
 /**
  * Thrown by `reorder` when one or more outline-item ids in the payload do not
  * belong to the target story for the caller. The route maps this to 403 — we
@@ -63,8 +48,8 @@ export class OutlineNotOwnedError extends Error {
 
 export function createOutlineRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: RepoCreateOutlineInput) {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, input.storyId, userId);
+    const userId = resolveUserId(req, 'outline.repo');
+    await ensureStoryOwned(client, input.storyId, userId, 'outline.repo');
     const row = await client.outlineItem.create({
       data: {
         storyId: input.storyId,
@@ -83,7 +68,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function findById(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'outline.repo');
     const row = await client.outlineItem.findFirst({ where: { id, story: { userId } } });
     if (!row) return null;
     return projectDecrypted<RepoOutlineItem>(
@@ -94,8 +79,8 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function findManyForStory(storyId: string) {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, storyId, userId);
+    const userId = resolveUserId(req, 'outline.repo');
+    await ensureStoryOwned(client, storyId, userId, 'outline.repo');
     const rows = await client.outlineItem.findMany({
       where: { storyId, story: { userId } },
       orderBy: { order: 'asc' },
@@ -110,7 +95,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function update(id: string, input: OutlineUpdateInput) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'outline.repo');
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) Object.assign(data, writeEncrypted(req, 'title', input.title));
     if (input.sub !== undefined) Object.assign(data, writeEncrypted(req, 'sub', input.sub));
@@ -133,7 +118,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function remove(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'outline.repo');
     const deleted = await client.outlineItem.deleteMany({ where: { id, story: { userId } } });
     return deleted.count > 0;
   }
@@ -142,8 +127,8 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
     storyId: string,
     items: Array<{ id: string; order: number }>,
   ): Promise<void> {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, storyId, userId);
+    const userId = resolveUserId(req, 'outline.repo');
+    await ensureStoryOwned(client, storyId, userId, 'outline.repo');
 
     const ids = items.map((i) => i.id);
     const found = await client.outlineItem.findMany({
@@ -177,7 +162,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
   // Aggregate over the plaintext `order` column only. Keeps raw Prisma access
   // inside the repo layer per CLAUDE.md.
   async function maxOrder(storyId: string): Promise<number | null> {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'outline.repo');
     const agg = await client.outlineItem.aggregate({
       where: { storyId, story: { userId } },
       _max: { order: true },

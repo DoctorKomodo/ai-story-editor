@@ -7,7 +7,14 @@ import {
   chapterSummarySchema,
 } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeEncrypted } from './_narrative';
+import {
+  decodeJsonField,
+  decodeSummaryField,
+  ensureStoryOwned,
+  projectDecrypted,
+  resolveUserId,
+  writeEncrypted,
+} from './_narrative';
 import { createDraftRepo } from './draft.repo';
 
 // `findManyForStory` is metadata-only — no body fetched, no body decrypted.
@@ -71,21 +78,6 @@ export type RepoChapter = {
  */
 export type RepoChapterMeta = Omit<RepoChapter, 'bodyJson' | 'summary' | 'summaryUpdatedAt'>;
 
-function resolveUserId(req: Request): string {
-  const id = req.user?.id;
-  if (!id) throw new Error('chapter.repo: req.user.id is not set');
-  return id;
-}
-
-async function ensureStoryOwned(
-  client: PrismaClient,
-  storyId: string,
-  userId: string,
-): Promise<void> {
-  const ok = await client.story.findFirst({ where: { id: storyId, userId } });
-  if (!ok) throw new Error('chapter.repo: story not owned by caller');
-}
-
 /**
  * Thrown by `reorder` when one or more chapter ids in the payload do not
  * belong to the target story for the caller. The route maps this to 403 —
@@ -115,8 +107,8 @@ export class ChapterVersionConflictError extends Error {
 
 export function createChapterRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: RepoChapterCreateInput) {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, input.storyId, userId);
+    const userId = resolveUserId(req, 'chapter.repo');
+    await ensureStoryOwned(client, input.storyId, userId, 'chapter.repo');
 
     // `null` and `undefined` both mean "no body": persist all-null body
     // triples rather than encrypting the literal string "null".
@@ -158,7 +150,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function findById(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chapter.repo');
     const row = await client.chapter.findFirst({
       where: { id, story: { userId } },
     });
@@ -179,8 +171,8 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   ): Promise<
     Array<RepoChapterMeta & { summary?: ChapterSummary | null; summaryUpdatedAt?: Date | null }>
   > {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, storyId, userId);
+    const userId = resolveUserId(req, 'chapter.repo');
+    await ensureStoryOwned(client, storyId, userId, 'chapter.repo');
     // Metadata-only: skip the body ciphertext triple at the DB layer. This
     // saves a per-chapter AES-GCM decrypt + JSON.parse on every list refresh,
     // matches the documented API contract (docs/api-contract.md:102), and
@@ -246,7 +238,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     input: RepoChapterUpdateInput,
     opts?: { expectedUpdatedAt?: Date },
   ) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chapter.repo');
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) {
       Object.assign(data, writeEncrypted(req, 'title', input.title));
@@ -303,7 +295,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function remove(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chapter.repo');
     return client.$transaction(async (tx) => {
       const target = await tx.chapter.findFirst({
         where: { id, story: { userId } },
@@ -342,8 +334,8 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     storyId: string,
     items: Array<{ id: string; orderIndex: number }>,
   ): Promise<void> {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, storyId, userId);
+    const userId = resolveUserId(req, 'chapter.repo');
+    await ensureStoryOwned(client, storyId, userId, 'chapter.repo');
 
     const ids = items.map((i) => i.id);
     const found = await client.chapter.findMany({
@@ -382,7 +374,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   // touched; this stays inside the repo so routes don't need to reach past it
   // for "scalar" lookups either (CLAUDE.md Database rule).
   async function maxOrderIndex(storyId: string): Promise<number | null> {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chapter.repo');
     const agg = await client.chapter.aggregate({
       where: { storyId, story: { userId } },
       _max: { orderIndex: true },
@@ -395,7 +387,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   ): Promise<Map<string, { chapterCount: number; totalWordCount: number }>> {
     const out = new Map<string, { chapterCount: number; totalWordCount: number }>();
     if (storyIds.length === 0) return out;
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chapter.repo');
     const rows = await client.chapter.groupBy({
       by: ['storyId'],
       where: { storyId: { in: storyIds }, story: { userId } },
@@ -453,35 +445,10 @@ function shape(row: unknown, req: Request): RepoChapter {
     CHAPTER_ENCRYPTED_FIELD_KEYS,
   );
   // The encrypted column is named `body` (matching `bodyCiphertext/Iv/AuthTag`),
-  // but the API contract surfaces the TipTap document tree as `bodyJson`. Parse
-  // the serialised JSON and rename the field on the way out.
-  let bodyJson: unknown = null;
-  if (typeof projected.body === 'string' && projected.body.length > 0) {
-    try {
-      bodyJson = JSON.parse(projected.body as string);
-    } catch {
-      // Non-JSON plaintext — shouldn't happen post-[E11]; surface as-is so
-      // the caller can see something went wrong rather than crash.
-      bodyJson = projected.body;
-    }
-  }
-  delete projected.body;
-  projected.bodyJson = bodyJson;
+  // but the API contract surfaces the TipTap document tree as `bodyJson`.
+  decodeJsonField(projected, 'body', 'bodyJson');
 
-  let summary: ChapterSummary | null = null;
-  if (typeof projected.summaryJson === 'string' && projected.summaryJson.length > 0) {
-    try {
-      summary = chapterSummarySchema.parse(JSON.parse(projected.summaryJson as string));
-    } catch {
-      // A ZodError/SyntaxError on a decryptable-but-invalid blob can embed the
-      // decrypted field values, and decrypted narrative content must never reach
-      // logs — log only a static code + the chapter id.
-      console.warn(`[chapter.repo] summary_parse_failed chapter=${projected.id as string}`);
-      summary = null;
-    }
-  }
-  delete projected.summaryJson;
-  projected.summary = summary;
+  decodeSummaryField(projected, row as { summaryJsonUpdatedAt: Date | null }, 'chapter.repo');
   // Derive hasSummary/summaryIsStale from the raw ciphertext column + timestamps,
   // identical to shapeMeta(). A corrupt-but-present blob must still report
   // hasSummary=true so the frontend can surface the corrupted state
@@ -491,7 +458,6 @@ function shape(row: unknown, req: Request): RepoChapter {
     summaryJsonUpdatedAt: Date | null;
     updatedAt: Date;
   };
-  projected.summaryUpdatedAt = rawRow.summaryJsonUpdatedAt;
   projected.hasSummary = rawRow.summaryJsonCiphertext != null;
   projected.summaryIsStale =
     projected.hasSummary &&

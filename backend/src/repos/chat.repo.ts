@@ -2,7 +2,7 @@ import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { CHAT_ENCRYPTED_FIELD_KEYS, type ChatKind } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeEncrypted } from './_narrative';
+import { projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = CHAT_ENCRYPTED_FIELD_KEYS;
 
@@ -33,12 +33,6 @@ export type RepoChat = {
   lastActivityAt: Date;
 };
 
-function resolveUserId(req: Request): string {
-  const id = req.user?.id;
-  if (!id) throw new Error('chat.repo: req.user.id is not set');
-  return id;
-}
-
 async function ensureDraftOwned(
   client: PrismaClient,
   draftId: string,
@@ -52,7 +46,7 @@ async function ensureDraftOwned(
 
 export function createChatRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: ChatCreateInput) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chat.repo');
     await ensureDraftOwned(client, input.draftId, userId);
     const row = await client.chat.create({
       data: {
@@ -66,7 +60,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   }
 
   async function findById(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chat.repo');
     const row = await client.chat.findFirst({
       where: { id, draft: { chapter: { story: { userId } } } },
     });
@@ -75,7 +69,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   }
 
   async function findManyForDraft(draftId: string, opts?: { kind?: ChatKind }) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chat.repo');
     await ensureDraftOwned(client, draftId, userId);
     const rows = await client.chat.findMany({
       where: {
@@ -95,7 +89,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   }
 
   async function update(id: string, input: ChatUpdateInput) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chat.repo');
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) Object.assign(data, writeEncrypted(req, 'title', input.title));
     const updated = await client.chat.updateMany({
@@ -111,7 +105,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   }
 
   async function remove(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'chat.repo');
     const deleted = await client.chat.deleteMany({
       where: { id, draft: { chapter: { story: { userId } } } },
     });

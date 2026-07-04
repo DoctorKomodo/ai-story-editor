@@ -1,12 +1,15 @@
 import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
-import {
-  type ChapterSummary,
-  chapterSummarySchema,
-  DRAFT_ENCRYPTED_FIELD_KEYS,
-} from 'story-editor-shared';
+import { type ChapterSummary, DRAFT_ENCRYPTED_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeEncrypted } from './_narrative';
+import {
+  decodeJsonField,
+  decodeSummaryField,
+  ensureChapterOwned,
+  projectDecrypted,
+  resolveUserId,
+  writeEncrypted,
+} from './_narrative';
 
 export interface RepoDraftCreateInput {
   chapterId: string;
@@ -30,25 +33,10 @@ export type RepoDraft = {
   updatedAt: Date;
 };
 
-function resolveUserId(req: Request): string {
-  const id = req.user?.id;
-  if (!id) throw new Error('draft.repo: req.user.id is not set');
-  return id;
-}
-
-async function ensureChapterOwned(
-  client: PrismaClient,
-  chapterId: string,
-  userId: string,
-): Promise<void> {
-  const ok = await client.chapter.findFirst({ where: { id: chapterId, story: { userId } } });
-  if (!ok) throw new Error('draft.repo: chapter not owned by caller');
-}
-
 export function createDraftRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: RepoDraftCreateInput) {
-    const userId = resolveUserId(req);
-    await ensureChapterOwned(client, input.chapterId, userId);
+    const userId = resolveUserId(req, 'draft.repo');
+    await ensureChapterOwned(client, input.chapterId, userId, 'draft.repo');
 
     const bodyPlaintext =
       input.bodyJson === undefined || input.bodyJson === null
@@ -75,15 +63,15 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
   }
 
   async function findById(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'draft.repo');
     const row = await client.draft.findFirst({ where: { id, chapter: { story: { userId } } } });
     if (!row) return null;
     return shape(row, req);
   }
 
   async function findManyForChapter(chapterId: string): Promise<RepoDraft[]> {
-    const userId = resolveUserId(req);
-    await ensureChapterOwned(client, chapterId, userId);
+    const userId = resolveUserId(req, 'draft.repo');
+    await ensureChapterOwned(client, chapterId, userId, 'draft.repo');
     const rows = await client.draft.findMany({
       where: { chapterId, chapter: { story: { userId } } },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
@@ -101,32 +89,8 @@ function shape(row: unknown, req: Request): RepoDraft {
     DRAFT_ENCRYPTED_FIELD_KEYS,
   );
 
-  let bodyJson: unknown = null;
-  if (typeof projected.body === 'string' && projected.body.length > 0) {
-    try {
-      bodyJson = JSON.parse(projected.body as string);
-    } catch {
-      bodyJson = projected.body;
-    }
-  }
-  delete projected.body;
-  projected.bodyJson = bodyJson;
-
-  let summary: ChapterSummary | null = null;
-  if (typeof projected.summaryJson === 'string' && projected.summaryJson.length > 0) {
-    try {
-      summary = chapterSummarySchema.parse(JSON.parse(projected.summaryJson as string));
-    } catch {
-      console.warn(`[draft.repo] summary_parse_failed draft=${projected.id as string}`);
-      summary = null;
-    }
-  }
-  delete projected.summaryJson;
-  projected.summary = summary;
-
-  const rawRow = row as { summaryJsonUpdatedAt: Date | null };
-  projected.summaryUpdatedAt = rawRow.summaryJsonUpdatedAt;
-  delete projected.summaryJsonUpdatedAt;
+  decodeJsonField(projected, 'body', 'bodyJson');
+  decodeSummaryField(projected, row as { summaryJsonUpdatedAt: Date | null }, 'draft.repo');
 
   return projected as RepoDraft;
 }

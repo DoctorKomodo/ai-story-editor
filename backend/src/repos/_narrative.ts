@@ -7,7 +7,9 @@
 // column shape (ciphertext triple only). No dual-write, no plaintext
 // fallback — ciphertext is the sole source of truth for narrative content.
 
+import type { PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
+import { type ChapterSummary, chapterSummarySchema } from 'story-editor-shared';
 import {
   DekNotAvailableError,
   decryptForRequest,
@@ -109,4 +111,79 @@ export function projectDecrypted<T extends Record<string, unknown>>(
     projected[f] = readEncrypted(req, row, f);
   }
   return projected as unknown as T;
+}
+
+// ─── Repo boilerplate hoists ([9wk.4]) ──────────────────────────────────────
+// Every narrative repo needs the same three guards and the same two decode
+// blocks. `repoTag` keeps the per-repo error/log prefixes intact (e.g.
+// 'chapter.repo') so messages stay grep-stable.
+
+export function resolveUserId(req: Request, repoTag: string): string {
+  const id = req.user?.id;
+  if (!id) throw new Error(`${repoTag}: req.user.id is not set`);
+  return id;
+}
+
+export async function ensureStoryOwned(
+  client: PrismaClient,
+  storyId: string,
+  userId: string,
+  repoTag: string,
+): Promise<void> {
+  const ok = await client.story.findFirst({ where: { id: storyId, userId } });
+  if (!ok) throw new Error(`${repoTag}: story not owned by caller`);
+}
+
+export async function ensureChapterOwned(
+  client: PrismaClient,
+  chapterId: string,
+  userId: string,
+  repoTag: string,
+): Promise<void> {
+  const ok = await client.chapter.findFirst({ where: { id: chapterId, story: { userId } } });
+  if (!ok) throw new Error(`${repoTag}: chapter not owned by caller`);
+}
+
+// Parse a decrypted JSON-string field in place: `projected[field]` (plaintext
+// string | null) becomes `projected[targetField]` (parsed tree | raw string on
+// parse failure | null). Mirrors the chapter/draft shape() body block.
+export function decodeJsonField(
+  projected: Record<string, unknown>,
+  field: string,
+  targetField: string,
+): void {
+  let parsed: unknown = null;
+  if (typeof projected[field] === 'string' && (projected[field] as string).length > 0) {
+    try {
+      parsed = JSON.parse(projected[field] as string);
+    } catch {
+      parsed = projected[field];
+    }
+  }
+  delete projected[field];
+  projected[targetField] = parsed;
+}
+
+// Parse + validate a decrypted summaryJson field in place: sets
+// `projected.summary` (ChapterSummary | null) and `projected.summaryUpdatedAt`
+// (from the raw row), deleting the intermediate keys. Logs id-only on a
+// corrupt blob — decrypted narrative content must never reach logs.
+export function decodeSummaryField(
+  projected: Record<string, unknown>,
+  row: { summaryJsonUpdatedAt: Date | null },
+  repoTag: string,
+): void {
+  let summary: ChapterSummary | null = null;
+  if (typeof projected.summaryJson === 'string' && (projected.summaryJson as string).length > 0) {
+    try {
+      summary = chapterSummarySchema.parse(JSON.parse(projected.summaryJson as string));
+    } catch {
+      console.warn(`[${repoTag}] summary_parse_failed id=${projected.id as string}`);
+      summary = null;
+    }
+  }
+  delete projected.summaryJson;
+  projected.summary = summary;
+  projected.summaryUpdatedAt = row.summaryJsonUpdatedAt;
+  delete projected.summaryJsonUpdatedAt;
 }

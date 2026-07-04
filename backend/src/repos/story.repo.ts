@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import type { Story, StoryCreateInput, StoryUpdateInput } from 'story-editor-shared';
 import { STORY_ENCRYPTED_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeEncrypted } from './_narrative';
+import { projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
 
 // Keep the local ENCRYPTED_FIELDS name as the repo-local invariant (same as
 // character.repo.ts) — sourced from the shared tuple.
@@ -18,12 +18,6 @@ export type RepoStory = Omit<Story, 'createdAt' | 'updatedAt'> & {
   updatedAt: Date;
 };
 
-function resolveUserId(req: Request): string {
-  const id = req.user?.id;
-  if (!id) throw new Error('story.repo: req.user.id is not set (auth middleware missing?)');
-  return id;
-}
-
 export function createStoryRepo(req: Request, client: PrismaClient = defaultPrisma) {
   // `opts.id` is repo-internal (not on any wire schema): the import-replace
   // path reuses the id of the owned story it just deleted in the same
@@ -31,7 +25,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
   // and history stay valid ([story-editor-f1t]; the e2i no-dead-end
   // guarantee). Callers must never pass a client-supplied id.
   async function create(input: StoryCreateInput, opts?: { id?: string }) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'story.repo');
     const encCols = {
       ...writeEncrypted(req, 'title', input.title),
       ...writeEncrypted(req, 'synopsis', input.synopsis ?? null),
@@ -57,7 +51,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
   }
 
   async function findById(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'story.repo');
     const row = await client.story.findFirst({ where: { id, userId } });
     if (!row) return null;
     return projectDecrypted<RepoStory>(
@@ -68,7 +62,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
   }
 
   async function findManyForUser() {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'story.repo');
     const rows = await client.story.findMany({
       where: { userId },
       orderBy: { updatedAt: 'desc' },
@@ -79,7 +73,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
   }
 
   async function update(id: string, input: StoryUpdateInput) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'story.repo');
     // Scope by userId: updateMany returns { count } and doesn't throw on
     // miss, so unauthorised / unknown ids 404 cleanly without error.
     const data: Record<string, unknown> = {};
@@ -113,7 +107,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
   }
 
   async function remove(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'story.repo');
     const deleted = await client.story.deleteMany({ where: { id, userId } });
     return deleted.count > 0;
   }
@@ -124,7 +118,7 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
   // decrypted. Messages use `createdAt` (append time) plus `updatedAt` when
   // the edit path has set it (null = never edited).
   async function contentUpdatedAtMax(storyId: string): Promise<Date> {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'story.repo');
     const story = await client.story.findFirst({ where: { id: storyId, userId } });
     if (!story) throw new Error('story.repo: story not owned by caller');
 
