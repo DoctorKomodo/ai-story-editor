@@ -27,6 +27,9 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
       orderIndex: 0,
     });
 
+    // [9wk.3] chapter.repo.create already minted a draft at orderIndex 0 for
+    // this chapter — this test exercises draft.repo directly, so the
+    // second draft it creates must take the next slot.
     const draftRepo = createDraftRepo(ctx.req);
     const created = await draftRepo.create({
       chapterId: chapter.id,
@@ -37,7 +40,7 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
       summaryJson: { events: 'e', stateAtEnd: 's', openThreads: 'o' },
       label: 'darker take',
       wordCount: 2,
-      orderIndex: 0,
+      orderIndex: 1,
     });
 
     // Decrypted shape is correct, and carries no ciphertext columns.
@@ -76,7 +79,8 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
       title: 'C',
       orderIndex: 0,
     });
-    const created = await createDraftRepo(ctx.req).create({ chapterId: chapter.id, orderIndex: 0 });
+    // [9wk.3] orderIndex 0 is already taken by the chapter's minted draft.
+    const created = await createDraftRepo(ctx.req).create({ chapterId: chapter.id, orderIndex: 1 });
     expect(created.bodyJson).toBeNull();
     expect(created.summary).toBeNull();
     expect(created.label).toBeNull();

@@ -107,6 +107,8 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       },
     });
 
+    // [9wk.3] chapter.repo.create already minted a draft at orderIndex 0 for
+    // this chapter — this second draft takes the next slot.
     const draftRepo = createDraftRepo(ctx.req);
     await draftRepo.create({
       chapterId: chapter.id as string,
@@ -123,7 +125,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       },
       label: `draft-label ${SENTINEL}`,
       wordCount: 2,
-      orderIndex: 0,
+      orderIndex: 1,
     });
 
     await characterRepo.create({

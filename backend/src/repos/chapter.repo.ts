@@ -8,6 +8,7 @@ import {
 } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
 import { projectDecrypted, writeEncrypted } from './_narrative';
+import { createDraftRepo } from './draft.repo';
 
 // `findManyForStory` is metadata-only — no body fetched, no body decrypted.
 // Sidebar / list consumers don't need the body, and skipping it saves a full
@@ -54,6 +55,12 @@ export type RepoChapter = {
   orderIndex: number;
   createdAt: Date;
   updatedAt: Date;
+  // [9wk.3] Active-draft pointer. Non-null for every repo-created chapter
+  // (create mints the initial draft in the same transaction). Nullable in
+  // the type because the DB column is nullable (create-time chicken-and-egg).
+  // NOT exposed on the wire — serializeChapter/serializeChapterMeta pick
+  // explicitly and do not include it (step 4 adds it to the wire contract).
+  activeDraftId: string | null;
 };
 
 /**
@@ -117,17 +124,35 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
       input.bodyJson === undefined || input.bodyJson === null
         ? null
         : JSON.stringify(input.bodyJson);
-    const row = await client.chapter.create({
-      data: {
-        storyId: input.storyId,
-        orderIndex: input.orderIndex,
+
+    // [9wk.3] Chapter + initial draft + active pointer in ONE transaction:
+    // the "every chapter has exactly one active draft" invariant (spec §3/§6)
+    // must never be observable as violated. The draft re-encrypts the same
+    // plaintext under the same DEK (fresh IV — ciphertexts differ; fine).
+    const row = await client.$transaction(async (tx) => {
+      const chapterRow = await tx.chapter.create({
+        data: {
+          storyId: input.storyId,
+          orderIndex: input.orderIndex,
+          wordCount: input.wordCount ?? 0,
+          // Post-[E11]: narrative content is ciphertext-only.
+          ...writeEncrypted(req, 'title', input.title),
+          ...writeEncrypted(req, 'body', bodyPlaintext),
+        },
+      });
+      // Same tx-client cast pattern as import.service.ts. draft.repo owns
+      // Draft encryption; its ensureChapterOwned re-check inside the tx is
+      // one cheap SELECT against the row created above.
+      const draft = await createDraftRepo(req, tx as unknown as PrismaClient).create({
+        chapterId: chapterRow.id,
+        bodyJson: input.bodyJson,
         wordCount: input.wordCount ?? 0,
-        // Post-[E11]: narrative content is ciphertext-only. `title` uses the
-        // standard triple; `body` is the serialised TipTap JSON tree
-        // encrypted into `bodyCiphertext/Iv/AuthTag` (no plaintext sibling).
-        ...writeEncrypted(req, 'title', input.title),
-        ...writeEncrypted(req, 'body', bodyPlaintext),
-      },
+        orderIndex: 0,
+      });
+      return tx.chapter.update({
+        where: { id: chapterRow.id },
+        data: { activeDraftId: draft.id },
+      });
     });
     return shape(row, req);
   }
@@ -171,6 +196,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         wordCount: true,
         createdAt: true,
         updatedAt: true,
+        activeDraftId: true,
         // title triple — decrypted by `shapeMeta`. Body triple deliberately
         // omitted; readers that need it must hit `findById`.
         titleCiphertext: true,

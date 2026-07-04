@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
-import { createChatRepo } from '../../src/repos/chat.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { resetDb } from '../helpers/db';
 import { makeUserContext } from '../repos/_req';
@@ -80,7 +79,14 @@ describe('[9wk.2] drafts expand backfill — verbatim ciphertext relocation', ()
       wordCount: 2,
       orderIndex: 0,
     });
-    const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id, title: 'T' });
+
+    // [9wk.3] chapter.repo.create now mints a draft; this test needs the
+    // PRE-migration shape (draftless chapter). Strip the minted draft.
+    await prisma.chapter.update({
+      where: { id: chapter.id as string },
+      data: { activeDraftId: null },
+    });
+    await prisma.draft.deleteMany({ where: { chapterId: chapter.id as string } });
 
     // Capture the chapter's raw body ciphertext BEFORE backfill.
     const before = await prisma.chapter.findUniqueOrThrow({
@@ -107,8 +113,6 @@ describe('[9wk.2] drafts expand backfill — verbatim ciphertext relocation', ()
     // Pointers set.
     const chapterAfter = await prisma.chapter.findUniqueOrThrow({ where: { id: chapter.id } });
     expect(chapterAfter.activeDraftId).toBe(draft.id);
-    const chatAfter = await prisma.chat.findUniqueOrThrow({ where: { id: chat.id } });
-    expect(chatAfter.draftId).toBe(draft.id);
 
     // Idempotent: a second run is a no-op (still exactly one draft).
     await runBackfill();

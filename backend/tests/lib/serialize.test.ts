@@ -269,6 +269,7 @@ const REPO_CHAPTER: RepoChapter = {
   summaryUpdatedAt: null,
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
+  activeDraftId: 'd1',
 };
 
 const REPO_CHAPTER_META: RepoChapterMeta = {
@@ -281,6 +282,7 @@ const REPO_CHAPTER_META: RepoChapterMeta = {
   summaryIsStale: false,
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
+  activeDraftId: 'd1',
 };
 
 describe('serializeChapter', () => {
