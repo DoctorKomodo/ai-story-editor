@@ -178,7 +178,7 @@ Body: `{ "items": [{ "id", "order" }] }` (one transaction). Response `204`; the 
 ## Chats & Messages
 
 ### `POST /api/chapters/:chapterId/chats`
-Body: `{ "title?", "kind?" }` (`kind` = `'ask' | 'scene'`, default `'ask'`). Response `201`: `{ "chat": { "id", "chapterId", "title", "kind", "createdAt", "updatedAt", "lastActivityAt" } }`.
+Body: `{ "title?", "kind?" }` (`kind` = `'ask' | 'scene'`, default `'ask'`). Response `201`: `{ "chat": { "id", "draftId", "title", "kind", "createdAt", "updatedAt", "lastActivityAt" } }`. Chats are draft-scoped; this chapter-mounted route resolves the chapter's active draft server-side, so `draftId` is the active draft's id.
 
 ### `GET /api/chapters/:chapterId/chats`
 Query: `?kind=ask|scene` (optional filter). Response `200`: `{ "chats": [ … ] }`, each = the chat fields above + `"messageCount"`.
