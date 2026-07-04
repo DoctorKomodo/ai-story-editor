@@ -1,7 +1,7 @@
 // StoryBrowser — picker + create modal + navigation wiring shared by the
 // dashboard landing surface and the in-editor Your-Stories modal.
 import { QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -66,6 +66,7 @@ function renderBrowser(opts: { embedded?: boolean; activeStoryId?: string | null
             }
           />
           <Route path="/stories/:id" element={<LocationProbe />} />
+          <Route path="/" element={<LocationProbe />} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -167,5 +168,71 @@ describe('StoryBrowser', () => {
       expect(screen.getByTestId('story-picker-empty')).toBeInTheDocument();
     });
     expect(screen.queryByTestId('story-picker-import')).toBeNull();
+  });
+
+  // [story-editor-0wz] The [story-editor-f1t] dead-end: deleting the story
+  // the editor currently has open must exit to the library, not leave
+  // EditorPage's storyQuery 404ing into "Could not load story".
+  describe('deleting a story (story-editor-0wz)', () => {
+    function mockFetchWithStories(stories: Record<string, unknown>[]): void {
+      fetchMock.mockImplementation(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = typeof input === 'string' ? input : input.toString();
+        const method = init?.method ?? 'GET';
+        if (/\/api\/stories\/[^/]+$/.test(url) && method === 'DELETE') {
+          return new Response(null, { status: 204 });
+        }
+        if (url.endsWith('/api/stories')) {
+          return jsonResponse(200, { stories });
+        }
+        return jsonResponse(404, { error: 'not_mocked' });
+      });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('navigates to the library once the currently-open story is actually deleted', async () => {
+      mockFetchWithStories([makeStory('abc', 'Dune')]);
+      renderBrowser({ activeStoryId: 'abc' });
+      const deleteIcon = await screen.findByRole('button', { name: 'Delete "Dune"' });
+
+      // fireEvent-style .click() (not userEvent) once fake timers are live —
+      // userEvent's internal delay pipeline fights fake timers.
+      vi.useFakeTimers();
+      await act(async () => {
+        deleteIcon.click();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete' }).click();
+      });
+      // Still on the story route mid-window — undo would leave it unharmed.
+      expect(probeLocation()).toBe('/start');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(probeLocation()).toBe('/');
+    });
+
+    it('does not navigate when the deleted story is not the currently-open one', async () => {
+      mockFetchWithStories([makeStory('abc', 'Dune'), makeStory('xyz', 'Foundry')]);
+      renderBrowser({ activeStoryId: 'abc' });
+      const deleteIcon = await screen.findByRole('button', { name: 'Delete "Foundry"' });
+
+      vi.useFakeTimers();
+      await act(async () => {
+        deleteIcon.click();
+      });
+      await act(async () => {
+        screen.getByRole('button', { name: 'Delete' }).click();
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+
+      expect(probeLocation()).toBe('/start');
+    });
   });
 });
