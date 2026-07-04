@@ -119,7 +119,9 @@ function makeFakeReq(sessionId: string): Request {
   return req;
 }
 
-async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; chapterId: string }> {
+async function setupStoryAndChapter(
+  req: Request,
+): Promise<{ storyId: string; chapterId: string; draftId: string }> {
   const story = await createStoryRepo(req).create({
     title: 'Test Story',
     worldNotes: 'A magical world.',
@@ -135,7 +137,11 @@ async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; ch
     orderIndex: 0,
     wordCount: 3,
   });
-  return { storyId, chapterId: chapter.id as string };
+  return {
+    storyId,
+    chapterId: chapter.id as string,
+    draftId: chapter.activeDraftId as string,
+  };
 }
 
 // ─── Tests ────────────────────────────────────────────────────────────────────
@@ -229,15 +235,15 @@ describe('Chat persistence [V15]', () => {
   it('GET /api/chapters/:chapterId/chats returns chats sorted by lastActivityAt desc, createdAt desc', async () => {
     const { agent, sessionId } = await registerAndLogin();
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
+    const { chapterId, draftId } = await setupStoryAndChapter(req);
 
     // Create two dormant chats (no messages). lastActivityAt === createdAt for
     // both, so the tie-breaker (createdAt desc) determines order: the newer
     // chat ('Second Chat') should appear first.
-    await createChatRepo(req).create({ chapterId, title: 'First Chat' });
+    await createChatRepo(req).create({ draftId, title: 'First Chat' });
     // Tiny pause to guarantee distinct timestamps.
     await new Promise((r) => setTimeout(r, 20));
-    await createChatRepo(req).create({ chapterId, title: 'Second Chat' });
+    await createChatRepo(req).create({ draftId, title: 'Second Chat' });
 
     const res = await agent.get(`/api/chapters/${chapterId}/chats`);
 
@@ -316,9 +322,9 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
+    const { draftId } = await setupStoryAndChapter(req);
 
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -339,9 +345,9 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
+    const { draftId } = await setupStoryAndChapter(req);
 
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     const EXPECTED_TOKENS = 42;
@@ -400,8 +406,8 @@ describe('Chat persistence [V15]', () => {
   it('returns 409 and persists NO messages when user has no BYOK key', async () => {
     const { agent, sessionId } = await registerAndLogin();
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     // No storeKey call — user has no BYOK.
@@ -422,8 +428,8 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     // Models list succeeds, then Venice stream returns 429.
@@ -488,8 +494,8 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -521,8 +527,8 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     // First message
@@ -592,8 +598,8 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     // User sets 1234 override; model caps at 4096 → expect 1234 (override wins).
@@ -636,8 +642,8 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     // User sets 16000 override; model caps at 4096 → expect 4096 (model cap wins).
@@ -680,8 +686,8 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     // Set a per-model override for temperature and topP on BASE_MODEL_ID.
@@ -728,9 +734,9 @@ describe('Chat persistence [V15]', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
+    const { draftId } = await setupStoryAndChapter(req);
 
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));

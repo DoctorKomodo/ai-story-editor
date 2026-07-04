@@ -7,9 +7,9 @@ import { projectDecrypted, writeEncrypted } from './_narrative';
 const ENCRYPTED_FIELDS = CHAT_ENCRYPTED_FIELD_KEYS;
 
 // Repo-local input shapes. The shared chatCreateSchema can't cover these
-// directly because `chapterId` comes from the URL (not the request body).
+// directly because `draftId` comes from the URL-resolved draft (not the body).
 export interface ChatCreateInput {
-  chapterId: string;
+  draftId: string;
   title?: string | null;
   kind?: ChatKind;
 }
@@ -25,9 +25,7 @@ export interface ChatUpdateInput {
 // `Record<string, unknown>` constraint on `projectDecrypted<T>`.
 export type RepoChat = {
   id: string;
-  // Nullable in the DB until Task 5's contract migration; non-null at runtime
-  // for every row (dual-write + backfill). serializeChat asserts.
-  draftId: string | null;
+  draftId: string;
   title: string | null;
   kind: 'ask' | 'scene';
   createdAt: Date;
@@ -41,39 +39,24 @@ function resolveUserId(req: Request): string {
   return id;
 }
 
-async function ensureChapterOwned(
+async function ensureDraftOwned(
   client: PrismaClient,
-  chapterId: string,
+  draftId: string,
   userId: string,
 ): Promise<void> {
-  const ok = await client.chapter.findFirst({
-    where: { id: chapterId, story: { userId } },
+  const ok = await client.draft.findFirst({
+    where: { id: draftId, chapter: { story: { userId } } },
   });
-  if (!ok) throw new Error('chat.repo: chapter not owned by caller');
+  if (!ok) throw new Error('chat.repo: draft not owned by caller');
 }
 
 export function createChatRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: ChatCreateInput) {
     const userId = resolveUserId(req);
-    // [9wk.3] Dual-write during the chat contract transition: both draftId
-    // and chapterId FKs exist while the migration chain tightens draftId to
-    // NOT NULL and drops chapterId. Resolve the chapter's active draft with
-    // an owner-scoped lookup (every narrative read must be independently
-    // scoped, not rely on a sibling call) and write BOTH FKs. A null
-    // activeDraftId is an invariant violation (chapter-create mints the
-    // draft) — fail loudly, never insert a NULL draftId.
-    const chapter = await client.chapter.findFirst({
-      where: { id: input.chapterId, story: { userId } },
-      select: { activeDraftId: true },
-    });
-    if (!chapter) throw new Error('chat.repo: chapter not owned by caller');
-    if (chapter.activeDraftId === null) {
-      throw new Error('chat.repo: chapter has no active draft (invariant violation)');
-    }
+    await ensureDraftOwned(client, input.draftId, userId);
     const row = await client.chat.create({
       data: {
-        chapterId: input.chapterId,
-        draftId: chapter.activeDraftId,
+        draftId: input.draftId,
         kind: input.kind ?? 'ask',
         // Post-[E11]: `title` is ciphertext-only.
         ...writeEncrypted(req, 'title', input.title ?? null),
@@ -91,13 +74,13 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
   }
 
-  async function findManyForChapter(chapterId: string, opts?: { kind?: ChatKind }) {
+  async function findManyForDraft(draftId: string, opts?: { kind?: ChatKind }) {
     const userId = resolveUserId(req);
-    await ensureChapterOwned(client, chapterId, userId);
+    await ensureDraftOwned(client, draftId, userId);
     const rows = await client.chat.findMany({
       where: {
-        chapterId,
-        chapter: { story: { userId } },
+        draftId,
+        draft: { chapter: { story: { userId } } },
         ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
       },
       // story-editor-loj: order by most-recent-activity desc, with createdAt
@@ -135,5 +118,5 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForChapter, update, remove };
+  return { create, findById, findManyForDraft, update, remove };
 }

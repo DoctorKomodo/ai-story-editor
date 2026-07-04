@@ -16,7 +16,7 @@ async function createUserWithChapter() {
     title: 'ch',
     orderIndex: 0,
   });
-  return { user: ctx, chapterId: chapter.id as string };
+  return { user: ctx, draftId: chapter.activeDraftId as string };
 }
 
 describe('[E9] message.repo', () => {
@@ -31,7 +31,7 @@ describe('[E9] message.repo', () => {
       title: 'ch',
       orderIndex: 0,
     });
-    const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id as string });
+    const chat = await createChatRepo(ctx.req).create({ draftId: chapter.activeDraftId as string });
     const repo = createMessageRepo(ctx.req);
 
     const attachment = { selectionText: 'draft passage', chapterId: chapter.id as string };
@@ -71,7 +71,7 @@ describe('[E9] message.repo', () => {
       title: 'ch',
       orderIndex: 0,
     });
-    const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id as string });
+    const chat = await createChatRepo(ctx.req).create({ draftId: chapter.activeDraftId as string });
     const repo = createMessageRepo(ctx.req);
 
     expect(await repo.countForChat(chat.id as string)).toBe(0);
@@ -91,7 +91,9 @@ describe('[E9] message.repo', () => {
       title: 'ch-a',
       orderIndex: 0,
     });
-    const chat = await createChatRepo(ctxA.req).create({ chapterId: chapter.id as string });
+    const chat = await createChatRepo(ctxA.req).create({
+      draftId: chapter.activeDraftId as string,
+    });
     await createMessageRepo(ctxA.req).create({
       chatId: chat.id as string,
       role: 'user',
@@ -113,7 +115,7 @@ describe('[E9] message.repo', () => {
       title: 'ch',
       orderIndex: 0,
     });
-    const chat = await createChatRepo(ctx.req).create({ chapterId: chapter.id as string });
+    const chat = await createChatRepo(ctx.req).create({ draftId: chapter.activeDraftId as string });
     const repo = createMessageRepo(ctx.req);
 
     await repo.create({ chatId: chat.id as string, role: 'user', content: 'q1' });
@@ -135,10 +137,10 @@ describe('MessageRepo.deleteAllAfter', () => {
   afterEach(resetDb);
 
   it('deletes only rows whose createdAt > reference.createdAt', async () => {
-    const { user, chapterId } = await createUserWithChapter();
+    const { user, draftId } = await createUserWithChapter();
     const repo = createMessageRepo(user.req);
     const chatRepo = createChatRepo(user.req);
-    const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+    const chat = await chatRepo.create({ draftId, kind: 'ask', title: null });
 
     const userMsg = await repo.create({
       chatId: chat.id as string,
@@ -161,10 +163,10 @@ describe('MessageRepo.deleteAllAfter', () => {
   });
 
   it('deletes same-millisecond sibling with different id', async () => {
-    const { user, chapterId } = await createUserWithChapter();
+    const { user, draftId } = await createUserWithChapter();
     const repo = createMessageRepo(user.req);
     const chatRepo = createChatRepo(user.req);
-    const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+    const chat = await chatRepo.create({ draftId, kind: 'ask', title: null });
 
     // Two messages at exactly the same instant via raw Prisma to construct the
     // same-millisecond collision case. Post-[E11] there is no plaintext
@@ -194,10 +196,10 @@ describe('MessageRepo.deleteAllAfter', () => {
   });
 
   it('returns count 0 when reference message does not exist', async () => {
-    const { user, chapterId } = await createUserWithChapter();
+    const { user, draftId } = await createUserWithChapter();
     const repo = createMessageRepo(user.req);
     const chatRepo = createChatRepo(user.req);
-    const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+    const chat = await chatRepo.create({ draftId, kind: 'ask', title: null });
 
     const result = await repo.deleteAllAfter(chat.id as string, 'nonexistent-id');
     expect(result.count).toBe(0);
@@ -205,10 +207,10 @@ describe('MessageRepo.deleteAllAfter', () => {
 
   it("does not delete messages from another user's chat", async () => {
     const { user: userA } = await createUserWithChapter();
-    const { user: userB, chapterId: chapterBId } = await createUserWithChapter();
+    const { user: userB, draftId: draftBId } = await createUserWithChapter();
     const repoA = createMessageRepo(userA.req);
     const chatRepoB = createChatRepo(userB.req);
-    const chatB = await chatRepoB.create({ chapterId: chapterBId, kind: 'ask', title: null });
+    const chatB = await chatRepoB.create({ draftId: draftBId, kind: 'ask', title: null });
     const repoBviaB = createMessageRepo(userB.req);
     const userMsgB = await repoBviaB.create({
       chatId: chatB.id as string,
@@ -231,11 +233,11 @@ describe('MessageRepo.deleteAllAfter', () => {
   });
 
   it('does not delete when afterMessageId belongs to a different chat owned by same user', async () => {
-    const { user, chapterId } = await createUserWithChapter();
+    const { user, draftId } = await createUserWithChapter();
     const chatRepo = createChatRepo(user.req);
     const repo = createMessageRepo(user.req);
-    const chatA = await chatRepo.create({ chapterId, kind: 'ask', title: null });
-    const chatB = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+    const chatA = await chatRepo.create({ draftId, kind: 'ask', title: null });
+    const chatB = await chatRepo.create({ draftId, kind: 'ask', title: null });
 
     // Two messages in chat A — they should survive; we only need the row count.
     await repo.create({
@@ -267,9 +269,9 @@ describe('MessageRepo.deleteAllAfter', () => {
 });
 
 async function setupChatFixture() {
-  const { user, chapterId } = await createUserWithChapter();
+  const { user, draftId } = await createUserWithChapter();
   const chatRepo = createChatRepo(user.req);
-  const chat = await chatRepo.create({ chapterId, kind: 'ask', title: null });
+  const chat = await chatRepo.create({ draftId, kind: 'ask', title: null });
   return { req: user.req, chatId: chat.id as string };
 }
 

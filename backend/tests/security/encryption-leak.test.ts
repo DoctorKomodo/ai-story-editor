@@ -153,7 +153,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     });
 
     const chat = await chatRepo.create({
-      chapterId: chapter.id as string,
+      draftId: chapter.activeDraftId as string,
       title: `chat-title ${SENTINEL}`,
     });
 

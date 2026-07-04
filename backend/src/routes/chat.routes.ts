@@ -70,9 +70,15 @@ export function createChapterChatsRouter() {
         res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
         return;
       }
+      // [9wk.3] Chats are draft-scoped; this chapter-mounted route resolves
+      // the ACTIVE draft (step 4 re-mounts chats under /drafts/:draftId).
+      // Null is an invariant violation post-9wk.3 — 500 is correct.
+      if (chapter.activeDraftId === null) {
+        throw new Error('chat.routes: chapter has no active draft (invariant violation)');
+      }
 
       const chat = await createChatRepo(req).create({
-        chapterId,
+        draftId: chapter.activeDraftId,
         title: body.title ?? null,
         kind: body.kind ?? 'ask',
       });
@@ -94,8 +100,14 @@ export function createChapterChatsRouter() {
         res.status(404).json({ error: { message: 'Chapter not found', code: 'not_found' } });
         return;
       }
+      // [9wk.3] Chats are draft-scoped; this chapter-mounted route resolves
+      // the ACTIVE draft (step 4 re-mounts chats under /drafts/:draftId).
+      // Null is an invariant violation post-9wk.3 — 500 is correct.
+      if (chapter.activeDraftId === null) {
+        throw new Error('chat.routes: chapter has no active draft (invariant violation)');
+      }
 
-      const chats = await createChatRepo(req).findManyForChapter(chapterId, { kind });
+      const chats = await createChatRepo(req).findManyForDraft(chapter.activeDraftId, { kind });
 
       // Enrich each chat with its message count (via repo layer — ownership enforced).
       const enriched = await Promise.all(
@@ -234,7 +246,7 @@ export function createChatMessagesRouter() {
         // [9wk.3] Chats are draft-scoped; the chapter is reached through the
         // draft. draft.repo.findById is owner-filtered, and the chat itself was
         // ownership-checked above — a miss here is an invariant violation.
-        const chatDraft = await createDraftRepo(req).findById(chat.draftId as string);
+        const chatDraft = await createDraftRepo(req).findById(chat.draftId);
         if (!chatDraft) {
           throw new Error('chat.routes: chat draft not resolvable (invariant violation)');
         }

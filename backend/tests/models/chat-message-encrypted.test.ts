@@ -11,9 +11,10 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
     const chapter = await createChapterRow(story.id);
+    const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
     const created = await prisma.chat.create({
       data: {
-        chapterId: chapter.id,
+        draftId: draft.id,
         titleCiphertext: SENTINEL.ciphertext,
         titleIv: SENTINEL.iv,
         titleAuthTag: SENTINEL.authTag,

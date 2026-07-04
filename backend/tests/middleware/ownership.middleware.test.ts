@@ -62,7 +62,7 @@ async function seedTwoUsersAndAStory(): Promise<{
     where: { id: chapter.id },
     data: { activeDraftId: draft.id },
   });
-  const chat = await prisma.chat.create({ data: { chapterId: chapter.id, draftId: draft.id } });
+  const chat = await prisma.chat.create({ data: { draftId: draft.id } });
   const message = await prisma.message.create({
     data: { chatId: chat.id, role: 'user' },
   });
@@ -203,7 +203,9 @@ describe('requireOwnership middleware', () => {
       title: 'C',
       orderIndex: 0,
     });
-    const chat = await createChatRepo(owner.req).create({ chapterId: chapter.id as string });
+    const chat = await createChatRepo(owner.req).create({
+      draftId: chapter.activeDraftId as string,
+    });
     const message = await createMessageRepo(owner.req).create({
       chatId: chat.id as string,
       role: 'user',

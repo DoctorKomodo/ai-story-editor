@@ -74,8 +74,11 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
     await prisma.outlineItem.create({
       data: { storyId: story.id, order: 0, status: 'pending' },
     });
+    const draft = await prisma.draft.create({
+      data: { chapterId: chapter.id, orderIndex: 0 },
+    });
     const chat = await prisma.chat.create({
-      data: { chapterId: chapter.id },
+      data: { draftId: draft.id },
     });
     await prisma.message.create({
       data: { chatId: chat.id, role: 'user' },
@@ -102,7 +105,7 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
     expect(await prisma.chapter.count({ where: { storyId: story.id } })).toBe(0);
     expect(await prisma.character.count({ where: { storyId: story.id } })).toBe(0);
     expect(await prisma.outlineItem.count({ where: { storyId: story.id } })).toBe(0);
-    expect(await prisma.chat.count({ where: { chapterId: chapter.id } })).toBe(0);
+    expect(await prisma.chat.count({ where: { draftId: draft.id } })).toBe(0);
     expect(await prisma.message.count({ where: { chatId: chat.id } })).toBe(0);
 
     // Alice's agent gets 401 on any subsequent authenticated request.

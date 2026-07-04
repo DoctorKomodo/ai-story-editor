@@ -155,7 +155,7 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
     });
 
     const chat = await chatRepo.create({
-      chapterId: chapter.id,
+      draftId: chapter.activeDraftId as string,
       title: 'Scene chat',
       kind: 'scene', // non-default (ask)
     });

@@ -96,7 +96,6 @@ model Chapter {
 
   storyId String
   story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  chats   Chat[]
 
   activeDraftId String? @unique
   activeDraft   Draft?  @relation("ActiveDraft", fields: [activeDraftId], references: [id], onDelete: SetNull)
@@ -222,7 +221,7 @@ model Chat {
   id              String   @id @default(cuid())
   kind            String   @default("ask") // "ask" | "scene"
   // [E8] ciphertext triple for the chat title — now the SOLE source of truth.
-  // `chapterId` + timestamps remain plaintext (FK + timeline ordering).
+  // `draftId` + timestamps remain plaintext (FK + timeline ordering).
   // Plaintext `title` was dropped in [E11].
   titleCiphertext String?
   titleIv         String?
@@ -234,17 +233,15 @@ model Chat {
   // updatedAt, which only fires on Chat-row metadata changes (e.g. rename).
   lastActivityAt  DateTime @default(now())
 
-  chapterId String
-  draftId   String?
-  chapter   Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  draft     Draft?  @relation("DraftChats", fields: [draftId], references: [id], onDelete: Cascade)
+  draftId String
+  draft   Draft  @relation("DraftChats", fields: [draftId], references: [id], onDelete: Cascade)
 
   messages Message[]
 
-  @@index([chapterId])
-  @@index([chapterId, kind])
-  // story-editor-loj: index supports the findManyForChapter ORDER BY.
-  @@index([chapterId, lastActivityAt])
+  @@index([draftId])
+  @@index([draftId, kind])
+  // story-editor-loj: index supports the findManyForDraft ORDER BY.
+  @@index([draftId, lastActivityAt])
 }
 
 model Message {

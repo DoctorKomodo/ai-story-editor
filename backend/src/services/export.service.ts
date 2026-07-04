@@ -26,7 +26,10 @@ export async function buildExport(req: Request): Promise<ExportFile> {
       const full = await chapterRepo.findById(meta.id);
       const chats: ExportFile['stories'][number]['chapters'][number]['chats'] = [];
 
-      for (const c of await chatRepo.findManyForChapter(meta.id)) {
+      const chatRows =
+        meta.activeDraftId === null ? [] : await chatRepo.findManyForDraft(meta.activeDraftId);
+
+      for (const c of chatRows) {
         const messages = await messageRepo.findManyForChat(c.id);
         chats.push({
           title: c.title ?? null,

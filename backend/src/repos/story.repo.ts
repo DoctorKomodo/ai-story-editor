@@ -142,11 +142,11 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
         _max: { updatedAt: true },
       }),
       client.chat.aggregate({
-        where: { chapter: { storyId, story: { userId } } },
+        where: { draft: { chapter: { storyId, story: { userId } } } },
         _max: { updatedAt: true },
       }),
       client.message.aggregate({
-        where: { chat: { chapter: { storyId, story: { userId } } } },
+        where: { chat: { draft: { chapter: { storyId, story: { userId } } } } },
         _max: { createdAt: true, updatedAt: true },
       }),
     ]);

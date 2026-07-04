@@ -127,9 +127,15 @@ async function importOneStory(
           await chapterRepo.update(created.id, { summaryJson: ch.summary });
         }
 
+        if (created.activeDraftId === null) {
+          throw new Error('import: minted chapter has no active draft');
+        }
+
         for (const c of ch.chats) {
+          // chats attach to the chapter's minted initial draft (drafts[] in the
+          // export format is step 5 — this keeps v2-no-drafts files importing).
           const chat = await chatRepo.create({
-            chapterId: created.id,
+            draftId: created.activeDraftId,
             title: c.title ?? null,
             kind: c.kind,
           });
