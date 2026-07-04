@@ -1,10 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
-import { createDraftRepo } from '../../src/repos/draft.repo';
+import { createDraftRepo, DraftDeleteActiveError } from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
+import { computeWordCount } from '../../src/services/tiptap-text';
 import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
 import { makeUserContext, rawCiphertextMustNotEqual } from './_req';
+
+function paragraphDoc(text: string): unknown {
+  return {
+    type: 'doc',
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
+  };
+}
 
 describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
   beforeEach(async () => {
@@ -84,5 +92,235 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     expect(created.bodyJson).toBeNull();
     expect(created.summary).toBeNull();
     expect(created.label).toBeNull();
+  });
+
+  it('[9wk.4] update writes body + recomputed fields and label; null label clears', async () => {
+    const ctx = await makeUserContext('draft-repo-update');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const draftId = chapter.activeDraftId as string;
+
+    const updated = await draftRepo.update(draftId, {
+      bodyJson: paragraphDoc('updated body text'),
+      wordCount: 3,
+    });
+    expect(updated).not.toBeNull();
+    expect(updated!.updatedAt.getTime()).toBeGreaterThan(chapter.updatedAt.getTime());
+
+    const reread = await draftRepo.findById(draftId);
+    expect(JSON.stringify(reread!.bodyJson)).toContain('updated body text');
+    expect(reread!.wordCount).toBe(3);
+
+    const labeled = await draftRepo.update(draftId, { label: 'darker take' });
+    expect(labeled!.label).toBe('darker take');
+
+    const cleared = await draftRepo.update(draftId, { label: null });
+    expect(cleared!.label).toBeNull();
+  });
+
+  it('[9wk.4] update summary sets summaryUpdatedAt == updatedAt (same-instant, not stale)', async () => {
+    const ctx = await makeUserContext('draft-repo-summary');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const draftId = chapter.activeDraftId as string;
+
+    const updated = await draftRepo.update(draftId, {
+      summaryJson: { events: 'e', stateAtEnd: 's', openThreads: 'o' },
+    });
+    expect(updated!.summary).toEqual({ events: 'e', stateAtEnd: 's', openThreads: 'o' });
+    expect(updated!.summaryUpdatedAt).not.toBeNull();
+    expect(updated!.summaryUpdatedAt!.getTime()).toBe(updated!.updatedAt.getTime());
+  });
+
+  it('[9wk.4] setActive swaps the chapter pointer; rejects a draft of another chapter', async () => {
+    const ctx = await makeUserContext('draft-repo-setactive');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapterRepo = createChapterRepo(ctx.req);
+    const draftRepo = createDraftRepo(ctx.req);
+    const chapterA = await chapterRepo.create({
+      storyId: story.id as string,
+      title: 'A',
+      orderIndex: 0,
+    });
+    const chapterB = await chapterRepo.create({
+      storyId: story.id as string,
+      title: 'B',
+      orderIndex: 1,
+    });
+
+    const blank = await draftRepo.createBlank(chapterA.id);
+    const swapped = await draftRepo.setActive(chapterA.id, blank.id);
+    expect(swapped).toBe(true);
+    const rereadA = await chapterRepo.findById(chapterA.id);
+    expect(rereadA!.activeDraftId).toBe(blank.id);
+
+    const mismatched = await draftRepo.setActive(chapterA.id, chapterB.activeDraftId as string);
+    expect(mismatched).toBe(false);
+    const rereadA2 = await chapterRepo.findById(chapterA.id);
+    expect(rereadA2!.activeDraftId).toBe(blank.id);
+  });
+
+  it('[9wk.4] remove: 409-guard errors on active and on last; deletes + reindexes otherwise', async () => {
+    const ctx = await makeUserContext('draft-repo-remove');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapterRepo = createChapterRepo(ctx.req);
+    const draftRepo = createDraftRepo(ctx.req);
+    const chapter = await chapterRepo.create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const activeDraftId = chapter.activeDraftId as string;
+
+    // Single-draft chapter: the sole draft is always active — active guard
+    // fires first (DraftDeleteLastError is unreachable here by construction).
+    await expect(draftRepo.remove(activeDraftId)).rejects.toThrow(DraftDeleteActiveError);
+
+    // Add two more drafts (orderIndex 1, 2). orderIndex 0 stays active.
+    const draft1 = await draftRepo.createBlank(chapter.id);
+    const draft2 = await draftRepo.createBlank(chapter.id);
+    expect(draft1.orderIndex).toBe(1);
+    expect(draft2.orderIndex).toBe(2);
+
+    // Removing the still-active draft is refused even with siblings present.
+    await expect(draftRepo.remove(activeDraftId)).rejects.toThrow(DraftDeleteActiveError);
+
+    // Remove the middle (non-active) draft → survivors reindex to 0, 1.
+    const removed = await draftRepo.remove(draft1.id);
+    expect(removed).toBe(true);
+    const remaining = await draftRepo.findManyForChapter(chapter.id);
+    expect(remaining.map((d) => d.id).sort()).toEqual([activeDraftId, draft2.id].sort());
+    const byId = new Map(remaining.map((d) => [d.id, d]));
+    expect(byId.get(activeDraftId)!.orderIndex).toBe(0);
+    expect(byId.get(draft2.id)!.orderIndex).toBe(1);
+  });
+
+  it('[9wk.4] createFork copies body plaintext (fresh ciphertext), recomputes wordCount, no summary', async () => {
+    const ctx = await makeUserContext('draft-repo-fork');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: paragraphDoc('fork source text here'),
+      wordCount: 4,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const source = await draftRepo.findById(chapter.activeDraftId as string);
+
+    const forked = await draftRepo.createFork(chapter.id, 'fork label');
+    expect(forked.bodyJson).toEqual(source!.bodyJson);
+    expect(forked.wordCount).toBe(computeWordCount(source!.bodyJson));
+    expect(forked.summary).toBeNull();
+    expect(forked.label).toBe('fork label');
+    expect(forked.orderIndex).toBe(1);
+
+    const sourceRaw = await prisma.draft.findUniqueOrThrow({ where: { id: source!.id } });
+    const forkedRaw = await prisma.draft.findUniqueOrThrow({ where: { id: forked.id } });
+    expect(forkedRaw.bodyCiphertext).not.toBe(sourceRaw.bodyCiphertext);
+  });
+
+  it('[9wk.4] createBlank: empty body, wordCount 0, next orderIndex', async () => {
+    const ctx = await makeUserContext('draft-repo-blank');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+
+    const blank = await draftRepo.createBlank(chapter.id);
+    expect(blank.bodyJson).toBeNull();
+    expect(blank.wordCount).toBe(0);
+    expect(blank.orderIndex).toBe(1);
+  });
+
+  it('[9wk.4] findManyMetaForChapter returns isActive + staleness, no bodyJson, no ciphertext keys', async () => {
+    const ctx = await makeUserContext('draft-repo-meta');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    await draftRepo.createBlank(chapter.id);
+    await draftRepo.update(chapter.activeDraftId as string, {
+      summaryJson: { events: 'e', stateAtEnd: 's', openThreads: 'o' },
+    });
+
+    const metas = await draftRepo.findManyMetaForChapter(chapter.id);
+    expect(metas).toHaveLength(2);
+
+    for (const meta of metas) {
+      expect(Object.keys(meta).sort()).toEqual(
+        [
+          'id',
+          'chapterId',
+          'label',
+          'wordCount',
+          'orderIndex',
+          'isActive',
+          'hasSummary',
+          'summaryIsStale',
+          'createdAt',
+          'updatedAt',
+        ].sort(),
+      );
+      expect(
+        Object.keys(meta).some(
+          (k) => k.endsWith('Ciphertext') || k.endsWith('Iv') || k.endsWith('AuthTag'),
+        ),
+      ).toBe(false);
+      expect('bodyJson' in meta).toBe(false);
+    }
+
+    const active = metas.find((m) => m.id === chapter.activeDraftId);
+    expect(active!.isActive).toBe(true);
+    expect(active!.hasSummary).toBe(true);
+    expect(active!.summaryIsStale).toBe(false);
+
+    const other = metas.find((m) => m.id !== chapter.activeDraftId);
+    expect(other!.isActive).toBe(false);
+    expect(other!.hasSummary).toBe(false);
   });
 });
