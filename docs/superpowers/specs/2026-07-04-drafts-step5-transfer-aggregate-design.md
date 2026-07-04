@@ -51,8 +51,17 @@ drafts:     z.array(draftExportSchema).min(1)
 
 with a refine enforcing **exactly one `isActive: true`** across `drafts[]` (zero or multiple
 actives reject). The refine lives on the shared schema, so it runs server-side AND in the
-frontend's file-pick `safeParse` with no frontend code change. Server-side, a malformed story
-fails **just that story** (per-story transaction, #153 architecture), not the whole file.
+frontend's file-pick `safeParse` with no frontend code change. **A refine violation is a
+whole-file structural gate:** the import route validates the entire envelope via
+`validateBody(importRequestSchema)` before `runImport` starts, so a malformed chapter 400s the
+whole file — the per-story transaction isolates *runtime* failures only, not parse failures.
+(Corrects the epic spec's "fails just that story" line for the refine case, which predates the
+route's whole-body validation; the frontend picker rejects the same file the same way, so a bad
+file never reaches the server in normal use.)
+
+Zod-v4 note (verified): `.refine` on a `strictObject` preserves `.shape` access, so the
+parity guard's `chapterExportSchema.shape.drafts` derivation composes fine — do not chase the
+zod-v3 `ZodEffects` limitation.
 
 `importResultSchema.imported` gains a required `drafts: z.number().int().nonnegative()`.
 
@@ -82,8 +91,12 @@ Inside the existing per-story `$transaction`, per chapter:
    chapters/characters/outline).
 2. **Mint = draft 0.** `chapterRepo.create({ storyId, title, orderIndex: i, bodyJson:
    drafts[0].bodyJson, wordCount: computeWordCount(drafts[0].bodyJson) })`. Then, when the file
-   carries them, patch the minted draft: `draftRepo.update(created.activeDraftId, { label })` /
-   `{ summaryJson }` (the existing null-activeDraftId invariant throw stays ahead of these writes).
+   carries label and/or summary for draft 0, patch the minted draft in **one combined call**:
+   `draftRepo.update(created.activeDraftId, { label, summaryJson })` (the existing
+   null-activeDraftId invariant throw stays ahead of this write). One call, not two: a later
+   label-only `update()` bumps `@updatedAt` without touching `summaryJsonUpdatedAt`, spuriously
+   staling the just-written summary — the same failure class as the `create()` prerequisite fix
+   below.
 3. **`drafts[1..]`** via `draftRepo.create({ chapterId, bodyJson, wordCount: computeWordCount(…),
    label, summaryJson, orderIndex: <densified> })` — one call each.
    **Prerequisite fix (found in design self-review):** `draft.repo.create` currently stamps
@@ -115,7 +128,10 @@ client.chapter.findMany({
 ```
 
 reduced to the same `Map<storyId, { chapterCount, totalWordCount }>` (count rows per story; sum
-`activeDraft.wordCount`). A `null` `activeDraft` throws the standard invariant-violation error.
+`activeDraft.wordCount`). The reduce carries an **explicit** `activeDraft === null` check throwing
+the standard invariant-violation error (a bare `.wordCount` access would raise an anonymous
+TypeError). Zero-chapter stories behave identically to today: no map entry → the route's existing
+`?? 0` defaults (verified against `stories.routes.ts`).
 The `stories.test.ts` regression re-points: a chapter with several drafts counts once, at its
 **active** draft's word count.
 
@@ -147,15 +163,21 @@ appear in the `<previous_chapters>` prompt context.
   chapter entry rejects; `imported.drafts` required.
 - **transfer.test.ts:** multi-draft round-trip (bodies, labels, summaries, non-active drafts'
   chats survive); `isActive` → `activeDraftId` restore; densification from a gappy/hand-edited
-  file; `imported.drafts` count; malformed-actives story fails alone (per-story tx) while other
-  stories import.
+  file; `imported.drafts` count; a file containing a zero-active or two-active chapter is
+  rejected **whole-file at 400** (`validation_error`) with nothing imported (see §3 — the refine
+  is a parse-time gate, not a per-story runtime failure).
 - **backup-roundtrip.test.ts parity guard:** `draftExportSchema` layer derived from
   `chapterExportSchema.shape.drafts`; drafts allowlist + nested-chats allowlist; `imported`
   deep-equal extended with `drafts`.
 - **stories.test.ts:** aggregate regression per §6.
 - **E12** per §7. **Prompt** per §8.
-- **Frontend:** compile/test fixes only — fixtures gain `drafts[]` and the `drafts` count; no
-  component changes (the refine reaches the file picker via the shared schema).
+- **Frontend:** compile/test fixes only — no component changes (`SettingsDataTab` renders
+  per-story `outcomes`, not `imported.*` counts — verified; the refine reaches the file picker
+  via the shared schema). Budget honestly for the fixture churn though: every fixture that
+  constructs an export file or an `ImportResult` needs `drafts[]` / the `drafts` count —
+  `SettingsDataTab.test.tsx`, the `useBackup` mocks, and `shared`'s `transfer.test.ts`, whose
+  `minimal` fixture still carries chapter-level `bodyJson`/`summary`/`chats` and must be
+  **rewritten** (it now fails parse under D1/D2), not merely extended.
 
 ## 10. Out of scope
 
