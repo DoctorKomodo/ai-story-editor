@@ -156,6 +156,35 @@ describe('Draft routes [9wk.4]', () => {
     expect(conflictRes.body.error.code).toBe('conflict');
   });
 
+  it('PATCH {} is a no-op: 200 with the unchanged draft, summary stays fresh', async () => {
+    const { agent, chapterId, activeDraftId } = await setupChapter('drafts-patch-empty');
+
+    const summaryRes = await agent
+      .put(`/api/drafts/${activeDraftId}/summary`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ events: 'A.', stateAtEnd: 'B.', openThreads: 'C?' });
+    expect(summaryRes.status).toBe(200);
+
+    const before = await agent.get(`/api/drafts/${activeDraftId}`);
+    expect(before.status).toBe(200);
+
+    const patched = await agent
+      .patch(`/api/drafts/${activeDraftId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({});
+    expect(patched.status).toBe(200);
+    expect(patched.body.draft.updatedAt).toBe(before.body.draft.updatedAt);
+    expect(patched.body.draft.label).toBe(before.body.draft.label);
+    expect(patched.body.draft.bodyJson).toEqual(before.body.draft.bodyJson);
+
+    const list = await agent.get(`/api/chapters/${chapterId}/drafts`);
+    const meta = (
+      list.body.drafts as Array<{ id: string; hasSummary: boolean; summaryIsStale: boolean }>
+    ).find((d) => d.id === activeDraftId);
+    expect(meta?.hasSummary).toBe(true);
+    expect(meta?.summaryIsStale).toBe(false);
+  });
+
   it('DELETE the active/sole draft -> 409 cannot_delete_active_draft', async () => {
     const { agent, activeDraftId } = await setupChapter('drafts-del-active');
     const res = await agent.delete(`/api/drafts/${activeDraftId}`).set('Origin', TEST_ORIGIN);

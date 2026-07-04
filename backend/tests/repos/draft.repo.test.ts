@@ -1,7 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeEncrypted } from '../../src/repos/_narrative';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
-import { createDraftRepo, DraftDeleteActiveError } from '../../src/repos/draft.repo';
+import {
+  createDraftRepo,
+  DraftDeleteActiveError,
+  DraftVersionConflictError,
+} from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { computeWordCount } from '../../src/services/tiptap-text';
 import { resetDb } from '../helpers/db';
@@ -392,5 +396,79 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     const other = metas.find((m) => m.id !== chapter.activeDraftId);
     expect(other!.isActive).toBe(false);
     expect(other!.hasSummary).toBe(false);
+  });
+
+  it('[9wk.4 fix] isActive: true for the active draft, false for a non-active sibling and for another user', async () => {
+    const ctx = await makeUserContext('draft-repo-isactive');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const sibling = await draftRepo.createBlank(chapter.id);
+
+    expect(await draftRepo.isActive(chapter.activeDraftId as string)).toBe(true);
+    expect(await draftRepo.isActive(sibling.id)).toBe(false);
+
+    const other = await makeUserContext('draft-repo-isactive-other');
+    expect(await createDraftRepo(other.req).isActive(chapter.activeDraftId as string)).toBe(false);
+  });
+
+  it('[9wk.4 fix] update(id, {}) is a no-op: does not bump updatedAt and does not stale a fresh summary', async () => {
+    const ctx = await makeUserContext('draft-repo-empty-patch');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const draftId = chapter.activeDraftId as string;
+
+    const withSummary = await draftRepo.update(draftId, {
+      summaryJson: { events: 'e', stateAtEnd: 's', openThreads: 'o' },
+    });
+    expect(withSummary!.summaryUpdatedAt!.getTime()).toBe(withSummary!.updatedAt.getTime());
+
+    const noop = await draftRepo.update(draftId, {});
+    expect(noop).not.toBeNull();
+    expect(noop!.updatedAt.getTime()).toBe(withSummary!.updatedAt.getTime());
+    expect(noop!.summaryUpdatedAt!.getTime()).toBe(withSummary!.summaryUpdatedAt!.getTime());
+    // Not stale: summaryUpdatedAt still equals updatedAt after the no-op.
+    expect(noop!.summaryUpdatedAt!.getTime()).toBe(noop!.updatedAt.getTime());
+  });
+
+  it('[9wk.4 fix] update(id, {}, { expectedUpdatedAt: stale }) still throws DraftVersionConflictError', async () => {
+    const ctx = await makeUserContext('draft-repo-empty-patch-conflict');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const draftId = chapter.activeDraftId as string;
+    const staleUpdatedAt = (await draftRepo.findById(draftId))!.updatedAt;
+
+    // Advance updatedAt with a real write so the captured timestamp goes stale.
+    await draftRepo.update(draftId, { label: 'renamed' });
+
+    await expect(
+      draftRepo.update(draftId, {}, { expectedUpdatedAt: staleUpdatedAt }),
+    ).rejects.toThrow(DraftVersionConflictError);
   });
 });

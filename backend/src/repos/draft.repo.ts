@@ -158,6 +158,21 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
       }
     }
 
+    if (Object.keys(data).length === 0) {
+      // Nothing to write — skip the query entirely so an empty PATCH doesn't
+      // bump Prisma's `@updatedAt` and spuriously stale a fresh summary. A
+      // stale precondition must still 409 even though there's no write.
+      const row = await client.draft.findFirst({ where: { id, chapter: { story: { userId } } } });
+      if (!row) return null;
+      if (
+        opts?.expectedUpdatedAt !== undefined &&
+        row.updatedAt.getTime() !== opts.expectedUpdatedAt.getTime()
+      ) {
+        throw new DraftVersionConflictError();
+      }
+      return shape(row, req);
+    }
+
     const updated = await client.draft.updateMany({
       where: {
         id,
@@ -181,6 +196,19 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     const row = await client.draft.findFirst({ where: { id, chapter: { story: { userId } } } });
     if (!row) return null;
     return shape(row, req);
+  }
+
+  // Cheap owner-scoped check of whether `draftId` is its chapter's active
+  // draft — no ciphertext columns selected, no decrypt. Routes that only
+  // need this boolean (list/create/patch responses) must not go through
+  // `findById`, which decrypts the full row just to read a plaintext column.
+  async function isActive(draftId: string): Promise<boolean> {
+    const userId = resolveUserId(req, 'draft.repo');
+    const row = await client.draft.findFirst({
+      where: { id: draftId, chapter: { story: { userId } } },
+      select: { id: true, chapter: { select: { activeDraftId: true } } },
+    });
+    return row !== null && row.chapter.activeDraftId === row.id;
   }
 
   async function setActive(chapterId: string, draftId: string): Promise<boolean> {
@@ -327,6 +355,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     findManyForChapter,
     findManyMetaForChapter,
     update,
+    isActive,
     setActive,
     remove,
   };

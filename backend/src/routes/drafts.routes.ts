@@ -26,7 +26,6 @@ import { logVeniceErrorDev, mapVeniceError } from '../lib/venice-errors';
 import { requireAuth } from '../middleware/auth.middleware';
 import { requireOwnership } from '../middleware/ownership.middleware';
 import { validateBody } from '../middleware/validate';
-import { createChapterRepo } from '../repos/chapter.repo';
 import { createDraftRepo, type RepoDraftUpdateInput } from '../repos/draft.repo';
 import { getDekFromRequest } from '../services/content-crypto.service';
 import { resolvePrompt } from '../services/prompt.service';
@@ -46,9 +45,8 @@ function isPrismaUniqueViolation(err: unknown): boolean {
   return err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002';
 }
 
-async function isActiveDraft(req: Request, chapterId: string, draftId: string): Promise<boolean> {
-  const chapter = await createChapterRepo(req).findById(chapterId);
-  return chapter?.activeDraftId === draftId;
+async function isActiveDraft(req: Request, draftId: string): Promise<boolean> {
+  return createDraftRepo(req).isActive(draftId);
 }
 
 // ─── Router 1: chapter-scoped draft list + create ────────────────────────────
@@ -96,7 +94,7 @@ export function createChapterDraftsRouter() {
         throw lastErr ?? new Error('drafts POST: failed to allocate orderIndex');
       }
 
-      const isActive = await isActiveDraft(req, chapterId, created.id);
+      const isActive = await isActiveDraft(req, created.id);
       respond(draftResponseSchema, res, { draft: serializeDraft(created, isActive) }, 201);
     }),
   );
@@ -141,7 +139,7 @@ export function createDraftCrudRouter() {
     try {
       const draft = await createDraftRepo(req).findById(draftId);
       if (!draft) throw notFound();
-      const isActive = await isActiveDraft(req, draft.chapterId, draft.id);
+      const isActive = await isActiveDraft(req, draft.id);
       respond(draftResponseSchema, res, { draft: serializeDraft(draft, isActive) });
     } catch (err) {
       next(err);
@@ -169,7 +167,7 @@ export function createDraftCrudRouter() {
           : undefined,
       );
       if (!updated) throw notFound();
-      const isActive = await isActiveDraft(req, updated.chapterId, updated.id);
+      const isActive = await isActiveDraft(req, updated.id);
       respond(draftResponseSchema, res, { draft: serializeDraft(updated, isActive) });
     }),
   );
