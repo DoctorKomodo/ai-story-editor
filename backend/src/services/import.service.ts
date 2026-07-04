@@ -63,9 +63,11 @@ async function importOneStory(
 ): Promise<{ action: 'created' | 'replaced'; counts: ImportCounts }> {
   return prisma.$transaction(
     async (tx) => {
-      // The repo create() methods do not open their own $transaction, so the tx
-      // client substitutes for PrismaClient at runtime. Messages use createWithin()
-      // because their create() does self-transact and cannot nest. One cast:
+      // The tx client substitutes for PrismaClient at runtime. A repo method that
+      // opens its own $transaction (chapter.repo.create since 9wk.3) joins this
+      // ongoing transaction rather than escaping it — confirmed empirically: an
+      // outer rollback also rolls back its inner writes. Messages still use
+      // createWithin() because their create() self-transacts and cannot nest. One cast:
       const txc = tx as unknown as PrismaClient;
       const storyRepo = createStoryRepo(req, txc);
       const chapterRepo = createChapterRepo(req, txc);

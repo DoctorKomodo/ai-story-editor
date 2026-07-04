@@ -67,8 +67,6 @@ describe('[9wk.2] drafts expand backfill — verbatim ciphertext relocation', ()
       genre: null,
       targetWords: null,
     });
-    // chapterRepo.create writes an encrypted body but does NOT create a draft —
-    // so the chapter is "draftless", exactly the pre-migration shape.
     const chapter = await createChapterRepo(ctx.req).create({
       storyId: story.id as string,
       title: 'C',
