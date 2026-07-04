@@ -94,3 +94,21 @@ export function useUpdateStoryMutation(): UseMutationResult<Story, Error, Update
     },
   });
 }
+
+/**
+ * Hard-deletes a story (schema-level cascade removes the full subtree).
+ * On success evicts the per-story cache so a stale hit can't resurrect
+ * deleted content, and invalidates the list so the server's truth wins.
+ */
+export function useDeleteStoryMutation(): UseMutationResult<void, Error, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string): Promise<void> => {
+      await api<void>(`/stories/${encodeURIComponent(id)}`, { method: 'DELETE' });
+    },
+    onSuccess: (_data, id) => {
+      qc.removeQueries({ queryKey: storyQueryKey(id) });
+      void qc.invalidateQueries({ queryKey: storiesQueryKey });
+    },
+  });
+}
