@@ -40,6 +40,7 @@ async function seedTwoUsersAndAStory(): Promise<{
   outlineId: string;
   chatId: string;
   messageId: string;
+  draftId: string;
 }> {
   const owner = await makeUser(prisma, { email: 'owner@example.com', username: 'owner' });
   const stranger = await makeUser(prisma, { email: 'stranger@example.com', username: 'stranger' });
@@ -76,6 +77,7 @@ async function seedTwoUsersAndAStory(): Promise<{
     outlineId: outline.id,
     chatId: chat.id,
     messageId: message.id,
+    draftId: draft.id,
   };
 }
 
@@ -146,6 +148,16 @@ describe('requireOwnership middleware', () => {
     expect(okRes.status).toBe(200);
     const denyRes = await request(mountProtected('chapter', 'chapterId', strangerId)).get(
       `/${chapterId}`,
+    );
+    expect(denyRes.status).toBe(403);
+  });
+
+  it('traverses Draft → Chapter → Story → User', async () => {
+    const { ownerId, strangerId, draftId } = await seedTwoUsersAndAStory();
+    const okRes = await request(mountProtected('draft', 'draftId', ownerId)).get(`/${draftId}`);
+    expect(okRes.status).toBe(200);
+    const denyRes = await request(mountProtected('draft', 'draftId', strangerId)).get(
+      `/${draftId}`,
     );
     expect(denyRes.status).toBe(403);
   });

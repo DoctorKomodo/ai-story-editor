@@ -155,7 +155,7 @@ export interface VeniceErrorBody {
 
 export interface VeniceErrorContext {
   userId: string | undefined;
-  route: 'ai-models' | 'ai-complete' | 'chat' | 'chapter-summarise';
+  route: 'ai-models' | 'ai-complete' | 'chat' | 'chapter-summarise' | 'draft-summarise';
 }
 
 interface MappedError {
