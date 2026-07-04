@@ -92,6 +92,18 @@ describe('SettingsDataTab', () => {
     expect(screen.getByText('No file selected')).toBeInTheDocument();
   });
 
+  it('names the format version when an old (v1) backup is staged, instead of the generic message', async () => {
+    renderTab();
+    fireEvent.change(screen.getByTestId('data-restore-file'), {
+      target: { files: [makeFile({ ...LEGACY_BACKUP, formatVersion: 1 }, 'old-backup.json')] },
+    });
+    await waitFor(() => expect(screen.getByTestId('data-restore-error')).toBeInTheDocument());
+    expect(screen.getByTestId('data-restore-error')).toHaveTextContent(/format version 1/);
+    expect(screen.getByTestId('data-restore-error')).not.toHaveTextContent(
+      'not a valid Inkwell backup',
+    );
+  });
+
   it('enables Restore as soon as a legacy (no-id) file is staged — no phrase needed', async () => {
     const apiSpy = vi.spyOn(apiModule, 'api');
     renderTab();

@@ -519,6 +519,43 @@ describe('POST /api/users/me/import', () => {
         },
       });
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('unsupported_format_version');
+  });
+
+  it('rejects a real v1 backup with a distinct unsupported_format_version error', async () => {
+    // The most common post-upgrade failure: a backup exported before the 1→2
+    // format bump. It must fail with a nameable version error, not a generic
+    // validation_error burying the cause under strict-schema issues (spec §4).
+    const { agent } = await registerAndLogin({ username: 'v1-backup-user' });
+    const res = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({
+        file: {
+          formatVersion: 1,
+          app: 'inkwell',
+          exportedAt: '2026-06-24T12:00:00.000Z',
+          stories: [
+            {
+              title: 'Old Story',
+              chapters: [
+                {
+                  title: 'Ch',
+                  status: 'draft',
+                  orderIndex: 0,
+                  bodyJson: null,
+                  summary: null,
+                  chats: [],
+                },
+              ],
+              characters: [],
+              outlineItems: [],
+            },
+          ],
+        },
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('unsupported_format_version');
   });
 
   it('rate-limiter fires 429 on the 6th import request within the window', async () => {

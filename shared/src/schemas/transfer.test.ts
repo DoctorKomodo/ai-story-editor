@@ -55,6 +55,21 @@ describe('transfer schemas', () => {
   it('rejects an unknown formatVersion', () => {
     expect(exportSchema.safeParse({ ...minimal, formatVersion: 99 }).success).toBe(false);
   });
+  it('rejects a real v1 backup (formatVersion 1, chapters carrying status)', () => {
+    // Pre-2.0 files are deliberately unsupported (spec §4). Pin the rejection
+    // so a regression in how v1 files fail cannot ship silently.
+    const v1 = {
+      ...minimal,
+      formatVersion: 1,
+      stories: [
+        {
+          ...minimal.stories[0],
+          chapters: [{ ...minimal.stories[0]!.chapters[0], status: 'draft' }],
+        },
+      ],
+    };
+    expect(importSchema.safeParse(v1).success).toBe(false);
+  });
   it('rejects unknown top-level keys (strict)', () => {
     expect(exportSchema.safeParse({ ...minimal, settings: {} }).success).toBe(false);
   });

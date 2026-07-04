@@ -250,7 +250,7 @@ Each non-skipped story runs in its own `$transaction` (`replace`'s delete + recr
 **Behavior change:** unlike the previous whole-file-replace contract, this endpoint never deletes a live story that's simply absent from the file — leftover stories not mentioned in the import survive and must be deleted manually.
 
 Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
-Errors: `400 validation_error` (unknown `formatVersion` or malformed file/body).
+Errors: `400 unsupported_format_version` (the file's `formatVersion` is a number other than the current one — e.g. a backup exported before the v2 format bump; checked before strict validation so the cause isn't buried in `issues`), `400 validation_error` (malformed file/body).
 
 ---
 

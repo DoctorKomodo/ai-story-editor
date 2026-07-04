@@ -1,6 +1,7 @@
 import { type JSX, useId, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
+  EXPORT_FORMAT_VERSION,
   type ImportFile,
   type ImportResolution,
   type ImportResult,
@@ -84,10 +85,18 @@ export function SettingsDataTab(): JSX.Element {
 
     let parsed: ImportFile;
     try {
-      const parseResult = importSchema.safeParse(JSON.parse(await f.text()));
+      const raw: unknown = JSON.parse(await f.text());
+      const parseResult = importSchema.safeParse(raw);
       if (selection !== fileSelectionRef.current) return;
       if (!parseResult.success) {
-        setFileError('That file is not a valid Inkwell backup.');
+        // A version mismatch buries the real cause under dozens of strict-schema
+        // issues — name it explicitly instead of "not a valid backup".
+        const version = (raw as { formatVersion?: unknown } | null)?.formatVersion;
+        setFileError(
+          typeof version === 'number' && version !== EXPORT_FORMAT_VERSION
+            ? `This backup uses format version ${version}; this app only reads version ${EXPORT_FORMAT_VERSION} backups. It was exported by a different app version and cannot be imported.`
+            : 'That file is not a valid Inkwell backup.',
+        );
         clearFileSelection();
         return;
       }
