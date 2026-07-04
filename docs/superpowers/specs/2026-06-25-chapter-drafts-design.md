@@ -271,15 +271,20 @@ Mounted under the chapter; mirror the existing chapter/chat router patterns.
 All draft reads/writes go through `draft.repo.ts` (encrypt/decrypt symmetry; no controller touches
 Prisma for `Draft` directly — enforced by `repo-boundary-reviewer`).
 
-**Chapter creation mints the initial draft (step 4 — explicitly assigned).** The migration
-backfills a draft for every *existing* chapter, but nothing yet creates one for *new* chapters:
-`chapter.repo.create` / `POST /chapters` / `prisma/seed.ts` all produce draftless chapters today
-(fine during the expand phase — live readers still use `Chapter`'s own columns). **Step 4 must
-wire every chapter-create path to create one empty draft (`orderIndex 0`, `label NULL`) and set
-`activeDraftId` in the same transaction** — route, repo `create()`, and `seed.ts`. (Import is
-separately covered by step 5's three-phase write.) This is a hard prerequisite for step 5's
-contract migration: if `Chapter.body*` is dropped while any create path still yields a draftless
-chapter, new chapters have no body storage at all.
+**Chapter creation mints the initial draft (step 3 — explicitly assigned; moved from step 4,
+2026-07-04).** The migration backfills a draft for every *existing* chapter, but nothing yet
+creates one for *new* chapters: `chapter.repo.create` / `POST /chapters` / `prisma/seed.ts` all
+produce draftless chapters today (fine during the expand phase — live readers still use
+`Chapter`'s own columns). **Step 3 must wire every chapter-create path to create one empty draft
+(`orderIndex 0`, `label NULL`) and set `activeDraftId` in the same transaction** — route, repo
+`create()`, and `seed.ts` — *before* its chat contract tightens: step 3's `Chat.draftId NOT NULL`
+requires chat-create to resolve a draft for every chapter, so the "exactly one active draft"
+invariant must be established in the same step. Step 3's contract migration also **re-backfills**
+drafts/`activeDraftId`/`Chat.draftId` for anything created between the expand migration and the
+contract (dev DBs only; the step-9 squash makes this moot for operators). (Import is separately
+covered by step 5's three-phase write.) This also protects step 5's contract migration: if
+`Chapter.body*` were dropped while any create path still yielded a draftless chapter, new chapters
+would have no body storage at all.
 
 ### Moved: chapter body + summary endpoints → draft-scoped
 The chapter body lives on the draft now, so the body GET/PATCH and the summary/summarise endpoints
@@ -519,19 +524,23 @@ epic merges to `main`.**
    `Chat.chapterId` + `Chapter.body*/summary*/wordCount`. Minimal `draft.repo.ts` (encrypt/decrypt
    create+read) + **backfill-logic test** (§5a) + **E12 leak-test extension to `Draft`**.
    (repo-boundary-reviewer.)
-3. **Ownership-chain + chat/message re-point** — rewrite the nested `where` clauses in
-   `chat.repo.ts`, `message.repo.ts`, `ownership.middleware.ts`; flip the `Chat` wire contract
-   (`chapterId`→`draftId`) in `RepoChat`/serializer/shared schema/create-input/stories — frontend
-   flip lands once in `ChatSceneTab.tsx` + `useChat.ts` (both `chatsQueryKey` and
-   `chatsBaseQueryKey`); **CONTRACT migration: `Chat.draftId` non-null + FK, drop
-   `Chat.chapterId`.** (**security-reviewer** gate.)
+3. **Ownership-chain + chat/message re-point** — FIRST: wire chapter-create (route +
+   `chapter.repo.create` + `seed.ts`) to mint the initial draft + set `activeDraftId` in one
+   transaction (§6 — establishes the invariant this step's contract depends on). Then rewrite the
+   nested `where` clauses in `chat.repo.ts`, `message.repo.ts`, `ownership.middleware.ts`; flip
+   the `Chat` wire contract (`chapterId`→`draftId`) in `RepoChat`/serializer/shared
+   schema/create-input/stories; chat routes stay chapter-mounted (step 4 re-scopes them),
+   resolving `chapterId`→`activeDraftId` server-side; frontend gets mechanical compile fixes only
+   (`useChat.ts` invalidation keys off `vars`/hook args instead of the response's `chapterId` —
+   real re-keying to `draftId` stays in step 6). **CONTRACT migration: re-backfill
+   drafts/pointers for rows created since expand, then `Chat.draftId` non-null + FK + new
+   indexes, drop `Chat.chapterId`.** (**security-reviewer** gate.)
 4. **`draft.repo.ts` + draft routes** (list/create-fork-blank/rename/delete-with-reindex/set-active);
    re-scope chat routes to draft; move body + summary/summarise endpoints to draft scope. 409 guards
    via the central `HttpError` idiom (add a `conflict()` helper; fold `ChapterVersionConflictError`
    into the central table); carry the `expectedUpdatedAt` optimistic-concurrency precondition to the
    draft body PATCH (re-target `Draft.updatedAt`; port `chapters.concurrency.test.ts`).
-   **Wire every chapter-create path (route + `chapter.repo.create` + `seed.ts`) to mint the initial
-   draft + set `activeDraftId` in one transaction (§6)** — prerequisite for step 5's contract drop.
+   (Chapter-create → initial-draft wiring moved to step 3, where the invariant is first needed.)
    While fleshing out `draft.repo.ts`, pay down the step-2 shortcuts: hoist the shared repo
    boilerplate (`resolveUserId`, `ensureChapterOwned`, the body/summary decode blocks in `shape()`)
    into `_narrative.ts`, and move `DRAFT_ENCRYPTED_FIELD_KEYS` to the new shared draft schema.
