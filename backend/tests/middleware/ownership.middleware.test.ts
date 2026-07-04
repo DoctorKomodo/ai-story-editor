@@ -2,8 +2,13 @@ import express, { type NextFunction, type Request, type Response } from 'express
 import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type OwnedResource, requireOwnership } from '../../src/middleware/ownership.middleware';
+import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createChatRepo } from '../../src/repos/chat.repo';
+import { createMessageRepo } from '../../src/repos/message.repo';
+import { createStoryRepo } from '../../src/repos/story.repo';
 import { resetDb } from '../helpers/db';
 import { makeUser } from '../helpers/makeUser';
+import { makeUserContext } from '../repos/_req';
 import { prisma } from '../setup';
 
 function mountProtected(resource: OwnedResource, idParam: string, userId: string) {
@@ -50,7 +55,14 @@ async function seedTwoUsersAndAStory(): Promise<{
   const outline = await prisma.outlineItem.create({
     data: { order: 0, status: 'pending', storyId: story.id },
   });
-  const chat = await prisma.chat.create({ data: { chapterId: chapter.id } });
+  const draft = await prisma.draft.create({
+    data: { chapterId: chapter.id, orderIndex: 0 },
+  });
+  await prisma.chapter.update({
+    where: { id: chapter.id },
+    data: { activeDraftId: draft.id },
+  });
+  const chat = await prisma.chat.create({ data: { chapterId: chapter.id, draftId: draft.id } });
   const message = await prisma.message.create({
     data: { chatId: chat.id, role: 'user' },
   });
@@ -180,5 +192,45 @@ describe('requireOwnership middleware', () => {
       `/${messageId}`,
     );
     expect(denyRes.status).toBe(403);
+  });
+
+  it('[9wk.3] chat/message ownership resolves through draft.chapter.story — cross-user denied', async () => {
+    const owner = await makeUserContext('own-draftchain');
+    const attacker = await makeUserContext('atk-draftchain');
+    const story = await createStoryRepo(owner.req).create({ title: 'S' });
+    const chapter = await createChapterRepo(owner.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const chat = await createChatRepo(owner.req).create({ chapterId: chapter.id as string });
+    const message = await createMessageRepo(owner.req).create({
+      chatId: chat.id as string,
+      role: 'user',
+      content: 'mine',
+    });
+
+    // Repo layer: attacker resolves nothing through the new chain.
+    expect(await createChatRepo(attacker.req).findById(chat.id as string)).toBeNull();
+    expect(await createMessageRepo(attacker.req).findById(message.id as string)).toBeNull();
+
+    // Middleware layer: 403 for both resource types, owner passes.
+    const chatOkRes = await request(mountProtected('chat', 'chatId', owner.user.id)).get(
+      `/${chat.id}`,
+    );
+    expect(chatOkRes.status).toBe(200);
+    const chatDenyRes = await request(mountProtected('chat', 'chatId', attacker.user.id)).get(
+      `/${chat.id}`,
+    );
+    expect(chatDenyRes.status).toBe(403);
+
+    const messageOkRes = await request(mountProtected('message', 'messageId', owner.user.id)).get(
+      `/${message.id}`,
+    );
+    expect(messageOkRes.status).toBe(200);
+    const messageDenyRes = await request(
+      mountProtected('message', 'messageId', attacker.user.id),
+    ).get(`/${message.id}`);
+    expect(messageDenyRes.status).toBe(403);
   });
 });

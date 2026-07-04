@@ -138,6 +138,7 @@ model Draft {
   chapter   Chapter @relation("ChapterDrafts", fields: [chapterId], references: [id], onDelete: Cascade)
   // Back-side of Chapter.activeDraft (the active-pointer relation).
   activeForChapter Chapter? @relation("ActiveDraft")
+  chats            Chat[]  @relation("DraftChats")
 
   @@unique([chapterId, orderIndex])
   @@index([chapterId])
@@ -236,6 +237,7 @@ model Chat {
   chapterId String
   draftId   String?
   chapter   Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  draft     Draft?  @relation("DraftChats", fields: [draftId], references: [id], onDelete: Cascade)
 
   messages Message[]
 

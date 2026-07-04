@@ -83,7 +83,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   async function findById(id: string) {
     const userId = resolveUserId(req);
     const row = await client.chat.findFirst({
-      where: { id, chapter: { story: { userId } } },
+      where: { id, draft: { chapter: { story: { userId } } } },
     });
     if (!row) return null;
     return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
@@ -114,12 +114,12 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) Object.assign(data, writeEncrypted(req, 'title', input.title));
     const updated = await client.chat.updateMany({
-      where: { id, chapter: { story: { userId } } },
+      where: { id, draft: { chapter: { story: { userId } } } },
       data,
     });
     if (updated.count === 0) return null;
     const row = await client.chat.findFirst({
-      where: { id, chapter: { story: { userId } } },
+      where: { id, draft: { chapter: { story: { userId } } } },
     });
     if (!row) return null;
     return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
@@ -128,7 +128,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   async function remove(id: string) {
     const userId = resolveUserId(req);
     const deleted = await client.chat.deleteMany({
-      where: { id, chapter: { story: { userId } } },
+      where: { id, draft: { chapter: { story: { userId } } } },
     });
     return deleted.count > 0;
   }

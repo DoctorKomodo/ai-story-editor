@@ -48,14 +48,14 @@ async function checkOwned(
     }
     case 'chat': {
       const row = await client.chat.findFirst({
-        where: { id, chapter: { story: { userId } } },
+        where: { id, draft: { chapter: { story: { userId } } } },
         select,
       });
       return row !== null;
     }
     case 'message': {
       const row = await client.message.findFirst({
-        where: { id, chat: { chapter: { story: { userId } } } },
+        where: { id, chat: { draft: { chapter: { story: { userId } } } } },
         select,
       });
       return row !== null;

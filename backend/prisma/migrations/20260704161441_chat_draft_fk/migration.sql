@@ -1,0 +1,2 @@
+-- AddForeignKey
+ALTER TABLE "Chat" ADD CONSTRAINT "Chat_draftId_fkey" FOREIGN KEY ("draftId") REFERENCES "Draft"("id") ON DELETE CASCADE ON UPDATE CASCADE;
