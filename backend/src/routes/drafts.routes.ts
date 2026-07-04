@@ -19,7 +19,7 @@ import {
   draftUpdateSchema,
 } from 'story-editor-shared';
 import { z } from 'zod';
-import { notFound } from '../lib/http-errors';
+import { HttpError, notFound } from '../lib/http-errors';
 import { respond } from '../lib/respond';
 import { serializeDraft, serializeDraftMeta } from '../lib/serialize';
 import { logVeniceErrorDev, mapVeniceError } from '../lib/venice-errors';
@@ -212,10 +212,7 @@ export function createDraftCrudRouter() {
 
       const plaintext = tipTapJsonToText(draft.bodyJson ?? null).trim();
       if (plaintext.length === 0 || draft.wordCount === 0) {
-        res
-          .status(400)
-          .json({ error: { message: 'Chapter has no body to summarise', code: 'empty_chapter' } });
-        return;
+        throw new HttpError(400, 'empty_chapter', 'Draft has no body to summarise');
       }
 
       try {
@@ -227,14 +224,11 @@ export function createDraftCrudRouter() {
 
       const modelInfo = veniceModelsService.findModel(body.modelId, userId);
       if (!modelInfo || modelInfo.supportsResponseSchema === false) {
-        res.status(400).json({
-          error: {
-            message:
-              "This model doesn't support structured output — switch to a schema-capable model.",
-            code: 'model_unsupported_for_summarisation',
-          },
-        });
-        return;
+        throw new HttpError(
+          400,
+          'model_unsupported_for_summarisation',
+          "This model doesn't support structured output — switch to a schema-capable model.",
+        );
       }
 
       const { settings, includeVeniceSystemPrompt, userPrompts } =
@@ -290,13 +284,7 @@ export function createDraftCrudRouter() {
           request: snapshot,
           rawContent: content,
         });
-        res.status(502).json({
-          error: {
-            message: 'Venice returned a malformed summary.',
-            code: 'summary_parse_failed',
-          },
-        });
-        return;
+        throw new HttpError(502, 'summary_parse_failed', 'Venice returned a malformed summary.');
       }
 
       const updated = await createDraftRepo(req).update(draftId, { summaryJson: parsed });
