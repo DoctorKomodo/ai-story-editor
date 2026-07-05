@@ -4,43 +4,54 @@ import { useSelectedDraftStore } from '@/store/selectedDraft';
 
 afterEach(() => {
   act(() => {
-    useSelectedDraftStore.getState().setSelectedDraftId(null);
+    useSelectedDraftStore.getState().reset();
   });
 });
 
 describe('useSelectedDraftStore', () => {
-  it('defaults to null', () => {
+  it('defaults to null (follow the active draft)', () => {
     const { result } = renderHook(() => useSelectedDraftStore());
-    expect(result.current.selectedDraftId).toBeNull();
+    expect(result.current.selected).toBeNull();
   });
 
-  it('sets the selected draft id', () => {
+  it('setSelectedDraft stores the chapter-scoped pair', () => {
     const { result } = renderHook(() => useSelectedDraftStore());
     act(() => {
-      result.current.setSelectedDraftId('draft-9');
+      result.current.setSelectedDraft('ch-1', 'draft-9');
     });
-    expect(result.current.selectedDraftId).toBe('draft-9');
+    expect(result.current.selected).toEqual({ chapterId: 'ch-1', draftId: 'draft-9' });
   });
 
-  it('can clear back to null', () => {
+  it('clearSelectedDraft returns to follow-active', () => {
     const { result } = renderHook(() => useSelectedDraftStore());
     act(() => {
-      result.current.setSelectedDraftId('draft-9');
+      result.current.setSelectedDraft('ch-1', 'draft-9');
     });
     act(() => {
-      result.current.setSelectedDraftId(null);
+      result.current.clearSelectedDraft();
     });
-    expect(result.current.selectedDraftId).toBeNull();
+    expect(result.current.selected).toBeNull();
+  });
+
+  it('a later setSelectedDraft overwrites the previous pair (one selection app-wide)', () => {
+    const { result } = renderHook(() => useSelectedDraftStore());
+    act(() => {
+      result.current.setSelectedDraft('ch-1', 'draft-9');
+    });
+    act(() => {
+      result.current.setSelectedDraft('ch-2', 'draft-3');
+    });
+    expect(result.current.selected).toEqual({ chapterId: 'ch-2', draftId: 'draft-3' });
   });
 
   it('reset() returns data fields to initialState', () => {
     const { result } = renderHook(() => useSelectedDraftStore());
     act(() => {
-      result.current.setSelectedDraftId('draft-42');
+      result.current.setSelectedDraft('ch-1', 'draft-42');
     });
     act(() => {
       result.current.reset();
     });
-    expect(result.current.selectedDraftId).toBeNull();
+    expect(result.current.selected).toBeNull();
   });
 });

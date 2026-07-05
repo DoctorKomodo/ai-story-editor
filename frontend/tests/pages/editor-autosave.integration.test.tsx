@@ -419,7 +419,7 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
     });
 
     act(() => {
-      useSelectedDraftStore.getState().setSelectedDraftId('draft-b');
+      useSelectedDraftStore.getState().setSelectedDraft('ch1', 'draft-b');
     });
 
     // Re-seeds from B's server body.
@@ -498,7 +498,7 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
     });
 
     act(() => {
-      useSelectedDraftStore.getState().setSelectedDraftId('draft-b');
+      useSelectedDraftStore.getState().setSelectedDraft('ch1', 'draft-b');
     });
 
     // Viewing B: no local record exists for it — no banner.
@@ -507,7 +507,7 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
     });
 
     act(() => {
-      useSelectedDraftStore.getState().setSelectedDraftId('draft-a');
+      useSelectedDraftStore.getState().setSelectedDraft('ch1', 'draft-a');
     });
 
     // Back on A: the record still matches — banner offers again.

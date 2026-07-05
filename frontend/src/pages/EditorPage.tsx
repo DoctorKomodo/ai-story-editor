@@ -198,18 +198,27 @@ export function EditorPage(): JSX.Element {
   const updateChapter = useUpdateChapterMutation();
   const [draftBodyJson, setDraftBodyJson] = useState<JSONContent | null>(null);
 
-  // [9wk.6] Draft-native editor: which draft is being viewed. selectedDraftId
-  // is null until the 9wk.7 sidebar sets it — null means "follow the active
-  // draft". Reset on chapter switch.
-  const selectedDraftId = useSelectedDraftStore((s) => s.selectedDraftId);
-  const resetSelectedDraft = useSelectedDraftStore((s) => s.reset);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChapterId is the reset trigger.
+  // [9wk.7] Which draft is being viewed — a chapter-scoped pair; null means
+  // "follow the active draft". A pair for another chapter is inert (the
+  // derivation below ignores it), which is what makes a cross-chapter draft
+  // click race-free: the sidebar sets the pair and the chapter in one
+  // interaction, and no effect ordering can wipe it.
+  const selectedDraft = useSelectedDraftStore((s) => s.selected);
+  const clearSelectedDraft = useSelectedDraftStore((s) => s.clearSelectedDraft);
+  // Clear a STALE selection on chapter switch (parent-spec §8 "resets on
+  // chapter switch") while keeping a selection made FOR the new chapter.
+  // Reads the store imperatively so this runs only on chapter change.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: activeChapterId is the trigger; `selected` is read fresh via getState.
   useEffect(() => {
-    resetSelectedDraft();
+    const sel = useSelectedDraftStore.getState().selected;
+    if (sel !== null && sel.chapterId !== activeChapterId) clearSelectedDraft();
   }, [activeChapterId]);
 
   const draftsQuery = useDraftsQuery(activeChapterId);
-  const viewedDraftId = selectedDraftId ?? activeDraftIdOf(draftsQuery.data);
+  const viewedDraftId =
+    (selectedDraft !== null && selectedDraft.chapterId === activeChapterId
+      ? selectedDraft.draftId
+      : null) ?? activeDraftIdOf(draftsQuery.data);
   const draftQuery = useDraftQuery(viewedDraftId);
   const updateDraft = useUpdateDraftMutation();
 
