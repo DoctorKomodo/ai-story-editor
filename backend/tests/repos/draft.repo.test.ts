@@ -471,4 +471,39 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
       draftRepo.update(draftId, {}, { expectedUpdatedAt: staleUpdatedAt }),
     ).rejects.toThrow(DraftVersionConflictError);
   });
+
+  it('[9wk.5] create with summaryJson stamps summaryUpdatedAt === updatedAt (same-instant, not stale)', async () => {
+    const ctx = await makeUserContext('draft-repo-create-summary');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+
+    const created = await draftRepo.create({
+      chapterId: chapter.id,
+      bodyJson: paragraphDoc('two words'),
+      wordCount: 2,
+      summaryJson: { events: 'e', stateAtEnd: 's', openThreads: 'o' },
+      orderIndex: 1,
+    });
+
+    expect(created.summaryUpdatedAt).not.toBeNull();
+    expect(created.summaryUpdatedAt!.getTime()).toBe(created.updatedAt.getTime());
+
+    const reread = await draftRepo.findById(created.id);
+    expect(reread!.summaryUpdatedAt).not.toBeNull();
+    expect(reread!.summaryUpdatedAt!.getTime()).toBe(reread!.updatedAt.getTime());
+
+    const metas = await draftRepo.findManyMetaForChapter(chapter.id);
+    const meta = metas.find((m) => m.id === created.id);
+    expect(meta!.hasSummary).toBe(true);
+    expect(meta!.summaryIsStale).toBe(false);
+  });
 });

@@ -97,12 +97,15 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         : JSON.stringify(input.summaryJson);
     const labelPlaintext = input.label === undefined ? null : input.label;
 
+    // Same instant as @updatedAt so a draft created WITH a summary isn't
+    // born stale. Ported from update()'s summary write path.
+    const now = new Date();
     const row = await client.draft.create({
       data: {
         chapterId: input.chapterId,
         orderIndex: input.orderIndex,
         wordCount: input.wordCount ?? 0,
-        ...(summaryPlaintext !== null ? { summaryJsonUpdatedAt: new Date() } : {}),
+        ...(summaryPlaintext !== null ? { summaryJsonUpdatedAt: now, updatedAt: now } : {}),
         ...writeEncrypted(req, 'body', bodyPlaintext),
         ...writeEncrypted(req, 'summaryJson', summaryPlaintext),
         ...writeEncrypted(req, 'label', labelPlaintext),
