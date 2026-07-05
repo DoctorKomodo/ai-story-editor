@@ -21,7 +21,9 @@ export async function buildExport(req: Request): Promise<ExportFile> {
   const out: ExportFile['stories'] = [];
 
   for (const s of stories) {
-    const chapterMetas = await chapterRepo.findManyForStory(s.id, { includeSummary: true });
+    // Summaries are exported per-draft via findManyForChapter below — the
+    // metadata join's active-draft summary decrypt would be discarded.
+    const chapterMetas = await chapterRepo.findManyForStory(s.id);
     const chapters: ExportFile['stories'][number]['chapters'] = [];
 
     for (const meta of chapterMetas) {
