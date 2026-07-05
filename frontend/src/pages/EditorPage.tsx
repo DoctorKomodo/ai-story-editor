@@ -49,6 +49,7 @@ import { DraftRestoreBanner } from '@/components/DraftRestoreBanner';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
 import { InlineAIResult } from '@/components/InlineAIResult';
+import { NewDraftDialog } from '@/components/NewDraftDialog';
 import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
 import { SceneTab } from '@/components/SceneTab';
@@ -207,10 +208,8 @@ export function EditorPage(): JSX.Element {
   const clearSelectedDraft = useSelectedDraftStore((s) => s.clearSelectedDraft);
   const setSelectedDraft = useSelectedDraftStore((s) => s.setSelectedDraft);
   // [9wk.7] Dialog-request state — which chapter the new-draft dialog is
-  // open for (null = closed). Task 7 renders the dialog from the read side;
-  // until then the value has no reader, so it's left unbound to satisfy
-  // noUnusedLocals rather than declaring a dead name.
-  const [, setNewDraftChapterId] = useState<string | null>(null);
+  // open for (null = closed).
+  const [newDraftChapterId, setNewDraftChapterId] = useState<string | null>(null);
   // Clear a STALE selection on chapter switch (parent-spec §8 "resets on
   // chapter switch") while keeping a selection made FOR the new chapter.
   // Reads the store imperatively so this runs only on chapter change.
@@ -936,6 +935,30 @@ export function EditorPage(): JSX.Element {
             setSummarySheetChapterId(null);
           }}
           initialSummary={detailForSheet.data?.summary ?? undefined}
+        />
+      ) : null}
+
+      {/* [9wk.7] New-draft dialog — opened from ChapterList's "+" or
+          DraftList's "New draft…" affordance. viewedIsActive is honest about
+          the fork API always forking the chapter's ACTIVE draft (no source
+          param): true when the requesting chapter isn't the one currently
+          open in the editor (no "viewed" draft to compare against) OR the
+          editor's viewed draft for that chapter already IS the active one. */}
+      {newDraftChapterId !== null && story ? (
+        <NewDraftDialog
+          chapterId={newDraftChapterId}
+          storyId={story.id}
+          draftCount={chaptersQuery.data?.find((c) => c.id === newDraftChapterId)?.draftCount ?? 1}
+          viewedIsActive={
+            newDraftChapterId !== activeChapterId ||
+            viewedDraftId === activeDraftIdOf(draftsQuery.data)
+          }
+          onClose={() => {
+            setNewDraftChapterId(null);
+          }}
+          onCreated={(draft) => {
+            handleSelectDraft(draft.chapterId, draft.id);
+          }}
         />
       ) : null}
 
