@@ -24,6 +24,7 @@ import {
   GripIcon,
   IconButton,
   InlineConfirm,
+  revealOnRowHover,
   useInlineConfirm,
 } from '@/design/primitives';
 import { deriveListSummaryState } from '@/hooks/useChapterSummary';
@@ -135,7 +136,7 @@ function ChapterRow({
         data-testid={`chapter-row-${chapter.id}-grip`}
         className={[
           'grip cursor-grab touch-none text-ink-4 hover:text-ink-2',
-          'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
+          revealOnRowHover,
           'flex-shrink-0',
         ].join(' ')}
         {...attributes}
