@@ -144,7 +144,7 @@ export function ChatSceneTab({ kind, draftId, editor }: ChatSceneTabProps): JSX.
 
   const onSend = useCallback(
     async (args: ChatSendArgs): Promise<boolean> => {
-      const guard = checkChatSendGuards({ activeChapterId: draftId, selectedModelId });
+      const guard = checkChatSendGuards({ draftId, selectedModelId });
       if (guard) {
         useErrorStore.getState().push(guard);
         return false;

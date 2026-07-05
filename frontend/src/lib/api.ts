@@ -11,8 +11,6 @@
  *   Parses `{ error: { message, code } }` bodies when present.
  * - Resolves with `undefined as T` for 204 responses.
  */
-import { type Chat, chatResponseSchema } from 'story-editor-shared';
-
 const DEFAULT_BASE_URL = '/api';
 
 function resolveBaseUrl(): string {
@@ -246,19 +244,6 @@ export async function fetchExportBlob(): Promise<{ blob: Blob; filename: string 
 // Thin wrappers over `api()` / `apiStream()` used by SC14+ scene-tab hooks.
 // All auth and error handling is delegated to `doRequest` via `api()` /
 // `apiStream()` — do not call `fetch` directly here.
-
-/**
- * [SC14] PATCH /api/chats/:id
- *
- * Renames an existing chat.
- */
-export async function patchChat(id: string, title: string): Promise<Chat> {
-  const res = await api<unknown>(`/chats/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: { title },
-  });
-  return chatResponseSchema.parse(res).chat;
-}
 
 /**
  * [SC14] DELETE /api/chats/:id

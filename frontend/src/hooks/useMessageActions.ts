@@ -60,7 +60,7 @@ export function useMessageActions({
   const fireReplay = useCallback(
     (anchorId: string) => {
       if (chatId === null) return;
-      const guard = checkChatSendGuards({ activeChapterId: draftId, selectedModelId: modelId });
+      const guard = checkChatSendGuards({ draftId, selectedModelId: modelId });
       if (guard) {
         useErrorStore.getState().push(guard);
         return;

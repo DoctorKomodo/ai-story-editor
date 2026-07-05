@@ -1,5 +1,6 @@
-// [9wk.4] Draft routes — live ALONGSIDE the old chapter-mounted endpoints
-// (chapters.routes.ts) until the step-5 cutover removes the latter.
+// [9wk.4] Draft routes — body/summary/wordCount CRUD lives here now.
+// chapters.routes.ts keeps the structural chapter endpoints (title, list,
+// create, delete, reorder); it isn't going away.
 //
 // Three router factories, mirroring the chat.routes.ts precedent:
 //   createChapterDraftsRouter()  — /api/chapters/:chapterId/drafts   (list, create)
