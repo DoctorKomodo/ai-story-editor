@@ -506,4 +506,63 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     expect(meta!.hasSummary).toBe(true);
     expect(meta!.summaryIsStale).toBe(false);
   });
+
+  it('[9wk.6] findById carries the same hasSummary/summaryIsStale booleans as the meta list', async () => {
+    const ctx = await makeUserContext('draft-repo-summary-parity');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const draftId = chapter.activeDraftId as string;
+
+    // No-summary case: a brand-new blank draft — both booleans false.
+    const blankMetas = await draftRepo.findManyMetaForChapter(chapter.id);
+    const blankMeta = blankMetas.find((m) => m.id === draftId)!;
+    const blankDetail = await draftRepo.findById(draftId);
+    expect(blankDetail!.hasSummary).toBe(false);
+    expect(blankDetail!.summaryIsStale).toBe(false);
+    expect({
+      hasSummary: blankDetail!.hasSummary,
+      summaryIsStale: blankDetail!.summaryIsStale,
+    }).toEqual({ hasSummary: blankMeta.hasSummary, summaryIsStale: blankMeta.summaryIsStale });
+
+    // Fresh case: summary just written, same-instant as updatedAt — not stale.
+    await draftRepo.update(draftId, {
+      summaryJson: { events: 'e', stateAtEnd: 's', openThreads: 'o' },
+    });
+    const freshDetail = await draftRepo.findById(draftId);
+    const freshMeta = (await draftRepo.findManyMetaForChapter(chapter.id)).find(
+      (m) => m.id === draftId,
+    )!;
+    expect(freshDetail!.hasSummary).toBe(true);
+    expect(freshDetail!.summaryIsStale).toBe(false);
+    expect({
+      hasSummary: freshDetail!.hasSummary,
+      summaryIsStale: freshDetail!.summaryIsStale,
+    }).toEqual({ hasSummary: freshMeta.hasSummary, summaryIsStale: freshMeta.summaryIsStale });
+
+    // Stale case: a bodyJson-only update bumps updatedAt past summaryUpdatedAt.
+    await new Promise((r) => setTimeout(r, 10));
+    await draftRepo.update(draftId, {
+      bodyJson: { type: 'doc', content: [] },
+      wordCount: 0,
+    });
+    const detail = await draftRepo.findById(draftId);
+    const meta = (await draftRepo.findManyMetaForChapter(chapter.id)).find(
+      (d) => d.id === draftId,
+    )!;
+    expect(detail!.hasSummary).toBe(true);
+    expect(detail!.summaryIsStale).toBe(true);
+    expect({ hasSummary: detail!.hasSummary, summaryIsStale: detail!.summaryIsStale }).toEqual({
+      hasSummary: meta.hasSummary,
+      summaryIsStale: meta.summaryIsStale,
+    });
+  });
 });

@@ -165,10 +165,9 @@ export function serializeChapterMeta(row: RepoChapterMeta): ChapterMeta {
 
 // Explicit pick (not spread): RepoDraft's runtime row carries chapterId +
 // summaryJsonUpdatedAt remnants; picking keeps the wire shape exact.
-// `hasSummary` / `summaryIsStale` are derived here (not on RepoDraft) from the
-// decoded `summary` / `summaryUpdatedAt` fields — a corrupt-but-present blob
-// decodes to `summary: null` with `summaryUpdatedAt` set, so it still reports
-// `hasSummary: true` via the `summaryUpdatedAt !== null` arm.
+// [9wk.6] hasSummary / summaryIsStale are derived in draft.repo's shape()
+// (single source, shared with the meta path via deriveSummaryFlags) — this
+// serializer is a pure pick.
 export function serializeDraft(row: RepoDraft, isActive: boolean): Draft {
   return {
     id: row.id,
@@ -177,8 +176,8 @@ export function serializeDraft(row: RepoDraft, isActive: boolean): Draft {
     wordCount: row.wordCount,
     orderIndex: row.orderIndex,
     isActive,
-    hasSummary: row.summary !== null || row.summaryUpdatedAt !== null,
-    summaryIsStale: row.summaryUpdatedAt !== null && row.summaryUpdatedAt < row.updatedAt,
+    hasSummary: row.hasSummary,
+    summaryIsStale: row.summaryIsStale,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     bodyJson: row.bodyJson,

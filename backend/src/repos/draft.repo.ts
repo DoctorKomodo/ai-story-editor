@@ -34,6 +34,8 @@ export type RepoDraft = {
   bodyJson: unknown;
   summary: ChapterSummary | null;
   summaryUpdatedAt: Date | null;
+  hasSummary: boolean;
+  summaryIsStale: boolean;
   label: string | null;
   wordCount: number;
   orderIndex: number;
@@ -294,15 +296,16 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         r as Record<string, unknown>,
         ['label'] as const,
       );
-      const hasSummary = r.summaryJsonCiphertext != null;
-      const summaryIsStale =
-        hasSummary && r.summaryJsonUpdatedAt != null && r.summaryJsonUpdatedAt < r.updatedAt;
+      const flags = deriveSummaryFlags(
+        r.summaryJsonCiphertext != null,
+        r.summaryJsonUpdatedAt,
+        r.updatedAt,
+      );
       delete projected.summaryJsonUpdatedAt;
       return {
         ...projected,
         isActive: r.id === chapter.activeDraftId,
-        hasSummary,
-        summaryIsStale,
+        ...flags,
       } as RepoDraftMeta;
     });
   }
@@ -364,6 +367,22 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
   };
 }
 
+// [9wk.6] Single source for the summary-state booleans. Both projections call
+// this — shape() from the decoded row, findManyMetaForChapter from the raw
+// row — so the LOGIC cannot desync; each path only normalizes its own
+// "summary present?" input (the meta path must not decrypt to answer it).
+export function deriveSummaryFlags(
+  summaryPresent: boolean,
+  summaryUpdatedAt: Date | null,
+  updatedAt: Date,
+): { hasSummary: boolean; summaryIsStale: boolean } {
+  const hasSummary = summaryPresent || summaryUpdatedAt !== null;
+  return {
+    hasSummary,
+    summaryIsStale: hasSummary && summaryUpdatedAt !== null && summaryUpdatedAt < updatedAt,
+  };
+}
+
 function shape(row: unknown, req: Request): RepoDraft {
   const projected = projectDecrypted(
     req,
@@ -374,5 +393,14 @@ function shape(row: unknown, req: Request): RepoDraft {
   decodeJsonField(projected, 'body', 'bodyJson');
   decodeSummaryField(projected, row as { summaryJsonUpdatedAt: Date | null }, 'draft.repo');
 
-  return projected as RepoDraft;
+  // [9wk.6] Derived here (single source) — serializeDraft is a pure pick.
+  // summaryPresent uses the DECODED summary OR the timestamp so a
+  // corrupt-but-present blob (summary: null, summaryUpdatedAt set) still
+  // reports hasSummary: true — same semantics the serializer had.
+  const flags = deriveSummaryFlags(
+    (projected as { summary: unknown }).summary !== null,
+    (projected as { summaryUpdatedAt: Date | null }).summaryUpdatedAt,
+    (projected as { updatedAt: Date }).updatedAt,
+  );
+  return { ...(projected as object), ...flags } as RepoDraft;
 }
