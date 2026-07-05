@@ -62,22 +62,6 @@ describe('useUnloadFlush', () => {
     });
   });
 
-  it('omits expectedUpdatedAt from the PATCH body when null', () => {
-    const pending: UnloadFlushArgs = {
-      draftId: 'draft-a',
-      bodyJson: { type: 'doc' },
-      expectedUpdatedAt: null,
-    };
-    renderHook(() => useUnloadFlush(() => pending));
-
-    firePagehide();
-
-    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    const body = JSON.parse(init.body as string);
-    expect(body).toEqual({ bodyJson: { type: 'doc' } });
-    expect('expectedUpdatedAt' in body).toBe(false);
-  });
-
   it('does nothing when getPending returns null', () => {
     renderHook(() => useUnloadFlush(() => null));
 
@@ -92,7 +76,7 @@ describe('useUnloadFlush', () => {
     const pending: UnloadFlushArgs = {
       draftId: 'draft-a',
       bodyJson: { type: 'doc', content: bigText },
-      expectedUpdatedAt: null,
+      expectedUpdatedAt: '2026-04-24T10:00:00.000Z',
     };
     renderHook(() => useUnloadFlush(() => pending));
 
@@ -105,7 +89,7 @@ describe('useUnloadFlush', () => {
     const pending: UnloadFlushArgs = {
       draftId: 'draft-a',
       bodyJson: { type: 'doc' },
-      expectedUpdatedAt: null,
+      expectedUpdatedAt: '2026-04-24T10:00:00.000Z',
     };
     renderHook(() => useUnloadFlush(() => pending));
 
@@ -119,7 +103,7 @@ describe('useUnloadFlush', () => {
     const pending: UnloadFlushArgs = {
       draftId: 'draft-a',
       bodyJson: { type: 'doc' },
-      expectedUpdatedAt: null,
+      expectedUpdatedAt: '2026-04-24T10:00:00.000Z',
     };
     const { unmount } = renderHook(() => useUnloadFlush(() => pending));
     unmount();

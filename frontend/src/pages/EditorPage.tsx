@@ -278,13 +278,27 @@ export function EditorPage(): JSX.Element {
     setDraftBodyJson(seed);
   }, [viewedDraftId, draftQuery.data]);
 
-  // Last-seen server `updatedAt` — sent as the PATCH's `expectedUpdatedAt`
-  // precondition. Kept fresh from the draft cache, which
-  // `useUpdateDraftMutation`'s `onSuccess` also writes after every save.
-  const serverUpdatedAtRef = useRef<string | null>(null);
+  // Last-seen server `updatedAt` PER DRAFT — sent as each PATCH's
+  // `expectedUpdatedAt` precondition. A map (not a scalar) because
+  // useAutosave's resetKey flush executes a save snapshotted for the
+  // PREVIOUS draft after the view has already moved on; the snapshot closes
+  // over its own draft id and must read that draft's timestamp ([9wk.7] D2).
+  // Entries are retained for the mount's lifetime: a chapter-switch flush
+  // still needs the departed draft's entry, deleted drafts' entries are
+  // inert (ids never reused), and growth is bounded by drafts viewed.
+  const updatedAtByDraftRef = useRef<Map<string, string>>(new Map());
   useEffect(() => {
-    serverUpdatedAtRef.current = draftQuery.data?.updatedAt ?? null;
-  }, [draftQuery.data?.updatedAt]);
+    const d = draftQuery.data;
+    if (d !== undefined) updatedAtByDraftRef.current.set(d.id, d.updatedAt);
+  }, [draftQuery.data]);
+
+  // The draft currently on screen — read by handleSave's 409 catch so a
+  // conflict landing for an already-departed draft can't banner the current
+  // one (the IDB recovery layer owns that path).
+  const viewedDraftIdRef = useRef<string | null>(viewedDraftId);
+  useEffect(() => {
+    viewedDraftIdRef.current = viewedDraftId;
+  }, [viewedDraftId]);
 
   // True when the last save was rejected 409 (another tab/device moved the
   // chapter since we last read it). While true, autosave is inert — the
@@ -301,20 +315,27 @@ export function EditorPage(): JSX.Element {
     async (value: JSONContent): Promise<void> => {
       if (!story?.id || activeChapterId === null || viewedDraftId === null) return;
       // wordCount is recomputed server-side from bodyJson (drafts.routes.ts).
+      const expectedUpdatedAt = updatedAtByDraftRef.current.get(viewedDraftId);
+      // D2 missing-entry invariant: an automatic save must never degrade to
+      // an unconditional PATCH. The entry is written before typing is
+      // possible (the seed effect requires draftQuery.data); if it is somehow
+      // absent, fail the save — onSaved never fires, so the IndexedDB draft
+      // remains as the recovery path.
+      if (expectedUpdatedAt === undefined) {
+        throw new Error('autosave: unknown server updatedAt for the target draft');
+      }
       try {
         await updateDraft.mutateAsync({
           draftId: viewedDraftId,
           chapterId: activeChapterId,
           storyId: story.id,
-          input: {
-            bodyJson: value,
-            ...(serverUpdatedAtRef.current !== null
-              ? { expectedUpdatedAt: serverUpdatedAtRef.current }
-              : {}),
-          },
+          input: { bodyJson: value, expectedUpdatedAt },
         });
       } catch (err) {
-        if (isDraftConflictError(err)) setConflict(true);
+        // Banner only when the conflict concerns the draft still on screen.
+        if (isDraftConflictError(err) && viewedDraftIdRef.current === viewedDraftId) {
+          setConflict(true);
+        }
         throw err;
       }
     },
@@ -387,14 +408,14 @@ export function EditorPage(): JSX.Element {
     useCallback(() => {
       const pending = autosave.getPendingPayload();
       if (pending === null || viewedDraftId === null) return null;
+      const expectedUpdatedAt = updatedAtByDraftRef.current.get(viewedDraftId);
+      // Same invariant as handleSave: no known precondition → no keepalive
+      // PATCH (the IDB draft persisted by onDirty is the recovery path).
+      if (expectedUpdatedAt === undefined) return null;
       // Closure-read ids are safe: switching the viewed draft changes
       // useAutosave's resetKey, which nulls getPendingPayload() until the new
       // draft's baseline seeds — a stale buffer can't flush at the new id.
-      return {
-        draftId: viewedDraftId,
-        bodyJson: pending,
-        expectedUpdatedAt: serverUpdatedAtRef.current,
-      };
+      return { draftId: viewedDraftId, bodyJson: pending, expectedUpdatedAt };
     }, [autosave.getPendingPayload, viewedDraftId]),
   );
 

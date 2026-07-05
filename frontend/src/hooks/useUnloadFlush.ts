@@ -4,9 +4,10 @@ import { apiKeepalivePatch } from '@/lib/api';
 export interface UnloadFlushArgs {
   draftId: string;
   bodyJson: unknown;
-  /** The viewed draft's last-seen updatedAt — the flush is preconditioned so a
-   * stale buffer can only no-op (409 unobserved), never clobber. */
-  expectedUpdatedAt: string | null;
+  /** The target draft's last-seen updatedAt — the flush is preconditioned so
+   * a stale buffer can only no-op (409 unobserved), never clobber. Non-null
+   * by construction ([9wk.7] D2: no precondition → no flush). */
+  expectedUpdatedAt: string;
 }
 
 /**
@@ -42,9 +43,7 @@ export function useUnloadFlush(getPending: () => UnloadFlushArgs | null): void {
 
       const serialized = JSON.stringify({
         bodyJson: pending.bodyJson,
-        ...(pending.expectedUpdatedAt !== null
-          ? { expectedUpdatedAt: pending.expectedUpdatedAt }
-          : {}),
+        expectedUpdatedAt: pending.expectedUpdatedAt,
       });
       if (lastFlushedBodyRef.current === serialized) return;
 

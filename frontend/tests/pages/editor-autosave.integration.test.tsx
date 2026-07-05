@@ -239,6 +239,7 @@ interface PatchOutcome {
 function draftsBackendRouter(
   records: Map<string, DraftRecord>,
   onPatch?: (id: string, body: Record<string, unknown>, rec: DraftRecord) => PatchOutcome | null,
+  chapters: Record<string, unknown>[] = [makeChapterRecord()],
 ): (url: string, init?: RequestInit) => Promise<Response> {
   return (url, init) => {
     const method = (init?.method ?? 'GET').toUpperCase();
@@ -252,7 +253,7 @@ function draftsBackendRouter(
       return Promise.resolve(jsonResponse(200, { story: makeStory() }));
     }
     if (url.endsWith('/stories/abc123/chapters')) {
-      return Promise.resolve(jsonResponse(200, { chapters: [makeChapterRecord()] }));
+      return Promise.resolve(jsonResponse(200, { chapters }));
     }
     if (url.endsWith('/stories/abc123/characters')) {
       return Promise.resolve(jsonResponse(200, { characters: [] }));
@@ -277,8 +278,12 @@ function draftsBackendRouter(
     if (url.endsWith('/users/me/settings')) {
       return Promise.resolve(jsonResponse(200, { settings: FULL_SETTINGS }));
     }
-    if (url.endsWith('/chapters/ch1/drafts')) {
-      const list = [...records.values()].sort((a, b) => a.orderIndex - b.orderIndex);
+    const listMatch = url.match(/\/chapters\/([^/?]+)\/drafts$/);
+    if (listMatch) {
+      const chapterId = listMatch[1] as string;
+      const list = [...records.values()]
+        .filter((r) => r.chapterId === chapterId)
+        .sort((a, b) => a.orderIndex - b.orderIndex);
       return Promise.resolve(jsonResponse(200, { drafts: list.map(draftMetaOf) }));
     }
 
@@ -376,6 +381,24 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
     ) as [string, RequestInit][];
   }
 
+  /** Every body-PATCH in the run must carry the expectedUpdatedAt precondition
+   * (spec D2 missing-entry invariant). `except` allows the explicit-Overwrite
+   * body through. */
+  function expectAllBodyPatchesPreconditioned(except: string[] = []): void {
+    const bodyPatches = fetchMock.mock.calls.filter(([url, init]) => {
+      if (typeof url !== 'string' || !/\/drafts\/[^/?]+$/.test(url)) return false;
+      const i = init as RequestInit | undefined;
+      if (i?.method !== 'PATCH') return false;
+      const parsed = JSON.parse((i.body as string) ?? '{}') as Record<string, unknown>;
+      return parsed.bodyJson !== undefined;
+    }) as [string, RequestInit][];
+    for (const [, init] of bodyPatches) {
+      const parsed = JSON.parse(init.body as string) as Record<string, unknown>;
+      if (except.some((marker) => (init.body as string).includes(marker))) continue;
+      expect(parsed.expectedUpdatedAt).toBeTypeOf('string');
+    }
+  }
+
   it('draft-switch never cross-flushes a buffered edit onto the newly-viewed draft', async () => {
     const records = new Map<string, DraftRecord>([
       [
@@ -439,6 +462,11 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
       (init.body as string).includes('typed into A'),
     );
     expect(flushToA).toBeDefined();
+    // [9wk.7] The uncached-target variant used to flush WITHOUT a
+    // precondition (ref nulled before the flush). Now it must carry A's own
+    // timestamp.
+    const flushToABody = JSON.parse(flushToA![1].body as string) as Record<string, unknown>;
+    expect(flushToABody.expectedUpdatedAt).toBe('2026-04-24T10:00:00.000Z');
     const crossPatch = patchCallsTo('draft-b').find(([, init]) =>
       (init.body as string).includes('typed into A'),
     );
@@ -660,5 +688,234 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
     const overwriteCall = patchCallsTo('draft-a').at(-1);
     const overwriteBody = JSON.parse(overwriteCall![1].body as string) as Record<string, unknown>;
     expect('expectedUpdatedAt' in overwriteBody).toBe(false);
+  }, 15000);
+
+  it('[9wk.7] flush on a draft switch carries the DEPARTED draft own updatedAt — no spurious 409/banner', async () => {
+    const T_A = '2026-04-24T10:00:00.000Z';
+    const T_B = '2026-04-24T09:00:00.000Z';
+    const records = new Map<string, DraftRecord>([
+      [
+        'draft-a',
+        draftRecord({
+          id: 'draft-a',
+          orderIndex: 0,
+          isActive: true,
+          updatedAt: T_A,
+          bodyJson: null,
+        }),
+      ],
+      [
+        'draft-b',
+        draftRecord({
+          id: 'draft-b',
+          orderIndex: 1,
+          isActive: false,
+          updatedAt: T_B,
+          bodyJson: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Draft B body' }] }],
+          },
+        }),
+      ],
+    ]);
+    fetchMock.mockImplementation(draftsBackendRouter(records));
+
+    useActiveChapterStore.setState({ activeChapterId: 'ch1' });
+    renderEditor();
+
+    // Warm draft-b's DETAIL cache: view B once, then come back to A. This is
+    // the precondition of the bug — a cached target makes draftQuery.data
+    // flip to B synchronously on the switch, before the resetKey flush runs.
+    await screen.findByRole('textbox', { name: /chapter body/i });
+    act(() => {
+      useSelectedDraftStore.getState().setSelectedDraft('ch1', 'draft-b');
+    });
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /chapter body/i }).textContent ?? '').toContain(
+        'Draft B body',
+      );
+    });
+    act(() => {
+      useSelectedDraftStore.getState().setSelectedDraft('ch1', 'draft-a');
+    });
+    const boxA = screen.getByRole('textbox', { name: /chapter body/i });
+    await waitFor(() => {
+      expect(boxA.textContent ?? '').toBe('');
+    });
+
+    boxA.focus();
+    await userEvent.type(boxA, 'typed into A', { skipClick: true });
+    await waitFor(() => {
+      expect(boxA.textContent ?? '').toContain('typed into A');
+    });
+
+    // Switch to the CACHED draft B → resetKey flush fires for draft-a.
+    act(() => {
+      useSelectedDraftStore.getState().setSelectedDraft('ch1', 'draft-b');
+    });
+
+    await waitFor(() => {
+      const flush = patchCallsTo('draft-a').find(([, init]) =>
+        (init.body as string).includes('typed into A'),
+      );
+      expect(flush).toBeDefined();
+    });
+    const [, flushInit] = patchCallsTo('draft-a').find(([, init]) =>
+      (init.body as string).includes('typed into A'),
+    ) as [string, RequestInit];
+    const flushBody = JSON.parse(flushInit.body as string) as Record<string, unknown>;
+    // The fix: A's OWN timestamp, not B's — the backend accepts (200), so the
+    // final keystrokes reached the server instead of dying on a bogus 409.
+    expect(flushBody.expectedUpdatedAt).toBe(T_A);
+
+    // And no conflict banner ever appears on the draft we switched to.
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /chapter body/i }).textContent ?? '').toContain(
+        'Draft B body',
+      );
+    });
+    expect(screen.queryByTestId('chapter-conflict-banner')).toBeNull();
+
+    expectAllBodyPatchesPreconditioned();
+  }, 15000);
+
+  it('[9wk.7] flush on a CHAPTER switch still carries the departed draft updatedAt (never unconditional)', async () => {
+    const T_A = '2026-04-24T10:00:00.000Z';
+    const records = new Map<string, DraftRecord>([
+      [
+        'draft-a',
+        draftRecord({
+          id: 'draft-a',
+          orderIndex: 0,
+          isActive: true,
+          updatedAt: T_A,
+          bodyJson: null,
+        }),
+      ],
+      [
+        'draft-c',
+        draftRecord({
+          id: 'draft-c',
+          chapterId: 'ch2',
+          orderIndex: 0,
+          isActive: true,
+          updatedAt: '2026-04-24T08:00:00.000Z',
+          bodyJson: null,
+        }),
+      ],
+    ]);
+    fetchMock.mockImplementation(
+      draftsBackendRouter(records, undefined, [
+        makeChapterRecord({ draftCount: 1 }),
+        makeChapterRecord({
+          id: 'ch2',
+          title: 'Second',
+          orderIndex: 1,
+          activeDraftId: 'draft-c',
+          draftCount: 1,
+        }),
+      ]),
+    );
+
+    useActiveChapterStore.setState({ activeChapterId: 'ch1' });
+    renderEditor();
+
+    const box = await screen.findByRole('textbox', { name: /chapter body/i });
+    await waitFor(() => {
+      expect(box.textContent ?? '').toBe('');
+    });
+    box.focus();
+    await userEvent.type(box, 'leaving the chapter', { skipClick: true });
+    await waitFor(() => {
+      expect(box.textContent ?? '').toContain('leaving the chapter');
+    });
+
+    act(() => {
+      useActiveChapterStore.setState({ activeChapterId: 'ch2' });
+    });
+
+    await waitFor(() => {
+      const flush = patchCallsTo('draft-a').find(([, init]) =>
+        (init.body as string).includes('leaving the chapter'),
+      );
+      expect(flush).toBeDefined();
+    });
+    const [, flushInit] = patchCallsTo('draft-a').find(([, init]) =>
+      (init.body as string).includes('leaving the chapter'),
+    ) as [string, RequestInit];
+    const flushBody = JSON.parse(flushInit.body as string) as Record<string, unknown>;
+    expect(flushBody.expectedUpdatedAt).toBe(T_A);
+
+    expectAllBodyPatchesPreconditioned();
+  }, 15000);
+
+  it('[9wk.7] a real 409 for a draft the user already left shows NO banner; the IDB draft persists', async () => {
+    const T_A = '2026-04-24T10:00:00.000Z';
+    const records = new Map<string, DraftRecord>([
+      [
+        'draft-a',
+        draftRecord({
+          id: 'draft-a',
+          orderIndex: 0,
+          isActive: true,
+          updatedAt: T_A,
+          bodyJson: null,
+        }),
+      ],
+      [
+        'draft-b',
+        draftRecord({
+          id: 'draft-b',
+          orderIndex: 1,
+          isActive: false,
+          updatedAt: '2026-04-24T09:00:00.000Z',
+          bodyJson: null,
+        }),
+      ],
+    ]);
+    // Force EVERY body-PATCH to draft-a to 409 (simulates another device
+    // having moved draft-a since we loaded it).
+    fetchMock.mockImplementation(
+      draftsBackendRouter(records, (id, body) => {
+        if (id === 'draft-a' && body.bodyJson !== undefined) {
+          return {
+            status: 409,
+            body: { error: { message: 'Draft changed elsewhere.', code: 'conflict' } },
+          };
+        }
+        return null;
+      }),
+    );
+
+    useActiveChapterStore.setState({ activeChapterId: 'ch1' });
+    renderEditor();
+
+    const box = await screen.findByRole('textbox', { name: /chapter body/i });
+    await waitFor(() => {
+      expect(box.textContent ?? '').toBe('');
+    });
+    box.focus();
+    await userEvent.type(box, 'doomed edit', { skipClick: true });
+    await waitFor(() => {
+      expect(box.textContent ?? '').toContain('doomed edit');
+    });
+
+    // Switch away IMMEDIATELY — the flush's 409 lands while draft-b is viewed.
+    act(() => {
+      useSelectedDraftStore.getState().setSelectedDraft('ch1', 'draft-b');
+    });
+
+    await waitFor(() => {
+      expect(patchCallsTo('draft-a').length).toBeGreaterThan(0);
+    });
+    // Give the rejected promise a beat to (not) set state, then assert.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(screen.queryByTestId('chapter-conflict-banner')).toBeNull();
+
+    // The rejected body survives locally for recovery on next view of A.
+    const { getDraft } = await import('@/lib/chapterDrafts');
+    const local = await getDraft('u1', 'ch1', 'draft-a');
+    expect(local).not.toBeNull();
+    expect(JSON.stringify(local!.bodyJson)).toContain('doomed edit');
   }, 15000);
 });
