@@ -118,12 +118,13 @@ describe('ChapterList draft tree (9wk.7)', () => {
 
   it('the open chapter auto-expands its drafts (caret reports expanded)', async () => {
     renderList('ch-1');
-    expect(await screen.findByTestId('draft-list-ch-1')).toBeInTheDocument();
+    const region = await screen.findByTestId('draft-list-ch-1');
+    expect(region).toBeInTheDocument();
     expect(await screen.findByText('Draft B')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Show drafts' })).toHaveAttribute(
-      'aria-expanded',
-      'true',
-    );
+    const caret = screen.getByRole('button', { name: 'Show drafts' });
+    expect(caret).toHaveAttribute('aria-expanded', 'true');
+    expect(caret).toHaveAttribute('aria-controls', region.id);
+    expect(region.id).toBe('draft-list-ch-1');
   });
 
   it('a non-open multi-draft chapter starts collapsed and toggles via the caret', async () => {

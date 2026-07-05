@@ -84,8 +84,20 @@ export function NewDraftDialog({
   };
 
   return (
-    <Modal open onClose={onClose} labelledBy={titleId} size="sm" testId="new-draft-dialog">
-      <ModalHeader titleId={titleId} title="New draft" onClose={onClose} />
+    <Modal
+      open
+      onClose={onClose}
+      labelledBy={titleId}
+      size="sm"
+      testId="new-draft-dialog"
+      dismissable={!createDraft.isPending}
+    >
+      <ModalHeader
+        titleId={titleId}
+        title="New draft"
+        onClose={onClose}
+        closeDisabled={createDraft.isPending}
+      />
       <ModalBody className="flex flex-col gap-3">
         <fieldset className="flex flex-col gap-1.5 border-0 p-0 m-0">
           <legend className="sr-only">Starting point</legend>
@@ -117,6 +129,7 @@ export function NewDraftDialog({
             id={nameId}
             value={name}
             placeholder={placeholder}
+            disabled={createDraft.isPending}
             onChange={(e) => {
               setName(e.target.value);
             }}

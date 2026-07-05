@@ -922,4 +922,67 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
     expect(local).not.toBeNull();
     expect(JSON.stringify(local!.bodyJson)).toContain('doomed edit');
   }, 15000);
+
+  it("[9wk.7] a stale cross-chapter selection pair is cleared on mount; the editor follows the open chapter's active draft", async () => {
+    const T_A = '2026-04-24T10:00:00.000Z';
+    const T_C = '2026-04-24T08:00:00.000Z';
+    const records = new Map<string, DraftRecord>([
+      [
+        'draft-a',
+        draftRecord({
+          id: 'draft-a',
+          orderIndex: 0,
+          isActive: true,
+          updatedAt: T_A,
+          bodyJson: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Draft A body' }] }],
+          },
+        }),
+      ],
+      [
+        'draft-c',
+        draftRecord({
+          id: 'draft-c',
+          chapterId: 'ch2',
+          orderIndex: 0,
+          isActive: true,
+          updatedAt: T_C,
+          bodyJson: {
+            type: 'doc',
+            content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Draft C body' }] }],
+          },
+        }),
+      ],
+    ]);
+    fetchMock.mockImplementation(
+      draftsBackendRouter(records, undefined, [
+        makeChapterRecord({ draftCount: 1 }),
+        makeChapterRecord({
+          id: 'ch2',
+          title: 'Second',
+          orderIndex: 1,
+          activeDraftId: 'draft-c',
+          draftCount: 1,
+        }),
+      ]),
+    );
+
+    // Seed a selection pair for ch2 — a DIFFERENT chapter than the one the
+    // page opens (ch1). This mirrors a pair left over from a prior chapter
+    // switch that never got cleared.
+    act(() => {
+      useSelectedDraftStore.getState().setSelectedDraft('ch2', 'draft-c');
+    });
+    useActiveChapterStore.setState({ activeChapterId: 'ch1' });
+    renderEditor();
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /chapter body/i }).textContent ?? '').toContain(
+        'Draft A body',
+      );
+    });
+
+    expect(useSelectedDraftStore.getState().selected).toBeNull();
+  });
 });

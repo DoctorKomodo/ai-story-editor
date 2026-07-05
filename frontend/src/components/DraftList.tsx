@@ -86,7 +86,7 @@ function DraftRow({
       aria-current={viewed ? 'true' : undefined}
       className={[
         'group flex items-center gap-2 pl-10 pr-2 h-7 rounded-[var(--radius)]',
-        'transition-colors cursor-pointer',
+        'transition-colors',
         viewed ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--surface-hover)]',
       ].join(' ')}
     >
@@ -244,7 +244,11 @@ export function DraftList({
   };
 
   return (
-    <ul className="flex flex-col gap-0.5 py-0.5" data-testid={`draft-list-${chapterId}`}>
+    <ul
+      id={`draft-list-${chapterId}`}
+      className="flex flex-col gap-0.5 py-0.5"
+      data-testid={`draft-list-${chapterId}`}
+    >
       {drafts.map((d) => (
         <DraftRow
           key={d.id}

@@ -137,6 +137,21 @@ describe('NewDraftDialog', () => {
     expect(onClose).toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
+
+  it('while a create is pending, Escape does not dismiss and the name input is disabled', async () => {
+    fetchMock.mockReturnValueOnce(new Promise(() => {})); // never resolves
+    const { onClose } = renderDialog();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('textbox', { name: /name/i })).toBeDisabled();
+    });
+    expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled();
+
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+  });
 });
 
 describe('deriveViewedIsActive', () => {

@@ -174,6 +174,7 @@ function ChapterRow({
             type="button"
             aria-label="Show drafts"
             aria-expanded={expanded}
+            aria-controls={`draft-list-${chapter.id}`}
             data-testid={`chapter-row-${chapter.id}-caret`}
             onClick={(e) => {
               e.stopPropagation();
