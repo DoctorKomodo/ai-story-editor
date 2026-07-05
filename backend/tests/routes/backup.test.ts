@@ -755,15 +755,18 @@ describe('POST /api/users/me/import', () => {
                 {
                   label: null,
                   orderIndex: 0,
-                  isActive: true,
+                  isActive: false,
                   bodyJson: { type: 'doc', content: [] },
                   summary: null,
                   chats: [],
                 },
                 {
+                  // isActive on the gapped MIDDLE entry so the import path's
+                  // setActive(draftIds[activeIdx]) index math is exercised
+                  // (activeIdx > 0), not just the mint-stays-active default.
                   label: 'mid',
                   orderIndex: 5,
-                  isActive: false,
+                  isActive: true,
                   bodyJson: { type: 'doc', content: [] },
                   summary: null,
                   chats: [],
@@ -790,16 +793,21 @@ describe('POST /api/users/me/import', () => {
     expect(imp.body.imported.drafts).toBe(3);
 
     const exp = (await agent.get('/api/users/me/export')).body;
-    const chapterId = (
+    const chapterMeta = (
       await agent.get(`/api/stories/${exp.stories[0].id}/chapters`).set('Origin', TEST_ORIGIN)
-    ).body.chapters[0].id as string;
+    ).body.chapters[0] as { id: string; activeDraftId: string };
     const draftsRes = await agent
-      .get(`/api/chapters/${chapterId}/drafts`)
+      .get(`/api/chapters/${chapterMeta.id}/drafts`)
       .set('Origin', TEST_ORIGIN);
     const drafts = [...draftsRes.body.drafts].sort(
       (a: { orderIndex: number }, b: { orderIndex: number }) => a.orderIndex - b.orderIndex,
     );
     expect(drafts.map((d: { orderIndex: number }) => d.orderIndex)).toEqual([0, 1, 2]);
+    // The gapped middle entry (orderIndex 5 → densified 1) was the isActive
+    // one — the restored active pointer must land on it.
+    expect(drafts.map((d: { isActive: boolean }) => d.isActive)).toEqual([false, true, false]);
+    expect(chapterMeta.activeDraftId).toBe((drafts[1] as { id: string; label: string | null }).id);
+    expect((drafts[1] as { label: string | null }).label).toBe('mid');
   });
 
   it('[9wk.5] whole-file 400 on a malformed active-draft chapter — nothing runs, not even the earlier story', async () => {

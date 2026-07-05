@@ -428,9 +428,9 @@ function shapeMeta(row: unknown, req: Request): RepoChapterMeta {
 }
 
 // Two-projection split: the chapter row decrypts `title` only (its
-// bodyCiphertext/summaryJson* columns are dormant post-[9wk.4] — decrypting
-// them here would silently serve a stale copy); bodyJson/summary/wordCount
-// are sourced from the ACTIVE DRAFT, which is the chapter downstream.
+// body/summaryJson columns were dropped by the [9wk.5] contract migration);
+// bodyJson/summary/wordCount are sourced from the ACTIVE DRAFT, which is the
+// chapter downstream.
 function shape(row: unknown, req: Request): RepoChapter {
   const r = row as {
     id: string;
