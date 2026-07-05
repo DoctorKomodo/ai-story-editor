@@ -13,6 +13,26 @@ import {
 } from '@/design/primitives';
 import { positionalDraftLabel, useCreateDraftMutation } from '@/hooks/useDrafts';
 
+/**
+ * Whether the fork radio may say "Fork current draft" (spec D5). The API
+ * always forks the target chapter's ACTIVE draft, so "current" is honest only
+ * when the dialog targets the chapter open in the editor AND the draft being
+ * viewed there is that chapter's active draft. For any other chapter no draft
+ * of the target is in view at all, so the copy must say "active".
+ */
+export function deriveViewedIsActive(args: {
+  dialogChapterId: string;
+  activeChapterId: string | null;
+  viewedDraftId: string | null;
+  activeDraftId: string | null;
+}): boolean {
+  return (
+    args.dialogChapterId === args.activeChapterId &&
+    args.viewedDraftId !== null &&
+    args.viewedDraftId === args.activeDraftId
+  );
+}
+
 export interface NewDraftDialogProps {
   chapterId: string;
   storyId: string;

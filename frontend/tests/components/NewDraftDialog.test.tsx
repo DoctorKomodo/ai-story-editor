@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import type { JSX, ReactNode } from 'react';
 import type { Draft } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { NewDraftDialog } from '@/components/NewDraftDialog';
+import { deriveViewedIsActive, NewDraftDialog } from '@/components/NewDraftDialog';
 import { resetApiClientForTests } from '@/lib/api';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -136,5 +136,59 @@ describe('NewDraftDialog', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(onClose).toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('deriveViewedIsActive', () => {
+  it('true when the dialog targets the open chapter and the viewed draft is its active one', () => {
+    expect(
+      deriveViewedIsActive({
+        dialogChapterId: 'ch-1',
+        activeChapterId: 'ch-1',
+        viewedDraftId: 'd-active',
+        activeDraftId: 'd-active',
+      }),
+    ).toBe(true);
+  });
+
+  it('false when the viewed draft of the open chapter is not the active one', () => {
+    expect(
+      deriveViewedIsActive({
+        dialogChapterId: 'ch-1',
+        activeChapterId: 'ch-1',
+        viewedDraftId: 'd-other',
+        activeDraftId: 'd-active',
+      }),
+    ).toBe(false);
+  });
+
+  it('false for a chapter that is not open in the editor, regardless of the viewed draft (D5)', () => {
+    expect(
+      deriveViewedIsActive({
+        dialogChapterId: 'ch-2',
+        activeChapterId: 'ch-1',
+        viewedDraftId: 'd-active',
+        activeDraftId: 'd-active',
+      }),
+    ).toBe(false);
+    expect(
+      deriveViewedIsActive({
+        dialogChapterId: 'ch-2',
+        activeChapterId: null,
+        viewedDraftId: null,
+        activeDraftId: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('false while the drafts list has not resolved (both ids null must not compare equal)', () => {
+    expect(
+      deriveViewedIsActive({
+        dialogChapterId: 'ch-1',
+        activeChapterId: 'ch-1',
+        viewedDraftId: null,
+        activeDraftId: null,
+      }),
+    ).toBe(false);
   });
 });

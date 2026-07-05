@@ -49,7 +49,7 @@ import { DraftRestoreBanner } from '@/components/DraftRestoreBanner';
 import { Export, type ExportStory } from '@/components/Export';
 import { FormatBar } from '@/components/FormatBar';
 import { InlineAIResult } from '@/components/InlineAIResult';
-import { NewDraftDialog } from '@/components/NewDraftDialog';
+import { deriveViewedIsActive, NewDraftDialog } from '@/components/NewDraftDialog';
 import { OutlineTab } from '@/components/OutlineTab';
 import { Paper } from '@/components/Paper';
 import { SceneTab } from '@/components/SceneTab';
@@ -939,20 +939,23 @@ export function EditorPage(): JSX.Element {
       ) : null}
 
       {/* [9wk.7] New-draft dialog — opened from ChapterList's "+" or
-          DraftList's "New draft…" affordance. viewedIsActive is honest about
-          the fork API always forking the chapter's ACTIVE draft (no source
-          param): true when the requesting chapter isn't the one currently
-          open in the editor (no "viewed" draft to compare against) OR the
-          editor's viewed draft for that chapter already IS the active one. */}
+          DraftList's "New draft…" affordance (the latter reachable for ANY
+          expanded chapter, not just the open one). The fork API always forks
+          the target chapter's ACTIVE draft (no source param), so the
+          "current draft" copy is only honest when that chapter is open in
+          the editor and its viewed draft is the active one — see
+          deriveViewedIsActive. */}
       {newDraftChapterId !== null && story ? (
         <NewDraftDialog
           chapterId={newDraftChapterId}
           storyId={story.id}
           draftCount={chaptersQuery.data?.find((c) => c.id === newDraftChapterId)?.draftCount ?? 1}
-          viewedIsActive={
-            newDraftChapterId !== activeChapterId ||
-            viewedDraftId === activeDraftIdOf(draftsQuery.data)
-          }
+          viewedIsActive={deriveViewedIsActive({
+            dialogChapterId: newDraftChapterId,
+            activeChapterId,
+            viewedDraftId,
+            activeDraftId: activeDraftIdOf(draftsQuery.data),
+          })}
           onClose={() => {
             setNewDraftChapterId(null);
           }}
