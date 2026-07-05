@@ -47,7 +47,15 @@ type ImportCounts = ImportResult['imported'];
 type StoryOutcomeAction = NonNullable<ImportResult['outcomes']>[number]['action'];
 
 function zeroCounts(): ImportCounts {
-  return { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 };
+  return {
+    stories: 0,
+    chapters: 0,
+    drafts: 0,
+    characters: 0,
+    outlineItems: 0,
+    chats: 0,
+    messages: 0,
+  };
 }
 
 /**
@@ -116,47 +124,84 @@ async function importOneStory(
       const chapters = [...s.chapters].sort((a, b) => a.orderIndex - b.orderIndex);
       for (let i = 0; i < chapters.length; i++) {
         const ch = chapters[i]!;
+        const drafts = [...ch.drafts].sort((a, b) => a.orderIndex - b.orderIndex);
+        const first = drafts[0]!; // schema guarantees min(1)
+
+        // [9wk.5] Mint-as-first-draft (design D3): chapter.repo.create's
+        // unconditional mint IS drafts[0] — no repo path ever yields a
+        // draft-less chapter, even mid-transaction.
         const created = await chapterRepo.create({
           storyId: story.id,
           title: ch.title,
-          bodyJson: ch.bodyJson,
+          bodyJson: first.bodyJson,
           orderIndex: i,
-          wordCount: computeWordCount(ch.bodyJson),
+          wordCount: computeWordCount(first.bodyJson),
         });
         counts.chapters++;
 
         if (created.activeDraftId === null) {
           throw new Error('import: minted chapter has no active draft');
         }
+        counts.drafts++;
+        const draftIds: string[] = [created.activeDraftId];
 
-        if (ch.summary) {
-          // Summary lives on the draft now; attach it to the minted initial
-          // draft (drafts[] in the export format is step 5).
-          await draftRepo.update(created.activeDraftId, { summaryJson: ch.summary });
+        if (first.label !== null || first.summary !== null) {
+          // ONE combined call (spec §5): a later label-only update would bump
+          // @updatedAt past summaryJsonUpdatedAt and spuriously stale the
+          // just-written summary.
+          await draftRepo.update(created.activeDraftId, {
+            ...(first.label !== null ? { label: first.label } : {}),
+            ...(first.summary !== null ? { summaryJson: first.summary } : {}),
+          });
         }
 
-        for (const c of ch.chats) {
-          // chats attach to the chapter's minted initial draft (drafts[] in the
-          // export format is step 5 — this keeps v2-no-drafts files importing).
-          const chat = await chatRepo.create({
-            draftId: created.activeDraftId,
-            title: c.title ?? null,
-            kind: c.kind,
+        for (let j = 1; j < drafts.length; j++) {
+          const d = drafts[j]!;
+          const row = await draftRepo.create({
+            chapterId: created.id,
+            bodyJson: d.bodyJson,
+            wordCount: computeWordCount(d.bodyJson),
+            label: d.label,
+            summaryJson: d.summary,
+            // Densified from the loop index (same convention as chapters/
+            // characters/outline) — a gappy hand-edited file can't violate
+            // @@unique([chapterId, orderIndex]).
+            orderIndex: j,
           });
-          counts.chats++;
+          counts.drafts++;
+          draftIds.push(row.id);
+        }
 
-          for (const m of c.messages) {
-            await messageRepo.createWithin(tx, {
-              chatId: chat.id,
-              role: m.role,
-              content: m.content,
-              attachmentJson: m.attachmentJson,
-              citationsJson: m.citationsJson,
-              model: m.model,
-              tokens: m.tokens,
-              latencyMs: m.latencyMs,
+        const activeIdx = drafts.findIndex((d) => d.isActive);
+        if (activeIdx > 0) {
+          // Refine guarantees exactly one isActive; idx 0 is already active
+          // via the mint.
+          const ok = await draftRepo.setActive(created.id, draftIds[activeIdx]!);
+          if (!ok) throw new Error('import: could not set active draft');
+        }
+
+        for (let j = 0; j < drafts.length; j++) {
+          for (const c of drafts[j]!.chats) {
+            const chat = await chatRepo.create({
+              draftId: draftIds[j]!,
+              title: c.title ?? null,
+              kind: c.kind,
             });
-            counts.messages++;
+            counts.chats++;
+
+            for (const m of c.messages) {
+              await messageRepo.createWithin(tx, {
+                chatId: chat.id,
+                role: m.role,
+                content: m.content,
+                attachmentJson: m.attachmentJson,
+                citationsJson: m.citationsJson,
+                model: m.model,
+                tokens: m.tokens,
+                latencyMs: m.latencyMs,
+              });
+              counts.messages++;
+            }
           }
         }
       }
@@ -221,6 +266,7 @@ export async function runImport(
       const { action, counts: storyCounts } = await importOneStory(req, s, resolution);
       counts.stories += storyCounts.stories;
       counts.chapters += storyCounts.chapters;
+      counts.drafts += storyCounts.drafts;
       counts.characters += storyCounts.characters;
       counts.outlineItems += storyCounts.outlineItems;
       counts.chats += storyCounts.chats;

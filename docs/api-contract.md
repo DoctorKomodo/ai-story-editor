@@ -255,8 +255,9 @@ Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds
 ## Backup — `/api/users/me`
 
 ### `GET /export`
-Streams the caller's full narrative tree (all stories → chapters → chats/messages, characters, outline items), decrypted, as a downloadable JSON file (`Content-Disposition: attachment`).
-Response `200`: `{ "formatVersion": 2, "app": "inkwell", "exportedAt", "stories": [ … ] }`. Each story carries its live `id` and `snapshotUpdatedAt` — the max `updatedAt` across the story's own row and its entire subtree (chapters, characters, outline items, chats, messages) at export time — used by `POST /import/plan` to detect drift since the file was taken.
+Streams the caller's full narrative tree (all stories → chapters → drafts → chats/messages, characters, outline items), decrypted, as a downloadable JSON file (`Content-Disposition: attachment`).
+Response `200`: `{ "formatVersion": 2, "app": "inkwell", "exportedAt", "stories": [ … ] }`. Each story carries its live `id` and `snapshotUpdatedAt` — the max `updatedAt` across the story's own row and its entire subtree (chapters, drafts, characters, outline items, chats, messages) at export time — used by `POST /import/plan` to detect drift since the file was taken.
+Each chapter entry is `{ "title", "orderIndex", "drafts": [{ "label", "orderIndex", "isActive", "bodyJson", "summary", "chats": [ … ] }] }` — drafts[]-only ([9wk.5]); there is no chapter-level `bodyJson`/`summary`/`chats` anymore, and chats live under their owning draft. `drafts` always has at least one entry, and exactly one entry per chapter has `isActive: true`.
 
 ### `POST /import/plan` — rate-limited 5 req/min/user (shared bucket with `POST /import`)
 Preflight, read-only — no mutation. Body: `{ "stories": [{ "id", "snapshotUpdatedAt" }] }` (max 1000 entries).
@@ -275,8 +276,8 @@ Each non-skipped story runs in its own `$transaction` (`replace`'s delete + recr
 
 **Behavior change:** unlike the previous whole-file-replace contract, this endpoint never deletes a live story that's simply absent from the file — leftover stories not mentioned in the import survive and must be deleted manually.
 
-Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
-Errors: `400 unsupported_format_version` (the file's `formatVersion` is a number other than the current one — e.g. a backup exported before the v2 format bump; checked before strict validation so the cause isn't buried in `issues`), `400 validation_error` (malformed file/body).
+Response `200`: `{ "imported": { "stories", "chapters", "drafts", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
+Errors: `400 unsupported_format_version` (the file's `formatVersion` is a number other than the current one — e.g. a backup exported before the v2 format bump; checked before strict validation so the cause isn't buried in `issues`), `400 validation_error` (malformed file/body — including a chapter with zero `drafts`, or a chapter whose `drafts[]` doesn't have exactly one `isActive: true`; this refine is a whole-file parse-time gate, so a single malformed chapter 400s the entire file before any story is imported).
 
 ---
 

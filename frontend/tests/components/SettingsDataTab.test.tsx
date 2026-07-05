@@ -31,7 +31,15 @@ const LEGACY_BACKUP = {
 };
 
 const IMPORT_RESULT_EMPTY = {
-  imported: { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 },
+  imported: {
+    stories: 0,
+    chapters: 0,
+    drafts: 0,
+    characters: 0,
+    outlineItems: 0,
+    chats: 0,
+    messages: 0,
+  },
   outcomes: [],
 };
 
@@ -301,6 +309,7 @@ describe('SettingsDataTab', () => {
         imported: {
           stories: 1,
           chapters: 0,
+          drafts: 0,
           characters: 0,
           outlineItems: 0,
           chats: 0,
@@ -450,6 +459,7 @@ describe('SettingsDataTab', () => {
           imported: {
             stories: 1,
             chapters: 0,
+            drafts: 0,
             characters: 0,
             outlineItems: 0,
             chats: 0,
