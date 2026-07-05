@@ -1,19 +1,27 @@
+import 'fake-indexeddb/auto';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type { JSX, ReactNode } from 'react';
 import type { Draft, DraftMeta } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { chaptersQueryKey } from '@/hooks/useChapters';
+import { chapterQueryKey, chaptersQueryKey } from '@/hooks/useChapters';
 import {
   activeDraftIdOf,
+  draftDisplayLabel,
   draftQueryKey,
   draftsQueryKey,
   isDraftConflictError,
+  positionalDraftLabel,
+  useCreateDraftMutation,
+  useDeleteDraftMutation,
   useDraftQuery,
   useDraftsQuery,
+  useSetActiveDraftMutation,
   useUpdateDraftMutation,
 } from '@/hooks/useDrafts';
 import { ApiError, resetApiClientForTests } from '@/lib/api';
+import { getDraft, putDraft } from '@/lib/chapterDrafts';
+import { useSessionStore } from '@/store/session';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -224,5 +232,182 @@ describe('activeDraftIdOf', () => {
 
   it('returns null on an empty list', () => {
     expect(activeDraftIdOf([])).toBeNull();
+  });
+});
+
+describe('positionalDraftLabel / draftDisplayLabel', () => {
+  it('letters A..Z for orderIndex 0..25, then numeric', () => {
+    expect(positionalDraftLabel(0)).toBe('Draft A');
+    expect(positionalDraftLabel(1)).toBe('Draft B');
+    expect(positionalDraftLabel(25)).toBe('Draft Z');
+    // Deliberate discontinuity: Z is the 26th; "Draft 26" never appears.
+    expect(positionalDraftLabel(26)).toBe('Draft 27');
+    expect(positionalDraftLabel(99)).toBe('Draft 100');
+  });
+
+  it('custom label wins; null label falls back to positional', () => {
+    expect(draftDisplayLabel({ label: 'Grimdark ending', orderIndex: 3 })).toBe('Grimdark ending');
+    expect(draftDisplayLabel({ label: null, orderIndex: 3 })).toBe('Draft D');
+  });
+});
+
+describe('useCreateDraftMutation', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
+
+  it('POSTs mode+label, seeds the record cache, invalidates drafts list + chapters list', async () => {
+    const created: Draft = { ...draftFixture, id: 'd-new', orderIndex: 2, isActive: false };
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { draft: created }));
+    const { wrapper, qc } = withClient();
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+
+    const { result } = renderHook(() => useCreateDraftMutation(), { wrapper });
+    await result.current.mutateAsync({
+      chapterId: 'ch-1',
+      storyId: 'story-1',
+      input: { mode: 'fork', label: 'Alt ending' },
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/chapters/ch-1/drafts');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body as string)).toEqual({ mode: 'fork', label: 'Alt ending' });
+
+    expect(qc.getQueryData(draftQueryKey('d-new'))).toEqual(created);
+    const keys = invalidateSpy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(draftsQueryKey('ch-1')));
+    expect(keys).toContain(JSON.stringify(chaptersQueryKey('story-1')));
+  });
+});
+
+describe('useSetActiveDraftMutation', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+  });
+
+  it('PUTs the active-draft pointer and invalidates the five affected keys', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const { wrapper, qc } = withClient();
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSetActiveDraftMutation(), { wrapper });
+    await result.current.mutateAsync({
+      chapterId: 'ch-1',
+      storyId: 'story-1',
+      draftId: 'd-2',
+      previousActiveDraftId: 'd-1',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/chapters/ch-1/active-draft');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body as string)).toEqual({ draftId: 'd-2' });
+
+    const keys = invalidateSpy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(draftsQueryKey('ch-1')));
+    expect(keys).toContain(JSON.stringify(chaptersQueryKey('story-1')));
+    // Chapter detail GET serves the ACTIVE draft's summary (step-6 D5).
+    expect(keys).toContain(JSON.stringify(chapterQueryKey('ch-1')));
+    // Both flipped records.
+    expect(keys).toContain(JSON.stringify(draftQueryKey('d-2')));
+    expect(keys).toContain(JSON.stringify(draftQueryKey('d-1')));
+  });
+
+  it('skips the previous-record invalidation when previousActiveDraftId is null', async () => {
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const { wrapper, qc } = withClient();
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+
+    const { result } = renderHook(() => useSetActiveDraftMutation(), { wrapper });
+    await result.current.mutateAsync({
+      chapterId: 'ch-1',
+      storyId: 'story-1',
+      draftId: 'd-2',
+      previousActiveDraftId: null,
+    });
+
+    const keys = invalidateSpy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).not.toContain(JSON.stringify(draftQueryKey('null')));
+    expect(keys.filter((k) => k.includes('"detail"')).length).toBe(1);
+  });
+});
+
+describe('useDeleteDraftMutation', () => {
+  let fetchMock: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    resetApiClientForTests();
+    useSessionStore.setState({
+      user: { id: 'u1', username: 'alice', name: 'Alice' },
+      status: 'authenticated',
+    });
+    fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetApiClientForTests();
+    act(() => {
+      useSessionStore.setState({ user: null, status: 'idle' });
+    });
+  });
+
+  it('DELETEs, prefix-removes the draft cache tree, invalidates lists, purges the IDB row', async () => {
+    // Seed a local recovery row for the doomed draft.
+    await putDraft({
+      userId: 'u1',
+      storyId: 'story-1',
+      chapterId: 'ch-1',
+      draftId: 'd-2',
+      bodyJson: { type: 'doc', content: [] },
+      baseUpdatedAt: '2026-06-01T00:00:00.000Z',
+      savedAt: Date.now(),
+    });
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const { wrapper, qc } = withClient();
+    qc.setQueryData(draftQueryKey('d-2'), draftFixture);
+    qc.setQueryData(['draft', 'd-2', 'chats', 'ask'], []);
+    const invalidateSpy = vi.spyOn(qc, 'invalidateQueries');
+
+    const { result } = renderHook(() => useDeleteDraftMutation(), { wrapper });
+    await result.current.mutateAsync({ chapterId: 'ch-1', storyId: 'story-1', draftId: 'd-2' });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/drafts/d-2');
+    expect(init.method).toBe('DELETE');
+
+    // Prefix removal: record + chat lists (message caches are a different
+    // prefix, deliberately left to gcTime).
+    expect(qc.getQueryData(draftQueryKey('d-2'))).toBeUndefined();
+    expect(qc.getQueryData(['draft', 'd-2', 'chats', 'ask'])).toBeUndefined();
+
+    const keys = invalidateSpy.mock.calls.map((c) => JSON.stringify(c[0]?.queryKey));
+    expect(keys).toContain(JSON.stringify(draftsQueryKey('ch-1')));
+    expect(keys).toContain(JSON.stringify(chaptersQueryKey('story-1')));
+
+    await waitFor(async () => {
+      expect(await getDraft('u1', 'ch-1', 'd-2')).toBeNull();
+    });
   });
 });
