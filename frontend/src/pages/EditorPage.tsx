@@ -205,6 +205,12 @@ export function EditorPage(): JSX.Element {
   // interaction, and no effect ordering can wipe it.
   const selectedDraft = useSelectedDraftStore((s) => s.selected);
   const clearSelectedDraft = useSelectedDraftStore((s) => s.clearSelectedDraft);
+  const setSelectedDraft = useSelectedDraftStore((s) => s.setSelectedDraft);
+  // [9wk.7] Dialog-request state — which chapter the new-draft dialog is
+  // open for (null = closed). Task 7 renders the dialog from the read side;
+  // until then the value has no reader, so it's left unbound to satisfy
+  // noUnusedLocals rather than declaring a dead name.
+  const [, setNewDraftChapterId] = useState<string | null>(null);
   // Clear a STALE selection on chapter switch (parent-spec §8 "resets on
   // chapter switch") while keeping a selection made FOR the new chapter.
   // Reads the store imperatively so this runs only on chapter change.
@@ -213,6 +219,16 @@ export function EditorPage(): JSX.Element {
     const sel = useSelectedDraftStore.getState().selected;
     if (sel !== null && sel.chapterId !== activeChapterId) clearSelectedDraft();
   }, [activeChapterId]);
+
+  const handleSelectDraft = useCallback(
+    (chapterId: string, draftId: string): void => {
+      // Pair first, then the chapter switch — the pair's chapterId matches
+      // the incoming chapter, so the conditional reset effect keeps it (D1).
+      setSelectedDraft(chapterId, draftId);
+      if (chapterId !== activeChapterId) setActiveChapterId(chapterId);
+    },
+    [setSelectedDraft, activeChapterId, setActiveChapterId],
+  );
 
   const draftsQuery = useDraftsQuery(activeChapterId);
   const viewedDraftId =
@@ -718,6 +734,9 @@ export function EditorPage(): JSX.Element {
                   setSummaryPopoverState({ chapterId, anchorEl });
                 }}
                 openPopoverChapterId={summaryPopoverState?.chapterId ?? null}
+                viewedDraftId={viewedDraftId}
+                onSelectDraft={handleSelectDraft}
+                onRequestNewDraft={setNewDraftChapterId}
               />
             }
             castBody={

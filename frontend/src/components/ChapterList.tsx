@@ -15,10 +15,11 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
-import type { JSX } from 'react';
-import { useCallback, useRef, useState } from 'react';
+import type { JSX, ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChapterMeta } from 'story-editor-shared';
 import { ChapterListSectionHeader } from '@/components/ChapterListSectionHeader';
+import { DraftList } from '@/components/DraftList';
 import {
   CloseIcon,
   GripIcon,
@@ -53,6 +54,12 @@ export interface ChapterListProps {
   onOpenSummary: (chapterId: string, anchorEl: HTMLElement) => void;
   /** Id of the chapter whose summary popover is currently open. Controls aria-pressed on its icon. */
   openPopoverChapterId?: string | null;
+  /** [9wk.7] The draft open in the editor — highlights its row in the tree. */
+  viewedDraftId: string | null;
+  /** [9wk.7] Draft row clicked (chapter + draft pair, set atomically upstream). */
+  onSelectDraft: (chapterId: string, draftId: string) => void;
+  /** [9wk.7] ＋ affordances — opens the new-draft dialog for the chapter. */
+  onRequestNewDraft: (chapterId: string) => void;
 }
 
 function chapterDisplayTitle(c: ChapterMeta): string {
@@ -69,6 +76,11 @@ interface ChapterRowProps {
   isDeleting: boolean;
   onOpenSummary: (chapterId: string, anchorEl: HTMLElement) => void;
   popoverOpen: boolean;
+  expanded: boolean;
+  onToggleExpanded: () => void;
+  showNewDraftAffordance: boolean;
+  onRequestNewDraft: (chapterId: string) => void;
+  children?: ReactNode;
 }
 
 /**
@@ -85,6 +97,11 @@ function ChapterRow({
   isDeleting,
   onOpenSummary,
   popoverOpen,
+  expanded,
+  onToggleExpanded,
+  showNewDraftAffordance,
+  onRequestNewDraft,
+  children,
 }: ChapterRowProps): JSX.Element {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging, isOver } =
     useSortable({ id: chapter.id });
@@ -120,83 +137,115 @@ function ChapterRow({
       data-over={isOver ? 'true' : undefined}
       data-testid={`chapter-row-${chapter.id}`}
       aria-current={active ? 'true' : undefined}
-      className={[
-        'group flex items-center gap-2 pl-3 pr-2 h-8 rounded-[var(--radius)]',
-        'transition-colors cursor-pointer',
-        active ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--surface-hover)]',
-        isOver ? 'ring-1 ring-ink' : '',
-        isDragging ? 'opacity-60' : '',
-      ]
-        .filter(Boolean)
-        .join(' ')}
     >
-      <button
-        type="button"
-        aria-label="Reorder"
-        data-testid={`chapter-row-${chapter.id}-grip`}
+      <div
         className={[
-          'grip cursor-grab touch-none text-ink-4 hover:text-ink-2',
-          revealOnRowHover,
-          'flex-shrink-0',
-        ].join(' ')}
-        {...attributes}
-        {...listeners}
+          'group flex items-center gap-2 pl-3 pr-2 h-8 rounded-[var(--radius)]',
+          'transition-colors cursor-pointer',
+          active ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--surface-hover)]',
+          isOver ? 'ring-1 ring-ink' : '',
+          isDragging ? 'opacity-60' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
       >
-        <GripIcon />
-      </button>
-      <span
-        aria-hidden="true"
-        className="font-mono text-[11px] text-ink-4 tabular-nums w-5 flex-shrink-0"
-      >
-        {String(chapter.orderIndex + 1).padStart(2, '0')}
-      </span>
-      <button
-        type="button"
-        onClick={() => {
-          onSelect(chapter.id);
-        }}
-        className="flex-1 min-w-0 text-left font-serif text-[14px] text-ink leading-tight truncate"
-      >
-        {chapterDisplayTitle(chapter)}
-      </button>
-      {confirm.open ? (
-        <InlineConfirm
-          {...confirm.props}
-          label={`Delete ${chapterDisplayTitle(chapter)}`}
-          onConfirm={() => {
-            void onConfirmDelete();
-          }}
-          pending={isDeleting}
-          testId={`chapter-row-${chapter.id}-confirm`}
-        />
-      ) : (
-        <>
-          {/* list-meta derivation never returns 'generating' (mutation state) or 'corrupted' (requires detail) */}
-          <SummaryStateIcon
-            state={deriveListSummaryState({
-              hasSummary: chapter.hasSummary,
-              summaryIsStale: chapter.summaryIsStale,
-            })}
-            ariaPressed={popoverOpen}
+        <button
+          type="button"
+          aria-label="Reorder"
+          data-testid={`chapter-row-${chapter.id}-grip`}
+          className={[
+            'grip cursor-grab touch-none text-ink-4 hover:text-ink-2',
+            revealOnRowHover,
+            'flex-shrink-0',
+          ].join(' ')}
+          {...attributes}
+          {...listeners}
+        >
+          <GripIcon />
+        </button>
+        <span
+          aria-hidden="true"
+          className="font-mono text-[11px] text-ink-4 tabular-nums w-5 flex-shrink-0"
+        >
+          {String(chapter.orderIndex + 1).padStart(2, '0')}
+        </span>
+        {chapter.draftCount > 1 ? (
+          <button
+            type="button"
+            aria-label="Show drafts"
+            aria-expanded={expanded}
+            data-testid={`chapter-row-${chapter.id}-caret`}
             onClick={(e) => {
-              onOpenSummary(chapter.id, e.currentTarget);
+              e.stopPropagation();
+              onToggleExpanded();
             }}
+            className="flex-shrink-0 text-ink-4 hover:text-ink-2 transition-transform"
+            style={{ transform: expanded ? 'rotate(90deg)' : undefined }}
+          >
+            <span aria-hidden="true">▸</span>
+          </button>
+        ) : null}
+        <button
+          type="button"
+          onClick={() => {
+            onSelect(chapter.id);
+          }}
+          className="flex-1 min-w-0 text-left font-serif text-[14px] text-ink leading-tight truncate"
+        >
+          {chapterDisplayTitle(chapter)}
+        </button>
+        {confirm.open ? (
+          <InlineConfirm
+            {...confirm.props}
+            label={`Delete ${chapterDisplayTitle(chapter)}`}
+            onConfirm={() => {
+              void onConfirmDelete();
+            }}
+            pending={isDeleting}
+            testId={`chapter-row-${chapter.id}-confirm`}
           />
-          <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
-            {formatWordCountCompact(chapter.wordCount)}
-          </span>
-          {active ? (
-            <IconButton
-              ariaLabel={`Delete ${chapterDisplayTitle(chapter)}`}
-              onClick={confirm.ask}
-              testId={`chapter-row-${chapter.id}-delete`}
-              className="flex-shrink-0"
-            >
-              <CloseIcon />
-            </IconButton>
-          ) : null}
-        </>
-      )}
+        ) : (
+          <>
+            {/* list-meta derivation never returns 'generating' (mutation state) or 'corrupted' (requires detail) */}
+            <SummaryStateIcon
+              state={deriveListSummaryState({
+                hasSummary: chapter.hasSummary,
+                summaryIsStale: chapter.summaryIsStale,
+              })}
+              ariaPressed={popoverOpen}
+              onClick={(e) => {
+                onOpenSummary(chapter.id, e.currentTarget);
+              }}
+            />
+            <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
+              {formatWordCountCompact(chapter.wordCount)}
+            </span>
+            {showNewDraftAffordance ? (
+              <IconButton
+                ariaLabel="New draft"
+                onClick={() => {
+                  onRequestNewDraft(chapter.id);
+                }}
+                testId={`chapter-row-${chapter.id}-new-draft`}
+                className={['flex-shrink-0', revealOnRowHover].join(' ')}
+              >
+                <span aria-hidden="true">＋</span>
+              </IconButton>
+            ) : null}
+            {active ? (
+              <IconButton
+                ariaLabel={`Delete ${chapterDisplayTitle(chapter)}`}
+                onClick={confirm.ask}
+                testId={`chapter-row-${chapter.id}-delete`}
+                className="flex-shrink-0"
+              >
+                <CloseIcon />
+              </IconButton>
+            ) : null}
+          </>
+        )}
+      </div>
+      {children}
     </li>
   );
 }
@@ -208,6 +257,9 @@ export function ChapterList({
   onChapterDeleted,
   onOpenSummary,
   openPopoverChapterId,
+  viewedDraftId,
+  onSelectDraft,
+  onRequestNewDraft,
 }: ChapterListProps): JSX.Element {
   const { data: chapters, isLoading, isError, error } = useChaptersQuery(storyId);
   const createChapter = useCreateChapterMutation(storyId);
@@ -219,6 +271,37 @@ export function ChapterList({
   const deleteChapter = useDeleteChapterMutation(storyId);
   const [deleteStatus, setDeleteStatus] = useState<string>('');
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const [draftStatus, setDraftStatus] = useState<string>('');
+
+  // [9wk.7] D4 — caret expansion. Manual toggles override the default
+  // (default: expanded iff the chapter is open in the editor). Ephemeral;
+  // cleared when the story changes.
+  const [expandOverrides, setExpandOverrides] = useState<Map<string, boolean>>(new Map());
+  // biome-ignore lint/correctness/useExhaustiveDependencies: storyId change invalidates the overrides.
+  useEffect(() => {
+    setExpandOverrides(new Map());
+  }, [storyId]);
+
+  const isExpanded = useCallback(
+    (chapter: ChapterMeta): boolean => {
+      if (chapter.draftCount <= 1) return false;
+      return expandOverrides.get(chapter.id) ?? chapter.id === activeChapterId;
+    },
+    [expandOverrides, activeChapterId],
+  );
+
+  const toggleExpanded = useCallback(
+    (chapter: ChapterMeta): void => {
+      setExpandOverrides((prev) => {
+        const next = new Map(prev);
+        const current = prev.get(chapter.id) ?? chapter.id === activeChapterId;
+        next.set(chapter.id, !current);
+        return next;
+      });
+    },
+    [activeChapterId],
+  );
 
   const handleRequestDelete = useCallback(
     async (chapterId: string): Promise<void> => {
@@ -336,7 +419,24 @@ export function ChapterList({
                   isDeleting={pendingDeleteId === c.id}
                   onOpenSummary={onOpenSummary}
                   popoverOpen={openPopoverChapterId === c.id}
-                />
+                  expanded={isExpanded(c)}
+                  onToggleExpanded={() => {
+                    toggleExpanded(c);
+                  }}
+                  showNewDraftAffordance={c.draftCount === 1}
+                  onRequestNewDraft={onRequestNewDraft}
+                >
+                  {isExpanded(c) ? (
+                    <DraftList
+                      chapterId={c.id}
+                      storyId={storyId}
+                      viewedDraftId={viewedDraftId}
+                      onSelectDraft={onSelectDraft}
+                      onRequestNewDraft={onRequestNewDraft}
+                      onStatus={setDraftStatus}
+                    />
+                  ) : null}
+                </ChapterRow>
               ))}
             </ul>
           </SortableContext>
@@ -344,8 +444,7 @@ export function ChapterList({
       )}
 
       <div role="status" aria-live="polite" className="sr-only">
-        {reorderStatus}
-        {deleteStatus}
+        {[reorderStatus, deleteStatus, draftStatus].filter(Boolean).join(' ')}
       </div>
     </div>
   );
