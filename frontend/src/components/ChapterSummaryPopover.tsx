@@ -50,7 +50,11 @@ export function ChapterSummaryPopover({
 
   const detail = useChapterQuery(chapterId, storyId);
   // Hook must run unconditionally (rules-of-hooks); the null-chapter early-return below prevents .mutate() ever firing with the empty key.
-  const summariseMutation = useSummariseChapterMutation(chapterId ?? '', storyId);
+  const summariseMutation = useSummariseChapterMutation(
+    chapter?.activeDraftId ?? '',
+    chapterId ?? '',
+    storyId,
+  );
 
   // Clear any prior error when the user closes the popover, so reopening the
   // same chapter doesn't immediately re-show a stale failure. `mutation.reset`

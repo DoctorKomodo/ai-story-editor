@@ -881,6 +881,7 @@ export function EditorPage(): JSX.Element {
         <ChapterSummarySheet
           chapterId={summarySheetChapterId}
           storyId={story.id}
+          activeDraftId={detailForSheet.data?.activeDraftId ?? ''}
           open
           onClose={() => {
             setSummarySheetChapterId(null);

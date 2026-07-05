@@ -17,6 +17,7 @@ describe('ChapterSummarySheet', () => {
         <ChapterSummarySheet
           chapterId="c1"
           storyId="s1"
+          activeDraftId="draft-1"
           open={false}
           onClose={vi.fn()}
           initialSummary={{ events: '', stateAtEnd: '', openThreads: '' }}
@@ -34,6 +35,7 @@ describe('ChapterSummarySheet', () => {
         <ChapterSummarySheet
           chapterId="c1"
           storyId="s1"
+          activeDraftId="draft-1"
           open
           onClose={onClose}
           initialSummary={{ events: '', stateAtEnd: '', openThreads: '' }}
@@ -46,7 +48,7 @@ describe('ChapterSummarySheet', () => {
     fetchSpy.mockRestore();
   });
 
-  it('submits all three fields via PUT /stories/s1/chapters/c1/summary', async () => {
+  it('submits all three fields via PUT /drafts/draft-1/summary', async () => {
     const onClose = vi.fn();
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValueOnce(
       new Response(
@@ -62,6 +64,7 @@ describe('ChapterSummarySheet', () => {
         <ChapterSummarySheet
           chapterId="c1"
           storyId="s1"
+          activeDraftId="draft-1"
           open
           onClose={onClose}
           initialSummary={{ events: '', stateAtEnd: '', openThreads: '' }}
@@ -74,7 +77,7 @@ describe('ChapterSummarySheet', () => {
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
     expect(fetchSpy).toHaveBeenCalledWith(
-      expect.stringContaining('/stories/s1/chapters/c1/summary'),
+      expect.stringContaining('/drafts/draft-1/summary'),
       expect.objectContaining({ method: 'PUT' }),
     );
   });
@@ -85,6 +88,7 @@ describe('ChapterSummarySheet', () => {
         <ChapterSummarySheet
           chapterId="c1"
           storyId="s1"
+          activeDraftId="draft-1"
           open
           onClose={vi.fn()}
           initialSummary={{ events: 'ev', stateAtEnd: 'st', openThreads: 'ot' }}
@@ -104,6 +108,7 @@ describe('ChapterSummarySheet', () => {
         <ChapterSummarySheet
           chapterId="c1"
           storyId="s1"
+          activeDraftId="draft-1"
           open
           onClose={onClose}
           initialSummary={{ events: '', stateAtEnd: '', openThreads: '' }}
@@ -124,6 +129,7 @@ describe('ChapterSummarySheet', () => {
         <ChapterSummarySheet
           chapterId="c1"
           storyId="s1"
+          activeDraftId="draft-1"
           open
           onClose={onClose}
           initialSummary={{ events: '', stateAtEnd: '', openThreads: '' }}

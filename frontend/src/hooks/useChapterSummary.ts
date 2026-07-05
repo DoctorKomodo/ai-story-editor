@@ -3,6 +3,7 @@ import { type ChapterSummary, chapterSummaryResponseSchema } from 'story-editor-
 import type { z } from 'zod';
 import { api } from '@/lib/api';
 import { chapterQueryKey, chaptersQueryKey } from './useChapters';
+import { draftQueryKey, draftsQueryKey } from './useDrafts';
 
 export type ChapterSummaryResponse = z.infer<typeof chapterSummaryResponseSchema>;
 
@@ -40,44 +41,52 @@ export function deriveListSummaryState(input: {
   return input.summaryIsStale ? 'stale' : 'current';
 }
 
-/** POST /stories/:storyId/chapters/:chapterId/summarise — generate OR regenerate; same endpoint either way. */
+/** POST /drafts/:draftId/summarise — generate OR regenerate; same endpoint either way. */
 export function useSummariseChapterMutation(
+  draftId: string,
   chapterId: string,
   storyId: string,
 ): UseMutationResult<ChapterSummaryResponse, Error, string> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (modelId: string): Promise<ChapterSummaryResponse> => {
-      const res = await api<unknown>(
-        `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}/summarise`,
-        { method: 'POST', body: { modelId } },
-      );
+      const res = await api<unknown>(`/drafts/${encodeURIComponent(draftId)}/summarise`, {
+        method: 'POST',
+        body: { modelId },
+      });
       return chapterSummaryResponseSchema.parse(res);
     },
     onSuccess: () => {
+      // chapterQueryKey is the popover/sheet READ path (chapter GET serves the
+      // active draft's summary, spec D5) — dropping it would leave them stale.
       void qc.invalidateQueries({ queryKey: chapterQueryKey(chapterId) });
       void qc.invalidateQueries({ queryKey: chaptersQueryKey(storyId) });
+      void qc.invalidateQueries({ queryKey: draftQueryKey(draftId) });
+      void qc.invalidateQueries({ queryKey: draftsQueryKey(chapterId) });
     },
   });
 }
 
-/** PUT /stories/:storyId/chapters/:chapterId/summary — user-edited summary. */
+/** PUT /drafts/:draftId/summary — user-edited summary. */
 export function useUpdateChapterSummaryMutation(
+  draftId: string,
   chapterId: string,
   storyId: string,
 ): UseMutationResult<ChapterSummaryResponse, Error, ChapterSummary> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (summary: ChapterSummary): Promise<ChapterSummaryResponse> => {
-      const res = await api<unknown>(
-        `/stories/${encodeURIComponent(storyId)}/chapters/${encodeURIComponent(chapterId)}/summary`,
-        { method: 'PUT', body: summary },
-      );
+      const res = await api<unknown>(`/drafts/${encodeURIComponent(draftId)}/summary`, {
+        method: 'PUT',
+        body: summary,
+      });
       return chapterSummaryResponseSchema.parse(res);
     },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: chapterQueryKey(chapterId) });
       void qc.invalidateQueries({ queryKey: chaptersQueryKey(storyId) });
+      void qc.invalidateQueries({ queryKey: draftQueryKey(draftId) });
+      void qc.invalidateQueries({ queryKey: draftsQueryKey(chapterId) });
     },
   });
 }

@@ -16,6 +16,7 @@ import { ApiError } from '@/lib/api';
 export interface ChapterSummarySheetProps {
   chapterId: string;
   storyId: string;
+  activeDraftId: string;
   open: boolean;
   onClose: () => void;
   initialSummary?: ChapterSummary;
@@ -32,6 +33,7 @@ function mapError(err: unknown): string {
 export function ChapterSummarySheet({
   chapterId,
   storyId,
+  activeDraftId,
   open,
   onClose,
   initialSummary,
@@ -42,6 +44,7 @@ export function ChapterSummarySheet({
     <ChapterSummarySheetInner
       chapterId={chapterId}
       storyId={storyId}
+      activeDraftId={activeDraftId}
       onClose={onClose}
       initialSummary={initialSummary ?? EMPTY}
     />
@@ -51,11 +54,13 @@ export function ChapterSummarySheet({
 function ChapterSummarySheetInner({
   chapterId,
   storyId,
+  activeDraftId,
   onClose,
   initialSummary,
 }: {
   chapterId: string;
   storyId: string;
+  activeDraftId: string;
   onClose: () => void;
   initialSummary: ChapterSummary;
 }): JSX.Element {
@@ -64,7 +69,7 @@ function ChapterSummarySheetInner({
   const stateAtEndId = useId();
   const openThreadsId = useId();
 
-  const mutation = useUpdateChapterSummaryMutation(chapterId, storyId);
+  const mutation = useUpdateChapterSummaryMutation(activeDraftId, chapterId, storyId);
   const [fields, setFields] = useState<ChapterSummary>(initialSummary);
   useEffect(() => {
     setFields(initialSummary ?? EMPTY);
