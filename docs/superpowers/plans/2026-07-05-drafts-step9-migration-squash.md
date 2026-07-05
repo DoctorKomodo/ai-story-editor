@@ -185,23 +185,32 @@ Expected: exit 0, "18 migrations found", all applied.
 
 - [ ] **Step 4: Prove schema equivalence, both directions**
 
+> **Prisma 7.8 note:** Prisma 7 **removed** `--from-url`/`--to-url` from
+> `migrate diff`, and forbids a literal/`env()` `url` inside the schema file,
+> so the two-live-DB comparison routes through a live introspection of each
+> scratch DB (`db pull --url … --print`) followed by a schema-to-schema diff.
+> `DATABASE_URL` is still required to satisfy `prisma.config.ts`'s load, even
+> though the diff only reads the two introspected files.
+
 ```bash
-# DATABASE_URL is required by prisma.config.ts even though diff only uses the
-# explicit --from-url/--to-url pair — any valid URL satisfies the config load.
 cd backend
+# Introspect each scratch DB to a standalone schema file (live, --url override).
+npx prisma db pull --url postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_old --print > /tmp/old-introspected.prisma
+npx prisma db pull --url postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_new --print > /tmp/new-introspected.prisma
+# Formal diff in BOTH directions (each must be an empty migration).
 DATABASE_URL=postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_old \
   npx prisma migrate diff \
-  --from-url postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_old \
-  --to-url   postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_new \
+  --from-schema=/tmp/old-introspected.prisma \
+  --to-schema=/tmp/new-introspected.prisma \
   --script
 DATABASE_URL=postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_old \
   npx prisma migrate diff \
-  --from-url postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_new \
-  --to-url   postgresql://storyeditor:storyeditor@localhost:5432/squash_diff_old \
+  --from-schema=/tmp/new-introspected.prisma \
+  --to-schema=/tmp/old-introspected.prisma \
   --script
 ```
 
-Expected: each command prints exactly `-- This is an empty migration.` **Copy both commands and their outputs verbatim into the task report** — this is the one-time equivalence record (spec D3). If either diff is non-empty, the consolidated SQL is wrong: fix `migration.sql`, drop/recreate `squash_diff_new`, re-run steps 3–4. Do NOT touch the pre-9wk migrations.
+Expected: each command prints exactly `-- This is an empty migration.` (a plain `diff /tmp/old-introspected.prisma /tmp/new-introspected.prisma` also corroborates — identical). **Copy both commands and their outputs verbatim into the task report** — this is the one-time equivalence record (spec D3). If either diff is non-empty, the consolidated SQL is wrong: fix `migration.sql`, drop/recreate `squash_diff_new`, re-run steps 3–4. Do NOT touch the pre-9wk migrations.
 
 - [ ] **Step 5: Full backend suite against the new chain**
 

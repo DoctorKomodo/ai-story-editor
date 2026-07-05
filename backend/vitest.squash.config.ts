@@ -1,4 +1,3 @@
-import path from 'node:path';
 import { defineConfig } from 'vitest/config';
 
 // story-editor-9wk.9 migration-squash harness. NEVER part of CI or the
@@ -19,12 +18,10 @@ export default defineConfig({
     // whole pipeline room.
     testTimeout: 120_000,
     hookTimeout: 120_000,
-    // vitest 4 defaults this to true — without the override, an include glob
-    // that matches nothing exits 0 and the harness silently stops proving
-    // anything (same defence as the main vitest.config.ts).
+    // Fail if the run collected no tests at all — defence against config
+    // drift (e.g. an `include` glob that silently matches nothing). Mirrors
+    // the main vitest.config.ts guard; the plan's empty-include RED
+    // checkpoint (harness wired but no test file yet) relies on this.
     passWithNoTests: false,
-  },
-  resolve: {
-    alias: { '@': path.resolve(__dirname, './src') },
   },
 });
