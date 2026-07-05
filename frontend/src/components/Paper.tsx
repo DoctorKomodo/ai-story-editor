@@ -94,8 +94,7 @@ function SubRow({ genre, draftLabel, wordCount, status }: SubRowProps): JSX.Elem
   const parts: SubRowPart[] = [];
   if (genre) parts.push({ key: 'genre', node: <span>{genre}</span> });
 
-  const draft = draftLabel ?? 'Draft 1';
-  if (draft) parts.push({ key: 'draft', node: <span>{draft}</span> });
+  if (draftLabel) parts.push({ key: 'draft', node: <span>{draftLabel}</span> });
 
   if (typeof wordCount === 'number') {
     parts.push({ key: 'wc', node: <span>{wordCount.toLocaleString()} words</span> });

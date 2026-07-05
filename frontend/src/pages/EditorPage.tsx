@@ -72,6 +72,7 @@ import {
 import { useCharactersQuery } from '@/hooks/useCharacters';
 import {
   activeDraftIdOf,
+  draftDisplayLabel,
   isDraftConflictError,
   useDraftQuery,
   useDraftsQuery,
@@ -234,6 +235,7 @@ export function EditorPage(): JSX.Element {
     (selectedDraft !== null && selectedDraft.chapterId === activeChapterId
       ? selectedDraft.draftId
       : null) ?? activeDraftIdOf(draftsQuery.data);
+  const viewedDraftMeta = draftsQuery.data?.find((d) => d.id === viewedDraftId) ?? null;
   const draftQuery = useDraftQuery(viewedDraftId);
   const updateDraft = useUpdateDraftMutation();
 
@@ -809,6 +811,7 @@ export function EditorPage(): JSX.Element {
                     storyId={story.id}
                     storyTitle={story.title}
                     storyGenre={story.genre}
+                    draftLabel={viewedDraftMeta ? draftDisplayLabel(viewedDraftMeta) : null}
                     storyWordCount={totalWordCount}
                     chapterId={activeChapterId}
                     chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}

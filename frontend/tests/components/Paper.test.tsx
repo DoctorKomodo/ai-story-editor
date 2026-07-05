@@ -103,13 +103,13 @@ describe('Paper (F32)', () => {
     unmount();
   });
 
-  it('defaults the draft label to "Draft 1" when not provided', async () => {
+  it('omits the draft segment when draftLabel is not provided', async () => {
     const { unmount } = await renderAndGrab({
       storyTitle: 'Hollow Crown',
       storyWordCount: 100,
     });
 
-    expect(screen.getByTestId('paper-sub')).toHaveTextContent('Draft 1');
+    expect(screen.getByTestId('paper-sub')).not.toHaveTextContent('Draft');
 
     unmount();
   });

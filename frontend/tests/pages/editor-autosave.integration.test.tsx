@@ -776,6 +776,10 @@ describe('EditorPage draft-native corruption-class regressions (9wk.6 Task 3)', 
     });
     expect(screen.queryByTestId('chapter-conflict-banner')).toBeNull();
 
+    // D10: the Paper sub-row shows the VIEWED draft's display label — B has
+    // no custom label, so its positional label renders.
+    expect(screen.getByTestId('paper-sub')).toHaveTextContent('Draft B');
+
     expectAllBodyPatchesPreconditioned();
   }, 15000);
 
