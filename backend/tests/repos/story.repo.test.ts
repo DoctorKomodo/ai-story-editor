@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { resetDb } from '../helpers/db';
@@ -169,6 +170,39 @@ describe('[E9] story.repo — encrypt on write / decrypt on read', () => {
       const afterEdit = await storyRepo.contentUpdatedAtMax(s.id as string);
       expect(afterEdit.getTime()).toBeGreaterThan(beforeEdit.getTime());
       expect(afterEdit.getTime()).toBeGreaterThanOrEqual((edited?.updatedAt as Date).getTime());
+    });
+
+    it('[story-editor-wkw] bumps when a draft-only edit lands (body/summary live on Draft, not Chapter)', async () => {
+      const ctx = await makeUserContext();
+      const storyRepo = createStoryRepo(ctx.req);
+      const chapterRepo = createChapterRepo(ctx.req);
+      const draftRepo = createDraftRepo(ctx.req);
+
+      const s = await storyRepo.create({ title: 'Draft drift' });
+      const chapter = await chapterRepo.create({
+        storyId: s.id as string,
+        title: 'Ch1',
+        orderIndex: 0,
+      });
+
+      const beforeEdit = await storyRepo.contentUpdatedAtMax(s.id as string);
+
+      // Ensure a strictly later timestamp on the next write.
+      await new Promise((r) => setTimeout(r, 5));
+      const edited = await draftRepo.update(chapter.activeDraftId as string, {
+        bodyJson: {
+          type: 'doc',
+          content: [{ type: 'paragraph', content: [{ type: 'text', text: 'drifted body' }] }],
+        },
+      });
+
+      // A body edit touches ONLY the Draft row — if the subtree max skips
+      // Draft.updatedAt, import/plan reports "unchanged" for a story whose
+      // content actually moved.
+      const afterEdit = await storyRepo.contentUpdatedAtMax(s.id as string);
+      expect(afterEdit.getTime()).toBeGreaterThan(beforeEdit.getTime());
+      expect(edited).not.toBeNull();
+      expect(afterEdit.getTime()).toBeGreaterThanOrEqual((edited!.updatedAt as Date).getTime());
     });
 
     it('throws when the story is not owned by the caller', async () => {

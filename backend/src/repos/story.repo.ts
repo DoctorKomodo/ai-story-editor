@@ -113,8 +113,8 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
   }
 
   // Max `updatedAt` across the story row and its entire subtree (chapters,
-  // characters, outline items, chats, messages) — "the last time anything in
-  // this story changed." Timestamps only, no narrative column is read or
+  // drafts, characters, outline items, chats, messages) — "the last time
+  // anything in this story changed." Timestamps only, no narrative column is read or
   // decrypted. Messages use `createdAt` (append time) plus `updatedAt` when
   // the edit path has set it (null = never edited).
   async function contentUpdatedAtMax(storyId: string): Promise<Date> {
@@ -122,32 +122,42 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     const story = await client.story.findFirst({ where: { id: storyId, userId } });
     if (!story) throw new Error('story.repo: story not owned by caller');
 
-    const [chapterMax, characterMax, outlineMax, chatMax, messageMax] = await Promise.all([
-      client.chapter.aggregate({
-        where: { storyId, story: { userId } },
-        _max: { updatedAt: true },
-      }),
-      client.character.aggregate({
-        where: { storyId, story: { userId } },
-        _max: { updatedAt: true },
-      }),
-      client.outlineItem.aggregate({
-        where: { storyId, story: { userId } },
-        _max: { updatedAt: true },
-      }),
-      client.chat.aggregate({
-        where: { draft: { chapter: { storyId, story: { userId } } } },
-        _max: { updatedAt: true },
-      }),
-      client.message.aggregate({
-        where: { chat: { draft: { chapter: { storyId, story: { userId } } } } },
-        _max: { createdAt: true, updatedAt: true },
-      }),
-    ]);
+    const [chapterMax, draftMax, characterMax, outlineMax, chatMax, messageMax] = await Promise.all(
+      [
+        client.chapter.aggregate({
+          where: { storyId, story: { userId } },
+          _max: { updatedAt: true },
+        }),
+        // [story-editor-wkw] Body/summary edits land on Draft.updatedAt only —
+        // without this candidate a draft-only edit leaves the max unmoved and
+        // import/plan under-reports a conflict as "unchanged".
+        client.draft.aggregate({
+          where: { chapter: { storyId, story: { userId } } },
+          _max: { updatedAt: true },
+        }),
+        client.character.aggregate({
+          where: { storyId, story: { userId } },
+          _max: { updatedAt: true },
+        }),
+        client.outlineItem.aggregate({
+          where: { storyId, story: { userId } },
+          _max: { updatedAt: true },
+        }),
+        client.chat.aggregate({
+          where: { draft: { chapter: { storyId, story: { userId } } } },
+          _max: { updatedAt: true },
+        }),
+        client.message.aggregate({
+          where: { chat: { draft: { chapter: { storyId, story: { userId } } } } },
+          _max: { createdAt: true, updatedAt: true },
+        }),
+      ],
+    );
 
     const candidates = [
       story.updatedAt,
       chapterMax._max.updatedAt,
+      draftMax._max.updatedAt,
       characterMax._max.updatedAt,
       outlineMax._max.updatedAt,
       chatMax._max.updatedAt,
