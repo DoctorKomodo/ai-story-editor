@@ -7,7 +7,7 @@ import { chatMessagesQueryKey, type useSendChatMessageMutation } from '@/hooks/u
 
 export interface UseBannerRetryOptions {
   chatId: string | null;
-  chapterId: string | null;
+  draftId: string | null;
   selectedModelId: string | null;
   mutation: ReturnType<typeof useSendChatMessageMutation>;
   lastSendArgsRef: RefObject<ChatSendArgs | null>;
@@ -42,7 +42,7 @@ export interface UseBannerRetryResult {
  */
 export function useBannerRetry({
   chatId,
-  chapterId,
+  draftId,
   selectedModelId,
   mutation,
   lastSendArgsRef,
@@ -53,7 +53,7 @@ export function useBannerRetry({
 
   const onRetry = useCallback(async (): Promise<void> => {
     const last = lastSendArgsRef.current;
-    if (last === null || chatId === null || chapterId === null || selectedModelId === null) return;
+    if (last === null || chatId === null || draftId === null || selectedModelId === null) return;
     setIsDispatching(true);
     try {
       await qc.refetchQueries({ queryKey: chatMessagesQueryKey(chatId) });
@@ -63,7 +63,7 @@ export function useBannerRetry({
       if (trailing?.role === 'user') {
         await mutation.mutateAsync({
           chatId,
-          chapterId,
+          draftId,
           modelId: selectedModelId,
           retry: true,
         });
@@ -73,7 +73,7 @@ export function useBannerRetry({
     } finally {
       setIsDispatching(false);
     }
-  }, [chatId, chapterId, selectedModelId, mutation, qc, onSend, lastSendArgsRef]);
+  }, [chatId, draftId, selectedModelId, mutation, qc, onSend, lastSendArgsRef]);
 
   return { onRetry, isDispatching };
 }

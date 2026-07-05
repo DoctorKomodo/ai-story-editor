@@ -14,7 +14,7 @@ const meta: Meta<typeof ChatTab> = {
       </QueryClientProvider>
     ),
   ],
-  args: { chapterId: 'demo-chapter', editor: null },
+  args: { draftId: 'demo-draft', editor: null },
 };
 export default meta;
 type Story = StoryObj<typeof ChatTab>;

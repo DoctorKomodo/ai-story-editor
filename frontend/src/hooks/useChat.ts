@@ -36,20 +36,20 @@ export const chatMessagesQueryKey = (chatId: string): readonly [string, string, 
   ['chat', chatId, 'messages'] as const;
 
 /**
- * 3-element prefix key covering all kind variants for a given chapter.
+ * 3-element prefix key covering all kind variants for a given draft.
  * Use this (not `chatsQueryKey`) when invalidating after mutations so that
  * TanStack Query's prefix-match logic sweeps both `kind='ask'` and
  * `kind='scene'` cached queries.  `chatsQueryKey` (below) appends the kind
  * as a 4th slot and is only appropriate for registering individual queries.
  */
-export const chatsBaseQueryKey = (chapterId: string): readonly [string, string, string] =>
-  ['chapter', chapterId, 'chats'] as const;
+export const chatsBaseQueryKey = (draftId: string): readonly [string, string, string] =>
+  ['draft', draftId, 'chats'] as const;
 
 export const chatsQueryKey = (
-  chapterId: string,
+  draftId: string,
   kind?: ChatKind,
 ): readonly [string, string, string, string | undefined] =>
-  ['chapter', chapterId, 'chats', kind] as const;
+  ['draft', draftId, 'chats', kind] as const;
 
 export function useChatMessagesQuery(chatId: string | null): UseQueryResult<Message[], Error> {
   return useQuery({
@@ -63,27 +63,25 @@ export function useChatMessagesQuery(chatId: string | null): UseQueryResult<Mess
 }
 
 export function useChatsQuery(
-  chapterId: string | null,
+  draftId: string | null,
   opts?: { kind?: ChatKind },
 ): UseQueryResult<ChatSummary[], Error> {
   const kind = opts?.kind;
   return useQuery({
-    queryKey: chatsQueryKey(chapterId ?? '', kind),
+    queryKey: chatsQueryKey(draftId ?? '', kind),
     queryFn: async (): Promise<ChatSummary[]> => {
       const params = kind !== undefined ? `?kind=${encodeURIComponent(kind)}` : '';
-      const res = await api<unknown>(
-        `/chapters/${encodeURIComponent(chapterId ?? '')}/chats${params}`,
-      );
+      const res = await api<unknown>(`/drafts/${encodeURIComponent(draftId ?? '')}/chats${params}`);
       return chatsResponseSchema.parse(res).chats;
     },
-    enabled: chapterId !== null,
+    enabled: draftId !== null,
   });
 }
 
 // ---- chat mutations (F55) ----
 
 export interface CreateChatArgs {
-  chapterId: string;
+  draftId: string;
   title?: string;
   kind?: ChatKind;
 }
@@ -91,11 +89,11 @@ export interface CreateChatArgs {
 export function useCreateChatMutation(): UseMutationResult<Chat, Error, CreateChatArgs> {
   const qc = useQueryClient();
   return useMutation<Chat, Error, CreateChatArgs>({
-    mutationFn: async ({ chapterId, title, kind }) => {
+    mutationFn: async ({ draftId, title, kind }) => {
       const body: Record<string, unknown> = {};
       if (title !== undefined) body.title = title;
       if (kind !== undefined) body.kind = kind;
-      const res = await api<unknown>(`/chapters/${encodeURIComponent(chapterId)}/chats`, {
+      const res = await api<unknown>(`/drafts/${encodeURIComponent(draftId)}/chats`, {
         method: 'POST',
         body,
       });
@@ -103,17 +101,17 @@ export function useCreateChatMutation(): UseMutationResult<Chat, Error, CreateCh
     },
     onSuccess: (chat, vars) => {
       const summary: ChatSummary = { ...chat, messageCount: 0 };
-      const key = chatsQueryKey(vars.chapterId, vars.kind);
+      const key = chatsQueryKey(vars.draftId, vars.kind);
       qc.setQueryData<ChatSummary[]>(key, (prev) => [summary, ...(prev ?? [])]);
       // Invalidate by the 3-element prefix so ALL kind variants
       // (ask, scene, undefined) are swept — not just the undefined slot.
-      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(vars.chapterId) });
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(vars.draftId) });
     },
   });
 }
 
 export function useRenameChatMutation(
-  chapterId: string | null,
+  draftId: string | null,
   kind: ChatKind = 'ask',
 ): UseMutationResult<Chat, Error, { id: string; title: string }> {
   const qc = useQueryClient();
@@ -126,36 +124,36 @@ export function useRenameChatMutation(
       return chatResponseSchema.parse(res).chat;
     },
     onSuccess: (updated, vars) => {
-      if (chapterId === null) return;
-      const key = chatsQueryKey(chapterId, kind);
+      if (draftId === null) return;
+      const key = chatsQueryKey(draftId, kind);
       qc.setQueryData<ChatSummary[]>(key, (prev) =>
         (prev ?? []).map((c) => (c.id === vars.id ? { ...c, title: updated.title } : c)),
       );
-      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(draftId) });
     },
   });
 }
 
 export function useRemoveChatMutation(
-  chapterId: string | null,
+  draftId: string | null,
   kind: ChatKind = 'ask',
 ): UseMutationResult<void, Error, string> {
   const qc = useQueryClient();
   return useMutation<void, Error, string>({
     mutationFn: (id: string) => deleteChat(id),
     onSuccess: (_void, id) => {
-      if (chapterId === null) return;
-      const key = chatsQueryKey(chapterId, kind);
+      if (draftId === null) return;
+      const key = chatsQueryKey(draftId, kind);
       qc.setQueryData<ChatSummary[]>(key, (prev) => (prev ?? []).filter((c) => c.id !== id));
-      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(draftId) });
     },
   });
 }
 
 export interface SendChatMessageArgs {
   chatId: string;
-  /** The chapter this chat belongs to. Used by onSuccess to invalidate the chats list. */
-  chapterId: string;
+  /** The draft this chat belongs to. Used by onSuccess to invalidate the chats list. */
+  draftId: string;
   modelId: string;
   /** Message text. Required unless `retry` is true. */
   content?: string;
@@ -164,7 +162,7 @@ export interface SendChatMessageArgs {
   /** Replay from this specific user message (resend/regenerate). Drops everything after it. */
   fromMessageId?: string;
   /** The selection attached to this message. `attachment.chapterId` is the selection's source
-   *  chapter — in practice the same as the top-level `chapterId` but semantically distinct. */
+   *  chapter — an independent value from the top-level `draftId`, never conflate the two. */
   attachment?: { selectionText: string; chapterId: string };
   enableWebSearch?: boolean;
 }
@@ -275,8 +273,8 @@ export function useSendChatMessageMutation(): UseMutationResult<
       // message create, so the chats-list order has shifted. Match the
       // pattern used by useCreateChatMutation / useRenameChatMutation /
       // useRemoveChatMutation: invalidate via chatsBaseQueryKey so both
-      // kind='ask' and kind='scene' lists for the chapter are swept.
-      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(vars.chapterId) });
+      // kind='ask' and kind='scene' lists for the draft are swept.
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(vars.draftId) });
     },
     onSettled: (_void, _err, vars) => {
       // Safety net for any path that didn't clear in onSuccess (i.e. failed
@@ -299,7 +297,7 @@ export function useSendChatMessageMutation(): UseMutationResult<
 export interface EditMessageArgs {
   chatId: string;
   /** Needed so onSuccess can invalidate the chats list (edit bumps lastActivityAt). */
-  chapterId: string;
+  draftId: string;
   messageId: string;
   content: string;
 }
@@ -314,10 +312,10 @@ export function useEditMessageMutation(): UseMutationResult<Message, Error, Edit
       );
       return messageResponseSchema.parse(res).message;
     },
-    onSuccess: (_message, { chatId, chapterId }) => {
+    onSuccess: (_message, { chatId, draftId }) => {
       void qc.invalidateQueries({ queryKey: chatMessagesQueryKey(chatId) });
       // Edit bumps Chat.lastActivityAt — re-sort the session list, same as send.
-      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(chapterId) });
+      void qc.invalidateQueries({ queryKey: chatsBaseQueryKey(draftId) });
     },
   });
 }

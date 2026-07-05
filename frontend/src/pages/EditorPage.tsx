@@ -816,8 +816,8 @@ export function EditorPage(): JSX.Element {
         }
         chat={
           <ChatPanel
-            chatBody={<ChatTab chapterId={activeChapterId} editor={editor} />}
-            sceneBody={<SceneTab chapterId={activeChapterId} editor={editor} />}
+            chatBody={<ChatTab draftId={viewedDraftId} editor={editor} />}
+            sceneBody={<SceneTab draftId={viewedDraftId} editor={editor} />}
             onOpenModelPicker={() => {
               useSettingsModalStore.getState().openWith('models');
             }}

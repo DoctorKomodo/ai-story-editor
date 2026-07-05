@@ -55,7 +55,7 @@ describe('useEditMessageMutation', () => {
     await act(async () => {
       await result.current.mutateAsync({
         chatId: 'c1',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         messageId: 'm1',
         content: 'edited',
       });

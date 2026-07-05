@@ -6,7 +6,7 @@ import { useErrorStore } from '@/store/errors';
 
 export interface UseMessageActionsOptions {
   chatId: string | null;
-  chapterId: string | null;
+  draftId: string | null;
   modelId: string | null;
   /** Persisted messages in createdAt-asc order (same ordering the backend deletes from). */
   messages: Message[];
@@ -33,7 +33,7 @@ export interface UseMessageActionsResult {
 
 export function useMessageActions({
   chatId,
-  chapterId,
+  draftId,
   modelId,
   messages,
   sendMutation,
@@ -49,31 +49,31 @@ export function useMessageActions({
 
   const confirmEdit = useCallback(
     (id: string, content: string) => {
-      if (chatId === null || chapterId === null) return;
+      if (chatId === null || draftId === null) return;
       setEditingMessageId(null);
-      void editMutation.mutateAsync({ chatId, chapterId, messageId: id, content });
+      void editMutation.mutateAsync({ chatId, draftId, messageId: id, content });
     },
-    [chatId, chapterId, editMutation],
+    [chatId, draftId, editMutation],
   );
 
   // Fire a replay from the given USER-message anchor id.
   const fireReplay = useCallback(
     (anchorId: string) => {
       if (chatId === null) return;
-      const guard = checkChatSendGuards({ activeChapterId: chapterId, selectedModelId: modelId });
+      const guard = checkChatSendGuards({ activeChapterId: draftId, selectedModelId: modelId });
       if (guard) {
         useErrorStore.getState().push(guard);
         return;
       }
-      // chapterId and modelId are non-null after the guard passes
+      // draftId and modelId are non-null after the guard passes
       void sendMutation.mutateAsync({
         chatId,
-        chapterId: chapterId as string,
+        draftId: draftId as string,
         modelId: modelId as string,
         fromMessageId: anchorId,
       });
     },
-    [chatId, chapterId, modelId, sendMutation],
+    [chatId, draftId, modelId, sendMutation],
   );
 
   // count = messages strictly after the anchor (what deleteAllAfter removes).

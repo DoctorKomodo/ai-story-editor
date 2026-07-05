@@ -83,7 +83,7 @@ describe('useSendChatMessageMutation', () => {
     act(() => {
       p = result.current.mutateAsync({
         chatId: 'c1',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         content: 'hello',
         modelId: 'm1',
       });
@@ -120,7 +120,7 @@ describe('useSendChatMessageMutation', () => {
     act(() => {
       p = result.current.mutateAsync({
         chatId: 'c1',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         content: 'q',
         modelId: 'm1',
         attachment: { selectionText: 'sel', chapterId: 'ch1' },
@@ -150,7 +150,7 @@ describe('useSendChatMessageMutation', () => {
 
     await act(async () => {
       await result.current
-        .mutateAsync({ chatId: 'c1', chapterId: 'ch1', content: 'q', modelId: 'm1' })
+        .mutateAsync({ chatId: 'c1', draftId: 'ch1', content: 'q', modelId: 'm1' })
         .catch(() => {
           // expected — mutation throws on error frame
         });
@@ -187,7 +187,7 @@ describe('useSendChatMessageMutation', () => {
       await expect(
         result.current.mutateAsync({
           chatId: 'c1',
-          chapterId: 'ch1',
+          draftId: 'ch1',
           content: 'hi',
           modelId: 'm1',
         }),
@@ -222,7 +222,7 @@ describe('useSendChatMessageMutation', () => {
 
     const sendPromise = result.current.mutateAsync({
       chatId: 'c1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       content: 'hello',
       modelId: 'm1',
     });
@@ -266,7 +266,7 @@ describe('useSendChatMessageMutation', () => {
     act(() => {
       p = result.current.mutateAsync({
         chatId: 'c1',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         content: 'q',
         modelId: 'm1',
       });
@@ -323,7 +323,7 @@ describe('useSendChatMessageMutation', () => {
 
     const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
     act(() => {
-      result.current.mutate({ chatId: 'c1', chapterId: 'ch1', modelId: 'm', fromMessageId: 'u1' });
+      result.current.mutate({ chatId: 'c1', draftId: 'ch1', modelId: 'm', fromMessageId: 'u1' });
     });
 
     // onMutate ran synchronously: everything after u1 is dropped, u1 kept.
@@ -342,7 +342,7 @@ describe('useSendChatMessageMutation', () => {
     const { result } = renderHook(() => useSendChatMessageMutation(), { wrapper });
     await act(async () => {
       await result.current
-        .mutateAsync({ chatId: 'c1', chapterId: 'ch1', modelId: 'm', fromMessageId: 'u1' })
+        .mutateAsync({ chatId: 'c1', draftId: 'ch1', modelId: 'm', fromMessageId: 'u1' })
         .catch(() => {});
     });
 
@@ -372,7 +372,7 @@ describe('useSendChatMessageMutation', () => {
     act(() => {
       void result.current.mutateAsync({
         chatId: 'c1',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         content: 'q',
         modelId: 'm1',
       });
@@ -408,15 +408,15 @@ describe('useSendChatMessageMutation', () => {
 // ── useSendChatMessageMutation — invalidates chats list ───────────────────────
 
 describe('useSendChatMessageMutation — invalidates chats list (story-editor-loj)', () => {
-  it('invalidates the chats list cache for the chapter after a successful send', async () => {
+  it('invalidates the chats list cache for the draft after a successful send', async () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
-    // Seed the chats-list cache for chapter-1 with a single chat.
-    qc.setQueryData(chatsBaseQueryKey('chapter-1'), [
+    // Seed the chats-list cache for draft-1 with a single chat.
+    qc.setQueryData(chatsBaseQueryKey('draft-1'), [
       {
         id: 'chat-1',
-        draftId: 'chapter-1',
+        draftId: 'draft-1',
         title: 't',
         kind: 'ask',
         createdAt: '2026-05-01T00:00:00Z',
@@ -447,7 +447,7 @@ describe('useSendChatMessageMutation — invalidates chats list (story-editor-lo
     await act(async () => {
       await result.current.mutateAsync({
         chatId: 'chat-1',
-        chapterId: 'chapter-1',
+        draftId: 'draft-1',
         content: 'hi',
         modelId: 'venice-uncensored-1b',
       });
@@ -458,7 +458,7 @@ describe('useSendChatMessageMutation — invalidates chats list (story-editor-lo
         const arg = args[0];
         if (!arg || typeof arg !== 'object' || !('queryKey' in arg)) return false;
         const key = (arg as { queryKey?: readonly unknown[] }).queryKey;
-        const expected = chatsBaseQueryKey('chapter-1');
+        const expected = chatsBaseQueryKey('draft-1');
         return (
           Array.isArray(key) &&
           key.length >= expected.length &&
@@ -475,7 +475,7 @@ describe('useSendChatMessageMutation — invalidates chats list (story-editor-lo
 describe('useCreateChatMutation cache invalidation', () => {
   type FetchMock = ReturnType<typeof vi.fn>;
   let fetchMock: FetchMock;
-  const CHAPTER_ID = 'ch-inv-1';
+  const DRAFT_ID = 'ch-inv-1';
 
   function jsonResponse(status: number, body: unknown): Response {
     return new Response(JSON.stringify(body), {
@@ -496,10 +496,10 @@ describe('useCreateChatMutation cache invalidation', () => {
   });
 
   it('invalidates kind-filtered cache entries after createChat so all kind variants are refreshed', async () => {
-    // Arrange: POST /chapters/:id/chats returns a new chat row.
+    // Arrange: POST /drafts/:id/chats returns a new chat row.
     const newChat = {
       id: 'chat-new',
-      draftId: CHAPTER_ID,
+      draftId: DRAFT_ID,
       title: null,
       kind: 'scene' as const,
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -514,7 +514,7 @@ describe('useCreateChatMutation cache invalidation', () => {
 
     // Pre-populate the kind='scene' query with a stale-time so TanStack
     // Query treats it as fresh before the mutation fires.
-    const sceneKey = chatsQueryKey(CHAPTER_ID, 'scene');
+    const sceneKey = chatsQueryKey(DRAFT_ID, 'scene');
     qc.setQueryData(sceneKey, []);
 
     // Verify the scene query starts fresh (not stale).
@@ -528,24 +528,24 @@ describe('useCreateChatMutation cache invalidation', () => {
     const { result } = renderHook(() => useCreateChatMutation(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ chapterId: CHAPTER_ID, kind: 'scene' });
+      await result.current.mutateAsync({ draftId: DRAFT_ID, kind: 'scene' });
     });
 
     // After the mutation succeeds, the kind='scene' query must be marked
     // stale (invalidated) by the 3-element prefix invalidation.  Previously,
-    // invalidating with `chatsQueryKey(chapterId)` (4 elements, undefined kind)
-    // would NOT have matched the 4-element key `['chapter', id, 'chats', 'scene']`.
+    // invalidating with `chatsQueryKey(draftId)` (4 elements, undefined kind)
+    // would NOT have matched the 4-element key `['draft', id, 'chats', 'scene']`.
     const stateAfter = qc.getQueryState(sceneKey);
     expect(stateAfter?.isInvalidated).toBe(true);
 
     // The 3-element base key is what chatsBaseQueryKey returns — confirm shape.
-    expect(chatsBaseQueryKey(CHAPTER_ID)).toEqual(['chapter', CHAPTER_ID, 'chats']);
+    expect(chatsBaseQueryKey(DRAFT_ID)).toEqual(['draft', DRAFT_ID, 'chats']);
   });
 
   it('useCreateChatMutation optimistically prepends to cache', async () => {
     const newChat = {
       id: 'chat-new',
-      draftId: CHAPTER_ID,
+      draftId: DRAFT_ID,
       title: null,
       kind: 'ask' as const,
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -562,10 +562,10 @@ describe('useCreateChatMutation cache invalidation', () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
-    const askKey = chatsQueryKey(CHAPTER_ID, 'ask');
+    const askKey = chatsQueryKey(DRAFT_ID, 'ask');
     const existingChat: ChatSummary = {
       id: 'chat-old',
-      draftId: CHAPTER_ID,
+      draftId: DRAFT_ID,
       title: 'Old',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -581,7 +581,7 @@ describe('useCreateChatMutation cache invalidation', () => {
     const { result } = renderHook(() => useCreateChatMutation(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync({ chapterId: CHAPTER_ID, kind: 'ask' });
+      await result.current.mutateAsync({ draftId: DRAFT_ID, kind: 'ask' });
     });
 
     const cached = qc.getQueryData<ChatSummary[]>(askKey);
@@ -597,7 +597,7 @@ describe('useCreateChatMutation cache invalidation', () => {
 describe('useRenameChatMutation', () => {
   type FetchMock = ReturnType<typeof vi.fn>;
   let fetchMock: FetchMock;
-  const CHAPTER_ID = 'ch-rename-1';
+  const DRAFT_ID = 'ch-rename-1';
 
   function jsonResponse(status: number, body: unknown): Response {
     return new Response(JSON.stringify(body), {
@@ -621,7 +621,7 @@ describe('useRenameChatMutation', () => {
     const serverNormalisedTitle = 'Server-Normalized Title';
     const updatedChat: Chat = {
       id: 'chat-1',
-      draftId: CHAPTER_ID,
+      draftId: DRAFT_ID,
       title: serverNormalisedTitle,
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -638,10 +638,10 @@ describe('useRenameChatMutation', () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
-    const askKey = chatsQueryKey(CHAPTER_ID, 'ask');
+    const askKey = chatsQueryKey(DRAFT_ID, 'ask');
     const existingChat: ChatSummary = {
       id: 'chat-1',
-      draftId: CHAPTER_ID,
+      draftId: DRAFT_ID,
       title: 'Original Title',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -654,7 +654,7 @@ describe('useRenameChatMutation', () => {
     const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
-    const { result } = renderHook(() => useRenameChatMutation(CHAPTER_ID, 'ask'), { wrapper });
+    const { result } = renderHook(() => useRenameChatMutation(DRAFT_ID, 'ask'), { wrapper });
 
     await act(async () => {
       await result.current.mutateAsync({ id: 'chat-1', title: 'client title' });
@@ -672,7 +672,7 @@ describe('useRenameChatMutation', () => {
 describe('useRemoveChatMutation', () => {
   type FetchMock = ReturnType<typeof vi.fn>;
   let fetchMock: FetchMock;
-  const CHAPTER_ID = 'ch-remove-1';
+  const DRAFT_ID = 'ch-remove-1';
 
   beforeEach(() => {
     resetApiClientForTests();
@@ -696,10 +696,10 @@ describe('useRemoveChatMutation', () => {
     const qc = new QueryClient({
       defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
     });
-    const askKey = chatsQueryKey(CHAPTER_ID, 'ask');
+    const askKey = chatsQueryKey(DRAFT_ID, 'ask');
     const chatToKeep: ChatSummary = {
       id: 'chat-keep',
-      draftId: CHAPTER_ID,
+      draftId: DRAFT_ID,
       title: 'Keep Me',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -709,7 +709,7 @@ describe('useRemoveChatMutation', () => {
     };
     const chatToDelete: ChatSummary = {
       id: 'chat-delete',
-      draftId: CHAPTER_ID,
+      draftId: DRAFT_ID,
       title: 'Delete Me',
       kind: 'ask',
       createdAt: '2026-01-01T00:00:00.000Z',
@@ -722,7 +722,7 @@ describe('useRemoveChatMutation', () => {
     const wrapper = ({ children }: { children: ReactNode }): JSX.Element => (
       <QueryClientProvider client={qc}>{children}</QueryClientProvider>
     );
-    const { result } = renderHook(() => useRemoveChatMutation(CHAPTER_ID, 'ask'), { wrapper });
+    const { result } = renderHook(() => useRemoveChatMutation(DRAFT_ID, 'ask'), { wrapper });
 
     await act(async () => {
       await result.current.mutateAsync('chat-delete');
@@ -738,7 +738,7 @@ describe('useRemoveChatMutation', () => {
 // ── useChat schema drift ──────────────────────────────────────────────────────
 
 describe('useChat schema drift', () => {
-  const CHAPTER_ID = 'ch-drift-1';
+  const DRAFT_ID = 'ch-drift-1';
 
   function jsonResponse(status: number, body: unknown): Response {
     return new Response(JSON.stringify(body), {
@@ -749,7 +749,7 @@ describe('useChat schema drift', () => {
 
   const validChat = {
     id: 'cm0chat00000001',
-    draftId: CHAPTER_ID,
+    draftId: DRAFT_ID,
     title: 'First-draft brainstorm',
     kind: 'ask' as const,
     createdAt: '2026-05-15T00:00:00.000Z',
@@ -780,9 +780,7 @@ describe('useChat schema drift', () => {
     );
     const { result } = renderHook(() => useCreateChatMutation(), { wrapper });
 
-    await expect(
-      result.current.mutateAsync({ chapterId: CHAPTER_ID, kind: 'ask' }),
-    ).rejects.toThrow();
+    await expect(result.current.mutateAsync({ draftId: DRAFT_ID, kind: 'ask' })).rejects.toThrow();
   });
 });
 
