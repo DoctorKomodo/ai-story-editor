@@ -73,26 +73,16 @@ model Story {
 }
 
 model Chapter {
-  id                    String    @id @default(cuid())
-  orderIndex            Int
-  wordCount             Int       @default(0)
-  // [E5] ciphertext triples — now the SOLE source of truth for narrative
-  // fields. `bodyCiphertext` encodes the serialised TipTap JSON tree.
-  // `wordCount` is derived from the tree at save time (before encryption) so
-  // UI progress calcs keep working without decryption. Plaintext `title`,
-  // `content`, `bodyJson` were dropped in [E11].
-  titleCiphertext       String?
-  titleIv               String?
-  titleAuthTag          String?
-  bodyCiphertext        String?
-  bodyIv                String?
-  bodyAuthTag           String?
-  summaryJsonCiphertext String?
-  summaryJsonIv         String?
-  summaryJsonAuthTag    String?
-  summaryJsonUpdatedAt  DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id         String   @id @default(cuid())
+  orderIndex Int
+  // [9wk.5] body/summary/wordCount live on the active Draft — the active
+  // draft IS the chapter downstream (see Draft model). `titleCiphertext` is
+  // the only remaining narrative ciphertext triple on this model.
+  titleCiphertext String?
+  titleIv         String?
+  titleAuthTag    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   storyId String
   story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)

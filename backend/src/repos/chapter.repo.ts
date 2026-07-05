@@ -98,26 +98,16 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     const userId = resolveUserId(req, 'chapter.repo');
     await ensureStoryOwned(client, input.storyId, userId, 'chapter.repo');
 
-    // `null` and `undefined` both mean "no body": persist all-null body
-    // triples rather than encrypting the literal string "null".
-    const bodyPlaintext =
-      input.bodyJson === undefined || input.bodyJson === null
-        ? null
-        : JSON.stringify(input.bodyJson);
-
-    // [9wk.3] Chapter + initial draft + active pointer in ONE transaction:
+    // [9wk.5] Chapter + initial draft + active pointer in ONE transaction:
     // the "every chapter has exactly one active draft" invariant (spec §3/§6)
-    // must never be observable as violated. The draft re-encrypts the same
-    // plaintext under the same DEK (fresh IV — ciphertexts differ; fine).
+    // must never be observable as violated. draft.repo owns the body
+    // stringify + encryption; the chapter row carries structural fields only.
     const row = await client.$transaction(async (tx) => {
       const chapterRow = await tx.chapter.create({
         data: {
           storyId: input.storyId,
           orderIndex: input.orderIndex,
-          wordCount: input.wordCount ?? 0,
-          // Post-[E11]: narrative content is ciphertext-only.
           ...writeEncrypted(req, 'title', input.title),
-          ...writeEncrypted(req, 'body', bodyPlaintext),
         },
       });
       // Same tx-client cast pattern as import.service.ts. draft.repo owns

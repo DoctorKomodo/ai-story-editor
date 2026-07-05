@@ -5,7 +5,7 @@ import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { resetDb } from '../helpers/db';
 import { prisma } from '../setup';
-import { makeUserContext, rawCiphertextMustNotEqual } from './_req';
+import { makeUserContext } from './_req';
 
 describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
   beforeEach(resetDb);
@@ -36,8 +36,6 @@ describe('[E9] chapter.repo — encrypt on write / decrypt on read', () => {
     // Ciphertext present in the DB.
     const raw = await prisma.chapter.findUniqueOrThrow({ where: { id: created.id as string } });
     expect(raw.titleCiphertext).toBeTruthy();
-    expect(raw.bodyCiphertext).toBeTruthy();
-    rawCiphertextMustNotEqual(raw.bodyCiphertext!, JSON.stringify(body));
   });
 
   it('findById enforces ownership via nested story.userId', async () => {

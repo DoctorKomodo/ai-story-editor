@@ -29,23 +29,10 @@ describe('Chapter model', () => {
       data: { orderIndex: 0, storyId: story.id },
     });
     expect(chapter.id).toMatch(/^c[a-z0-9]+$/);
-    expect(chapter.wordCount).toBe(0);
     expect(chapter.orderIndex).toBe(0);
     expect(chapter.storyId).toBe(story.id);
     expect(chapter.createdAt).toBeInstanceOf(Date);
     expect(chapter.updatedAt).toBeInstanceOf(Date);
-  });
-
-  it('stores wordCount as plaintext (derived from bodyJson before encryption)', async () => {
-    const story = await makeStory('ch-b@example.com');
-    const chapter = await prisma.chapter.create({
-      data: {
-        orderIndex: 1,
-        wordCount: 9,
-        storyId: story.id,
-      },
-    });
-    expect(chapter.wordCount).toBe(9);
   });
 
   it('orders chapters by orderIndex within a story', async () => {
