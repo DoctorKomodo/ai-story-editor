@@ -11,9 +11,10 @@ export interface UseChapterDraftArgs {
   userId: string | null;
   storyId: string | null;
   chapterId: string | null;
-  /** `chapterQuery.data?.updatedAt ?? null`. */
+  draftId: string | null;
+  /** draftQuery.data?.updatedAt ?? null. */
   serverUpdatedAt: string | null;
-  /** `chapterQuery.data !== undefined`. */
+  /** draftQuery.data !== undefined. */
   serverLoaded: boolean;
 }
 
@@ -48,14 +49,21 @@ export function useChapterDraft(args: UseChapterDraftArgs): UseChapterDraftResul
   }, [args]);
 
   const persistDraft = useCallback((bodyJson: unknown) => {
-    const { userId, storyId, chapterId, serverUpdatedAt } = argsRef.current;
-    if (userId === null || storyId === null || chapterId === null || serverUpdatedAt === null) {
+    const { userId, storyId, chapterId, draftId, serverUpdatedAt } = argsRef.current;
+    if (
+      userId === null ||
+      storyId === null ||
+      chapterId === null ||
+      draftId === null ||
+      serverUpdatedAt === null
+    ) {
       return;
     }
     void putDraft({
       userId,
       storyId,
       chapterId,
+      draftId,
       bodyJson,
       baseUpdatedAt: serverUpdatedAt,
       savedAt: Date.now(),
@@ -63,9 +71,9 @@ export function useChapterDraft(args: UseChapterDraftArgs): UseChapterDraftResul
   }, []);
 
   const clearDraft = useCallback(() => {
-    const { userId, chapterId } = argsRef.current;
-    if (userId === null || chapterId === null) return;
-    void deleteDraft(userId, chapterId);
+    const { userId, chapterId, draftId } = argsRef.current;
+    if (userId === null || chapterId === null || draftId === null) return;
+    void deleteDraft(userId, chapterId, draftId);
   }, []);
 
   const acceptDraft = useCallback((): ChapterDraft | null => {
@@ -75,38 +83,38 @@ export function useChapterDraft(args: UseChapterDraftArgs): UseChapterDraftResul
 
   const discardDraft = useCallback(() => {
     setPendingDraft(null);
-    const { userId, chapterId } = argsRef.current;
-    if (userId === null || chapterId === null) return;
-    void deleteDraft(userId, chapterId);
+    const { userId, chapterId, draftId } = argsRef.current;
+    if (userId === null || chapterId === null || draftId === null) return;
+    void deleteDraft(userId, chapterId, draftId);
   }, []);
 
-  const { userId, chapterId, serverLoaded } = args;
+  const { userId, chapterId, draftId, serverLoaded } = args;
 
-  // Guards a late IDB resolve landing after the chapter has already switched
-  // again — same pattern as EditorPage's `seededForChapterIdRef`.
-  const currentChapterKeyRef = useRef<string | null>(null);
+  // Guards a late IDB resolve landing after the draft has already switched
+  // again — same pattern as EditorPage's `seededForDraftIdRef`.
+  const currentDraftKeyRef = useRef<string | null>(null);
   useEffect(() => {
     setPendingDraft(null);
-    if (userId === null || chapterId === null || !serverLoaded) return;
+    if (userId === null || chapterId === null || draftId === null || !serverLoaded) return;
 
-    const key = `${userId}:${chapterId}`;
-    currentChapterKeyRef.current = key;
+    const key = `${userId}:${chapterId}:${draftId}`;
+    currentDraftKeyRef.current = key;
 
     void (async () => {
-      const draft = await getDraft(userId, chapterId);
-      if (currentChapterKeyRef.current !== key) return;
+      const draft = await getDraft(userId, chapterId, draftId);
+      if (currentDraftKeyRef.current !== key) return;
       if (draft === null) return;
       const decision = resolveDraftDecision(draft, argsRef.current.serverUpdatedAt ?? '');
       if (decision === 'offer') {
         setPendingDraft(draft);
       } else {
-        void deleteDraft(userId, chapterId);
+        void deleteDraft(userId, chapterId, draftId);
       }
     })();
     // serverUpdatedAt is read fresh via argsRef inside the async callback —
     // including it here would re-run the lookup on every save, not just on
-    // chapter switch.
-  }, [userId, chapterId, serverLoaded]);
+    // draft switch.
+  }, [userId, chapterId, draftId, serverLoaded]);
 
   return { pendingDraft, persistDraft, clearDraft, acceptDraft, discardDraft };
 }

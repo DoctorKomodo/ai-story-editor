@@ -5,8 +5,8 @@
  * because the client never holds it. This is a deliberate, user-approved
  * weakening of the at-rest story for a bounded window: drafts are transient
  * (deleted on every confirmed save; stale drafts discarded on load), one per
- * `(userId, chapterId)`, and scoped to the browser profile. See the plan's
- * "Design decisions" §1 for the accepted threat model.
+ * `(userId, chapterId, draftId)`, and scoped to the browser profile. See the
+ * plan's "Design decisions" §1 for the accepted threat model.
  *
  * All functions swallow-and-warn on IndexedDB unavailability (e.g. private-
  * mode Firefox) — draft persistence silently degrades to a no-op; autosave
@@ -16,9 +16,10 @@
 export interface ChapterDraft {
   userId: string;
   chapterId: string;
+  draftId: string;
   storyId: string;
   bodyJson: unknown;
-  /** Server `chapter.updatedAt` (ISO) the edit was made against. */
+  /** Server draft.updatedAt (ISO) the edit was made against. */
   baseUpdatedAt: string;
   /** `Date.now()` of the local persist. */
   savedAt: number;
@@ -27,7 +28,7 @@ export interface ChapterDraft {
 export type DraftDecision = 'offer' | 'discard';
 
 const DB_NAME = 'inkwell-drafts';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_NAME = 'chapterDrafts';
 
 let dbPromise: Promise<IDBDatabase> | null = null;
@@ -38,9 +39,15 @@ function openDb(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = () => {
       const db = req.result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: ['userId', 'chapterId'] });
+      // [9wk.6] v1→v2: keyPath gained draftId. keyPath is immutable, so the
+      // store is dropped and recreated — v1 rows' baseUpdatedAt held the
+      // CHAPTER's updatedAt, which can never equal a draft's updatedAt, so
+      // every old row would fail resolveDraftDecision anyway. Nothing of
+      // value is lost.
+      if (db.objectStoreNames.contains(STORE_NAME)) {
+        db.deleteObjectStore(STORE_NAME);
       }
+      db.createObjectStore(STORE_NAME, { keyPath: ['userId', 'chapterId', 'draftId'] });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -62,12 +69,16 @@ export async function putDraft(draft: ChapterDraft): Promise<void> {
   }
 }
 
-export async function getDraft(userId: string, chapterId: string): Promise<ChapterDraft | null> {
+export async function getDraft(
+  userId: string,
+  chapterId: string,
+  draftId: string,
+): Promise<ChapterDraft | null> {
   try {
     const db = await openDb();
     return await new Promise<ChapterDraft | null>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readonly');
-      const req = tx.objectStore(STORE_NAME).get([userId, chapterId]);
+      const req = tx.objectStore(STORE_NAME).get([userId, chapterId, draftId]);
       req.onsuccess = () => resolve((req.result as ChapterDraft | undefined) ?? null);
       req.onerror = () => reject(req.error);
     });
@@ -77,12 +88,16 @@ export async function getDraft(userId: string, chapterId: string): Promise<Chapt
   }
 }
 
-export async function deleteDraft(userId: string, chapterId: string): Promise<void> {
+export async function deleteDraft(
+  userId: string,
+  chapterId: string,
+  draftId: string,
+): Promise<void> {
   try {
     const db = await openDb();
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE_NAME, 'readwrite');
-      tx.objectStore(STORE_NAME).delete([userId, chapterId]);
+      tx.objectStore(STORE_NAME).delete([userId, chapterId, draftId]);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

@@ -29,9 +29,9 @@ describe('useUnloadFlush', () => {
 
   it('fires a keepalive PATCH with credentials on pagehide when a payload is pending', () => {
     const pending: UnloadFlushArgs = {
-      storyId: 's1',
-      chapterId: 'c1',
+      draftId: 'draft-a',
       bodyJson: { type: 'doc' },
+      expectedUpdatedAt: '2026-07-02T00:00:00.000Z',
     };
     renderHook(() => useUnloadFlush(() => pending));
 
@@ -39,10 +39,43 @@ describe('useUnloadFlush', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(url).toContain('/stories/s1/chapters/c1');
+    expect(url).toContain('/drafts/draft-a');
     expect(init.method).toBe('PATCH');
     expect(init.keepalive).toBe(true);
     expect(init.credentials).toBe('include');
+  });
+
+  it('carries bodyJson + expectedUpdatedAt in the PATCH body', () => {
+    const pending: UnloadFlushArgs = {
+      draftId: 'draft-a',
+      bodyJson: { type: 'doc', content: [{ type: 'text', text: 'hi' }] },
+      expectedUpdatedAt: '2026-07-02T00:00:00.000Z',
+    };
+    renderHook(() => useUnloadFlush(() => pending));
+
+    firePagehide();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({
+      bodyJson: { type: 'doc', content: [{ type: 'text', text: 'hi' }] },
+      expectedUpdatedAt: '2026-07-02T00:00:00.000Z',
+    });
+  });
+
+  it('omits expectedUpdatedAt from the PATCH body when null', () => {
+    const pending: UnloadFlushArgs = {
+      draftId: 'draft-a',
+      bodyJson: { type: 'doc' },
+      expectedUpdatedAt: null,
+    };
+    renderHook(() => useUnloadFlush(() => pending));
+
+    firePagehide();
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    const body = JSON.parse(init.body as string);
+    expect(body).toEqual({ bodyJson: { type: 'doc' } });
+    expect('expectedUpdatedAt' in body).toBe(false);
   });
 
   it('does nothing when getPending returns null', () => {
@@ -57,9 +90,9 @@ describe('useUnloadFlush', () => {
   it('skips the network flush when the body exceeds KEEPALIVE_MAX_BYTES', () => {
     const bigText = 'x'.repeat(KEEPALIVE_MAX_BYTES + 1000);
     const pending: UnloadFlushArgs = {
-      storyId: 's1',
-      chapterId: 'c1',
+      draftId: 'draft-a',
       bodyJson: { type: 'doc', content: bigText },
+      expectedUpdatedAt: null,
     };
     renderHook(() => useUnloadFlush(() => pending));
 
@@ -70,9 +103,9 @@ describe('useUnloadFlush', () => {
 
   it('dedupes visibilitychange-hidden followed by pagehide (single fetch)', () => {
     const pending: UnloadFlushArgs = {
-      storyId: 's1',
-      chapterId: 'c1',
+      draftId: 'draft-a',
       bodyJson: { type: 'doc' },
+      expectedUpdatedAt: null,
     };
     renderHook(() => useUnloadFlush(() => pending));
 
@@ -84,9 +117,9 @@ describe('useUnloadFlush', () => {
 
   it('removes listeners on unmount', () => {
     const pending: UnloadFlushArgs = {
-      storyId: 's1',
-      chapterId: 'c1',
+      draftId: 'draft-a',
       bodyJson: { type: 'doc' },
+      expectedUpdatedAt: null,
     };
     const { unmount } = renderHook(() => useUnloadFlush(() => pending));
     unmount();

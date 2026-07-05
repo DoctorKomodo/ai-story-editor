@@ -2,9 +2,11 @@ import { useEffect, useRef } from 'react';
 import { apiKeepalivePatch } from '@/lib/api';
 
 export interface UnloadFlushArgs {
-  storyId: string;
-  chapterId: string;
+  draftId: string;
   bodyJson: unknown;
+  /** The viewed draft's last-seen updatedAt — the flush is preconditioned so a
+   * stale buffer can only no-op (409 unobserved), never clobber. */
+  expectedUpdatedAt: string | null;
 }
 
 /**
@@ -21,9 +23,9 @@ export interface UnloadFlushArgs {
  *
  * The keepalive response is never observed — if the page survives (tab
  * re-shown), the normal debounce/retry re-PATCHes the same body. That PATCH
- * is idempotent; after Task 3 it carries `expectedUpdatedAt`, so a keepalive
- * flush that landed makes the follow-up 409 — a rare, acceptable
- * self-conflict the Task 3 banner handles like any other conflict.
+ * is idempotent; it carries `expectedUpdatedAt` against the DRAFT's
+ * updatedAt, so a keepalive flush that landed makes the follow-up 409 — a
+ * rare, acceptable self-conflict the conflict banner handles like any other.
  */
 export function useUnloadFlush(getPending: () => UnloadFlushArgs | null): void {
   const getPendingRef = useRef(getPending);
@@ -38,10 +40,15 @@ export function useUnloadFlush(getPending: () => UnloadFlushArgs | null): void {
       const pending = getPendingRef.current();
       if (pending === null) return;
 
-      const serialized = JSON.stringify({ bodyJson: pending.bodyJson });
+      const serialized = JSON.stringify({
+        bodyJson: pending.bodyJson,
+        ...(pending.expectedUpdatedAt !== null
+          ? { expectedUpdatedAt: pending.expectedUpdatedAt }
+          : {}),
+      });
       if (lastFlushedBodyRef.current === serialized) return;
 
-      const path = `/stories/${encodeURIComponent(pending.storyId)}/chapters/${encodeURIComponent(pending.chapterId)}`;
+      const path = `/drafts/${encodeURIComponent(pending.draftId)}`;
       const sent = apiKeepalivePatch(path, serialized);
       if (sent) lastFlushedBodyRef.current = serialized;
     };
