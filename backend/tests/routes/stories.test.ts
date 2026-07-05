@@ -14,6 +14,7 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { app } from '../../src/index';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { attachDekToRequest } from '../../src/services/content-crypto.service';
 import { _resetSessionStore, getSession } from '../../src/services/session-store';
@@ -171,7 +172,7 @@ describe('Stories routes [B1]', () => {
 
     const storyId = storyWithChapters.id as string;
 
-    await createChapterRepo(req).create({
+    const ch1 = await createChapterRepo(req).create({
       storyId,
       title: 'Ch 1',
       orderIndex: 0,
@@ -190,6 +191,17 @@ describe('Stories routes [B1]', () => {
       wordCount: 75,
     });
 
+    // [9wk.5] totals must follow the ACTIVE draft, not the create-time value:
+    // give Ch 1 a second draft with a different word count and activate it.
+    const alt = await createDraftRepo(req).create({
+      chapterId: ch1.id as string,
+      // bodyJson deliberately omitted (optional) — only wordCount feeds the
+      // aggregate under test; the file has no TipTap-doc helper to borrow.
+      wordCount: 999,
+      orderIndex: 1, // the mint sits at 0
+    });
+    await createDraftRepo(req).setActive(ch1.id as string, alt.id);
+
     const res = await agent.get('/api/stories');
 
     expect(res.status).toBe(200);
@@ -198,7 +210,7 @@ describe('Stories routes [B1]', () => {
     const full = res.body.stories.find((s: { id: string }) => s.id === storyId);
     expect(full).toBeDefined();
     expect(full.chapterCount).toBe(3);
-    expect(full.totalWordCount).toBe(425);
+    expect(full.totalWordCount).toBe(999 + 250 + 75);
 
     const empty = res.body.stories.find((s: { id: string }) => s.id === (emptyStory.id as string));
     expect(empty).toBeDefined();

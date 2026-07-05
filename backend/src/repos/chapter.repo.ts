@@ -351,17 +351,27 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     const out = new Map<string, { chapterCount: number; totalWordCount: number }>();
     if (storyIds.length === 0) return out;
     const userId = resolveUserId(req, 'chapter.repo');
-    const rows = await client.chapter.groupBy({
-      by: ['storyId'],
+    // [9wk.5] Word totals follow the ACTIVE draft (Chapter.wordCount is
+    // dropped by this step's contract migration). One owner-scoped query +
+    // reduce; zero-chapter stories get no entry, matching the old groupBy —
+    // the route's `?? 0` defaults cover them.
+    const rows = await client.chapter.findMany({
       where: { storyId: { in: storyIds }, story: { userId } },
-      _count: { _all: true },
-      _sum: { wordCount: true },
+      select: { storyId: true, activeDraft: { select: { wordCount: true } } },
     });
     for (const r of rows) {
-      out.set(r.storyId, {
-        chapterCount: r._count._all,
-        totalWordCount: r._sum.wordCount ?? 0,
-      });
+      if (r.activeDraft === null) {
+        // Stricter than the old groupBy (which silently summed the dormant
+        // column): consistent with shape()/shapeMeta()'s invariant throw. All
+        // fixtures reaching this path mint or explicitly wire a draft
+        // (verified: ownership.middleware / delete-account raw seeds build the
+        // triangle), so no test relies on tolerating a draftless chapter.
+        throw new Error('chapter.repo: chapter has no active draft (invariant violation)');
+      }
+      const agg = out.get(r.storyId) ?? { chapterCount: 0, totalWordCount: 0 };
+      agg.chapterCount += 1;
+      agg.totalWordCount += r.activeDraft.wordCount;
+      out.set(r.storyId, agg);
     }
     return out;
   }

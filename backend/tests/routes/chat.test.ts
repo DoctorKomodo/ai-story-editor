@@ -923,6 +923,89 @@ describe('POST /api/chats/:chatId/messages — [pcs] previous-chapter summaries'
       ?.content;
     expect(systemMessage).not.toContain('<previous_chapters>');
   });
+
+  it('[9wk.5] a summary on a NON-active draft of a prior chapter does not enter <previous_chapters>', async () => {
+    // Mirrors setupTwoChaptersWithChat's wiring, but instead of writing the
+    // prior chapter's summary onto its ACTIVE draft (via draftRepo.update),
+    // mints a second, non-active draft carrying the summary — the active
+    // draft is left unsummarised.
+    const { agent, sessionId } = await registerAndLogin({ username: 'pcs-chat-u3' });
+    const req = makeFakeReq(sessionId);
+
+    const story = await createStoryRepo(req).create({ title: 'T', worldNotes: null });
+    const storyId = story.id as string;
+
+    const ch0 = await createChapterRepo(req).create({
+      storyId,
+      title: 'Opening',
+      orderIndex: 0,
+      wordCount: 0,
+    });
+    const ch1 = await createChapterRepo(req).create({
+      storyId,
+      title: 'Rising Action',
+      orderIndex: 1,
+      wordCount: 3,
+      bodyJson: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'The plot thickens.' }] }],
+      },
+    });
+
+    // Non-active draft on ch0 carries the summary; ch0's active draft (the
+    // create-time mint) is left unsummarised.
+    await createDraftRepo(req).create({
+      chapterId: ch0.id as string,
+      summaryJson: {
+        events: 'The hero met the mentor.',
+        stateAtEnd: "Mentor's hut, dusk.",
+        openThreads: 'Why did the mentor disappear?',
+      },
+      orderIndex: 1,
+    });
+
+    const fetchSpy = stubVeniceFetch();
+    await storeKey(agent, fetchSpy);
+
+    const chatRes = await agent
+      .post(`/api/drafts/${ch1.activeDraftId as string}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'pcs-test', kind: 'ask' })
+      .expect(201);
+    const chatId = chatRes.body.chat.id as string;
+
+    fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
+    fetchSpy.mockResolvedValueOnce(
+      sseStreamResponse([
+        {
+          id: 'chatcmpl-pcs3',
+          object: 'chat.completion.chunk',
+          choices: [{ index: 0, delta: { content: 'OK' }, finish_reason: null }],
+        },
+      ]),
+    );
+
+    await agent
+      .post(`/api/chats/${chatId}/messages`)
+      .set('Origin', TEST_ORIGIN)
+      .buffer(true)
+      .parse((response, callback) => {
+        let data = '';
+        response.on('data', (chunk: Buffer) => {
+          data += chunk.toString();
+        });
+        response.on('end', () => callback(null, data));
+      })
+      .send({ content: 'What happened before?', modelId: MODEL_ID });
+
+    const call = fetchSpy.mock.calls.find(([url]) => String(url).includes('/chat/completions'));
+    const sentBody = JSON.parse(
+      String((call?.[1] as RequestInit | undefined)?.body ?? '{}'),
+    ) as Record<string, unknown>;
+    const systemMessage = (sentBody.messages as Array<{ role: string; content: string }>)?.[0]
+      ?.content;
+    expect(systemMessage).not.toContain('<previous_chapters>');
+  });
 });
 
 // ─── POST resend via fromMessageId suite ─────────────────────────────────────
