@@ -57,7 +57,7 @@ export type ChatSceneKind = 'ask' | 'scene';
 
 export interface ChatSceneTabProps {
   kind: ChatSceneKind;
-  chapterId: string | null;
+  draftId: string | null;
   editor: TiptapEditor | null;
 }
 
@@ -98,16 +98,16 @@ const KIND_CONFIG: Record<ChatSceneKind, KindConfig> = {
   },
 };
 
-export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JSX.Element {
+export function ChatSceneTab({ kind, draftId, editor }: ChatSceneTabProps): JSX.Element {
   const config = KIND_CONFIG[kind];
 
   const [activeChatId, setActiveChatId] = useState<string | null>(null);
-  const chatsQuery = useChatsQuery(chapterId, { kind });
+  const chatsQuery = useChatsQuery(draftId, { kind });
   const sessions = chatsQuery.data ?? [];
 
   const createChat = useCreateChatMutation();
-  const renameChat = useRenameChatMutation(chapterId, kind);
-  const removeChat = useRemoveChatMutation(chapterId, kind);
+  const renameChat = useRenameChatMutation(draftId, kind);
+  const removeChat = useRemoveChatMutation(draftId, kind);
   const sendChatMessage = useSendChatMessageMutation();
 
   const settings = useUserSettings();
@@ -116,7 +116,7 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
   const messagesQuery = useChatMessagesQuery(activeChatId);
   const actions = useMessageActions({
     chatId: activeChatId,
-    chapterId,
+    draftId,
     modelId: selectedModelId,
     messages: messagesQuery.data ?? [],
     sendMutation: sendChatMessage,
@@ -144,18 +144,18 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
 
   const onSend = useCallback(
     async (args: ChatSendArgs): Promise<boolean> => {
-      const guard = checkChatSendGuards({ activeChapterId: chapterId, selectedModelId });
+      const guard = checkChatSendGuards({ draftId, selectedModelId });
       if (guard) {
         useErrorStore.getState().push(guard);
         return false;
       }
-      const cId = chapterId as string;
+      const dId = draftId as string;
       const mId = selectedModelId as string;
 
       let chatId = activeChatId;
       if (chatId === null) {
         try {
-          const created = await createChat.mutateAsync({ chapterId: cId, kind });
+          const created = await createChat.mutateAsync({ draftId: dId, kind });
           chatId = created.id;
           setActiveChatId(chatId);
         } catch (err) {
@@ -180,7 +180,7 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
       lastSendArgsRef.current = args;
       const sendArgs: Parameters<typeof sendChatMessage.mutateAsync>[0] = {
         chatId,
-        chapterId: cId, // story-editor-loj: needed so onSuccess can invalidate the chats list
+        draftId: dId, // story-editor-loj: needed so onSuccess can invalidate the chats list
         content: args.content,
         modelId: mId,
         enableWebSearch: args.enableWebSearch,
@@ -211,7 +211,7 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
       return true;
     },
     [
-      chapterId,
+      draftId,
       selectedModelId,
       activeChatId,
       sessions,
@@ -224,7 +224,7 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
 
   const { onRetry, isDispatching } = useBannerRetry({
     chatId: activeChatId,
-    chapterId,
+    draftId,
     selectedModelId,
     mutation: sendChatMessage,
     lastSendArgsRef,
@@ -271,11 +271,11 @@ export function ChatSceneTab({ kind, chapterId, editor }: ChatSceneTabProps): JS
   );
 
   const onNew = useCallback((): void => {
-    if (chapterId === null) return;
-    void createChat.mutateAsync({ chapterId, kind }).then((c) => {
+    if (draftId === null) return;
+    void createChat.mutateAsync({ draftId, kind }).then((c) => {
       setActiveChatId(c.id);
     });
-  }, [chapterId, createChat, kind]);
+  }, [draftId, createChat, kind]);
 
   const visibleSessions = sessions.filter((s) => !isDeletePending(s.id));
   const pendingEntries = Array.from(pendingDeletes.entries());

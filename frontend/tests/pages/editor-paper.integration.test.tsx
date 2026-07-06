@@ -12,6 +12,7 @@ import { AppRouter } from '@/router';
 import { useActiveChapterStore } from '@/store/activeChapter';
 import { useSessionStore } from '@/store/session';
 import { useSidebarTabStore } from '@/store/sidebarTab';
+import { makeDraft, makeDraftMeta } from '../fixtures/chapter';
 
 type FetchMock = ReturnType<typeof vi.fn>;
 
@@ -37,19 +38,29 @@ function makeStory(): Record<string, unknown> {
 }
 
 function makeChapter(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  const id = (overrides.id as string | undefined) ?? 'ch1';
   return {
-    id: 'ch1',
+    id,
     storyId: 'abc123',
     title: 'Opening',
     orderIndex: 0,
     wordCount: 0,
-    status: 'draft',
     hasSummary: false,
     summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T10:00:00.000Z',
+    draftCount: 1,
+    activeDraftId: `draft-${id}`,
     ...overrides,
   };
+}
+
+// [9wk.6] The editor sources Paper's body from the draft endpoints, not the
+// chapter GET — every chapter fixture needs its one active draft mocked too.
+// `draftFor(chapterId)` names the one active draft consistently with
+// `makeChapter`'s `activeDraftId: draft-${id}`.
+function draftFor(chapterId: string): string {
+  return `draft-${chapterId}`;
 }
 
 function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response> {
@@ -64,6 +75,18 @@ function defaultRouter(): (url: string, init?: RequestInit) => Promise<Response>
     }
     if (url.endsWith('/stories/abc123/chapters')) {
       return Promise.resolve(jsonResponse(200, { chapters: [makeChapter()] }));
+    }
+    if (url.endsWith('/chapters/ch1/drafts')) {
+      return Promise.resolve(
+        jsonResponse(200, {
+          drafts: [makeDraftMeta({ id: draftFor('ch1'), chapterId: 'ch1' })],
+        }),
+      );
+    }
+    if (url.endsWith(`/drafts/${draftFor('ch1')}`)) {
+      return Promise.resolve(
+        jsonResponse(200, { draft: makeDraft({ id: draftFor('ch1'), chapterId: 'ch1' }) }),
+      );
     }
     if (url.endsWith('/stories/abc123/characters')) {
       return Promise.resolve(jsonResponse(200, { characters: [] }));
@@ -219,29 +242,40 @@ describe('EditorPage paper integration (F52)', () => {
         return Promise.resolve(jsonResponse(200, { story: makeStory() }));
       if (url.endsWith('/stories/abc123/chapters'))
         return Promise.resolve(jsonResponse(200, { chapters: [ch1, ch2] }));
-      if (url.endsWith('/stories/abc123/chapters/ch1')) {
+      if (url.endsWith('/chapters/ch1/drafts'))
         return Promise.resolve(
           jsonResponse(200, {
-            chapter: {
-              ...ch1,
+            drafts: [makeDraftMeta({ id: draftFor('ch1'), chapterId: 'ch1' })],
+          }),
+        );
+      if (url.endsWith(`/drafts/${draftFor('ch1')}`)) {
+        return Promise.resolve(
+          jsonResponse(200, {
+            draft: makeDraft({
+              id: draftFor('ch1'),
+              chapterId: 'ch1',
               bodyJson: {
                 type: 'doc',
                 content: [
                   { type: 'paragraph', content: [{ type: 'text', text: 'First chapter body.' }] },
                 ],
               },
-              summary: null,
-              summaryUpdatedAt: null,
-            },
+            }),
           }),
         );
       }
-      if (url.endsWith('/stories/abc123/chapters/ch2')) {
+      if (url.endsWith('/chapters/ch2/drafts'))
+        return Promise.resolve(
+          jsonResponse(200, {
+            drafts: [makeDraftMeta({ id: draftFor('ch2'), chapterId: 'ch2' })],
+          }),
+        );
+      if (url.endsWith(`/drafts/${draftFor('ch2')}`)) {
         // Empty body — this is the case that previously left the editor
         // showing ch1's text.
         return Promise.resolve(
           jsonResponse(200, {
-            chapter: { ...ch2, bodyJson: null, summary: null, summaryUpdatedAt: null },
+            draft: makeDraft({ id: draftFor('ch2'), chapterId: 'ch2', bodyJson: null }),
           }),
         );
       }

@@ -1,16 +1,13 @@
 export type {
   Chapter,
   ChapterCreateInput,
-  ChapterEncryptedFieldKey,
   ChapterMeta,
   ChapterMetaEncryptedFieldKey,
   ChapterReorderInput,
-  ChapterStatus,
   ChapterSummary,
   ChapterUpdateInput,
 } from './schemas/chapter';
 export {
-  CHAPTER_ENCRYPTED_FIELD_KEYS,
   CHAPTER_META_ENCRYPTED_FIELD_KEYS,
   CHAPTER_SUMMARY_FIELD_MAX,
   CHAPTER_TITLE_MAX,
@@ -20,7 +17,6 @@ export {
   chapterReorderSchema,
   chapterResponseSchema,
   chapterSchema,
-  chapterStatusSchema,
   chapterSummaryJsonSchema,
   chapterSummaryResponseSchema,
   chapterSummarySchema,
@@ -64,6 +60,24 @@ export {
   chatsResponseSchema,
   chatUpdateSchema,
 } from './schemas/chat';
+export type {
+  Draft,
+  DraftCreateInput,
+  DraftEncryptedFieldKey,
+  DraftMeta,
+  DraftUpdateInput,
+} from './schemas/draft';
+export {
+  activeDraftPutSchema,
+  DRAFT_ENCRYPTED_FIELD_KEYS,
+  DRAFT_LABEL_MAX,
+  draftCreateSchema,
+  draftMetaSchema,
+  draftResponseSchema,
+  draftSchema,
+  draftsResponseSchema,
+  draftUpdateSchema,
+} from './schemas/draft';
 
 export type {
   Citation,

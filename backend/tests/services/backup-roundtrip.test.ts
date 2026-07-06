@@ -36,6 +36,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
@@ -49,7 +50,8 @@ import { makeUserContext } from '../repos/_req';
 // Never hand-declare these field lists; that would defeat the tripwire.
 const storyExportSchema = exportSchema.shape.stories.unwrap().element;
 const chapterExportSchema = storyExportSchema.shape.chapters.unwrap().element;
-const chatExportSchema = chapterExportSchema.shape.chats.unwrap().element;
+const draftExportSchema = chapterExportSchema.shape.drafts.element;
+const chatExportSchema = draftExportSchema.shape.chats.unwrap().element;
 const messageExportSchema = chatExportSchema.shape.messages.unwrap().element;
 const characterExportSchema = storyExportSchema.shape.characters.unwrap().element;
 const outlineExportSchema = storyExportSchema.shape.outlineItems.unwrap().element;
@@ -63,7 +65,8 @@ const STORY_EXCLUDE = [
   'characters',
   'outlineItems',
 ] as const;
-const CHAPTER_EXCLUDE = ['chats'] as const;
+const CHAPTER_EXCLUDE = ['drafts'] as const;
+const DRAFT_EXCLUDE = ['chats'] as const;
 const CHAT_EXCLUDE = ['messages'] as const;
 const MESSAGE_EXCLUDE = ['createdAt'] as const;
 const CHARACTER_EXCLUDE = [] as const;
@@ -123,6 +126,7 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
     const outlineRepo = createOutlineRepo(ctx.req);
     const chatRepo = createChatRepo(ctx.req);
     const messageRepo = createMessageRepo(ctx.req);
+    const draftRepo = createDraftRepo(ctx.req);
 
     // --- Build a maximal library through the repo layer: every entity,
     // every exportable field set to a non-default value. ---
@@ -144,10 +148,12 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
         type: 'doc',
         content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Roundtrip body text.' }] }],
       },
-      status: 'revision', // non-default (draft)
       orderIndex: 0,
     });
-    await chapterRepo.update(chapter.id, {
+    // [9wk.4] Summary writes go through draft.repo; export reads summaries
+    // through the draft-backed metadata join, so seeding the chapter column
+    // would silently stale this parity assertion.
+    await draftRepo.update(chapter.activeDraftId as string, {
       summaryJson: {
         events: 'The hero crosses the threshold.',
         stateAtEnd: 'Alone at the gate.',
@@ -155,8 +161,26 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
       },
     });
 
-    const chat = await chatRepo.create({
+    // Non-active, labeled second draft — covers `label`/`summary` non-null on
+    // a non-active drafts[] entry (the active mint already covers `chats`).
+    await draftRepo.create({
       chapterId: chapter.id,
+      bodyJson: {
+        type: 'doc',
+        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Second draft body.' }] }],
+      },
+      wordCount: 3,
+      label: 'roundtrip alternate',
+      summaryJson: {
+        events: 'An alternate telling.',
+        stateAtEnd: 'Everything differs.',
+        openThreads: 'Which draft is true?',
+      },
+      orderIndex: 1,
+    });
+
+    const chat = await chatRepo.create({
+      draftId: chapter.activeDraftId as string,
       title: 'Scene chat',
       kind: 'scene', // non-default (ask)
     });
@@ -207,19 +231,25 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
     const story1 = export1.stories.find((s) => s.title === FIXTURE_STORY_TITLE);
     expect(story1, 'fixture story missing from first export').toBeDefined();
     const chapter1 = story1!.chapters[0];
-    const chat1 = chapter1?.chats[0];
+    const drafts1 = [...(chapter1?.drafts ?? [])].sort((a, b) => a.orderIndex - b.orderIndex);
+    const chat1 = drafts1[0]?.chats[0];
     const message1 = chat1?.messages[0];
     const character1 = story1!.characters[0];
     const outline1 = story1!.outlineItems[0];
     expect(chapter1, 'fixture chapter missing from first export').toBeDefined();
+    expect(drafts1, 'fixture drafts missing from first export').toHaveLength(2);
     expect(chat1, 'fixture chat missing from first export').toBeDefined();
     expect(message1, 'fixture message missing from first export').toBeDefined();
     expect(character1, 'fixture character missing from first export').toBeDefined();
     expect(outline1, 'fixture outline item missing from first export').toBeDefined();
 
-    // Layer 1: coverage over every schema-derived key set.
+    // Layer 1: coverage over every schema-derived key set. `label: null` on
+    // the active mint passes coverage's not-undefined check, so both drafts
+    // must be asserted to actually cover `label`/`summary`.
     assertCoverage(storyExportSchema.shape, STORY_EXCLUDE, story1!, 'story');
     assertCoverage(chapterExportSchema.shape, CHAPTER_EXCLUDE, chapter1!, 'chapter');
+    assertCoverage(draftExportSchema.shape, DRAFT_EXCLUDE, drafts1[0]!, 'chapter.drafts[0]');
+    assertCoverage(draftExportSchema.shape, DRAFT_EXCLUDE, drafts1[1]!, 'chapter.drafts[1]');
     assertCoverage(chatExportSchema.shape, CHAT_EXCLUDE, chat1!, 'chat');
     assertCoverage(messageExportSchema.shape, MESSAGE_EXCLUDE, message1!, 'message');
     assertCoverage(characterExportSchema.shape, CHARACTER_EXCLUDE, character1!, 'character');
@@ -231,6 +261,7 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
     expect(importResult.imported).toEqual({
       stories: 1,
       chapters: 1,
+      drafts: 2,
       characters: 1,
       outlineItems: 1,
       chats: 1,
@@ -252,7 +283,8 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
     expect(originalIds.has(imported!.id as string)).toBe(false);
 
     const chapter2 = imported!.chapters[0];
-    const chat2 = chapter2?.chats[0];
+    const drafts2 = [...(chapter2?.drafts ?? [])].sort((a, b) => a.orderIndex - b.orderIndex);
+    const chat2 = drafts2[0]?.chats[0];
     const message2 = chat2?.messages[0];
     const character2 = imported!.characters[0];
     const outline2 = imported!.outlineItems[0];
@@ -260,6 +292,20 @@ describe('[story-editor-046] backup export -> import -> export round-trip parity
     // Layer 2: fidelity over the same schema-derived key sets.
     assertFidelity(storyExportSchema.shape, STORY_EXCLUDE, story1!, imported!, 'story');
     assertFidelity(chapterExportSchema.shape, CHAPTER_EXCLUDE, chapter1!, chapter2!, 'chapter');
+    assertFidelity(
+      draftExportSchema.shape,
+      DRAFT_EXCLUDE,
+      drafts1[0]!,
+      drafts2[0]!,
+      'chapter.drafts[0]',
+    );
+    assertFidelity(
+      draftExportSchema.shape,
+      DRAFT_EXCLUDE,
+      drafts1[1]!,
+      drafts2[1]!,
+      'chapter.drafts[1]',
+    );
     assertFidelity(chatExportSchema.shape, CHAT_EXCLUDE, chat1!, chat2!, 'chat');
     assertFidelity(messageExportSchema.shape, MESSAGE_EXCLUDE, message1!, message2!, 'message');
     assertFidelity(

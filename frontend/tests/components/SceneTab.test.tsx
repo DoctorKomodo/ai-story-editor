@@ -122,7 +122,7 @@ describe('SceneTab — [7] soft-delete with undo', () => {
             {
               id: 's1',
               title: 'Veranda confrontation',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               kind: 'scene',
               messageCount: 0,
               createdAt: new Date().toISOString(),
@@ -143,7 +143,7 @@ describe('SceneTab — [7] soft-delete with undo', () => {
 
   it('shows UndoToast when a session is soft-deleted, restores on Undo', async () => {
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, makeBaseClient());
+    renderWithProviders(<SceneTab draftId="ch1" editor={null} />, makeBaseClient());
 
     const picker = await screen.findByRole('button', { name: /Scene session: Veranda/ });
     await user.click(picker);
@@ -188,7 +188,7 @@ describe('SceneTab — [1] session picker integration', () => {
       return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
     });
 
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeBaseClient());
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, makeBaseClient());
 
     await waitFor(() => {
       expect(screen.getByTestId('scene-tab')).toBeInTheDocument();
@@ -204,7 +204,7 @@ describe('SceneTab — [1] session picker integration', () => {
       return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
     });
 
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeBaseClient());
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, makeBaseClient());
 
     await waitFor(() => {
       expect(screen.getByTestId('scene-empty')).toBeInTheDocument();
@@ -224,7 +224,7 @@ describe('SceneTab — [1] session picker integration', () => {
               {
                 id: 's1',
                 title: 'Opening scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
                 createdAt: new Date().toISOString(),
@@ -238,7 +238,7 @@ describe('SceneTab — [1] session picker integration', () => {
       return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
     });
 
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeBaseClient());
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, makeBaseClient());
 
     // The picker should reflect the active session.
     await screen.findByRole('button', { name: /Scene session: Opening scene/ });
@@ -260,7 +260,7 @@ describe('SceneTab — [1] session picker integration', () => {
               {
                 id: 's1',
                 title: 'First scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
                 createdAt: olderTime,
@@ -270,7 +270,7 @@ describe('SceneTab — [1] session picker integration', () => {
               {
                 id: 's2',
                 title: 'Second scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 0,
                 createdAt: olderTime,
@@ -285,7 +285,7 @@ describe('SceneTab — [1] session picker integration', () => {
     });
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeBaseClient());
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, makeBaseClient());
 
     // First scene auto-selected.
     const picker = await screen.findByRole('button', { name: /Scene session: First scene/ });
@@ -327,7 +327,7 @@ describe('SceneTab — [2] auto-rename on first turn', () => {
     const now = new Date().toISOString();
     const newChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: null,
       kind: 'scene',
       createdAt: now,
@@ -341,10 +341,10 @@ describe('SceneTab — [2] auto-rename on first turn', () => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method?.toUpperCase() ?? 'GET';
 
-      if (url.includes('/chapters/ch1/chats') && method === 'GET') {
+      if (url.includes('/drafts/ch1/chats') && method === 'GET') {
         return jsonResponse(200, { chats: chatCreated ? [newChatSummary] : [] });
       }
-      if (url.includes('/chapters/ch1/chats') && method === 'POST') {
+      if (url.includes('/drafts/ch1/chats') && method === 'POST') {
         chatCreated = true;
         return jsonResponse(201, { chat: newChat });
       }
@@ -362,7 +362,7 @@ describe('SceneTab — [2] auto-rename on first turn', () => {
 
     const user = userEvent.setup();
     const qc = makeModelClient();
-    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="ch1" editor={null} />, qc);
 
     await waitFor(() => expect(screen.getByTestId('scene-tab')).toBeInTheDocument());
 
@@ -431,7 +431,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 id: 's1',
                 kind: 'scene',
                 title: 'Veranda',
-                chapterId: 'c1',
+                draftId: 'c1',
                 messageCount: 0,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -444,7 +444,7 @@ describe('SceneTab — [3] hydration error UX', () => {
       return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
     });
 
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, makeBaseClient());
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, makeBaseClient());
 
     await waitFor(
       () => {
@@ -471,7 +471,7 @@ describe('SceneTab — [3] hydration error UX', () => {
                 id: 's1',
                 kind: 'scene',
                 title: 'Veranda',
-                chapterId: 'c1',
+                draftId: 'c1',
                 messageCount: 0,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -487,7 +487,7 @@ describe('SceneTab — [3] hydration error UX', () => {
     const qc = makeBaseClient();
     // Pre-disable retries so the first failure shows the error banner immediately.
     qc.setDefaultOptions({ queries: { retry: false } });
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, qc);
 
     await waitFor(
       () => {
@@ -562,7 +562,7 @@ describe('SceneTab — [4] insert-at-end', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 2,
         createdAt: now,
@@ -582,7 +582,7 @@ describe('SceneTab — [4] insert-at-end', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 2,
                 createdAt: now,
@@ -605,7 +605,7 @@ describe('SceneTab — [4] insert-at-end', () => {
     } as unknown as Parameters<typeof SceneTab>[0]['editor'];
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="c1" editor={mockEditor} />, qc);
+    renderWithProviders(<SceneTab draftId="c1" editor={mockEditor} />, qc);
 
     // Wait for the assistant row to appear.
     await screen.findByTestId('assistant-a1');
@@ -671,7 +671,7 @@ describe('SceneTab — [5] retry semantics', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 2,
         createdAt: now,
@@ -691,7 +691,7 @@ describe('SceneTab — [5] retry semantics', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 2,
                 createdAt: now,
@@ -709,7 +709,7 @@ describe('SceneTab — [5] retry semantics', () => {
     vi.mocked(apiStream).mockResolvedValueOnce(sseResponse());
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, qc);
 
     // Wait for the assistant row to appear.
     const a1Row = await screen.findByTestId('assistant-a1');
@@ -753,7 +753,7 @@ describe('SceneTab — [6] stop during streaming', () => {
     const now = new Date().toISOString();
     const newChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: 'Existing scene',
       kind: 'scene',
       messageCount: 0,
@@ -764,7 +764,7 @@ describe('SceneTab — [6] stop during streaming', () => {
 
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/chapters/ch1/chats') && !url.includes('/messages')) {
+      if (url.includes('/drafts/ch1/chats') && !url.includes('/messages')) {
         return jsonResponse(200, { chats: [newChat] });
       }
       if (url.includes('/chats/sc1/messages')) {
@@ -789,7 +789,7 @@ describe('SceneTab — [6] stop during streaming', () => {
 
     const user = userEvent.setup();
     const qc = makeModelClient();
-    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="ch1" editor={null} />, qc);
 
     // Wait for chat to load and auto-select.
     await screen.findByRole('button', { name: /Scene session: Existing scene/ });
@@ -827,7 +827,7 @@ describe('SceneTab — [8] enableWebSearch propagation', () => {
     const now = new Date().toISOString();
     const newChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: null,
       kind: 'scene',
       createdAt: now,
@@ -841,10 +841,10 @@ describe('SceneTab — [8] enableWebSearch propagation', () => {
       const url = typeof input === 'string' ? input : input.toString();
       const method = init?.method?.toUpperCase() ?? 'GET';
 
-      if (url.includes('/chapters/ch1/chats') && method === 'GET') {
+      if (url.includes('/drafts/ch1/chats') && method === 'GET') {
         return jsonResponse(200, { chats: chatCreated ? [newChatSummary] : [] });
       }
-      if (url.includes('/chapters/ch1/chats') && method === 'POST') {
+      if (url.includes('/drafts/ch1/chats') && method === 'POST') {
         chatCreated = true;
         return jsonResponse(201, { chat: newChat });
       }
@@ -871,7 +871,7 @@ describe('SceneTab — [8] enableWebSearch propagation', () => {
     ]);
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="ch1" editor={null} />, qc);
 
     await waitFor(() => expect(screen.getByTestId('scene-tab')).toBeInTheDocument());
 
@@ -920,7 +920,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
 
     const existingChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: 'Existing',
       kind: 'scene',
       messageCount: 1,
@@ -931,7 +931,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
 
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/chapters/ch1/chats') && !url.includes('/messages')) {
+      if (url.includes('/drafts/ch1/chats') && !url.includes('/messages')) {
         return jsonResponse(200, { chats: [existingChat] });
       }
       if (url.includes('/chats/sc1/messages')) {
@@ -945,7 +945,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
     vi.mocked(apiStream).mockRejectedValueOnce(new Error('Venice quota exceeded'));
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="ch1" editor={null} />, qc);
 
     await screen.findByRole('button', { name: /Scene session: Existing/ });
 
@@ -974,7 +974,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
 
     const existingChat = {
       id: 'sc1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: 'Existing',
       kind: 'scene',
       messageCount: 1,
@@ -998,7 +998,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
 
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/chapters/ch1/chats') && !url.includes('/messages')) {
+      if (url.includes('/drafts/ch1/chats') && !url.includes('/messages')) {
         return jsonResponse(200, { chats: [existingChat] });
       }
       if (url.includes('/chats/sc1/messages')) {
@@ -1015,7 +1015,7 @@ describe('SceneTab — [9] send error → banner retry', () => {
       .mockResolvedValueOnce(sseResponse());
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="ch1" editor={null} />, qc);
 
     await screen.findByRole('button', { name: /Scene session: Existing/ });
 
@@ -1122,7 +1122,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 4,
         createdAt: now,
@@ -1142,7 +1142,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 4,
                 createdAt: now,
@@ -1157,7 +1157,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
     });
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, qc);
 
     await screen.findByTestId('assistant-a1');
 
@@ -1208,7 +1208,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
       {
         id: 'scene1',
         title: 'Test scene',
-        chapterId: 'c1',
+        draftId: 'c1',
         kind: 'scene',
         messageCount: 2,
         createdAt: now,
@@ -1228,7 +1228,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
               {
                 id: 'scene1',
                 title: 'Test scene',
-                chapterId: 'c1',
+                draftId: 'c1',
                 kind: 'scene',
                 messageCount: 2,
                 createdAt: now,
@@ -1243,7 +1243,7 @@ describe('SceneTab — [10] useMessageActions parity', () => {
     });
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="c1" editor={null} />, qc);
+    renderWithProviders(<SceneTab draftId="c1" editor={null} />, qc);
 
     await screen.findByTestId('assistant-a1');
 

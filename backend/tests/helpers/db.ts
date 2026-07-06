@@ -10,6 +10,7 @@ export async function resetDb(): Promise<void> {
   _resetSessionStore();
   await prisma.message.deleteMany();
   await prisma.chat.deleteMany();
+  await prisma.draft.deleteMany();
   await prisma.outlineItem.deleteMany();
   await prisma.character.deleteMany();
   await prisma.chapter.deleteMany();

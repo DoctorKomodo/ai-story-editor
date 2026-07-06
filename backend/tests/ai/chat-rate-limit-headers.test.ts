@@ -127,8 +127,10 @@ async function setupChat(req: Request): Promise<{ chatId: string }> {
     orderIndex: 0,
     wordCount: 1,
   });
-  const chapterId = chapter.id as string;
-  const chat = await createChatRepo(req).create({ chapterId, title: null });
+  const chat = await createChatRepo(req).create({
+    draftId: chapter.activeDraftId as string,
+    title: null,
+  });
   return { chatId: chat.id as string };
 }
 

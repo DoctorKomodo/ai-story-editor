@@ -7,7 +7,7 @@ import type {
 } from 'story-editor-shared';
 import { NARRATIVE_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeEncrypted } from './_narrative';
+import { ensureStoryOwned, projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
 
 export class CharacterNotOwnedError extends Error {
   constructor() {
@@ -37,21 +37,6 @@ export interface CharacterCreateInput extends SharedCharacterCreateInput {
   orderIndex: number;
 }
 
-function resolveUserId(req: Request): string {
-  const id = req.user?.id;
-  if (!id) throw new Error('character.repo: req.user.id is not set');
-  return id;
-}
-
-async function ensureStoryOwned(
-  client: PrismaClient,
-  storyId: string,
-  userId: string,
-): Promise<void> {
-  const ok = await client.story.findFirst({ where: { id: storyId, userId } });
-  if (!ok) throw new Error('character.repo: story not owned by caller');
-}
-
 function encryptedDataFrom(req: Request, input: CharacterCreateInput | CharacterUpdateInput) {
   const data: Record<string, unknown> = {};
   for (const f of ENCRYPTED_FIELDS) {
@@ -64,8 +49,8 @@ function encryptedDataFrom(req: Request, input: CharacterCreateInput | Character
 
 export function createCharacterRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function create(input: CharacterCreateInput) {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, input.storyId, userId);
+    const userId = resolveUserId(req, 'character.repo');
+    await ensureStoryOwned(client, input.storyId, userId, 'character.repo');
     const row = await client.character.create({
       data: {
         storyId: input.storyId,
@@ -86,7 +71,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
   }
 
   async function findById(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'character.repo');
     const row = await client.character.findFirst({ where: { id, story: { userId } } });
     if (!row) return null;
     return projectDecrypted<RepoCharacter>(
@@ -97,8 +82,8 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
   }
 
   async function findManyForStory(storyId: string) {
-    const userId = resolveUserId(req);
-    await ensureStoryOwned(client, storyId, userId);
+    const userId = resolveUserId(req, 'character.repo');
+    await ensureStoryOwned(client, storyId, userId, 'character.repo');
     const rows = await client.character.findMany({
       where: { storyId, story: { userId } },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
@@ -113,7 +98,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
   }
 
   async function update(id: string, input: CharacterUpdateInput) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'character.repo');
     const data = encryptedDataFrom(req, input);
     if (input.color !== undefined) data.color = input.color;
     if (input.initial !== undefined) data.initial = input.initial;
@@ -134,7 +119,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
   }
 
   async function remove(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'character.repo');
     return client.$transaction(async (tx) => {
       const target = await tx.character.findFirst({
         where: { id, story: { userId } },
@@ -173,7 +158,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     storyId: string,
     items: Array<{ id: string; orderIndex: number }>,
   ): Promise<void> {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'character.repo');
     const ids = items.map((i) => i.id);
     const found = await client.character.findMany({
       where: { id: { in: ids }, storyId, story: { userId } },
@@ -206,7 +191,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
   }
 
   async function maxOrderIndex(storyId: string): Promise<number | null> {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'character.repo');
     const agg = await client.character.aggregate({
       where: { storyId, story: { userId } },
       _max: { orderIndex: true },

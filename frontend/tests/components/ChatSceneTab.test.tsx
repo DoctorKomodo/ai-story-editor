@@ -100,12 +100,12 @@ describe('ChatSceneTab — bug regressions', () => {
   it('a failed ask-chat send shows the error banner with NO unhandled promise rejection and NO auto-title', async () => {
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/chapters/ch1/chats') && !url.includes('/messages')) {
+      if (url.includes('/api/drafts/ch1/chats') && !url.includes('/messages')) {
         return jsonResponse(200, {
           chats: [
             {
               id: 'c1',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               title: 'Existing chat',
               kind: 'ask',
               messageCount: 0,
@@ -132,7 +132,7 @@ describe('ChatSceneTab — bug regressions', () => {
     process.on('unhandledRejection', onUnhandled);
     try {
       const user = userEvent.setup();
-      renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, makeModelClient());
+      renderWithProviders(<ChatTab draftId="ch1" editor={null} />, makeModelClient());
       await screen.findByRole('button', { name: /Chat: Existing chat/ });
 
       const textarea = await screen.findByLabelText('Message');
@@ -159,14 +159,18 @@ describe('ChatSceneTab — bug regressions', () => {
   });
 
   it('forwards the attached selection on a scene send', async () => {
+    // The viewed draft ('d1') is deliberately a different id than the
+    // attachment's source chapter ('ch1') — the attachment's chapter id
+    // (ChatSceneTab.tsx: args.attachment.chapter.id) must NOT be conflated
+    // with the draftId prop that scopes the chat itself.
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/chapters/ch1/chats') && !url.includes('/messages')) {
+      if (url.includes('/api/drafts/d1/chats') && !url.includes('/messages')) {
         return jsonResponse(200, {
           chats: [
             {
               id: 'sc1',
-              chapterId: 'ch1',
+              draftId: 'd1',
               title: 'Existing scene',
               kind: 'scene',
               messageCount: 1,
@@ -192,7 +196,7 @@ describe('ChatSceneTab — bug regressions', () => {
     });
 
     const user = userEvent.setup();
-    renderWithProviders(<SceneTab chapterId="ch1" editor={null} />, makeModelClient());
+    renderWithProviders(<SceneTab draftId="d1" editor={null} />, makeModelClient());
     await screen.findByRole('button', { name: /Scene session: Existing/ });
 
     const textarea = await screen.findByLabelText('Message');
@@ -213,12 +217,12 @@ describe('ChatSceneTab — bug regressions', () => {
   it('a guard-rejected send (no model selected) leaves the typed message in the composer', async () => {
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/chapters/ch1/chats') && !url.includes('/messages')) {
+      if (url.includes('/api/drafts/ch1/chats') && !url.includes('/messages')) {
         return jsonResponse(200, {
           chats: [
             {
               id: 'c1',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               title: 'Existing chat',
               kind: 'ask',
               messageCount: 0,
@@ -245,7 +249,7 @@ describe('ChatSceneTab — bug regressions', () => {
     qc.setQueryData(modelsQueryKey, []);
 
     const user = userEvent.setup();
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
     await screen.findByRole('button', { name: /Chat: Existing chat/ });
 
     const textarea = await screen.findByLabelText('Message');

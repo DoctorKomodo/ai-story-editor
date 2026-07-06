@@ -180,6 +180,7 @@ describe('store enumeration guard', () => {
     'errors',
     'inlineAIResult',
     'selectedCharacter',
+    'selectedDraft',
     'selection',
   ];
   // UI-only stores intentionally excluded from per-user reset.

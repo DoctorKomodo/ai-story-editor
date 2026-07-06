@@ -73,31 +73,23 @@ model Story {
 }
 
 model Chapter {
-  id                    String    @id @default(cuid())
-  status                String    @default("draft")
-  orderIndex            Int
-  wordCount             Int       @default(0)
-  // [E5] ciphertext triples — now the SOLE source of truth for narrative
-  // fields. `bodyCiphertext` encodes the serialised TipTap JSON tree.
-  // `wordCount` is derived from the tree at save time (before encryption) so
-  // UI progress calcs keep working without decryption. Plaintext `title`,
-  // `content`, `bodyJson` were dropped in [E11].
-  titleCiphertext       String?
-  titleIv               String?
-  titleAuthTag          String?
-  bodyCiphertext        String?
-  bodyIv                String?
-  bodyAuthTag           String?
-  summaryJsonCiphertext String?
-  summaryJsonIv         String?
-  summaryJsonAuthTag    String?
-  summaryJsonUpdatedAt  DateTime?
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
+  id         String   @id @default(cuid())
+  orderIndex Int
+  // [9wk.5] body/summary/wordCount live on the active Draft — the active
+  // draft IS the chapter downstream (see Draft model). `titleCiphertext` is
+  // the only remaining narrative ciphertext triple on this model.
+  titleCiphertext String?
+  titleIv         String?
+  titleAuthTag    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   storyId String
   story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
-  chats   Chat[]
+
+  activeDraftId String? @unique
+  activeDraft   Draft?  @relation("ActiveDraft", fields: [activeDraftId], references: [id], onDelete: SetNull)
+  drafts        Draft[] @relation("ChapterDrafts")
 
   // [D16] Uniqueness at the DB level is the only reliable guard against the
   // aggregate(_max)+insert race in the POST handler; a unique constraint also
@@ -105,6 +97,40 @@ model Chapter {
   // the separate `@@index([storyId, orderIndex])` becomes redundant.
   @@unique([storyId, orderIndex])
   @@index([storyId])
+}
+
+model Draft {
+  id                    String    @id @default(cuid())
+  // [9wk.2] body + summary + wordCount relocated off Chapter (expand phase —
+  // Chapter still carries its copies until step 5's contract drop). Ciphertext
+  // triples are the SOLE source of truth, written by draft.repo via the
+  // standard envelope-encryption helpers. `wordCount` is plaintext, derived
+  // from the body before encryption at the route layer (step 4).
+  bodyCiphertext        String?
+  bodyIv                String?
+  bodyAuthTag           String?
+  summaryJsonCiphertext String?
+  summaryJsonIv         String?
+  summaryJsonAuthTag    String?
+  summaryJsonUpdatedAt  DateTime?
+  wordCount             Int       @default(0)
+  // Custom draft name ("darker take"). NULL ⇒ frontend renders a positional
+  // label. Encrypted because a label can leak plot.
+  labelCiphertext       String?
+  labelIv               String?
+  labelAuthTag          String?
+  orderIndex            Int
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  chapterId String
+  chapter   Chapter @relation("ChapterDrafts", fields: [chapterId], references: [id], onDelete: Cascade)
+  // Back-side of Chapter.activeDraft (the active-pointer relation).
+  activeForChapter Chapter? @relation("ActiveDraft")
+  chats            Chat[]  @relation("DraftChats")
+
+  @@unique([chapterId, orderIndex])
+  @@index([chapterId])
 }
 
 model Character {
@@ -185,7 +211,7 @@ model Chat {
   id              String   @id @default(cuid())
   kind            String   @default("ask") // "ask" | "scene"
   // [E8] ciphertext triple for the chat title — now the SOLE source of truth.
-  // `chapterId` + timestamps remain plaintext (FK + timeline ordering).
+  // `draftId` + timestamps remain plaintext (FK + timeline ordering).
   // Plaintext `title` was dropped in [E11].
   titleCiphertext String?
   titleIv         String?
@@ -197,15 +223,15 @@ model Chat {
   // updatedAt, which only fires on Chat-row metadata changes (e.g. rename).
   lastActivityAt  DateTime @default(now())
 
-  chapterId String
-  chapter   Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  draftId String
+  draft   Draft  @relation("DraftChats", fields: [draftId], references: [id], onDelete: Cascade)
 
   messages Message[]
 
-  @@index([chapterId])
-  @@index([chapterId, kind])
-  // story-editor-loj: index supports the findManyForChapter ORDER BY.
-  @@index([chapterId, lastActivityAt])
+  @@index([draftId])
+  @@index([draftId, kind])
+  // story-editor-loj: index supports the findManyForDraft ORDER BY.
+  @@index([draftId, lastActivityAt])
 }
 
 model Message {

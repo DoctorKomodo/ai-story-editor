@@ -136,7 +136,7 @@ export function resolveReasoningEnabled(
 }
 
 export interface LogVeniceParamsInput {
-  route: 'ai-complete' | 'chat' | 'chapter-summarise';
+  route: 'ai-complete' | 'chat' | 'chapter-summarise' | 'draft-summarise';
   userId: string;
   modelId: string;
   resolved: ResolvedTextGenParams;

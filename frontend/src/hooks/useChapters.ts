@@ -14,7 +14,7 @@ import {
   chapterResponseSchema,
   chaptersResponseSchema,
 } from 'story-editor-shared';
-import { ApiError, api } from '@/lib/api';
+import { api } from '@/lib/api';
 
 /**
  * Query key for the ordered chapter list belonging to a story.
@@ -287,15 +287,6 @@ export function useDeleteChapterMutation(
       void qc.invalidateQueries({ queryKey: chaptersQueryKey(storyId) });
     },
   });
-}
-
-/**
- * True for the 409 `conflict` the backend returns when a PATCH's
- * `expectedUpdatedAt` precondition no longer matches the chapter's current
- * `updatedAt` (another writer moved it since this client last read it).
- */
-export function isChapterConflictError(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 409 && err.code === 'conflict';
 }
 
 export function useUpdateChapterMutation(): UseMutationResult<Chapter, Error, UpdateChapterArgs> {

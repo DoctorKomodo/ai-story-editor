@@ -39,7 +39,10 @@ async function setupStoryChapterChat(
     wordCount: 0,
   });
   const chapterId = chapter.id as string;
-  const chat = await createChatRepo(req).create({ chapterId, title: null });
+  const chat = await createChatRepo(req).create({
+    draftId: chapter.activeDraftId as string,
+    title: null,
+  });
   return { storyId, chapterId, chatId: chat.id as string };
 }
 

@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  CHAPTER_ENCRYPTED_FIELD_KEYS,
   CHAPTER_META_ENCRYPTED_FIELD_KEYS,
   CHAPTER_SUMMARY_FIELD_MAX,
   CHAPTER_TITLE_MAX,
@@ -10,7 +9,6 @@ import {
   chapterReorderSchema,
   chapterResponseSchema,
   chapterSchema,
-  chapterStatusSchema,
   chapterSummaryJsonSchema,
   chapterSummaryResponseSchema,
   chapterSummarySchema,
@@ -24,26 +22,13 @@ const VALID_META = {
   title: 'Chapter One',
   wordCount: 0,
   orderIndex: 0,
-  status: 'draft' as const,
   createdAt: '2026-05-15T00:00:00.000Z',
   updatedAt: '2026-05-15T00:00:00.000Z',
   hasSummary: false,
   summaryIsStale: false,
+  draftCount: 1,
+  activeDraftId: 'draft-1',
 };
-
-describe('chapterStatusSchema', () => {
-  it('accepts the three documented values', () => {
-    expect(chapterStatusSchema.parse('draft')).toBe('draft');
-    expect(chapterStatusSchema.parse('revision')).toBe('revision');
-    expect(chapterStatusSchema.parse('final')).toBe('final');
-  });
-
-  it('rejects unknown status values', () => {
-    expect(() => chapterStatusSchema.parse('archived')).toThrow();
-    expect(() => chapterStatusSchema.parse('DRAFT')).toThrow();
-    expect(() => chapterStatusSchema.parse(0)).toThrow();
-  });
-});
 
 describe('chapterMetaSchema', () => {
   it('accepts a valid meta row', () => {
@@ -112,8 +97,8 @@ describe('chapterCreateSchema', () => {
     expect(chapterCreateSchema.parse({ title: 'New' })).toEqual({ title: 'New' });
   });
 
-  it('accepts title + bodyJson + status', () => {
-    const input = { title: 'New', bodyJson: { type: 'doc' }, status: 'draft' as const };
+  it('accepts title + bodyJson', () => {
+    const input = { title: 'New', bodyJson: { type: 'doc' } };
     expect(chapterCreateSchema.parse(input)).toEqual(input);
   });
 
@@ -131,10 +116,6 @@ describe('chapterCreateSchema', () => {
 describe('chapterUpdateSchema', () => {
   it('accepts every optional field individually', () => {
     expect(chapterUpdateSchema.parse({ title: 'New' })).toEqual({ title: 'New' });
-    expect(chapterUpdateSchema.parse({ bodyJson: { type: 'doc' } })).toEqual({
-      bodyJson: { type: 'doc' },
-    });
-    expect(chapterUpdateSchema.parse({ status: 'final' })).toEqual({ status: 'final' });
     expect(chapterUpdateSchema.parse({ orderIndex: 3 })).toEqual({ orderIndex: 3 });
   });
 
@@ -145,6 +126,15 @@ describe('chapterUpdateSchema', () => {
   it('rejects unknown keys including server-derived wordCount', () => {
     expect(() => chapterUpdateSchema.parse({ wordCount: 5 })).toThrow();
     expect(() => chapterUpdateSchema.parse({ id: 'c1' })).toThrow();
+  });
+
+  // [9wk.4] bodyJson + expectedUpdatedAt moved to the draft-scoped PATCH
+  // (/api/drafts/:draftId) — this endpoint no longer accepts either field.
+  it('rejects bodyJson and expectedUpdatedAt (moved to the draft PATCH)', () => {
+    expect(() => chapterUpdateSchema.parse({ bodyJson: { type: 'doc' } })).toThrow();
+    expect(() =>
+      chapterUpdateSchema.parse({ expectedUpdatedAt: '2026-05-18T00:00:00.000Z' }),
+    ).toThrow();
   });
 });
 
@@ -212,8 +202,7 @@ describe('chapterResponseSchema / chaptersResponseSchema', () => {
 });
 
 describe('encrypted-field tuples', () => {
-  it('exports both tuples with the expected members', () => {
-    expect(CHAPTER_ENCRYPTED_FIELD_KEYS).toEqual(['title', 'body', 'summaryJson']);
+  it('exports the chapter-own encrypted field tuple', () => {
     expect(CHAPTER_META_ENCRYPTED_FIELD_KEYS).toEqual(['title']);
   });
 });
@@ -251,32 +240,21 @@ describe('chapterMetaSchema (summary flags)', () => {
   it('accepts hasSummary + summaryIsStale', () => {
     expect(() =>
       chapterMetaSchema.parse({
-        id: 'c1',
-        storyId: 's1',
-        title: 't',
-        wordCount: 0,
-        orderIndex: 0,
-        status: 'draft',
-        createdAt: '2026-05-18T00:00:00.000Z',
-        updatedAt: '2026-05-18T00:00:00.000Z',
+        ...VALID_META,
         hasSummary: true,
         summaryIsStale: false,
       }),
     ).not.toThrow();
   });
   it('requires both summary flags', () => {
-    expect(() =>
-      chapterMetaSchema.parse({
-        id: 'c1',
-        storyId: 's1',
-        title: 't',
-        wordCount: 0,
-        orderIndex: 0,
-        status: 'draft',
-        createdAt: '2026-05-18T00:00:00.000Z',
-        updatedAt: '2026-05-18T00:00:00.000Z',
-      }),
-    ).toThrow();
+    const { hasSummary, summaryIsStale, ...rest } = VALID_META;
+    expect(() => chapterMetaSchema.parse(rest)).toThrow();
+  });
+  it('requires draftCount + activeDraftId', () => {
+    const { draftCount, ...rest } = VALID_META;
+    expect(() => chapterMetaSchema.parse(rest)).toThrow();
+    const { activeDraftId, ...rest2 } = VALID_META;
+    expect(() => chapterMetaSchema.parse(rest2)).toThrow();
   });
 });
 
@@ -284,16 +262,7 @@ describe('chapterSchema (summary + summaryUpdatedAt)', () => {
   it('accepts summary + summaryUpdatedAt nullable', () => {
     expect(() =>
       chapterSchema.parse({
-        id: 'c1',
-        storyId: 's1',
-        title: 't',
-        wordCount: 0,
-        orderIndex: 0,
-        status: 'draft',
-        createdAt: '2026-05-18T00:00:00.000Z',
-        updatedAt: '2026-05-18T00:00:00.000Z',
-        hasSummary: false,
-        summaryIsStale: false,
+        ...VALID_META,
         bodyJson: null,
         summary: null,
         summaryUpdatedAt: null,

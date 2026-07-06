@@ -8,7 +8,7 @@ export default defineConfig({
     environment: 'node',
     globals: false,
     include: ['tests/**/*.test.ts'],
-    exclude: ['tests/live/**', 'node_modules/**', 'dist/**'],
+    exclude: ['tests/live/**', 'tests/migrations/**', 'node_modules/**', 'dist/**'],
     setupFiles: ['tests/setup.ts'],
     globalSetup: ['tests/globalSetup.ts'],
     // Fast-argon2 opt-in (see src/services/argon2.config.ts + .env.test.example).

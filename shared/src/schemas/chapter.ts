@@ -4,8 +4,6 @@ export const CHAPTER_TITLE_MIN = 1;
 export const CHAPTER_TITLE_MAX = 500;
 export const CHAPTER_SUMMARY_FIELD_MAX = 8000;
 
-export const chapterStatusSchema = z.enum(['draft', 'revision', 'final']);
-
 export const chapterSummarySchema = z.strictObject({
   events: z
     .string()
@@ -60,7 +58,6 @@ const chapterMetaBase = z.strictObject({
   title: z.string(),
   wordCount: z.number().int().nonnegative(),
   orderIndex: z.number().int().nonnegative(),
-  status: chapterStatusSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -68,6 +65,10 @@ const chapterMetaBase = z.strictObject({
 export const chapterMetaSchema = chapterMetaBase.extend({
   hasSummary: z.boolean(),
   summaryIsStale: z.boolean(),
+  // [9wk.4] Draft-tree wire fields: the sidebar needs both without an extra
+  // round-trip; wordCount/summary flags are sourced from the ACTIVE draft.
+  draftCount: z.number().int().positive(),
+  activeDraftId: z.string().min(1),
 });
 
 /**
@@ -84,18 +85,13 @@ export const chapterSchema = chapterMetaSchema.extend({
 export const chapterCreateSchema = z.strictObject({
   title: z.string().min(CHAPTER_TITLE_MIN).max(CHAPTER_TITLE_MAX),
   bodyJson: z.unknown().optional(),
-  status: chapterStatusSchema.optional(),
 });
 
 export const chapterUpdateSchema = z.strictObject({
   title: z.string().min(CHAPTER_TITLE_MIN).max(CHAPTER_TITLE_MAX).optional(),
-  bodyJson: z.unknown().optional(),
-  status: chapterStatusSchema.optional(),
   orderIndex: z.number().int().nonnegative().optional(),
-  // Optimistic-concurrency precondition: the chapter's updatedAt the client
-  // last saw. When present and stale, the PATCH is rejected 409 'conflict'.
-  // Optional — absent keeps legacy last-write-wins (old clients, import).
-  expectedUpdatedAt: z.string().datetime().optional(),
+  // [9wk.4] bodyJson + expectedUpdatedAt moved to the draft-scoped PATCH
+  // (/api/drafts/:draftId) — body writes to this endpoint now 400.
 });
 
 /**
@@ -120,16 +116,15 @@ export const chaptersResponseSchema = z.strictObject({
   chapters: z.array(chapterMetaSchema),
 });
 
-// Co-located encrypted-field tuples. Two — full has body + title + summaryJson; meta has only title.
-export const CHAPTER_ENCRYPTED_FIELD_KEYS = ['title', 'body', 'summaryJson'] as const;
+// [9wk.4] Chapter's `body`/`summaryJson` columns are dormant post-cutover —
+// the active draft is the sole source for both (see chapter.repo `shape()`).
+// Only `title` remains chapter-own encrypted content.
 export const CHAPTER_META_ENCRYPTED_FIELD_KEYS = ['title'] as const;
 
 // z.infer type exports
-export type ChapterStatus = z.infer<typeof chapterStatusSchema>;
 export type Chapter = z.infer<typeof chapterSchema>;
 export type ChapterMeta = z.infer<typeof chapterMetaSchema>;
 export type ChapterCreateInput = z.infer<typeof chapterCreateSchema>;
 export type ChapterUpdateInput = z.infer<typeof chapterUpdateSchema>;
 export type ChapterReorderInput = z.infer<typeof chapterReorderSchema>;
-export type ChapterEncryptedFieldKey = (typeof CHAPTER_ENCRYPTED_FIELD_KEYS)[number];
 export type ChapterMetaEncryptedFieldKey = (typeof CHAPTER_META_ENCRYPTED_FIELD_KEYS)[number];

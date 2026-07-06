@@ -12,6 +12,7 @@ function baseArgs(overrides: Partial<UseChapterDraftArgs> = {}): UseChapterDraft
     userId: 'user-a',
     storyId: 'story-1',
     chapterId: 'ch-1',
+    draftId: 'draft-1',
     serverUpdatedAt: T1,
     serverLoaded: true,
     ...overrides,
@@ -21,7 +22,11 @@ function baseArgs(overrides: Partial<UseChapterDraftArgs> = {}): UseChapterDraft
 describe('useChapterDraft', () => {
   it('persistDraft writes a record carrying the current serverUpdatedAt as baseUpdatedAt', async () => {
     const { result } = renderHook((props: UseChapterDraftArgs) => useChapterDraft(props), {
-      initialProps: baseArgs({ chapterId: 'ch-persist', serverLoaded: false }),
+      initialProps: baseArgs({
+        chapterId: 'ch-persist',
+        draftId: 'draft-persist',
+        serverLoaded: false,
+      }),
     });
 
     act(() => {
@@ -29,7 +34,7 @@ describe('useChapterDraft', () => {
     });
 
     await waitFor(async () => {
-      const draft = await getDraft('user-a', 'ch-persist');
+      const draft = await getDraft('user-a', 'ch-persist', 'draft-persist');
       expect(draft).not.toBeNull();
       expect(draft?.baseUpdatedAt).toBe(T1);
       expect(draft?.bodyJson).toEqual({ type: 'doc' });
@@ -40,6 +45,7 @@ describe('useChapterDraft', () => {
     await putDraft({
       userId: 'user-a',
       chapterId: 'ch-clear',
+      draftId: 'draft-clear',
       storyId: 'story-1',
       bodyJson: { type: 'doc' },
       baseUpdatedAt: T1,
@@ -47,7 +53,11 @@ describe('useChapterDraft', () => {
     });
 
     const { result } = renderHook((props: UseChapterDraftArgs) => useChapterDraft(props), {
-      initialProps: baseArgs({ chapterId: 'ch-clear', serverLoaded: false }),
+      initialProps: baseArgs({
+        chapterId: 'ch-clear',
+        draftId: 'draft-clear',
+        serverLoaded: false,
+      }),
     });
 
     act(() => {
@@ -55,7 +65,7 @@ describe('useChapterDraft', () => {
     });
 
     await waitFor(async () => {
-      expect(await getDraft('user-a', 'ch-clear')).toBeNull();
+      expect(await getDraft('user-a', 'ch-clear', 'draft-clear')).toBeNull();
     });
   });
 
@@ -63,6 +73,7 @@ describe('useChapterDraft', () => {
     await putDraft({
       userId: 'user-a',
       chapterId: 'ch-offer',
+      draftId: 'draft-offer',
       storyId: 'story-1',
       bodyJson: { type: 'doc' },
       baseUpdatedAt: T1,
@@ -70,19 +81,26 @@ describe('useChapterDraft', () => {
     });
 
     const { result } = renderHook((props: UseChapterDraftArgs) => useChapterDraft(props), {
-      initialProps: baseArgs({ chapterId: 'ch-offer', serverUpdatedAt: T1, serverLoaded: true }),
+      initialProps: baseArgs({
+        chapterId: 'ch-offer',
+        draftId: 'draft-offer',
+        serverUpdatedAt: T1,
+        serverLoaded: true,
+      }),
     });
 
     await waitFor(() => {
       expect(result.current.pendingDraft).not.toBeNull();
     });
     expect(result.current.pendingDraft?.chapterId).toBe('ch-offer');
+    expect(result.current.pendingDraft?.draftId).toBe('draft-offer');
   });
 
   it('discards + deletes a stale draft whose server has moved past it', async () => {
     await putDraft({
       userId: 'user-a',
       chapterId: 'ch-stale',
+      draftId: 'draft-stale',
       storyId: 'story-1',
       bodyJson: { type: 'doc' },
       baseUpdatedAt: T1,
@@ -90,11 +108,16 @@ describe('useChapterDraft', () => {
     });
 
     const { result } = renderHook((props: UseChapterDraftArgs) => useChapterDraft(props), {
-      initialProps: baseArgs({ chapterId: 'ch-stale', serverUpdatedAt: T2, serverLoaded: true }),
+      initialProps: baseArgs({
+        chapterId: 'ch-stale',
+        draftId: 'draft-stale',
+        serverUpdatedAt: T2,
+        serverLoaded: true,
+      }),
     });
 
     await waitFor(async () => {
-      expect(await getDraft('user-a', 'ch-stale')).toBeNull();
+      expect(await getDraft('user-a', 'ch-stale', 'draft-stale')).toBeNull();
     });
     expect(result.current.pendingDraft).toBeNull();
   });
@@ -103,6 +126,7 @@ describe('useChapterDraft', () => {
     await putDraft({
       userId: 'user-a',
       chapterId: 'ch-accept',
+      draftId: 'draft-accept',
       storyId: 'story-1',
       bodyJson: { type: 'doc' },
       baseUpdatedAt: T1,
@@ -110,7 +134,12 @@ describe('useChapterDraft', () => {
     });
 
     const { result } = renderHook((props: UseChapterDraftArgs) => useChapterDraft(props), {
-      initialProps: baseArgs({ chapterId: 'ch-accept', serverUpdatedAt: T1, serverLoaded: true }),
+      initialProps: baseArgs({
+        chapterId: 'ch-accept',
+        draftId: 'draft-accept',
+        serverUpdatedAt: T1,
+        serverLoaded: true,
+      }),
     });
 
     await waitFor(() => {
@@ -126,14 +155,14 @@ describe('useChapterDraft', () => {
 
     // The record itself still exists after accept — the caller re-persists
     // via the autosave dirty path, and a confirmed save clears it.
-    expect(await getDraft('user-a', 'ch-accept')).not.toBeNull();
+    expect(await getDraft('user-a', 'ch-accept', 'draft-accept')).not.toBeNull();
 
     act(() => {
       result.current.discardDraft();
     });
     expect(result.current.pendingDraft).toBeNull();
     await waitFor(async () => {
-      expect(await getDraft('user-a', 'ch-accept')).toBeNull();
+      expect(await getDraft('user-a', 'ch-accept', 'draft-accept')).toBeNull();
     });
   });
 });

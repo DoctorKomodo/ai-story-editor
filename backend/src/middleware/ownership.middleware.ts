@@ -2,7 +2,14 @@ import type { PrismaClient } from '@prisma/client';
 import type { NextFunction, Request, Response } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
 
-export type OwnedResource = 'story' | 'chapter' | 'character' | 'outline' | 'chat' | 'message';
+export type OwnedResource =
+  | 'story'
+  | 'chapter'
+  | 'character'
+  | 'outline'
+  | 'chat'
+  | 'message'
+  | 'draft';
 
 function deny(res: Response, status: 401 | 403 | 400, code: string): Response {
   const messages: Record<string, string> = {
@@ -48,14 +55,21 @@ async function checkOwned(
     }
     case 'chat': {
       const row = await client.chat.findFirst({
-        where: { id, chapter: { story: { userId } } },
+        where: { id, draft: { chapter: { story: { userId } } } },
         select,
       });
       return row !== null;
     }
     case 'message': {
       const row = await client.message.findFirst({
-        where: { id, chat: { chapter: { story: { userId } } } },
+        where: { id, chat: { draft: { chapter: { story: { userId } } } } },
+        select,
+      });
+      return row !== null;
+    }
+    case 'draft': {
+      const row = await client.draft.findFirst({
+        where: { id, chapter: { story: { userId } } },
         select,
       });
       return row !== null;

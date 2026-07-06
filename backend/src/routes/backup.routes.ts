@@ -1,13 +1,15 @@
-import type { Request, Response } from 'express';
+import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import {
+  EXPORT_FORMAT_VERSION,
   exportSchema,
   importPlanRequestSchema,
   importPlanResponseSchema,
   importRequestSchema,
   importResultSchema,
 } from 'story-editor-shared';
+import { HttpError } from '../lib/http-errors';
 import { prisma } from '../lib/prisma';
 import { respond } from '../lib/respond';
 import { requireAuth } from '../middleware/auth.middleware';
@@ -48,6 +50,26 @@ const importLimiter = rateLimit({
   skipFailedRequests: false,
 });
 
+// A wrong-version file fails the strict import schema with dozens of unrelated
+// issues (unknown keys on every chapter), burying the real cause. Name it
+// before strict parsing so old backups get a distinct, actionable error.
+// Message is a static literal (HttpError security invariant).
+function rejectUnsupportedFormatVersion(req: Request, _res: Response, next: NextFunction): void {
+  const version = (req.body as { file?: { formatVersion?: unknown } } | undefined)?.file
+    ?.formatVersion;
+  if (typeof version === 'number' && version !== EXPORT_FORMAT_VERSION) {
+    next(
+      new HttpError(
+        400,
+        'unsupported_format_version',
+        'Unsupported backup format version — this file was exported by a different app version.',
+      ),
+    );
+    return;
+  }
+  next();
+}
+
 export function createImportRouter(): Router {
   const router = Router();
   router.use(requireAuth);
@@ -61,6 +83,7 @@ export function createImportRouter(): Router {
   );
   router.post(
     '/',
+    rejectUnsupportedFormatVersion,
     validateBody(importRequestSchema, async (body, req, res) => {
       const result = await runImport(req, body);
       return respond(importResultSchema, res, result);

@@ -3,6 +3,7 @@ import { EXPORT_FORMAT_VERSION, type ExportFile } from 'story-editor-shared';
 import { createChapterRepo } from '../repos/chapter.repo';
 import { createCharacterRepo } from '../repos/character.repo';
 import { createChatRepo } from '../repos/chat.repo';
+import { createDraftRepo } from '../repos/draft.repo';
 import { createMessageRepo } from '../repos/message.repo';
 import { createOutlineRepo } from '../repos/outline.repo';
 import { createStoryRepo } from '../repos/story.repo';
@@ -14,44 +15,51 @@ export async function buildExport(req: Request): Promise<ExportFile> {
   const outlineRepo = createOutlineRepo(req);
   const chatRepo = createChatRepo(req);
   const messageRepo = createMessageRepo(req);
+  const draftRepo = createDraftRepo(req);
 
   const stories = await storyRepo.findManyForUser();
   const out: ExportFile['stories'] = [];
 
   for (const s of stories) {
-    const chapterMetas = await chapterRepo.findManyForStory(s.id, { includeSummary: true });
+    // Summaries are exported per-draft via findManyForChapter below — the
+    // metadata join's active-draft summary decrypt would be discarded.
+    const chapterMetas = await chapterRepo.findManyForStory(s.id);
     const chapters: ExportFile['stories'][number]['chapters'] = [];
 
     for (const meta of chapterMetas) {
-      const full = await chapterRepo.findById(meta.id);
-      const chats: ExportFile['stories'][number]['chapters'][number]['chats'] = [];
+      const draftRows = await draftRepo.findManyForChapter(meta.id);
+      const drafts: ExportFile['stories'][number]['chapters'][number]['drafts'] = [];
 
-      for (const c of await chatRepo.findManyForChapter(meta.id)) {
-        const messages = await messageRepo.findManyForChat(c.id);
-        chats.push({
-          title: c.title ?? null,
-          kind: c.kind,
-          messages: messages.map((m) => ({
-            role: m.role,
-            content: m.content,
-            attachmentJson: m.attachmentJson ?? null,
-            citationsJson: m.citationsJson?.length ? m.citationsJson : null,
-            model: m.model ?? null,
-            tokens: m.tokens ?? null,
-            latencyMs: m.latencyMs ?? null,
-            createdAt: m.createdAt.toISOString(),
-          })),
+      for (const d of draftRows) {
+        const chats: (typeof drafts)[number]['chats'] = [];
+        for (const c of await chatRepo.findManyForDraft(d.id)) {
+          const messages = await messageRepo.findManyForChat(c.id);
+          chats.push({
+            title: c.title ?? null,
+            kind: c.kind,
+            messages: messages.map((m) => ({
+              role: m.role,
+              content: m.content,
+              attachmentJson: m.attachmentJson ?? null,
+              citationsJson: m.citationsJson?.length ? m.citationsJson : null,
+              model: m.model ?? null,
+              tokens: m.tokens ?? null,
+              latencyMs: m.latencyMs ?? null,
+              createdAt: m.createdAt.toISOString(),
+            })),
+          });
+        }
+        drafts.push({
+          label: d.label ?? null,
+          orderIndex: d.orderIndex,
+          isActive: d.id === meta.activeDraftId,
+          bodyJson: d.bodyJson,
+          summary: d.summary ?? null,
+          chats,
         });
       }
 
-      chapters.push({
-        title: meta.title,
-        status: meta.status,
-        orderIndex: meta.orderIndex,
-        bodyJson: full?.bodyJson,
-        summary: meta.summary ?? null,
-        chats,
-      });
+      chapters.push({ title: meta.title, orderIndex: meta.orderIndex, drafts });
     }
 
     const characters = (await characterRepo.findManyForStory(s.id)).map((c) => ({

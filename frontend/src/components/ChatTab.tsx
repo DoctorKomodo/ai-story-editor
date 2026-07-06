@@ -3,11 +3,11 @@ import type { JSX } from 'react';
 import { ChatSceneTab } from '@/components/ChatSceneTab';
 
 export interface ChatTabProps {
-  chapterId: string | null;
+  draftId: string | null;
   editor: TiptapEditor | null;
 }
 
 /** Thin wrapper over the shared [ChatSceneTab] shell — kind='ask'. */
-export function ChatTab({ chapterId, editor }: ChatTabProps): JSX.Element {
-  return <ChatSceneTab kind="ask" chapterId={chapterId} editor={editor} />;
+export function ChatTab({ draftId, editor }: ChatTabProps): JSX.Element {
+  return <ChatSceneTab kind="ask" draftId={draftId} editor={editor} />;
 }

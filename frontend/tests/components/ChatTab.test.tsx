@@ -82,7 +82,7 @@ describe('ChatTab — smoke', () => {
       return Promise.reject(new Error(`Unexpected fetch: ${String(url)}`));
     });
 
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, makeClient());
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, makeClient());
 
     await waitFor(() => {
       expect(screen.getByTestId('chat-tab')).toBeInTheDocument();
@@ -110,7 +110,7 @@ describe('ChatTab — smoke', () => {
             {
               id: 'c1',
               title: 'How do I describe rain?',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               kind: 'ask',
               messageCount: 0,
               createdAt: new Date().toISOString(),
@@ -125,7 +125,7 @@ describe('ChatTab — smoke', () => {
     vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, makeClient());
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, makeClient());
 
     const picker = await screen.findByRole('button', { name: /Chat: How do I describe rain/ });
     await user.click(picker);
@@ -186,7 +186,7 @@ describe('ChatTab — smoke', () => {
     // POST /chats returns a Chat (no messageCount — chatResponseSchema is strict).
     const newChat = {
       id: 'c1',
-      chapterId: 'ch1',
+      draftId: 'ch1',
       title: null,
       kind: 'ask',
       createdAt: now,
@@ -203,11 +203,11 @@ describe('ChatTab — smoke', () => {
       const method = init?.method?.toUpperCase() ?? 'GET';
 
       // List chats — returns the created chat once it exists
-      if (url.includes('/chapters/ch1/chats') && method === 'GET') {
+      if (url.includes('/drafts/ch1/chats') && method === 'GET') {
         return jsonResponse(200, { chats: chatCreated ? [newChatSummary] : [] });
       }
       // Create chat
-      if (url.includes('/chapters/ch1/chats') && method === 'POST') {
+      if (url.includes('/drafts/ch1/chats') && method === 'POST') {
         chatCreated = true;
         return jsonResponse(201, { chat: newChat });
       }
@@ -235,7 +235,7 @@ describe('ChatTab — smoke', () => {
       ...DEFAULT_SETTINGS,
       chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-model-1' },
     });
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
 
     // Wait for initial render — no sessions yet
     await waitFor(() => expect(screen.getByTestId('chat-tab')).toBeInTheDocument());
@@ -295,12 +295,12 @@ describe('ChatTab — smoke', () => {
   it('renders the Stop button while a chat send is in flight', async () => {
     fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = typeof input === 'string' ? input : input.toString();
-      if (url.includes('/api/chapters/ch1/chats') && !url.includes('/messages')) {
+      if (url.includes('/api/drafts/ch1/chats') && !url.includes('/messages')) {
         return jsonResponse(200, {
           chats: [
             {
               id: 'c1',
-              chapterId: 'ch1',
+              draftId: 'ch1',
               title: 'Existing chat',
               kind: 'ask',
               messageCount: 0,
@@ -341,7 +341,7 @@ describe('ChatTab — smoke', () => {
       ...DEFAULT_SETTINGS,
       chat: { ...DEFAULT_SETTINGS.chat, model: 'venice-model-1' },
     });
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
 
     // Wait for the chat list to load + auto-select.
     await screen.findByRole('button', { name: /Chat: Existing chat/ });
@@ -387,19 +387,19 @@ function baseMessage(id: string, role: 'user' | 'assistant', content: string, cr
   };
 }
 
-function standardFetchMock(chatId: string, chapterId: string): FetchMock {
+function standardFetchMock(chatId: string, draftId: string): FetchMock {
   return vi.fn(async (input: RequestInfo | URL) => {
     const url = typeof input === 'string' ? input : input.toString();
     if (url.includes(`/chats/${chatId}/messages`)) {
       return jsonResponse(200, { messages: [] });
     }
-    if (url.includes(`/chapters/${chapterId}/chats`)) {
+    if (url.includes(`/drafts/${draftId}/chats`)) {
       return jsonResponse(200, {
         chats: [
           {
             id: chatId,
             title: 'Test chat',
-            chapterId,
+            draftId,
             kind: 'ask',
             messageCount: 4,
             createdAt: new Date().toISOString(),
@@ -456,7 +456,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 4,
         createdAt: now,
@@ -466,7 +466,7 @@ describe('ChatTab — useMessageActions integration', () => {
     ]);
 
     const user = userEvent.setup();
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
 
     // Wait for u1's row to appear.
     await screen.findByTestId('chat-tab');
@@ -511,7 +511,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 2,
         createdAt: now,
@@ -521,7 +521,7 @@ describe('ChatTab — useMessageActions integration', () => {
     ]);
 
     const user = userEvent.setup();
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
 
     await screen.findByTestId('chat-tab');
 
@@ -562,7 +562,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 2,
         createdAt: now,
@@ -572,7 +572,7 @@ describe('ChatTab — useMessageActions integration', () => {
     ]);
 
     const user = userEvent.setup();
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
 
     await screen.findByTestId('chat-tab');
 
@@ -603,7 +603,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 4,
         createdAt: now,
@@ -613,7 +613,7 @@ describe('ChatTab — useMessageActions integration', () => {
     ]);
 
     const user = userEvent.setup();
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
 
     await screen.findByTestId('chat-tab');
 
@@ -652,7 +652,7 @@ describe('ChatTab — useMessageActions integration', () => {
       {
         id: 'c1',
         title: 'Test chat',
-        chapterId: 'ch1',
+        draftId: 'ch1',
         kind: 'ask',
         messageCount: 2,
         createdAt: now,
@@ -665,7 +665,7 @@ describe('ChatTab — useMessageActions integration', () => {
     useErrorStore.getState().clear();
 
     const user = userEvent.setup();
-    renderWithProviders(<ChatTab chapterId="ch1" editor={null} />, qc);
+    renderWithProviders(<ChatTab draftId="ch1" editor={null} />, qc);
 
     await screen.findByTestId('chat-tab');
 

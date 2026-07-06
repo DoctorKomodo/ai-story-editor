@@ -33,6 +33,9 @@ function renderList(
         onSelectChapter={onSelect}
         onOpenSummary={onOpenSummary ?? vi.fn()}
         openPopoverChapterId={openPopoverChapterId}
+        viewedDraftId={null}
+        onSelectDraft={vi.fn()}
+        onRequestNewDraft={vi.fn()}
       />
     </QueryClientProvider>,
   );

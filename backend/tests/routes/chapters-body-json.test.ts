@@ -1,10 +1,11 @@
 // [B10] Chapter save pipeline — integration tests for the bodyJson PATCH path.
 //
-// The PATCH /api/stories/:storyId/chapters/:chapterId handler must, whenever
-// `bodyJson` is present in the request body, derive `wordCount` server-side
-// via `tipTapJsonToText` and update both in a single write. Text-only PATCHes
-// (title/status/orderIndex only) must NOT touch body or wordCount — this is
-// the regression surface for the pipeline first shipped under [B3].
+// [9wk.4] Body writes moved to PATCH /api/drafts/:draftId — the handler must,
+// whenever `bodyJson` is present in the request body, derive `wordCount`
+// server-side via `tipTapJsonToText` and update both in a single write. The
+// chapter-mounted PATCH now only accepts title/orderIndex; a text-only PATCH
+// there must NOT touch body or wordCount — this is the regression surface
+// for the pipeline first shipped under [B3].
 
 import type { Request } from 'express';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -79,20 +80,20 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       title: 'Untitled',
       orderIndex: 0,
     });
-    const chapterId = created.id as string;
+    const draftId = created.activeDraftId as string;
 
     const tree = paragraphDoc('four five six seven'); // 4 words
     const res = await agent
-      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .patch(`/api/drafts/${draftId}`)
       .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: tree });
     expect(res.status).toBe(200);
-    expect(res.body.chapter.wordCount).toBe(4);
+    expect(res.body.draft.wordCount).toBe(4);
     // Body comes back as a parsed JSON tree, not a string.
-    expect(typeof res.body.chapter.bodyJson).toBe('object');
-    expect(res.body.chapter.bodyJson.type).toBe('doc');
+    expect(typeof res.body.draft.bodyJson).toBe('object');
+    expect(res.body.draft.bodyJson.type).toBe('doc');
     const firstParagraph = (
-      res.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>
+      res.body.draft.bodyJson.content as Array<{ content: Array<{ text: string }> }>
     )[0];
     expect(firstParagraph.content[0].text).toBe('four five six seven');
   });
@@ -110,15 +111,15 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       bodyJson: paragraphDoc('some stored words here please'),
       wordCount: 5,
     });
-    const chapterId = created.id as string;
+    const draftId = created.activeDraftId as string;
 
     const res = await agent
-      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .patch(`/api/drafts/${draftId}`)
       .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: null });
     expect(res.status).toBe(200);
-    expect(res.body.chapter.wordCount).toBe(0);
-    expect(res.body.chapter.bodyJson).toBeNull();
+    expect(res.body.draft.wordCount).toBe(0);
+    expect(res.body.draft.bodyJson).toBeNull();
   });
 
   it('PATCH with whitespace-only / empty-paragraph bodyJson yields wordCount 0', async () => {
@@ -132,7 +133,7 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       title: 'Draft',
       orderIndex: 0,
     });
-    const chapterId = created.id as string;
+    const draftId = created.activeDraftId as string;
 
     const emptyTree = {
       type: 'doc',
@@ -142,14 +143,14 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       ],
     };
     const res = await agent
-      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .patch(`/api/drafts/${draftId}`)
       .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: emptyTree });
     expect(res.status).toBe(200);
-    expect(res.body.chapter.wordCount).toBe(0);
+    expect(res.body.draft.wordCount).toBe(0);
   });
 
-  it('PATCH with bodyJson AND title in the same request updates both; wordCount reflects new body', async () => {
+  it('PATCH bodyJson on the draft then title on the chapter both take effect; wordCount reflects the new body', async () => {
     const { agent, sessionId } = await registerAndLogin({ username: 'b10-combo' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Combo' });
@@ -163,20 +164,58 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       wordCount: 2,
     });
     const chapterId = created.id as string;
+    const draftId = created.activeDraftId as string;
 
     const newTree = paragraphDoc('one two three four five six seven'); // 7 words
-    const res = await agent
+    const draftRes = await agent
+      .patch(`/api/drafts/${draftId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ bodyJson: newTree });
+    expect(draftRes.status).toBe(200);
+    expect(draftRes.body.draft.wordCount).toBe(7);
+
+    const titleRes = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
       .set('Origin', TEST_ORIGIN)
-      .send({ title: 'New Title', bodyJson: newTree });
-    expect(res.status).toBe(200);
-    expect(res.body.chapter.title).toBe('New Title');
-    expect(res.body.chapter.wordCount).toBe(7);
-    const p = (res.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>)[0];
+      .send({ title: 'New Title' });
+    expect(titleRes.status).toBe(200);
+    expect(titleRes.body.chapter.title).toBe('New Title');
+    expect(titleRes.body.chapter.wordCount).toBe(7);
+    const p = (
+      titleRes.body.chapter.bodyJson.content as Array<{ content: Array<{ text: string }> }>
+    )[0];
     expect(p.content[0].text).toBe('one two three four five six seven');
   });
 
-  it('text-only PATCH (title + status, no bodyJson) leaves body and wordCount untouched [B3 regression]', async () => {
+  it('[9wk.4] PATCH bodyJson/expectedUpdatedAt on the CHAPTER route now 400s (cutover contract)', async () => {
+    const { agent, sessionId } = await registerAndLogin({ username: 'b10-cutover-400' });
+    const req = makeFakeReq(sessionId);
+    const story = await createStoryRepo(req).create({ title: 'Cutover contract' });
+    const storyId = story.id as string;
+
+    const created = await createChapterRepo(req).create({
+      storyId,
+      title: 'Chapter',
+      orderIndex: 0,
+    });
+    const chapterId = created.id as string;
+
+    const bodyRes = await agent
+      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ bodyJson: paragraphDoc('no longer accepted here') });
+    expect(bodyRes.status).toBe(400);
+    expect(bodyRes.body.error.code).toBe('validation_error');
+
+    const versionRes = await agent
+      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ title: 'Fine', expectedUpdatedAt: new Date().toISOString() });
+    expect(versionRes.status).toBe(400);
+    expect(versionRes.body.error.code).toBe('validation_error');
+  });
+
+  it('text-only PATCH (title only, no bodyJson) leaves body and wordCount untouched [B3 regression]', async () => {
     const { agent, sessionId } = await registerAndLogin({ username: 'b10-text-only' });
     const req = makeFakeReq(sessionId);
     const story = await createStoryRepo(req).create({ title: 'Stable Body' });
@@ -195,10 +234,9 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     const res = await agent
       .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
       .set('Origin', TEST_ORIGIN)
-      .send({ title: 'Renamed', status: 'revision' });
+      .send({ title: 'Renamed' });
     expect(res.status).toBe(200);
     expect(res.body.chapter.title).toBe('Renamed');
-    expect(res.body.chapter.status).toBe('revision');
     // Body + wordCount must be UNCHANGED.
     expect(res.body.chapter.wordCount).toBe(4);
     expect(typeof res.body.chapter.bodyJson).toBe('object');
@@ -226,7 +264,7 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
       title: 'Ten Words',
       orderIndex: 0,
     });
-    const chapterId = created.id as string;
+    const draftId = created.activeDraftId as string;
 
     const tree = twoParagraphDoc(
       'The quick brown fox jumps.', // 5 words
@@ -234,10 +272,10 @@ describe('Chapter save pipeline — PATCH bodyJson [B10]', () => {
     );
 
     const res = await agent
-      .patch(`/api/stories/${storyId}/chapters/${chapterId}`)
+      .patch(`/api/drafts/${draftId}`)
       .set('Origin', TEST_ORIGIN)
       .send({ bodyJson: tree });
     expect(res.status).toBe(200);
-    expect(res.body.chapter.wordCount).toBe(10);
+    expect(res.body.draft.wordCount).toBe(10);
   });
 });

@@ -17,6 +17,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
+import { createDraftRepo } from '../../src/repos/draft.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
@@ -31,6 +32,7 @@ const SENTINEL = 'SENTINEL_E12_DO_NOT_LEAK';
 const NARRATIVE_TABLES = [
   'Story',
   'Chapter',
+  'Draft',
   'Character',
   'OutlineItem',
   'Chat',
@@ -97,12 +99,35 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
       wordCount: 3,
     });
 
-    await chapterRepo.update(chapter.id, {
+    // [9wk.4] Summary writes go through draft.repo now — attach it to the
+    // chapter's minted initial (active) draft.
+    const draftRepo = createDraftRepo(ctx.req);
+    await draftRepo.update(chapter.activeDraftId as string, {
       summaryJson: {
         events: `summary-events ${SENTINEL}`,
         stateAtEnd: `summary-state ${SENTINEL}`,
         openThreads: `summary-threads ${SENTINEL}`,
       },
+    });
+
+    // [9wk.3] chapter.repo.create already minted a draft at orderIndex 0 for
+    // this chapter — this second draft takes the next slot.
+    await draftRepo.create({
+      chapterId: chapter.id as string,
+      bodyJson: {
+        type: 'doc',
+        content: [
+          { type: 'paragraph', content: [{ type: 'text', text: `draft-body ${SENTINEL}` }] },
+        ],
+      },
+      summaryJson: {
+        events: `draft-events ${SENTINEL}`,
+        stateAtEnd: `draft-state ${SENTINEL}`,
+        openThreads: `draft-threads ${SENTINEL}`,
+      },
+      label: `draft-label ${SENTINEL}`,
+      wordCount: 2,
+      orderIndex: 1,
     });
 
     await characterRepo.create({
@@ -130,7 +155,7 @@ describe('[E12] encryption leak — no narrative plaintext reaches disk', () => 
     });
 
     const chat = await chatRepo.create({
-      chapterId: chapter.id as string,
+      draftId: chapter.activeDraftId as string,
       title: `chat-title ${SENTINEL}`,
     });
 

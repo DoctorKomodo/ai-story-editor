@@ -11,14 +11,6 @@
  *   Parses `{ error: { message, code } }` bodies when present.
  * - Resolves with `undefined as T` for 204 responses.
  */
-import {
-  type Chat,
-  type ChatKind,
-  type ChatSummary,
-  chatResponseSchema,
-  chatsResponseSchema,
-} from 'story-editor-shared';
-
 const DEFAULT_BASE_URL = '/api';
 
 function resolveBaseUrl(): string {
@@ -252,53 +244,6 @@ export async function fetchExportBlob(): Promise<{ blob: Blob; filename: string 
 // Thin wrappers over `api()` / `apiStream()` used by SC14+ scene-tab hooks.
 // All auth and error handling is delegated to `doRequest` via `api()` /
 // `apiStream()` — do not call `fetch` directly here.
-
-/**
- * [SC14] GET /api/chapters/:chapterId/chats
- *
- * Fetches all chats for the given chapter. Pass `opts.kind` to filter by chat
- * kind (`'ask'` or `'scene'`).
- */
-export async function listChats(
-  chapterId: string,
-  opts?: { kind?: ChatKind },
-): Promise<ChatSummary[]> {
-  const params = opts?.kind !== undefined ? `?kind=${encodeURIComponent(opts.kind)}` : '';
-  const res = await api<unknown>(`/chapters/${encodeURIComponent(chapterId)}/chats${params}`);
-  return chatsResponseSchema.parse(res).chats;
-}
-
-/**
- * [SC14] POST /api/chapters/:chapterId/chats
- *
- * Creates a new chat for the given chapter.
- */
-export async function createChat(
-  chapterId: string,
-  opts?: { title?: string; kind?: ChatKind },
-): Promise<Chat> {
-  const body: Record<string, unknown> = {};
-  if (opts?.title !== undefined) body.title = opts.title;
-  if (opts?.kind !== undefined) body.kind = opts.kind;
-  const res = await api<unknown>(`/chapters/${encodeURIComponent(chapterId)}/chats`, {
-    method: 'POST',
-    body,
-  });
-  return chatResponseSchema.parse(res).chat;
-}
-
-/**
- * [SC14] PATCH /api/chats/:id
- *
- * Renames an existing chat.
- */
-export async function patchChat(id: string, title: string): Promise<Chat> {
-  const res = await api<unknown>(`/chats/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: { title },
-  });
-  return chatResponseSchema.parse(res).chat;
-}
 
 /**
  * [SC14] DELETE /api/chats/:id

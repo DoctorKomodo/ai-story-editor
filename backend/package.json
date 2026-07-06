@@ -13,6 +13,7 @@
     "test:backend": "vitest",
     "db:test:reset": "bash ../scripts/db-test-reset.sh",
     "test:live": "bash -c 'OUT=$(vitest run --config vitest.live.config.ts \"$@\" 2>&1); CODE=$?; echo \"$OUT\"; exit $CODE' --",
+    "test:migration-squash": "vitest run --config vitest.squash.config.ts",
     "venice:probe": "tsx scripts/venice-probe.ts"
   },
   "dependencies": {

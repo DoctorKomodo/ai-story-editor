@@ -204,7 +204,7 @@ describe('serializeOutlineItem()', () => {
 describe('serializeChat()', () => {
   const baseRow = {
     id: 'cm0chat00000001',
-    chapterId: 'cm0chap00000001',
+    draftId: 'cm0chap00000001',
     title: 'Brainstorming',
     kind: 'ask' as const,
     createdAt: new Date('2026-05-15T00:00:00.000Z'),
@@ -263,13 +263,14 @@ const REPO_CHAPTER: RepoChapter = {
   bodyJson: { type: 'doc', content: [] },
   wordCount: 12,
   orderIndex: 0,
-  status: 'draft',
   hasSummary: false,
   summaryIsStale: false,
   summary: null,
   summaryUpdatedAt: null,
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
+  activeDraftId: 'd1',
+  draftCount: 1,
 };
 
 const REPO_CHAPTER_META: RepoChapterMeta = {
@@ -278,11 +279,12 @@ const REPO_CHAPTER_META: RepoChapterMeta = {
   title: 'Chapter One',
   wordCount: 12,
   orderIndex: 0,
-  status: 'draft',
   hasSummary: false,
   summaryIsStale: false,
   createdAt: new Date(ISO),
   updatedAt: new Date(ISO),
+  activeDraftId: 'd1',
+  draftCount: 1,
 };
 
 describe('serializeChapter', () => {
@@ -294,13 +296,14 @@ describe('serializeChapter', () => {
       bodyJson: { type: 'doc', content: [] },
       wordCount: 12,
       orderIndex: 0,
-      status: 'draft',
       hasSummary: false,
       summaryIsStale: false,
       summary: null,
       summaryUpdatedAt: null,
       createdAt: ISO,
       updatedAt: ISO,
+      activeDraftId: 'd1',
+      draftCount: 1,
     });
   });
 
@@ -335,11 +338,12 @@ describe('serializeChapterMeta', () => {
       title: 'Chapter One',
       wordCount: 12,
       orderIndex: 0,
-      status: 'draft',
       hasSummary: false,
       summaryIsStale: false,
       createdAt: ISO,
       updatedAt: ISO,
+      activeDraftId: 'd1',
+      draftCount: 1,
     });
   });
 

@@ -1,13 +1,14 @@
 import { z } from 'zod';
-import { chapterStatusSchema, chapterSummarySchema } from './chapter';
+import { chapterSummarySchema } from './chapter';
 import { characterCreateSchema } from './character';
 import { chatKindSchema } from './chat';
+import { DRAFT_LABEL_MAX } from './draft';
 import { citationSchema, messageAttachmentSchema, messageRoleSchema } from './message';
 import { outlineCreateSchema } from './outline';
 import { storyCreateSchema } from './story';
 
 /** Bump only on a breaking change to the file shape. Import rejects anything else. */
-export const EXPORT_FORMAT_VERSION = 1 as const;
+export const EXPORT_FORMAT_VERSION = 2 as const;
 
 const messageExportSchema = z.strictObject({
   role: messageRoleSchema,
@@ -27,14 +28,31 @@ const chatExportSchema = z.strictObject({
   messages: z.array(messageExportSchema).default([]),
 });
 
-const chapterExportSchema = z.strictObject({
-  title: z.string().min(1).max(500),
-  status: chapterStatusSchema,
+const draftExportSchema = z.strictObject({
+  label: z.string().min(1).max(DRAFT_LABEL_MAX).nullable().default(null),
   orderIndex: z.number().int().nonnegative(),
+  isActive: z.boolean(),
   bodyJson: z.unknown().optional(),
   summary: chapterSummarySchema.nullable().default(null),
   chats: z.array(chatExportSchema).default([]),
 });
+
+// [9wk.5] drafts[]-only (user decision D1): the active draft IS the chapter's
+// content downstream; chapter-level bodyJson/summary/chats are gone. min(1) is
+// D2 (hard cutover — interim draftless files reject). The refine is a
+// WHOLE-FILE parse gate: the import route validates the entire envelope via
+// validateBody before runImport starts, so a malformed chapter 400s the file
+// (the per-story transaction isolates runtime failures only).
+const chapterExportSchema = z
+  .strictObject({
+    title: z.string().min(1).max(500),
+    orderIndex: z.number().int().nonnegative(),
+    drafts: z.array(draftExportSchema).min(1),
+  })
+  .refine((ch) => ch.drafts.filter((d) => d.isActive).length === 1, {
+    message: 'exactly one draft per chapter must have isActive: true',
+    path: ['drafts'],
+  });
 
 const characterExportSchema = characterCreateSchema.extend({
   orderIndex: z.number().int().nonnegative(),
@@ -116,6 +134,7 @@ export const importResultSchema = z.strictObject({
   imported: z.strictObject({
     stories: z.number().int().nonnegative(),
     chapters: z.number().int().nonnegative(),
+    drafts: z.number().int().nonnegative(),
     characters: z.number().int().nonnegative(),
     outlineItems: z.number().int().nonnegative(),
     chats: z.number().int().nonnegative(),

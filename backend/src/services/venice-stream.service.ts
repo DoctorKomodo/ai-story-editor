@@ -78,7 +78,7 @@ export function prepareVeniceCall(input: PrepareVeniceCallInput): PreparedVenice
     // logVeniceParams's route union excludes 'ai-models' (that route never
     // reaches a completion call); PrepareVeniceCallInput widens to the full
     // VeniceErrorContext union for symmetry with the error-mapping context.
-    route: input.route as 'ai-complete' | 'chat' | 'chapter-summarise',
+    route: input.route as 'ai-complete' | 'chat' | 'chapter-summarise' | 'draft-summarise',
     userId: input.userId,
     modelId: input.modelId,
     resolved,

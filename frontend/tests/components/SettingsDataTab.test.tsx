@@ -24,14 +24,22 @@ function renderTab() {
 }
 
 const LEGACY_BACKUP = {
-  formatVersion: 1,
+  formatVersion: 2,
   app: 'inkwell',
   exportedAt: '2026-06-24T12:00:00.000Z',
   stories: [],
 };
 
 const IMPORT_RESULT_EMPTY = {
-  imported: { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 },
+  imported: {
+    stories: 0,
+    chapters: 0,
+    drafts: 0,
+    characters: 0,
+    outlineItems: 0,
+    chats: 0,
+    messages: 0,
+  },
   outcomes: [],
 };
 
@@ -90,6 +98,18 @@ describe('SettingsDataTab', () => {
     fireEvent.change(screen.getByTestId('data-restore-file'), { target: { files: [bad] } });
     await waitFor(() => expect(screen.getByTestId('data-restore-error')).toBeInTheDocument());
     expect(screen.getByText('No file selected')).toBeInTheDocument();
+  });
+
+  it('names the format version when an old (v1) backup is staged, instead of the generic message', async () => {
+    renderTab();
+    fireEvent.change(screen.getByTestId('data-restore-file'), {
+      target: { files: [makeFile({ ...LEGACY_BACKUP, formatVersion: 1 }, 'old-backup.json')] },
+    });
+    await waitFor(() => expect(screen.getByTestId('data-restore-error')).toBeInTheDocument());
+    expect(screen.getByTestId('data-restore-error')).toHaveTextContent(/format version 1/);
+    expect(screen.getByTestId('data-restore-error')).not.toHaveTextContent(
+      'not a valid Inkwell backup',
+    );
   });
 
   it('enables Restore as soon as a legacy (no-id) file is staged — no phrase needed', async () => {
@@ -289,6 +309,7 @@ describe('SettingsDataTab', () => {
         imported: {
           stories: 1,
           chapters: 0,
+          drafts: 0,
           characters: 0,
           outlineItems: 0,
           chats: 0,
@@ -438,6 +459,7 @@ describe('SettingsDataTab', () => {
           imported: {
             stories: 1,
             chapters: 0,
+            drafts: 0,
             characters: 0,
             outlineItems: 0,
             chats: 0,

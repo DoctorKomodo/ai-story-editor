@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import type { Citation, Message, MessageAttachment, MessageRole } from 'story-editor-shared';
 import { MESSAGE_ENCRYPTED_FIELD_KEYS, MESSAGE_JSON_PAYLOAD_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, writeEncrypted } from './_narrative';
+import { projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = MESSAGE_ENCRYPTED_FIELD_KEYS;
 const JSON_PAYLOAD_FIELDS = MESSAGE_JSON_PAYLOAD_FIELD_KEYS;
@@ -25,19 +25,13 @@ export type RepoMessage = Omit<Message, 'createdAt' | 'updatedAt'> & {
   updatedAt: Date | null;
 };
 
-function resolveUserId(req: Request): string {
-  const id = req.user?.id;
-  if (!id) throw new Error('message.repo: req.user.id is not set');
-  return id;
-}
-
 async function ensureChatOwned(
   client: PrismaClient | Prisma.TransactionClient,
   chatId: string,
   userId: string,
 ): Promise<void> {
   const ok = await client.chat.findFirst({
-    where: { id: chatId, chapter: { story: { userId } } },
+    where: { id: chatId, draft: { chapter: { story: { userId } } } },
   });
   if (!ok) throw new Error('message.repo: chat not owned by caller');
 }
@@ -49,7 +43,7 @@ function serialiseJsonField(v: unknown | null | undefined): string | null {
 
 export function createMessageRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function createWithin(tx: Prisma.TransactionClient, input: MessageCreateInput) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'message.repo');
     await ensureChatOwned(tx, input.chatId, userId);
     const created = await tx.message.create({
       data: {
@@ -76,11 +70,11 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function update(id: string, chatId: string, input: { content: string }) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'message.repo');
     // Ownership + role gate: only the owner's own user messages are editable,
     // and the message must belong to the specific chat named in the URL.
     const target = await client.message.findFirst({
-      where: { id, chatId, chat: { chapter: { story: { userId } } } },
+      where: { id, chatId, chat: { draft: { chapter: { story: { userId } } } } },
       select: { id: true, role: true },
     });
     if (!target || target.role !== 'user') return null;
@@ -105,28 +99,28 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   }
 
   async function findById(id: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'message.repo');
     const row = await client.message.findFirst({
-      where: { id, chat: { chapter: { story: { userId } } } },
+      where: { id, chat: { draft: { chapter: { story: { userId } } } } },
     });
     if (!row) return null;
     return shape(row, req);
   }
 
   async function findManyForChat(chatId: string) {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'message.repo');
     await ensureChatOwned(client, chatId, userId);
     const rows = await client.message.findMany({
-      where: { chatId, chat: { chapter: { story: { userId } } } },
+      where: { chatId, chat: { draft: { chapter: { story: { userId } } } } },
       orderBy: { createdAt: 'asc' },
     });
     return rows.map((r) => shape(r, req));
   }
 
   async function countForChat(chatId: string): Promise<number> {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'message.repo');
     return client.message.count({
-      where: { chatId, chat: { chapter: { story: { userId } } } },
+      where: { chatId, chat: { draft: { chapter: { story: { userId } } } } },
     });
   }
 
@@ -134,13 +128,13 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     chatId: string,
     afterMessageId: string,
   ): Promise<{ count: number }> {
-    const userId = resolveUserId(req);
+    const userId = resolveUserId(req, 'message.repo');
     await ensureChatOwned(client, chatId, userId);
     const ref = await client.message.findFirst({
       where: {
         id: afterMessageId,
         chatId,
-        chat: { chapter: { story: { userId } } },
+        chat: { draft: { chapter: { story: { userId } } } },
       },
       select: { id: true, createdAt: true },
     });
@@ -150,7 +144,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     const result = await client.message.deleteMany({
       where: {
         chatId,
-        chat: { chapter: { story: { userId } } },
+        chat: { draft: { chapter: { story: { userId } } } },
         OR: [
           { createdAt: { gt: ref.createdAt } },
           { AND: [{ createdAt: ref.createdAt }, { id: { not: ref.id } }] },

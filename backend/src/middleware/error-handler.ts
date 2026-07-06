@@ -1,10 +1,15 @@
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
 import { badRequestFromZod } from '../lib/bad-request';
-import { HttpError } from '../lib/http-errors';
+import { conflict, HttpError } from '../lib/http-errors';
 import { NoVeniceKeyError } from '../lib/venice';
 import { ChapterNotOwnedError } from '../repos/chapter.repo';
 import { CharacterNotOwnedError } from '../repos/character.repo';
+import {
+  DraftDeleteActiveError,
+  DraftDeleteLastError,
+  DraftVersionConflictError,
+} from '../repos/draft.repo';
 import { OutlineNotOwnedError } from '../repos/outline.repo';
 import { InvalidCredentialsError, UsernameUnavailableError } from '../services/auth.service';
 import { DekNotAvailableError } from '../services/content-crypto.service';
@@ -77,6 +82,21 @@ export function globalErrorHandler(
     err instanceof OutlineNotOwnedError
   ) {
     res.status(403).json({ error: { message: 'Forbidden', code: 'forbidden' } });
+    return;
+  }
+  if (err instanceof DraftVersionConflictError) {
+    const e = conflict('Draft was modified elsewhere');
+    res.status(e.status).json({ error: { message: e.message, code: e.code } });
+    return;
+  }
+  if (err instanceof DraftDeleteActiveError) {
+    const e = conflict('Cannot delete the active draft', 'cannot_delete_active_draft');
+    res.status(e.status).json({ error: { message: e.message, code: e.code } });
+    return;
+  }
+  if (err instanceof DraftDeleteLastError) {
+    const e = conflict('Cannot delete the last draft', 'cannot_delete_last_draft');
+    res.status(e.status).json({ error: { message: e.message, code: e.code } });
     return;
   }
   if (err instanceof DekNotAvailableError) {

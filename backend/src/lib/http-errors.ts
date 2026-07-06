@@ -24,3 +24,5 @@ export const notFound = (message = 'Not found'): HttpError =>
 export const forbidden = (message = 'Forbidden'): HttpError =>
   new HttpError(403, 'forbidden', message);
 export const unauthorized = (): HttpError => new HttpError(401, 'unauthorized', 'Unauthorized');
+export const conflict = (message: string, code = 'conflict'): HttpError =>
+  new HttpError(409, code, message);

@@ -28,6 +28,9 @@ function renderList(opts: {
         onSelectChapter={() => {}}
         onChapterDeleted={opts.onChapterDeleted}
         onOpenSummary={() => {}}
+        viewedDraftId={null}
+        onSelectDraft={() => {}}
+        onRequestNewDraft={() => {}}
       />
     </QueryClientProvider>,
   );

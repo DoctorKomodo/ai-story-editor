@@ -118,28 +118,54 @@ Cascades chapters / characters / outline / chats / messages. Response `204`.
 
 ## Chapters — `/api/stories/:storyId/chapters`
 
+[9wk.4] Chapter reads are **draft-backed**: `bodyJson`, `summary`, `summaryUpdatedAt`, `hasSummary`, `summaryIsStale`, and `wordCount` are all sourced from the chapter's **active draft** (see Drafts below), not from the chapter row's own (dormant) ciphertext columns. `title`/`orderIndex`/timestamps stay chapter-own. Every chapter carries an `activeDraftId` (non-null) and a `draftCount` (≥1).
+
 ### `GET /`
-Response `200`: `{ "chapters": [ … ] }` — **metadata only**, sorted by `orderIndex`: `{ "id", "storyId", "title", "wordCount", "orderIndex", "status", "createdAt", "updatedAt", "hasSummary", "summaryIsStale" }`. `bodyJson` is omitted here; use the single-chapter GET.
+Response `200`: `{ "chapters": [ … ] }` — **metadata only**, sorted by `orderIndex`: `{ "id", "storyId", "title", "wordCount", "orderIndex", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "draftCount", "activeDraftId" }`. `bodyJson` is omitted here; use the single-chapter GET.
 
 ### `POST /`
-Body: `{ "title", "bodyJson?", "status?" }`. Backend assigns `orderIndex` and computes `wordCount` from `bodyJson` before encryption. Response `201`: `{ "chapter" }`.
+Body: `{ "title", "bodyJson?" }`. Backend assigns `orderIndex`, computes `wordCount` from `bodyJson` before encryption, and mints the chapter's initial (active) draft in the same transaction. Response `201`: `{ "chapter" }`.
 
 ### `GET /:chapterId`
-Response `200`: `{ "chapter": { "id", "storyId", "title", "bodyJson", "wordCount", "orderIndex", "status", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "summary", "summaryUpdatedAt" } }`. `bodyJson` is the decrypted TipTap tree; `summary` is the structured summary (or `null`).
+Response `200`: `{ "chapter": { "id", "storyId", "title", "bodyJson", "wordCount", "orderIndex", "createdAt", "updatedAt", "hasSummary", "summaryIsStale", "summary", "summaryUpdatedAt", "draftCount", "activeDraftId" } }`. `bodyJson`/`summary`/`summaryUpdatedAt`/`wordCount`/`hasSummary`/`summaryIsStale` are sourced from the active draft.
 
 ### `PATCH /:chapterId`
-Body: any subset of `{ "title", "bodyJson", "status", "orderIndex" }`, plus optional `"expectedUpdatedAt"` (ISO datetime — optimistic-concurrency precondition; omitted = unconditional last-write-wins, which is what old clients and import send). If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "chapter" }`. Response `409` `{ "error": { "message", "code": "conflict" } }` when `expectedUpdatedAt` is sent and no longer matches the chapter's `updatedAt` (edited elsewhere — client should refetch, or resend without the precondition to overwrite).
+Body: any subset of `{ "title", "orderIndex" }` — **structural fields only**. Body writes (`bodyJson`) and the optimistic-concurrency precondition (`expectedUpdatedAt`) moved to `PATCH /api/drafts/:draftId` (see Drafts below); sending either here is a `400 validation_error` (`chapterUpdateSchema` is `.strictObject`). Response `200`: `{ "chapter" }`.
 
 ### `DELETE /:chapterId`
-Response `204` (remaining chapters are re-packed to sequential `orderIndex`).
+Response `204` (remaining chapters are re-packed to sequential `orderIndex`; cascades the chapter's drafts).
 
 ### `PATCH /reorder`
 Body: `{ "chapters": [{ "id", "orderIndex" }] }` (two-phase swap in one transaction). Response `204`; the client re-fetches the list.
 
-### `PUT /:chapterId/summary`
-Upsert a chapter summary directly (structured object). Response `200`: `{ "summary", "summaryUpdatedAt" }`.
+---
 
-### `POST /:chapterId/summarise` — non-streaming
+## Drafts — `/api/chapters/:chapterId/drafts`, `/api/chapters/:chapterId/active-draft`, `/api/drafts/:draftId`
+
+[9wk.2–9wk.4] A chapter's prose lives on its **drafts** — one or more forkable copies of body/summary/wordCount, exactly one of which is the chapter's **active draft** (the source for the chapter-mounted reads above). Every chapter has ≥1 draft; the active draft can never be deleted.
+
+### `GET /api/chapters/:chapterId/drafts`
+Response `200`: `{ "drafts": [ … ] }` — metadata only, sorted by `orderIndex`: `{ "id", "chapterId", "label", "wordCount", "orderIndex", "isActive", "hasSummary", "summaryIsStale", "createdAt", "updatedAt" }`. `label: null` ⇒ the frontend renders a positional label ("Draft A/B/C").
+
+### `POST /api/chapters/:chapterId/drafts`
+Body: `{ "mode": "fork" | "blank", "label"? }`. `fork` copies the active draft's body (fresh ciphertext, recomputed `wordCount`, summary cleared); `blank` creates an empty draft. Response `201`: `{ "draft" }` (full shape — see PATCH below).
+
+### `PUT /api/chapters/:chapterId/active-draft`
+Body: `{ "draftId" }`. Sets the chapter's active-draft pointer; `404` if `draftId` doesn't belong to this chapter. Response `204`.
+
+### `GET /api/drafts/:draftId`
+Response `200`: `{ "draft": { "id", "chapterId", "label", "wordCount", "orderIndex", "isActive", "hasSummary", "summaryIsStale", "createdAt", "updatedAt", "bodyJson", "summary", "summaryUpdatedAt" } }`.
+
+### `PATCH /api/drafts/:draftId`
+Body: any subset of `{ "bodyJson", "label" }`, plus optional `"expectedUpdatedAt"` (ISO datetime — optimistic-concurrency precondition; omitted = unconditional last-write-wins). If `bodyJson` is sent, `wordCount` is recomputed from it. Response `200`: `{ "draft" }`. Response `409` `{ "error": { "message", "code": "conflict" } }` when `expectedUpdatedAt` is sent and no longer matches the draft's `updatedAt`.
+
+### `DELETE /api/drafts/:draftId`
+Response `204`; remaining drafts re-packed to sequential `orderIndex`. `409 cannot_delete_active_draft` / `409 cannot_delete_last_draft` guard against deleting the active or sole draft.
+
+### `PUT /api/drafts/:draftId/summary`
+Upsert a draft summary directly (structured object). Response `200`: `{ "summary", "summaryUpdatedAt" }`.
+
+### `POST /api/drafts/:draftId/summarise` — non-streaming
 Body: `{ "modelId" }`. Calls Venice with **structured output** (`response_format: json_schema`) and returns JSON (not SSE).
 Response `200`: `{ "summary", "summaryUpdatedAt" }`.
 Errors: `400 { code: "empty_chapter" }`, `400 { code: "model_unsupported_for_summarisation" }`, `502 { code: "summary_parse_failed" }`, plus the Venice error catalog.
@@ -177,10 +203,10 @@ Body: `{ "items": [{ "id", "order" }] }` (one transaction). Response `204`; the 
 
 ## Chats & Messages
 
-### `POST /api/chapters/:chapterId/chats`
-Body: `{ "title?", "kind?" }` (`kind` = `'ask' | 'scene'`, default `'ask'`). Response `201`: `{ "chat": { "id", "chapterId", "title", "kind", "createdAt", "updatedAt", "lastActivityAt" } }`.
+### `POST /api/drafts/:draftId/chats`
+Body: `{ "title?", "kind?" }` (`kind` = `'ask' | 'scene'`, default `'ask'`). Response `201`: `{ "chat": { "id", "draftId", "title", "kind", "createdAt", "updatedAt", "lastActivityAt" } }`. [9wk.4] Chats are draft-scoped and mounted directly under the draft — no chapter-side resolution.
 
-### `GET /api/chapters/:chapterId/chats`
+### `GET /api/drafts/:draftId/chats`
 Query: `?kind=ask|scene` (optional filter). Response `200`: `{ "chats": [ … ] }`, each = the chat fields above + `"messageCount"`.
 
 ### `PATCH /api/chats/:chatId`
@@ -229,8 +255,9 @@ Errors: `409 venice_key_required`, `429 venice_rate_limited` (`retryAfterSeconds
 ## Backup — `/api/users/me`
 
 ### `GET /export`
-Streams the caller's full narrative tree (all stories → chapters → chats/messages, characters, outline items), decrypted, as a downloadable JSON file (`Content-Disposition: attachment`).
-Response `200`: `{ "formatVersion": 1, "app": "inkwell", "exportedAt", "stories": [ … ] }`. Each story carries its live `id` and `snapshotUpdatedAt` — the max `updatedAt` across the story's own row and its entire subtree (chapters, characters, outline items, chats, messages) at export time — used by `POST /import/plan` to detect drift since the file was taken.
+Streams the caller's full narrative tree (all stories → chapters → drafts → chats/messages, characters, outline items), decrypted, as a downloadable JSON file (`Content-Disposition: attachment`).
+Response `200`: `{ "formatVersion": 2, "app": "inkwell", "exportedAt", "stories": [ … ] }`. Each story carries its live `id` and `snapshotUpdatedAt` — the max `updatedAt` across the story's own row and its entire subtree (chapters, drafts, characters, outline items, chats, messages) at export time — used by `POST /import/plan` to detect drift since the file was taken.
+Each chapter entry is `{ "title", "orderIndex", "drafts": [{ "label", "orderIndex", "isActive", "bodyJson", "summary", "chats": [ … ] }] }` — drafts[]-only ([9wk.5]); there is no chapter-level `bodyJson`/`summary`/`chats` anymore, and chats live under their owning draft. `drafts` always has at least one entry, and exactly one entry per chapter has `isActive: true`.
 
 ### `POST /import/plan` — rate-limited 5 req/min/user (shared bucket with `POST /import`)
 Preflight, read-only — no mutation. Body: `{ "stories": [{ "id", "snapshotUpdatedAt" }] }` (max 1000 entries).
@@ -249,8 +276,8 @@ Each non-skipped story runs in its own `$transaction` (`replace`'s delete + recr
 
 **Behavior change:** unlike the previous whole-file-replace contract, this endpoint never deletes a live story that's simply absent from the file — leftover stories not mentioned in the import survive and must be deleted manually.
 
-Response `200`: `{ "imported": { "stories", "chapters", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
-Errors: `400 validation_error` (unknown `formatVersion` or malformed file/body).
+Response `200`: `{ "imported": { "stories", "chapters", "drafts", "characters", "outlineItems", "chats", "messages" }, "outcomes"?: [{ "index", "action": "created" | "replaced" | "skipped" | "failed" }] }`. `imported` counts only what was actually written (created + replaced stories' entities); `outcomes` is indexed into `file.stories` and never carries a title or any narrative content — only the index and the outcome.
+Errors: `400 unsupported_format_version` (the file's `formatVersion` is a number other than the current one — e.g. a backup exported before the v2 format bump; checked before strict validation so the cause isn't buried in `issues`), `400 validation_error` (malformed file/body — including a chapter with zero `drafts`, or a chapter whose `drafts[]` doesn't have exactly one `isActive: true`; this refine is a whole-file parse-time gate, so a single malformed chapter 400s the entire file before any story is imported).
 
 ---
 

@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { app } from '../../src/index';
 import { registerAndLogin } from '../helpers/auth';
 import { resetDb } from '../helpers/db';
+import { prisma } from '../setup';
 
 const TEST_ORIGIN = 'http://localhost:3000';
 
@@ -60,10 +61,12 @@ describe('GET /api/users/me/export', () => {
     expect(res.headers['content-disposition']).toMatch(
       /attachment; filename="inkwell-backup-export-user-\d{8}\.json"/,
     );
-    expect(res.body.formatVersion).toBe(1);
+    expect(res.body.formatVersion).toBe(2);
     expect(res.body.stories[0].title).toBe('My Story');
     expect(res.body.stories[0].worldNotes).toBe('secret lore');
-    expect(res.body.stories[0].chapters[0].bodyJson.content[0].content[0].text).toBe('hello world');
+    expect(res.body.stories[0].chapters[0].drafts[0].bodyJson.content[0].content[0].text).toBe(
+      'hello world',
+    );
     expect(res.body.stories[0].id).toBe(story.body.story.id);
     expect(res.body.stories[0].snapshotUpdatedAt).toEqual(expect.any(String));
     expect(() => new Date(res.body.stories[0].snapshotUpdatedAt).toISOString()).not.toThrow();
@@ -107,6 +110,7 @@ describe('POST /api/users/me/import', () => {
     expect(imp.status).toBe(200);
     expect(imp.body.imported.stories).toBe(1);
     expect(imp.body.imported.chapters).toBe(1);
+    expect(imp.body.imported.drafts).toBe(1);
     expect(imp.body.outcomes).toEqual([{ index: 0, action: 'created' }]);
 
     const after = (await agent.get('/api/users/me/export')).body;
@@ -172,11 +176,17 @@ describe('POST /api/users/me/import', () => {
     file.stories[0].chapters = [
       {
         title: 'Ch',
-        status: 'draft',
         orderIndex: 0,
-        bodyJson: { type: 'doc', content: [], __importCrash: true },
-        summary: null,
-        chats: [],
+        drafts: [
+          {
+            label: null,
+            orderIndex: 0,
+            isActive: true,
+            bodyJson: { type: 'doc', content: [], __importCrash: true },
+            summary: null,
+            chats: [],
+          },
+        ],
       },
     ];
 
@@ -234,7 +244,7 @@ describe('POST /api/users/me/import', () => {
       .send({ title: 'Pre-existing', worldNotes: 'kept-as-is' });
 
     const legacyFile = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -266,7 +276,7 @@ describe('POST /api/users/me/import', () => {
   it('a resolution for an id with no live match falls back to create', async () => {
     const { agent } = await registerAndLogin({ username: 'fallback-user' });
     const file = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -303,7 +313,7 @@ describe('POST /api/users/me/import', () => {
 
     const attacker = await registerAndLogin({ username: 'attacker-user' });
     const forgedFile = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -342,7 +352,7 @@ describe('POST /api/users/me/import', () => {
   it('mid-file failure: rolls back only the failing story, keeps prior commits, aborts the rest', async () => {
     const { agent } = await registerAndLogin({ username: 'midfail-user' });
     const file = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -352,11 +362,17 @@ describe('POST /api/users/me/import', () => {
           chapters: [
             {
               title: 'Ch',
-              status: 'draft',
               orderIndex: 0,
-              bodyJson: { type: 'doc', content: [], __importCrash: true },
-              summary: null,
-              chats: [],
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: true,
+                  bodyJson: { type: 'doc', content: [], __importCrash: true },
+                  summary: null,
+                  chats: [],
+                },
+              ],
             },
           ],
           characters: [],
@@ -374,15 +390,85 @@ describe('POST /api/users/me/import', () => {
     ]);
     expect(imp.body.imported.stories).toBe(1);
     expect(imp.body.imported.chapters).toBe(0);
+    expect(imp.body.imported.drafts).toBe(0);
 
     const after = (await agent.get('/api/users/me/export')).body;
     expect(after.stories.map((s: { title: string }) => s.title)).toEqual(['Good One']);
   });
 
+  it('mid-chapter failure rolls back a completed chapter+draft mint from an earlier chapter in the same story', async () => {
+    // Regression proof for the [story-editor-9wk.3] claim in import.service.ts
+    // (~lines 66-70): chapterRepo.create's own $transaction — which mints a
+    // Chapter row + its initial Draft + the activeDraftId pointer — must join
+    // the outer per-story transaction rather than escaping it. Ch1 below
+    // completes chapterRepo.create (and thus its inner mint-transaction) fully
+    // before Ch2's computeWordCount throws and aborts the outer transaction.
+    // If the inner transaction didn't join the outer one, Ch1's Chapter+Draft
+    // would survive the rollback even though the story import reports 'failed'.
+    const { agent, userId } = await registerAndLogin({ username: 'midchapter-mint-user' });
+    const file = {
+      formatVersion: 2,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          title: 'Two Chapters',
+          chapters: [
+            {
+              title: 'Ch1 - completes',
+              orderIndex: 0,
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: true,
+                  bodyJson: {
+                    type: 'doc',
+                    content: [{ type: 'paragraph', content: [{ type: 'text', text: 'hello' }] }],
+                  },
+                  summary: null,
+                  chats: [],
+                },
+              ],
+            },
+            {
+              title: 'Ch2 - crashes',
+              orderIndex: 1,
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: true,
+                  bodyJson: { type: 'doc', content: [], __importCrash: true },
+                  summary: null,
+                  chats: [],
+                },
+              ],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
+    expect(imp.status).toBe(200);
+    expect(imp.body.outcomes).toEqual([{ index: 0, action: 'failed' }]);
+    expect(imp.body.imported.stories).toBe(0);
+    expect(imp.body.imported.chapters).toBe(0);
+    expect(imp.body.imported.drafts).toBe(0);
+
+    // Zero Chapter and Draft rows survive for this user — Ch1's completed
+    // mint was rolled back along with the rest of the failed story.
+    expect(await prisma.chapter.count({ where: { story: { userId } } })).toBe(0);
+    expect(await prisma.draft.count({ where: { chapter: { story: { userId } } } })).toBe(0);
+  });
+
   it('re-sequences orderIndex/order from a gappy file', async () => {
     const { agent } = await registerAndLogin({ username: 'seq-user' });
     const file = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -391,19 +477,31 @@ describe('POST /api/users/me/import', () => {
           chapters: [
             {
               title: 'B',
-              status: 'draft',
               orderIndex: 7,
-              bodyJson: { type: 'doc', content: [] },
-              summary: null,
-              chats: [],
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: true,
+                  bodyJson: { type: 'doc', content: [] },
+                  summary: null,
+                  chats: [],
+                },
+              ],
             },
             {
               title: 'A',
-              status: 'draft',
               orderIndex: 2,
-              bodyJson: { type: 'doc', content: [] },
-              summary: null,
-              chats: [],
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: true,
+                  bodyJson: { type: 'doc', content: [] },
+                  summary: null,
+                  chats: [],
+                },
+              ],
             },
           ],
           characters: [],
@@ -454,7 +552,7 @@ describe('POST /api/users/me/import', () => {
     };
 
     const file = {
-      formatVersion: 1,
+      formatVersion: 2,
       app: 'inkwell',
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [
@@ -463,27 +561,35 @@ describe('POST /api/users/me/import', () => {
           chapters: [
             {
               title: 'Ch1',
-              status: 'draft',
               orderIndex: 0,
-              bodyJson: {
-                type: 'doc',
-                content: [{ type: 'paragraph', content: [{ type: 'text', text: 'chapter body' }] }],
-              },
-              summary: summaryPayload,
-              chats: [
+              drafts: [
                 {
-                  title: 'Ask chat',
-                  kind: 'ask',
-                  messages: [
+                  label: null,
+                  orderIndex: 0,
+                  isActive: true,
+                  bodyJson: {
+                    type: 'doc',
+                    content: [
+                      { type: 'paragraph', content: [{ type: 'text', text: 'chapter body' }] },
+                    ],
+                  },
+                  summary: summaryPayload,
+                  chats: [
                     {
-                      role: 'user',
-                      content: 'hello from chat',
-                      attachmentJson: null,
-                      citationsJson: null,
-                      model: null,
-                      tokens: null,
-                      latencyMs: null,
-                      createdAt: '2026-06-24T12:00:00.000Z',
+                      title: 'Ask chat',
+                      kind: 'ask',
+                      messages: [
+                        {
+                          role: 'user',
+                          content: 'hello from chat',
+                          attachmentJson: null,
+                          citationsJson: null,
+                          model: null,
+                          tokens: null,
+                          latencyMs: null,
+                          createdAt: '2026-06-24T12:00:00.000Z',
+                        },
+                      ],
                     },
                   ],
                 },
@@ -503,11 +609,248 @@ describe('POST /api/users/me/import', () => {
 
     const exp = (await agent.get('/api/users/me/export')).body;
     const ch = exp.stories[0].chapters[0];
-    expect(ch.summary).toEqual(summaryPayload);
-    expect(ch.chats).toHaveLength(1);
-    expect(ch.chats[0].messages).toHaveLength(1);
-    expect(ch.chats[0].messages[0].content).toBe('hello from chat');
-    expect(ch.chats[0].messages[0].role).toBe('user');
+    const draft = ch.drafts[0];
+    expect(draft.summary).toEqual(summaryPayload);
+    expect(draft.chats).toHaveLength(1);
+    expect(draft.chats[0].messages).toHaveLength(1);
+    expect(draft.chats[0].messages[0].content).toBe('hello from chat');
+    expect(draft.chats[0].messages[0].role).toBe('user');
+  });
+
+  it('[9wk.5] multi-draft round-trip: labels/orderIndex/isActive/non-active chat all survive', async () => {
+    const { agent } = await registerAndLogin({ username: 'multidraft-user' });
+    const file = {
+      formatVersion: 2,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          title: 'Multi-Draft Story',
+          chapters: [
+            {
+              title: 'Ch1',
+              orderIndex: 0,
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: true,
+                  bodyJson: {
+                    type: 'doc',
+                    content: [
+                      { type: 'paragraph', content: [{ type: 'text', text: 'draft one' }] },
+                    ],
+                  },
+                  summary: {
+                    events: 'Events one.',
+                    stateAtEnd: 'State one.',
+                    openThreads: 'Threads one.',
+                  },
+                  chats: [],
+                },
+                {
+                  label: 'darker take',
+                  orderIndex: 1,
+                  isActive: false,
+                  bodyJson: {
+                    type: 'doc',
+                    content: [
+                      { type: 'paragraph', content: [{ type: 'text', text: 'draft two' }] },
+                    ],
+                  },
+                  summary: null,
+                  chats: [
+                    {
+                      title: 'Draft two chat',
+                      kind: 'ask',
+                      messages: [
+                        {
+                          role: 'user',
+                          content: 'a question about draft two',
+                          attachmentJson: null,
+                          citationsJson: null,
+                          model: null,
+                          tokens: null,
+                          latencyMs: null,
+                          createdAt: '2026-06-24T12:00:00.000Z',
+                        },
+                      ],
+                    },
+                  ],
+                },
+                {
+                  label: null,
+                  orderIndex: 2,
+                  isActive: false,
+                  bodyJson: {
+                    type: 'doc',
+                    content: [
+                      { type: 'paragraph', content: [{ type: 'text', text: 'draft three' }] },
+                    ],
+                  },
+                  summary: null,
+                  chats: [],
+                },
+              ],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.drafts).toBe(3);
+
+    const exp = (await agent.get('/api/users/me/export')).body;
+    const chapterId = (
+      await agent.get(`/api/stories/${exp.stories[0].id}/chapters`).set('Origin', TEST_ORIGIN)
+    ).body.chapters[0].id as string;
+
+    const draftsRes = await agent
+      .get(`/api/chapters/${chapterId}/drafts`)
+      .set('Origin', TEST_ORIGIN);
+    expect(draftsRes.status).toBe(200);
+    const drafts = [...draftsRes.body.drafts].sort(
+      (a: { orderIndex: number }, b: { orderIndex: number }) => a.orderIndex - b.orderIndex,
+    );
+    expect(drafts).toHaveLength(3);
+    expect(drafts.map((d: { label: string | null }) => d.label)).toEqual([
+      null,
+      'darker take',
+      null,
+    ]);
+    expect(drafts.map((d: { orderIndex: number }) => d.orderIndex)).toEqual([0, 1, 2]);
+    expect(drafts.map((d: { isActive: boolean }) => d.isActive)).toEqual([true, false, false]);
+
+    const activeDraftId = (
+      await agent.get(`/api/stories/${exp.stories[0].id}/chapters`).set('Origin', TEST_ORIGIN)
+    ).body.chapters[0].activeDraftId as string;
+    expect(activeDraftId).toBe(drafts[0]!.id);
+
+    const nonActiveChats = await agent
+      .get(`/api/drafts/${drafts[1]!.id}/chats`)
+      .set('Origin', TEST_ORIGIN);
+    expect(nonActiveChats.status).toBe(200);
+    expect(nonActiveChats.body.chats).toHaveLength(1);
+    expect(nonActiveChats.body.chats[0].title).toBe('Draft two chat');
+  });
+
+  it('[9wk.5] densifies a gappy drafts[].orderIndex on import', async () => {
+    const { agent } = await registerAndLogin({ username: 'draft-densify-user' });
+    const file = {
+      formatVersion: 2,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        {
+          title: 'Densify Story',
+          chapters: [
+            {
+              title: 'Ch1',
+              orderIndex: 0,
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: false,
+                  bodyJson: { type: 'doc', content: [] },
+                  summary: null,
+                  chats: [],
+                },
+                {
+                  // isActive on the gapped MIDDLE entry so the import path's
+                  // setActive(draftIds[activeIdx]) index math is exercised
+                  // (activeIdx > 0), not just the mint-stays-active default.
+                  label: 'mid',
+                  orderIndex: 5,
+                  isActive: true,
+                  bodyJson: { type: 'doc', content: [] },
+                  summary: null,
+                  chats: [],
+                },
+                {
+                  label: 'last',
+                  orderIndex: 9,
+                  isActive: false,
+                  bodyJson: { type: 'doc', content: [] },
+                  summary: null,
+                  chats: [],
+                },
+              ],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const imp = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
+    expect(imp.status).toBe(200);
+    expect(imp.body.imported.drafts).toBe(3);
+
+    const exp = (await agent.get('/api/users/me/export')).body;
+    const chapterMeta = (
+      await agent.get(`/api/stories/${exp.stories[0].id}/chapters`).set('Origin', TEST_ORIGIN)
+    ).body.chapters[0] as { id: string; activeDraftId: string };
+    const draftsRes = await agent
+      .get(`/api/chapters/${chapterMeta.id}/drafts`)
+      .set('Origin', TEST_ORIGIN);
+    const drafts = [...draftsRes.body.drafts].sort(
+      (a: { orderIndex: number }, b: { orderIndex: number }) => a.orderIndex - b.orderIndex,
+    );
+    expect(drafts.map((d: { orderIndex: number }) => d.orderIndex)).toEqual([0, 1, 2]);
+    // The gapped middle entry (orderIndex 5 → densified 1) was the isActive
+    // one — the restored active pointer must land on it.
+    expect(drafts.map((d: { isActive: boolean }) => d.isActive)).toEqual([false, true, false]);
+    expect(chapterMeta.activeDraftId).toBe((drafts[1] as { id: string; label: string | null }).id);
+    expect((drafts[1] as { label: string | null }).label).toBe('mid');
+  });
+
+  it('[9wk.5] whole-file 400 on a malformed active-draft chapter — nothing runs, not even the earlier story', async () => {
+    const { agent } = await registerAndLogin({ username: 'malformed-active-user' });
+    const before = (await agent.get('/api/users/me/export')).body;
+    expect(before.stories).toHaveLength(0);
+
+    const file = {
+      formatVersion: 2,
+      app: 'inkwell',
+      exportedAt: '2026-06-24T12:00:00.000Z',
+      stories: [
+        { title: 'Story A', chapters: [], characters: [], outlineItems: [] },
+        {
+          title: 'Story B',
+          chapters: [
+            {
+              title: 'Ch',
+              orderIndex: 0,
+              drafts: [
+                {
+                  label: null,
+                  orderIndex: 0,
+                  isActive: false,
+                  bodyJson: { type: 'doc', content: [] },
+                  summary: null,
+                  chats: [],
+                },
+              ],
+            },
+          ],
+          characters: [],
+          outlineItems: [],
+        },
+      ],
+    };
+
+    const res = await agent.post('/api/users/me/import').set('Origin', TEST_ORIGIN).send({ file });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('validation_error');
+
+    const after = (await agent.get('/api/users/me/export')).body;
+    expect(after.stories).toHaveLength(0);
   });
 
   it('rejects an unknown formatVersion with 400', async () => {
@@ -524,6 +867,43 @@ describe('POST /api/users/me/import', () => {
         },
       });
     expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('unsupported_format_version');
+  });
+
+  it('rejects a real v1 backup with a distinct unsupported_format_version error', async () => {
+    // The most common post-upgrade failure: a backup exported before the 1→2
+    // format bump. It must fail with a nameable version error, not a generic
+    // validation_error burying the cause under strict-schema issues (spec §4).
+    const { agent } = await registerAndLogin({ username: 'v1-backup-user' });
+    const res = await agent
+      .post('/api/users/me/import')
+      .set('Origin', TEST_ORIGIN)
+      .send({
+        file: {
+          formatVersion: 1,
+          app: 'inkwell',
+          exportedAt: '2026-06-24T12:00:00.000Z',
+          stories: [
+            {
+              title: 'Old Story',
+              chapters: [
+                {
+                  title: 'Ch',
+                  status: 'draft',
+                  orderIndex: 0,
+                  bodyJson: null,
+                  summary: null,
+                  chats: [],
+                },
+              ],
+              characters: [],
+              outlineItems: [],
+            },
+          ],
+        },
+      });
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('unsupported_format_version');
   });
 
   it('rate-limiter fires 429 on the 6th import request within the window', async () => {
@@ -532,7 +912,7 @@ describe('POST /api/users/me/import', () => {
     const { agent } = await registerAndLogin({ username: 'ratelimit-user' });
     const minimalPayload = {
       file: {
-        formatVersion: 1,
+        formatVersion: 2,
         app: 'inkwell',
         exportedAt: '2026-06-24T12:00:00.000Z',
         stories: [],

@@ -25,9 +25,10 @@ describe('Chat model', () => {
 
   it('creates a chat with a nullable ciphertext title', async () => {
     const chapter = await makeChapter();
-    const chat = await prisma.chat.create({ data: { chapterId: chapter.id } });
+    const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
+    const chat = await prisma.chat.create({ data: { draftId: draft.id } });
     expect(chat.id).toMatch(/^c[a-z0-9]+$/);
-    expect(chat.chapterId).toBe(chapter.id);
+    expect(chat.draftId).toBe(draft.id);
     expect(chat.titleCiphertext).toBeNull();
     expect(chat.createdAt).toBeInstanceOf(Date);
     expect(chat.updatedAt).toBeInstanceOf(Date);
@@ -35,7 +36,8 @@ describe('Chat model', () => {
 
   it('cascades deletion when the chapter is deleted', async () => {
     const chapter = await makeChapter('casc@example.com');
-    const chat = await prisma.chat.create({ data: { chapterId: chapter.id } });
+    const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
+    const chat = await prisma.chat.create({ data: { draftId: draft.id } });
     await prisma.chapter.delete({ where: { id: chapter.id } });
     expect(await prisma.chat.findUnique({ where: { id: chat.id } })).toBeNull();
   });

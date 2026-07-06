@@ -46,7 +46,6 @@ function makeChapter(): Record<string, unknown> {
     title: 'Opening',
     orderIndex: 0,
     wordCount: 0,
-    status: 'draft',
     hasSummary: false,
     summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',

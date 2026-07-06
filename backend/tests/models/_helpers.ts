@@ -22,7 +22,8 @@ export async function createChapterRow(storyId: string) {
 }
 
 export async function createChatRow(chapterId: string) {
-  return prisma.chat.create({ data: { chapterId } });
+  const draft = await prisma.draft.create({ data: { chapterId, orderIndex: 0 } });
+  return prisma.chat.create({ data: { draftId: draft.id } });
 }
 
 // A sentinel ciphertext triple for schema-shape tests. The repo layer ([E9])

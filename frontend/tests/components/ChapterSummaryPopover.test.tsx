@@ -12,9 +12,10 @@ const META = {
   orderIndex: 0,
   title: 'Ch',
   wordCount: 10,
-  status: 'draft' as const,
   createdAt: '2026-05-18T00:00:00.000Z',
   updatedAt: '2026-05-18T00:00:00.000Z',
+  draftCount: 1,
+  activeDraftId: 'draft-1',
 };
 
 const anchorEls: HTMLElement[] = [];
@@ -79,7 +80,7 @@ describe('ChapterSummaryPopover', () => {
     expect(screen.getAllByText(/unreadable|couldn.t be read/i).length).toBeGreaterThan(0);
   });
 
-  it('Regenerate fires the summarise mutation (POST /stories/s1/chapters/c1/summarise)', async () => {
+  it('Regenerate fires the summarise mutation (POST /drafts/draft-1/summarise)', async () => {
     const fetchSpy = vi.spyOn(global, 'fetch').mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -97,7 +98,7 @@ describe('ChapterSummaryPopover', () => {
     fireEvent.click(screen.getByRole('button', { name: /regenerate/i }));
     await waitFor(() => {
       expect(fetchSpy).toHaveBeenCalledWith(
-        expect.stringContaining('/stories/s1/chapters/c1/summarise'),
+        expect.stringContaining('/drafts/draft-1/summarise'),
         expect.objectContaining({ method: 'POST' }),
       );
     });
@@ -245,7 +246,7 @@ describe('ChapterSummaryPopover', () => {
       expect(fetchSpy.mock.calls.length).toBeGreaterThanOrEqual(baseline + 1);
     });
     const retriedCall = fetchSpy.mock.calls[baseline];
-    expect(retriedCall?.[0]).toEqual(expect.stringContaining('/stories/s1/chapters/c1/summarise'));
+    expect(retriedCall?.[0]).toEqual(expect.stringContaining('/drafts/draft-1/summarise'));
     expect(retriedCall?.[1]).toEqual(expect.objectContaining({ method: 'POST' }));
   });
 });

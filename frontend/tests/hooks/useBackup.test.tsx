@@ -46,7 +46,15 @@ describe('useImportBackup', () => {
 
   it('calls invalidateQueries on success', async () => {
     vi.spyOn(apiModule, 'api').mockResolvedValue({
-      imported: { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 },
+      imported: {
+        stories: 0,
+        chapters: 0,
+        drafts: 0,
+        characters: 0,
+        outlineItems: 0,
+        chats: 0,
+        messages: 0,
+      },
     });
     const invalidate = vi.spyOn(queryClient, 'invalidateQueries').mockResolvedValue();
 
@@ -57,7 +65,7 @@ describe('useImportBackup', () => {
     await act(async () => {
       await result.current.mutateAsync({
         file: {
-          formatVersion: 1,
+          formatVersion: 2,
           app: 'inkwell',
           exportedAt: '2026-06-24T12:00:00.000Z',
           stories: [],
@@ -72,7 +80,15 @@ describe('useImportBackup', () => {
 
   it('posts { file, resolutions } to /users/me/import', async () => {
     const apiSpy = vi.spyOn(apiModule, 'api').mockResolvedValue({
-      imported: { stories: 0, chapters: 0, characters: 0, outlineItems: 0, chats: 0, messages: 0 },
+      imported: {
+        stories: 0,
+        chapters: 0,
+        drafts: 0,
+        characters: 0,
+        outlineItems: 0,
+        chats: 0,
+        messages: 0,
+      },
       outcomes: [{ index: 0, action: 'created' }],
     });
 
@@ -81,7 +97,7 @@ describe('useImportBackup', () => {
     });
 
     const file = {
-      formatVersion: 1 as const,
+      formatVersion: 2 as const,
       app: 'inkwell' as const,
       exportedAt: '2026-06-24T12:00:00.000Z',
       stories: [],

@@ -107,7 +107,9 @@ function makeFakeReq(sessionId: string): Request {
   return req;
 }
 
-async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; chapterId: string }> {
+async function setupStoryAndChapter(
+  req: Request,
+): Promise<{ storyId: string; chapterId: string; draftId: string }> {
   const story = await createStoryRepo(req).create({
     title: 'Cit Story',
     worldNotes: null,
@@ -123,7 +125,11 @@ async function setupStoryAndChapter(req: Request): Promise<{ storyId: string; ch
     orderIndex: 0,
     wordCount: 2,
   });
-  return { storyId, chapterId: chapter.id as string };
+  return {
+    storyId,
+    chapterId: chapter.id as string,
+    draftId: chapter.activeDraftId as string,
+  };
 }
 
 async function runPost(
@@ -183,8 +189,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -242,8 +248,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -272,8 +278,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -302,8 +308,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     const expected = [
@@ -347,8 +353,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     const input = Array.from({ length: 15 }, (_, i) => ({
@@ -389,8 +395,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -428,8 +434,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -464,8 +470,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));
@@ -502,8 +508,8 @@ describe('[V26] Chat web-search citations', () => {
     const { agent, sessionId } = await registerAndLogin();
     await storeKey(agent, fetchSpy);
     const req = makeFakeReq(sessionId);
-    const { chapterId } = await setupStoryAndChapter(req);
-    const chat = await createChatRepo(req).create({ chapterId, title: null });
+    const { draftId } = await setupStoryAndChapter(req);
+    const chat = await createChatRepo(req).create({ draftId, title: null });
     const chatId = chat.id as string;
 
     fetchSpy.mockResolvedValueOnce(jsonResponse(200, MODEL_LIST_BODY));

@@ -8,6 +8,7 @@ import { useComposerDraftStore } from '@/store/composerDraft';
 import { useErrorStore } from '@/store/errors';
 import { useInlineAIResultStore } from '@/store/inlineAIResult';
 import { useSelectedCharacterStore } from '@/store/selectedCharacter';
+import { useSelectedDraftStore } from '@/store/selectedDraft';
 import { useSelectionStore } from '@/store/selection';
 import { type SessionUser, useSessionStore } from '@/store/session';
 
@@ -31,6 +32,7 @@ export const PER_USER_STORES: readonly ResettableStore[] = [
   useChatDraftStore,
   useSelectionStore,
   useActiveChapterStore,
+  useSelectedDraftStore,
   useSelectedCharacterStore,
   useCharRefSuggestionStore,
   useErrorStore,

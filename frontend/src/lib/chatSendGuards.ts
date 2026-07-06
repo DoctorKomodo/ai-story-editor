@@ -7,14 +7,14 @@ import type { AppError } from '@/store/errors';
  * each guard branch is unit-testable without mounting the full page.
  */
 export function checkChatSendGuards(input: {
-  activeChapterId: string | null;
+  draftId: string | null;
   selectedModelId: string | null;
 }): Omit<AppError, 'id' | 'at'> | null {
-  if (!input.activeChapterId) {
+  if (!input.draftId) {
     return {
       severity: 'warn',
       source: 'chat.send',
-      code: 'no_chapter',
+      code: 'no_draft',
       message: 'Open a chapter before sending a message.',
     };
   }

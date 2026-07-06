@@ -204,6 +204,16 @@ The backend's container entrypoint runs `prisma migrate deploy` on every boot, s
 
 If the release notes say a migration is destructive (e.g. dropping a plaintext column after an encryption rollout), take a `scripts/backup-db.sh` snapshot first and keep it until you've verified the new release end-to-end.
 
+> **Upgrade note (chapter drafts):** The first release containing the
+> chapter-drafts feature ships a **destructive migration**. It relocates each
+> chapter's encrypted body/summary byte-for-byte into the new `Draft` table
+> (content is never decrypted — no keys are involved), re-points chats at the
+> new draft, and then drops the superseded `Chapter`/`Chat` columns. Take a
+> `scripts/backup-db.sh` snapshot before `docker compose pull && docker
+> compose up -d`. The migration applies automatically on boot, in one shot;
+> rollback is restore-from-backup. After the upgrade every chapter is simply a
+> one-draft chapter — users see no change until they create a second draft.
+
 ## Backup and restore
 
 Run a regular backup of the Postgres database (`pgdata` volume). That is the only server-side secret surface — there is no separate server-held encryption key to back up.

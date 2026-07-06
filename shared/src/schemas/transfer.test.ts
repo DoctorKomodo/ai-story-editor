@@ -19,24 +19,30 @@ const minimal = {
       chapters: [
         {
           title: 'C',
-          status: 'draft',
           orderIndex: 0,
-          bodyJson: { type: 'doc', content: [] },
-          summary: null,
-          chats: [
+          drafts: [
             {
-              title: null,
-              kind: 'ask',
-              messages: [
+              label: null,
+              orderIndex: 0,
+              isActive: true,
+              bodyJson: { type: 'doc', content: [] },
+              summary: null,
+              chats: [
                 {
-                  role: 'user',
-                  content: 'hi',
-                  attachmentJson: null,
-                  citationsJson: null,
-                  model: null,
-                  tokens: null,
-                  latencyMs: null,
-                  createdAt: '2026-06-24T12:00:00.000Z',
+                  title: null,
+                  kind: 'ask',
+                  messages: [
+                    {
+                      role: 'user',
+                      content: 'hi',
+                      attachmentJson: null,
+                      citationsJson: null,
+                      model: null,
+                      tokens: null,
+                      latencyMs: null,
+                      createdAt: '2026-06-24T12:00:00.000Z',
+                    },
+                  ],
                 },
               ],
             },
@@ -54,7 +60,22 @@ describe('transfer schemas', () => {
     expect(exportSchema.parse(minimal)).toBeTruthy();
   });
   it('rejects an unknown formatVersion', () => {
-    expect(exportSchema.safeParse({ ...minimal, formatVersion: 2 }).success).toBe(false);
+    expect(exportSchema.safeParse({ ...minimal, formatVersion: 99 }).success).toBe(false);
+  });
+  it('rejects a real v1 backup (formatVersion 1, chapters carrying status)', () => {
+    // Pre-2.0 files are deliberately unsupported (spec §4). Pin the rejection
+    // so a regression in how v1 files fail cannot ship silently.
+    const v1 = {
+      ...minimal,
+      formatVersion: 1,
+      stories: [
+        {
+          ...minimal.stories[0],
+          chapters: [{ ...minimal.stories[0]!.chapters[0], status: 'draft' }],
+        },
+      ],
+    };
+    expect(importSchema.safeParse(v1).success).toBe(false);
   });
   it('rejects unknown top-level keys (strict)', () => {
     expect(exportSchema.safeParse({ ...minimal, settings: {} }).success).toBe(false);
@@ -68,6 +89,7 @@ describe('transfer schemas', () => {
         imported: {
           stories: 1,
           chapters: 1,
+          drafts: 1,
           characters: 1,
           outlineItems: 1,
           chats: 1,
@@ -161,6 +183,7 @@ describe('transfer schemas', () => {
         imported: {
           stories: 2,
           chapters: 0,
+          drafts: 0,
           characters: 0,
           outlineItems: 0,
           chats: 0,
@@ -172,5 +195,34 @@ describe('transfer schemas', () => {
         ],
       }),
     ).toBeTruthy();
+  });
+
+  it('[9wk.5] rejects a chapter with zero drafts (min 1)', () => {
+    const noDrafts = structuredClone(minimal);
+    noDrafts.stories[0]!.chapters[0]!.drafts = [];
+    expect(importSchema.safeParse(noDrafts).success).toBe(false);
+  });
+  it('[9wk.5] rejects a chapter with zero or two active drafts (refine)', () => {
+    const zeroActive = structuredClone(minimal);
+    zeroActive.stories[0]!.chapters[0]!.drafts[0]!.isActive = false;
+    expect(importSchema.safeParse(zeroActive).success).toBe(false);
+
+    const twoActive = structuredClone(minimal);
+    twoActive.stories[0]!.chapters[0]!.drafts.push({
+      ...structuredClone(twoActive.stories[0]!.chapters[0]!.drafts[0]!),
+      orderIndex: 1,
+    }); // both isActive: true
+    expect(importSchema.safeParse(twoActive).success).toBe(false);
+  });
+  it('[9wk.5] rejects an interim-v2 draftless chapter entry (chapter-level bodyJson/chats)', () => {
+    const interim = structuredClone(minimal) as Record<string, unknown>;
+    (interim as typeof minimal).stories[0]!.chapters[0] = {
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: { type: 'doc', content: [] },
+      summary: null,
+      chats: [],
+    } as never;
+    expect(importSchema.safeParse(interim).success).toBe(false);
   });
 });

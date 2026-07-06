@@ -684,6 +684,85 @@ export function InlineConfirm({
 }
 
 /* ============================================================================
+ * revealOnRowHover — shared class fragment for row-level action clusters:
+ * invisible until the row (a `group` container) is hovered or focus moves
+ * inside. One source of truth so ChapterList / DraftList reveals can't drift.
+ * ========================================================================== */
+
+export const revealOnRowHover =
+  'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100';
+
+/* ============================================================================
+ * <InlineEdit/> — row content swaps for a text input (sibling interaction to
+ * InlineConfirm). Enter/blur commit the TRIMMED value (empty string is a
+ * valid commit — the caller owns "cleared" semantics); Escape cancels and
+ * suppresses the blur-commit that follows.
+ * ========================================================================== */
+
+export interface InlineEditProps {
+  initialValue: string;
+  placeholder?: string;
+  ariaLabel: string;
+  onCommit: (value: string) => void;
+  onCancel: () => void;
+  testId?: string;
+}
+
+export function InlineEdit({
+  initialValue,
+  placeholder,
+  ariaLabel,
+  onCommit,
+  onCancel,
+  testId,
+}: InlineEditProps): JSX.Element {
+  const [value, setValue] = useState(initialValue);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Escape → cancel must also swallow the blur that refocusing/unmounting
+  // fires right after; committing must be once-only (Enter then unmount-blur).
+  const settledRef = useRef(false);
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, []);
+
+  const commit = (): void => {
+    if (settledRef.current) return;
+    settledRef.current = true;
+    onCommit(value.trim());
+  };
+
+  const onKeyDown = (e: ReactKeyboardEvent<HTMLInputElement>): void => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      commit();
+    } else if (e.key === 'Escape') {
+      e.stopPropagation();
+      settledRef.current = true;
+      onCancel();
+    }
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      value={value}
+      placeholder={placeholder}
+      aria-label={ariaLabel}
+      data-testid={testId}
+      onChange={(e) => {
+        setValue(e.target.value);
+      }}
+      onKeyDown={onKeyDown}
+      onBlur={commit}
+      className="flex-1 min-w-0 h-6 px-1.5 font-sans text-[12.5px] text-ink bg-bg-elevated border border-line-2 rounded-[var(--radius)] outline-none focus:border-ink-3"
+    />
+  );
+}
+
+/* ============================================================================
  * FieldRow — labelled definition-list row with em-dash fallback for blank values
  * ========================================================================== */
 

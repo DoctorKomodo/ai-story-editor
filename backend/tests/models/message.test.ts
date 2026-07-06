@@ -17,7 +17,8 @@ async function makeChat(email = 'msg-author@example.com') {
   const chapter = await prisma.chapter.create({
     data: { orderIndex: 0, storyId: story.id },
   });
-  return prisma.chat.create({ data: { chapterId: chapter.id } });
+  const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
+  return prisma.chat.create({ data: { draftId: draft.id } });
 }
 
 describe('Message model', () => {

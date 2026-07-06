@@ -11,7 +11,9 @@ export const chatKindSchema = z.enum(['ask', 'scene']);
 // Prisma↔Zod drift seam at egress-validation time, same as the other entities.
 export const chatSchema = z.strictObject({
   id: z.string().min(1),
-  chapterId: z.string().min(1),
+  // [9wk.3] Chats are draft-scoped: the wire carries the owning draft's id.
+  // (chapterId was dropped when Chat re-pointed from Chapter to Draft.)
+  draftId: z.string().min(1),
   // Title is encrypted at rest; the wire format is plaintext (null when unset).
   title: z.string().nullable(),
   kind: chatKindSchema,

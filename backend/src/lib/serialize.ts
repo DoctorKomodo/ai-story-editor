@@ -3,6 +3,8 @@ import type {
   ChapterMeta,
   Character,
   Chat,
+  Draft,
+  DraftMeta,
   Message,
   OutlineItem,
   Story,
@@ -10,6 +12,7 @@ import type {
 import type { RepoChapter, RepoChapterMeta } from '../repos/chapter.repo';
 import type { RepoCharacter } from '../repos/character.repo';
 import type { RepoChat } from '../repos/chat.repo';
+import type { RepoDraft, RepoDraftMeta } from '../repos/draft.repo';
 import type { RepoMessage } from '../repos/message.repo';
 import type { RepoOutlineItem } from '../repos/outline.repo';
 import type { RepoStory } from '../repos/story.repo';
@@ -62,7 +65,7 @@ export function serializeMessage(row: RepoMessage): Message {
 export function serializeChat(row: RepoChat): Chat {
   return {
     id: row.id,
-    chapterId: row.chapterId,
+    draftId: row.draftId,
     title: row.title,
     kind: row.kind,
     createdAt: row.createdAt.toISOString(),
@@ -106,6 +109,18 @@ export function serializeOutlineItem(row: RepoOutlineItem): OutlineItem {
   };
 }
 
+// The chapter repo's `activeDraftId` is nullable in the repo type (the DB
+// column is nullable for the create-time chicken-and-egg), but every chapter
+// that survives `shape()`/`shapeMeta()` has one — those throw on a null
+// active draft before returning. A null reaching here is an invariant
+// violation, not a valid wire state.
+function assertActiveDraftId(id: string | null): string {
+  if (id === null) {
+    throw new Error('serialize: chapter has no active draft (invariant violation)');
+  }
+  return id;
+}
+
 // Explicit pick (not spread): forces the compiler to surface any repo field
 // the wire shape does NOT carry. projectDecrypted strips ciphertext triples
 // but nothing else — a future non-ciphertext column on the Prisma row would
@@ -118,13 +133,14 @@ export function serializeChapter(row: RepoChapter): Chapter {
     bodyJson: row.bodyJson,
     wordCount: row.wordCount,
     orderIndex: row.orderIndex,
-    status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     hasSummary: row.hasSummary,
     summaryIsStale: row.summaryIsStale,
     summary: row.summary,
     summaryUpdatedAt: row.summaryUpdatedAt ? row.summaryUpdatedAt.toISOString() : null,
+    draftCount: row.draftCount,
+    activeDraftId: assertActiveDraftId(row.activeDraftId),
   };
 }
 
@@ -138,10 +154,50 @@ export function serializeChapterMeta(row: RepoChapterMeta): ChapterMeta {
     title: row.title,
     wordCount: row.wordCount,
     orderIndex: row.orderIndex,
-    status: row.status,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     hasSummary: row.hasSummary,
     summaryIsStale: row.summaryIsStale,
+    draftCount: row.draftCount,
+    activeDraftId: assertActiveDraftId(row.activeDraftId),
+  };
+}
+
+// Explicit pick (not spread): RepoDraft's runtime row carries chapterId +
+// summaryJsonUpdatedAt remnants; picking keeps the wire shape exact.
+// [9wk.6] hasSummary / summaryIsStale are derived in draft.repo's shape()
+// (single source, shared with the meta path via deriveSummaryFlags) — this
+// serializer is a pure pick.
+export function serializeDraft(row: RepoDraft, isActive: boolean): Draft {
+  return {
+    id: row.id,
+    chapterId: row.chapterId,
+    label: row.label,
+    wordCount: row.wordCount,
+    orderIndex: row.orderIndex,
+    isActive,
+    hasSummary: row.hasSummary,
+    summaryIsStale: row.summaryIsStale,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    bodyJson: row.bodyJson,
+    summary: row.summary,
+    summaryUpdatedAt: row.summaryUpdatedAt ? row.summaryUpdatedAt.toISOString() : null,
+  };
+}
+
+// Explicit pick (not spread): matches every other serialize* helper.
+export function serializeDraftMeta(row: RepoDraftMeta): DraftMeta {
+  return {
+    id: row.id,
+    chapterId: row.chapterId,
+    label: row.label,
+    wordCount: row.wordCount,
+    orderIndex: row.orderIndex,
+    isActive: row.isActive,
+    hasSummary: row.hasSummary,
+    summaryIsStale: row.summaryIsStale,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   };
 }

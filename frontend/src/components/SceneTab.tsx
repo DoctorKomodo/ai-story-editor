@@ -4,10 +4,10 @@ import type { JSX } from 'react';
 import { ChatSceneTab } from '@/components/ChatSceneTab';
 
 export interface SceneTabProps {
-  chapterId: string | null;
+  draftId: string | null;
   editor: TiptapEditor | null;
 }
 
-export function SceneTab({ chapterId, editor }: SceneTabProps): JSX.Element {
-  return <ChatSceneTab kind="scene" chapterId={chapterId} editor={editor} />;
+export function SceneTab({ draftId, editor }: SceneTabProps): JSX.Element {
+  return <ChatSceneTab kind="scene" draftId={draftId} editor={editor} />;
 }

@@ -24,7 +24,7 @@ describe('export.service — id + snapshotUpdatedAt', () => {
       title: 'Ch1',
       orderIndex: 0,
     });
-    const chat = await chatRepo.create({ chapterId: chapter.id });
+    const chat = await chatRepo.create({ draftId: chapter.activeDraftId as string });
     const message = await messageRepo.create({
       chatId: chat.id,
       role: 'user',
