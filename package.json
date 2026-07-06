@@ -24,7 +24,7 @@
     "*.{ts,tsx,js,jsx,json,jsonc}": "biome check --write --no-errors-on-unmatched"
   },
   "devDependencies": {
-    "@biomejs/biome": "2.5.1",
+    "@biomejs/biome": "2.5.2",
     "@playwright/test": "^1.61.1",
     "lint-staged": "17.0.8",
     "simple-git-hooks": "2.13.1",
