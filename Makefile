@@ -61,10 +61,10 @@ migrate:
 	docker compose restart backend
 
 seed:
-	docker compose exec backend npx prisma generate
+	docker compose exec -w /app/backend backend npx prisma generate
 	docker compose restart backend
 	@sleep 3
-	docker compose exec backend npx tsx prisma/seed.ts
+	docker compose exec -w /app/backend backend npx tsx prisma/seed.ts
 
 reset-db:
 	docker compose down -v
