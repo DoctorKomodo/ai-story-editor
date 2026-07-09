@@ -175,6 +175,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * Titles run full-width at rest; the per-chapter word count is a hover overlay
+ * that fades in over the title's tail (no reflow). Hover a row to see it.
+ */
 export const Default: Story = {
   args: { activeChapterId: 'c1' },
   decorators: [withClient(sampleChapters)],

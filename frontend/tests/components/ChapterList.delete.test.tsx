@@ -75,7 +75,7 @@ describe('ChapterList — delete', () => {
     expect(screen.getByTestId('chapter-row-c2-delete')).toBeInTheDocument();
   });
 
-  it('clicking × opens InlineConfirm and replaces the word-count slot', async () => {
+  it('clicking × opens the InlineConfirm and focuses its delete button', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         chapters: [makeChapterMeta({ id: 'c1', orderIndex: 0, wordCount: 1500 })],
@@ -83,10 +83,11 @@ describe('ChapterList — delete', () => {
     );
     renderList({ activeChapterId: 'c1' });
     await screen.findByTestId('chapter-row-c1');
+    // The word count is now an always-mounted hover overlay on the title, not a
+    // trailing slot the confirm swaps out — so it stays in the DOM throughout.
     expect(within(screen.getByTestId('chapter-row-c1')).getByText('1.5k')).toBeInTheDocument();
     await userEvent.click(screen.getByTestId('chapter-row-c1-delete'));
     expect(screen.getByTestId('chapter-row-c1-confirm-delete')).toHaveFocus();
-    expect(within(screen.getByTestId('chapter-row-c1')).queryByText('1.5k')).toBeNull();
   });
 
   it('Escape dismisses the confirm', async () => {
