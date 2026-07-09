@@ -86,8 +86,9 @@ interface ChapterRowProps {
 /**
  * Single row. Uses `useSortable` so drag-to-reorder works. The grip handle
  * sits to the left and captures pointer events so a drag does not fire the
- * row's click. The × delete button is shown only on the active row; clicking
- * it opens an InlineConfirm that replaces the word-count slot.
+ * row's click. The × delete button is always mounted (opacity-revealed on
+ * hover or when the row is active) so selecting a row never reflows it;
+ * clicking it opens an InlineConfirm that replaces the word-count slot.
  */
 function ChapterRow({
   chapter,
@@ -180,12 +181,14 @@ function ChapterRow({
               e.stopPropagation();
               onToggleExpanded();
             }}
-            className="flex-shrink-0 text-ink-4 hover:text-ink-2 transition-transform"
+            className="w-4 flex-shrink-0 text-ink-4 hover:text-ink-2 transition-transform"
             style={{ transform: expanded ? 'rotate(90deg)' : undefined }}
           >
             <span aria-hidden="true">▸</span>
           </button>
-        ) : null}
+        ) : (
+          <span aria-hidden="true" className="w-4 flex-shrink-0" />
+        )}
         <button
           type="button"
           onClick={() => {
@@ -221,19 +224,28 @@ function ChapterRow({
             <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
               {formatWordCountCompact(chapter.wordCount)}
             </span>
-            {showNewDraftAffordance ? (
-              <IconButton
-                ariaLabel="New draft"
-                onClick={() => {
-                  onRequestNewDraft(chapter.id);
-                }}
-                testId={`chapter-row-${chapter.id}-new-draft`}
-                className={['flex-shrink-0', revealOnRowHover].join(' ')}
-              >
-                <span aria-hidden="true">＋</span>
-              </IconButton>
-            ) : null}
-            {active ? (
+            <span
+              className={[
+                'flex items-center gap-2 flex-shrink-0',
+                // Order-INDEPENDENT reveal: on the active row use opacity-100
+                // directly (omit revealOnRowHover's opacity-0 entirely) so
+                // visibility never depends on Tailwind's compiled class order;
+                // inactive rows reveal on hover/focus via revealOnRowHover.
+                active ? 'opacity-100' : revealOnRowHover,
+              ].join(' ')}
+            >
+              {showNewDraftAffordance ? (
+                <IconButton
+                  ariaLabel="New draft"
+                  onClick={() => {
+                    onRequestNewDraft(chapter.id);
+                  }}
+                  testId={`chapter-row-${chapter.id}-new-draft`}
+                  className="flex-shrink-0"
+                >
+                  <span aria-hidden="true">＋</span>
+                </IconButton>
+              ) : null}
               <IconButton
                 ariaLabel={`Delete ${chapterDisplayTitle(chapter)}`}
                 onClick={confirm.ask}
@@ -242,7 +254,7 @@ function ChapterRow({
               >
                 <CloseIcon />
               </IconButton>
-            ) : null}
+            </span>
           </>
         )}
       </div>

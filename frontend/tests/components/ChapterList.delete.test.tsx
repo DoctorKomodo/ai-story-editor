@@ -58,7 +58,7 @@ describe('ChapterList — delete', () => {
     useSessionStore.setState({ user: null, status: 'idle' });
   });
 
-  it('renders × only on the active row', async () => {
+  it('renders × on every row (always mounted, opacity-gated); clickable on the active row', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         chapters: [
@@ -69,8 +69,10 @@ describe('ChapterList — delete', () => {
     );
     renderList({ activeChapterId: 'c2' });
     await screen.findByTestId('chapter-row-c2');
+    // Delete button is now present in the DOM for BOTH rows (reveal is opacity,
+    // not mount) so selecting a chapter no longer reflows the row.
+    expect(screen.getByTestId('chapter-row-c1-delete')).toBeInTheDocument();
     expect(screen.getByTestId('chapter-row-c2-delete')).toBeInTheDocument();
-    expect(screen.queryByTestId('chapter-row-c1-delete')).toBeNull();
   });
 
   it('clicking × opens InlineConfirm and replaces the word-count slot', async () => {
