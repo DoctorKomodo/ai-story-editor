@@ -10,7 +10,7 @@ function renderPaper(initialBodyJson: unknown): ReturnType<typeof render> {
   const client = createQueryClient();
   return render(
     <QueryClientProvider client={client}>
-      <Paper storyTitle="The Long Dark" initialBodyJson={initialBodyJson as never} />
+      <Paper initialBodyJson={initialBodyJson as never} />
     </QueryClientProvider>,
   );
 }

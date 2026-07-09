@@ -58,7 +58,7 @@ describe('ChapterList — delete', () => {
     useSessionStore.setState({ user: null, status: 'idle' });
   });
 
-  it('renders × only on the active row', async () => {
+  it('renders × on every row (always mounted, opacity-gated); clickable on the active row', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         chapters: [
@@ -69,11 +69,13 @@ describe('ChapterList — delete', () => {
     );
     renderList({ activeChapterId: 'c2' });
     await screen.findByTestId('chapter-row-c2');
+    // Delete button is now present in the DOM for BOTH rows (reveal is opacity,
+    // not mount) so selecting a chapter no longer reflows the row.
+    expect(screen.getByTestId('chapter-row-c1-delete')).toBeInTheDocument();
     expect(screen.getByTestId('chapter-row-c2-delete')).toBeInTheDocument();
-    expect(screen.queryByTestId('chapter-row-c1-delete')).toBeNull();
   });
 
-  it('clicking × opens InlineConfirm and replaces the word-count slot', async () => {
+  it('clicking × opens the InlineConfirm and focuses its delete button', async () => {
     fetchMock.mockResolvedValueOnce(
       jsonResponse(200, {
         chapters: [makeChapterMeta({ id: 'c1', orderIndex: 0, wordCount: 1500 })],
@@ -81,10 +83,11 @@ describe('ChapterList — delete', () => {
     );
     renderList({ activeChapterId: 'c1' });
     await screen.findByTestId('chapter-row-c1');
+    // The word count is now an always-mounted hover overlay on the title, not a
+    // trailing slot the confirm swaps out — so it stays in the DOM throughout.
     expect(within(screen.getByTestId('chapter-row-c1')).getByText('1.5k')).toBeInTheDocument();
     await userEvent.click(screen.getByTestId('chapter-row-c1-delete'));
     expect(screen.getByTestId('chapter-row-c1-confirm-delete')).toHaveFocus();
-    expect(within(screen.getByTestId('chapter-row-c1')).queryByText('1.5k')).toBeNull();
   });
 
   it('Escape dismisses the confirm', async () => {

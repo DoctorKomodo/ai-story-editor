@@ -108,7 +108,9 @@ describe('ChapterList (F10)', () => {
     const onSelect = vi.fn();
     renderList(onSelect);
 
-    const row = await screen.findByRole('button', { name: /Two/ });
+    // Exact match: with the delete button always mounted, `/Two/` would also
+    // match the "Delete Two" IconButton on this (inactive) row.
+    const row = await screen.findByRole('button', { name: 'Two' });
     await userEvent.setup().click(row);
     expect(onSelect).toHaveBeenCalledWith('c2');
   });

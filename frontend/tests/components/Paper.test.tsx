@@ -5,15 +5,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { Paper, type PaperProps } from '@/components/Paper';
 import { createQueryClient } from '@/lib/queryClient';
 
-/**
- * F32 tests.
- *
- * Mirrors the F8 jsdom strategy: capture the editor instance via the
- * `onReady` escape hatch and drive content through `editor.commands.*`
- * rather than relying on contenteditable keystrokes (which jsdom
- * doesn't faithfully implement).
- */
-
 async function renderAndGrab(
   props: Partial<PaperProps> = {},
 ): Promise<{ editor: TiptapEditor; unmount: () => void }> {
@@ -22,7 +13,6 @@ async function renderAndGrab(
   const { unmount } = render(
     <QueryClientProvider client={client}>
       <Paper
-        storyTitle={props.storyTitle ?? 'Untitled'}
         {...props}
         onReady={(ed) => {
           captured = ed;
@@ -37,115 +27,98 @@ async function renderAndGrab(
   return { editor: captured!, unmount };
 }
 
-describe('Paper (F32)', () => {
-  it('renders the story title', async () => {
-    const { unmount } = await renderAndGrab({ storyTitle: 'A Long-Forgotten Tale' });
-
-    const heading = screen.getByRole('heading', { level: 1 });
-    expect(heading).toHaveTextContent('A Long-Forgotten Tale');
-    expect(heading.className).toMatch(/font-serif/);
-
-    unmount();
-  });
-
-  it('falls back to "Untitled" when no story title is set', async () => {
-    const { unmount } = await renderAndGrab({ storyTitle: '' });
-
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Untitled');
-
-    unmount();
-  });
-
-  it('renders genre / draft / word count / status chip in the sub row when provided', async () => {
+describe('Paper — header + status line', () => {
+  it('renders the chapter title as the level-1 heading (editable input, no story title)', async () => {
     const { unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      storyGenre: 'Fantasy',
-      draftLabel: 'Draft 2',
-      storyWordCount: 12345,
-      storyStatus: 'draft',
-    });
-
-    const sub = screen.getByTestId('paper-sub');
-    expect(sub).toHaveTextContent('Fantasy');
-    expect(sub).toHaveTextContent('Draft 2');
-    // toLocaleString — en-US default in jsdom.
-    expect(sub).toHaveTextContent('12,345 words');
-    // Status chip lives inside the sub row.
-    const chip = screen.getByTestId('paper-status-chip');
-    expect(chip).toHaveTextContent('draft');
-    // Chip is right-aligned via `ml-auto`.
-    expect(chip.className).toMatch(/ml-auto/);
-    // Sub row is uppercase / mono / 11px / .04em letter-spacing.
-    expect(sub.className).toMatch(/uppercase/);
-    expect(sub.className).toMatch(/font-mono/);
-    expect(sub.className).toMatch(/text-\[11px\]/);
-    expect(sub.className).toMatch(/tracking-\[\.04em\]/);
-
-    unmount();
-  });
-
-  it('omits sub-row fields that are null (no genre, no status)', async () => {
-    const { unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      storyGenre: null,
-      draftLabel: 'Draft 1',
-      storyWordCount: 0,
-      storyStatus: null,
-    });
-
-    const sub = screen.getByTestId('paper-sub');
-    expect(sub).toHaveTextContent('Draft 1');
-    expect(sub).toHaveTextContent('0 words');
-    // No genre token, no status chip rendered.
-    expect(sub).not.toHaveTextContent('Fantasy');
-    expect(screen.queryByTestId('paper-status-chip')).toBeNull();
-
-    unmount();
-  });
-
-  it('omits the draft segment when draftLabel is not provided', async () => {
-    const { unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      storyWordCount: 100,
-    });
-
-    expect(screen.getByTestId('paper-sub')).not.toHaveTextContent('Draft');
-
-    unmount();
-  });
-
-  it('renders the chapter heading with italic font, zero-padded label, and bottom border', async () => {
-    const { unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      chapterId: 'ch-test-1',
+      chapterId: 'ch-1',
       chapterTitle: 'A Quiet Beginning',
       chapterNumber: 3,
     });
 
-    const heading = screen.getByTestId('chapter-heading');
-    // 1px bottom border via `border-b`.
-    expect(heading.className).toMatch(/border-b/);
-    // mt-12 = 48px top margin per spec.
-    expect(heading.className).toMatch(/mt-12/);
-
-    const titleInput = screen.getByTestId('chapter-title-input') as HTMLInputElement;
-    expect(titleInput.value).toBe('A Quiet Beginning');
-    expect(titleInput.className).toMatch(/italic/);
-    expect(titleInput.className).toMatch(/font-serif/);
-    expect(titleInput.className).toMatch(/text-\[22px\]/);
-
-    // Right-aligned `§ NN` label, zero-padded.
+    // Chapter title is the primary heading.
+    const heading = screen.getByRole('heading', { level: 1 });
+    expect(heading).toBeInTheDocument();
+    const input = screen.getByTestId('chapter-title-input') as HTMLInputElement;
+    expect(input.value).toBe('A Quiet Beginning');
+    // Primary heading scale, not the old italic 22px sub-heading.
+    expect(input.className).toMatch(/text-\[28px\]/);
+    expect(input.className).not.toMatch(/italic/);
+    // Zero-padded § label retained.
     expect(screen.getByTestId('chapter-label')).toHaveTextContent('§ 03');
+    unmount();
+  });
 
+  it('renders no heading and no story title when no chapter is selected', async () => {
+    const { unmount } = await renderAndGrab({});
+    expect(screen.queryByRole('heading', { level: 1 })).toBeNull();
+    expect(screen.queryByTestId('chapter-heading')).toBeNull();
+    unmount();
+  });
+
+  it('status line shows draft label + word count and no genre', async () => {
+    const { unmount } = await renderAndGrab({
+      chapterId: 'ch-1',
+      chapterTitle: 'Hollow Crown',
+      draftLabel: 'Draft 2',
+      initialWordCount: 12345,
+    });
+    const sub = screen.getByTestId('paper-sub');
+    expect(sub).toHaveTextContent('Draft 2');
+    expect(sub).toHaveTextContent('12,345 words');
+    // Genre is gone: 'Fantasy' would have appeared here before.
+    expect(sub).not.toHaveTextContent('Fantasy');
+    expect(sub.className).toMatch(/uppercase/);
+    expect(sub.className).toMatch(/font-mono/);
+    unmount();
+  });
+
+  it('word count reflects the open draft and updates live as the body changes', async () => {
+    const { editor, unmount } = await renderAndGrab({
+      chapterId: 'ch-1',
+      chapterTitle: 'Hollow Crown',
+      draftLabel: 'Draft 1',
+      initialWordCount: 0,
+    });
+    // Seeded from initialWordCount before any edit.
+    expect(screen.getByTestId('paper-sub')).toHaveTextContent('0 words');
+    act(() => {
+      editor.commands.insertContent('Hello world today');
+    });
+    await waitFor(() => {
+      expect(screen.getByTestId('paper-sub')).toHaveTextContent('3 words');
+    });
+    unmount();
+  });
+
+  it('renders the status chip (right-aligned) when storyStatus is non-null', async () => {
+    const { unmount } = await renderAndGrab({
+      chapterId: 'ch-1',
+      chapterTitle: 'Hollow Crown',
+      draftLabel: 'Draft 2',
+      initialWordCount: 0,
+      storyStatus: 'draft',
+    });
+    const chip = screen.getByTestId('paper-status-chip');
+    expect(chip).toHaveTextContent('draft');
+    expect(chip.className).toMatch(/ml-auto/);
+    unmount();
+  });
+
+  it('omits the status chip when storyStatus is null', async () => {
+    const { unmount } = await renderAndGrab({
+      chapterId: 'ch-1',
+      chapterTitle: 'Hollow Crown',
+      draftLabel: 'Draft 1',
+      initialWordCount: 0,
+      storyStatus: null,
+    });
+    expect(screen.queryByTestId('paper-status-chip')).toBeNull();
     unmount();
   });
 
   it('omits the chapter heading entirely when no chapterTitle is provided', async () => {
-    const { unmount } = await renderAndGrab({ storyTitle: 'Hollow Crown' });
-
+    const { unmount } = await renderAndGrab({ chapterId: 'ch-1' });
     expect(screen.queryByTestId('chapter-heading')).toBeNull();
-    expect(screen.queryByRole('heading', { level: 2 })).toBeNull();
-
     unmount();
   });
 
@@ -154,129 +127,62 @@ describe('Paper (F32)', () => {
       type: 'doc',
       content: [{ type: 'paragraph', content: [{ type: 'text', text: 'one two three' }] }],
     };
-    const { editor, unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      initialBodyJson: initial,
-    });
-
+    const { editor, unmount } = await renderAndGrab({ initialBodyJson: initial });
     expect(editor.getText()).toBe('one two three');
     expect(screen.getByRole('textbox', { name: /chapter body/i })).toBeInTheDocument();
-
     unmount();
   });
 
   it('fires onUpdate with bodyJson and wordCount when content changes', async () => {
     const onUpdate = vi.fn<(args: { bodyJson: JSONContent; wordCount: number }) => void>();
-    const { editor, unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      onUpdate,
-    });
-
+    const { editor, unmount } = await renderAndGrab({ onUpdate });
     act(() => {
       editor.commands.insertContent('Hello world');
     });
-
     await waitFor(() => {
       expect(onUpdate).toHaveBeenCalled();
     });
-
     const lastCall = onUpdate.mock.calls.at(-1);
-    expect(lastCall).toBeDefined();
     expect(lastCall![0].wordCount).toBe(2);
     expect(lastCall![0].bodyJson).toMatchObject({ type: 'doc' });
-
     unmount();
   });
 
   it('fires onReady with the editor instance', async () => {
     const onReady = vi.fn<(editor: TiptapEditor | null) => void>();
-    const { editor, unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      onReady,
-    });
-
+    const { editor, unmount } = await renderAndGrab({ onReady });
     expect(onReady).toHaveBeenCalled();
-    // The wrapping renderAndGrab also captures via onReady, but the
-    // user-supplied callback must receive the same editor instance.
     expect(onReady.mock.calls.at(-1)?.[0]).toBe(editor);
-
-    unmount();
-  });
-
-  it('matches the F8 word-count rule (singular vs plural / empty)', async () => {
-    const onUpdate = vi.fn<(args: { bodyJson: JSONContent; wordCount: number }) => void>();
-    const { editor, unmount } = await renderAndGrab({
-      storyTitle: 'Hollow Crown',
-      onUpdate,
-    });
-
-    act(() => {
-      editor.commands.setContent({
-        type: 'doc',
-        content: [{ type: 'paragraph', content: [{ type: 'text', text: 'Hello' }] }],
-      });
-    });
-    act(() => {
-      editor.commands.insertContent(' ');
-    });
-    await waitFor(() => {
-      expect(onUpdate).toHaveBeenCalled();
-    });
-    // After the insert, the doc text trimmed is 'Hello' (one token).
-    let last = onUpdate.mock.calls.at(-1);
-    expect(last![0].wordCount).toBe(1);
-
-    onUpdate.mockClear();
-    act(() => {
-      editor.commands.insertContent('world');
-    });
-    await waitFor(() => {
-      expect(onUpdate).toHaveBeenCalled();
-    });
-    last = onUpdate.mock.calls.at(-1);
-    expect(last![0].wordCount).toBe(2);
-
     unmount();
   });
 
   it('chapter title input commits the bound chapterId on blur, not the latest prop', async () => {
-    // Mounts with chapterId 'A', user blurs after editing — onCommit must
-    // receive 'A' (the id bound at render time), defending against the race
-    // where a chapter switch updates the prop before blur fires.
     const onChapterTitleChange = vi.fn();
     const { unmount } = await renderAndGrab({
       chapterId: 'A',
       chapterTitle: 'Chapter A title',
       onChapterTitleChange,
     });
-
     const input = screen.getByTestId('chapter-title-input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'Renamed Chapter A' } });
     fireEvent.blur(input);
-
     expect(onChapterTitleChange).toHaveBeenCalledTimes(1);
     expect(onChapterTitleChange).toHaveBeenCalledWith('A', 'Renamed Chapter A');
-
     unmount();
   });
 
   it('blurring an empty chapter title silently reverts without firing onCommit', async () => {
-    // Backend Zod schema requires title.min(1); the input mirrors that
-    // constraint client-side so a 400 PATCH never fires.
     const onChapterTitleChange = vi.fn();
     const { unmount } = await renderAndGrab({
       chapterId: 'A',
       chapterTitle: 'Original',
       onChapterTitleChange,
     });
-
     const input = screen.getByTestId('chapter-title-input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: '   ' } });
     fireEvent.blur(input);
-
     expect(onChapterTitleChange).not.toHaveBeenCalled();
     expect(input.value).toBe('Original');
-
     unmount();
   });
 
@@ -287,14 +193,11 @@ describe('Paper (F32)', () => {
       chapterTitle: 'Original',
       onChapterTitleChange,
     });
-
     const input = screen.getByTestId('chapter-title-input') as HTMLInputElement;
     fireEvent.change(input, { target: { value: 'half-typed' } });
     fireEvent.keyDown(input, { key: 'Escape' });
-
     expect(input.value).toBe('Original');
     expect(onChapterTitleChange).not.toHaveBeenCalled();
-
     unmount();
   });
 });

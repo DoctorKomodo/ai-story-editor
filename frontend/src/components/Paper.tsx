@@ -18,10 +18,9 @@ import { getTypographyExtensions } from '@/lib/tiptap-typography';
  * `mockups/frontend-prototype/design/styles.css`:
  *   - centered column, grows from the mockup's 720px up to 1080px on wider screens
  *   - 48 / 80 / 240 page padding
- *   - serif 28/600 document title with an uppercase mono-feel sub-row
- *     (genre · draft · word count · status chip)
- *   - serif italic 22 chapter heading with a right-aligned `§ NN` label
- *     and a 1px bottom border
+ *   - editable chapter title as the level-1 heading (serif 28/600) with a
+ *     right-aligned `§ NN` label, followed by an uppercase mono-feel
+ *     sub-row (draft · word count · status chip)
  *   - serif 18 / line-height 1.7 / `text-wrap: pretty` prose surface
  *     (rules in `src/index.css` under `.paper-prose .ProseMirror`)
  *
@@ -33,10 +32,8 @@ import { getTypographyExtensions } from '@/lib/tiptap-typography';
  * to Paper is a later integration step.
  */
 export interface PaperProps {
-  storyTitle: string;
-  storyGenre?: string | null;
   draftLabel?: string | null;
-  storyWordCount?: number;
+  initialWordCount?: number;
   storyStatus?: string | null;
   chapterNumber?: number | null;
   chapterTitle?: string | null;
@@ -74,7 +71,6 @@ function countWords(text: string): number {
 }
 
 interface SubRowProps {
-  genre?: string | null;
   draftLabel?: string | null;
   wordCount?: number;
   status?: string | null;
@@ -85,15 +81,13 @@ interface SubRowPart {
   node: ReactNode;
 }
 
-function SubRow({ genre, draftLabel, wordCount, status }: SubRowProps): JSX.Element {
+function SubRow({ draftLabel, wordCount, status }: SubRowProps): JSX.Element {
   // Build the inline parts in order, inserting middle-dot separators
   // only between fields that are actually present. Each part carries a
   // stable identity-based key (not an array index) so React can keep
   // refs steady when fields toggle on/off. The status chip is rendered
   // separately because it sits on the right of the row.
   const parts: SubRowPart[] = [];
-  if (genre) parts.push({ key: 'genre', node: <span>{genre}</span> });
-
   if (draftLabel) parts.push({ key: 'draft', node: <span>{draftLabel}</span> });
 
   if (typeof wordCount === 'number') {
@@ -182,16 +176,14 @@ function ChapterTitleInput({
       data-testid="chapter-title-input"
       aria-label="Chapter title"
       placeholder="Untitled chapter"
-      className="flex-1 bg-transparent font-serif text-[22px] italic text-ink outline-none focus:bg-[var(--accent-soft)]/30 rounded-sm px-1 -mx-1"
+      className="w-full bg-transparent font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink outline-none focus:bg-[var(--accent-soft)]/30 rounded-sm px-1 -mx-1"
     />
   );
 }
 
 export function Paper({
-  storyTitle,
-  storyGenre,
   draftLabel,
-  storyWordCount,
+  initialWordCount,
   storyStatus,
   chapterId,
   chapterNumber,
@@ -202,6 +194,12 @@ export function Paper({
   onChapterTitleChange,
   storyId,
 }: PaperProps): JSX.Element {
+  // Live per-draft word count for the status line. Seeded from the open
+  // draft's server-authoritative count so it's correct before the first
+  // keystroke; Paper is keyed on viewedDraftId upstream, so a draft switch
+  // remounts and re-seeds — no effect needed.
+  const [liveWordCount, setLiveWordCount] = useState<number>(initialWordCount ?? 0);
+
   // `useEditor` re-creates options on every render but only re-subscribes
   // its callbacks at mount; route the prop callbacks through refs so the
   // latest function reference is always called. (Same pattern as F8's
@@ -255,11 +253,10 @@ export function Paper({
       },
     },
     onUpdate({ editor: ed }) {
-      const cb = onUpdateRef.current;
-      if (!cb) return;
       const json = ed.getJSON();
       const wordCount = countWords(ed.getText());
-      cb({ bodyJson: json, wordCount });
+      setLiveWordCount(wordCount);
+      onUpdateRef.current?.({ bodyJson: json, wordCount });
     },
   });
 
@@ -301,27 +298,15 @@ export function Paper({
 
   return (
     <article className="paper mx-auto w-full max-w-[1080px] px-20 pt-12 pb-60">
-      <h1 className="paper-title font-serif text-[28px] font-semibold leading-tight tracking-[-0.01em] text-ink">
-        {storyTitle || 'Untitled'}
-      </h1>
-
-      <SubRow
-        genre={storyGenre}
-        draftLabel={draftLabel}
-        wordCount={storyWordCount}
-        status={storyStatus}
-      />
-
       {chapterTitle !== null && chapterTitle !== undefined && chapterId ? (
-        <header
-          data-testid="chapter-heading"
-          className="chapter-heading mt-12 flex items-baseline gap-3 border-b border-line pt-2 pb-2"
-        >
-          <ChapterTitleInput
-            chapterId={chapterId}
-            value={chapterTitle}
-            onCommit={onChapterTitleChange}
-          />
+        <header data-testid="chapter-heading" className="flex items-baseline gap-3">
+          <h1 className="paper-title flex-1 min-w-0 m-0">
+            <ChapterTitleInput
+              chapterId={chapterId}
+              value={chapterTitle}
+              onCommit={onChapterTitleChange}
+            />
+          </h1>
           {chapterLabel ? (
             <span
               data-testid="chapter-label"
@@ -332,6 +317,8 @@ export function Paper({
           ) : null}
         </header>
       ) : null}
+
+      <SubRow draftLabel={draftLabel} wordCount={liveWordCount} status={storyStatus} />
 
       <div className="paper-prose mt-6">
         <EditorContent editor={editor} />
