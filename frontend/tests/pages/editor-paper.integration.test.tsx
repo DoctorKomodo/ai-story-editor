@@ -224,6 +224,11 @@ describe('EditorPage paper integration (F52)', () => {
     const titleInput = (await screen.findByTestId('chapter-title-input')) as HTMLInputElement;
     expect(titleInput.value).toMatch(/opening/i);
     expect(screen.queryByTestId('editor-empty-state')).toBeNull();
+
+    // story-editor-322: chapter title is the editor's primary heading, and
+    // genre no longer appears in the status line.
+    expect(screen.getByRole('heading', { level: 1 })).toBeInTheDocument();
+    expect(screen.getByTestId('paper-sub')).not.toHaveTextContent('Sci-Fi');
   });
 
   it('swaps the editor body when the active chapter changes (incl. empty bodies)', async () => {

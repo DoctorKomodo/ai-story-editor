@@ -45,7 +45,6 @@ describe('Paper @-mention character picker (X30 regression)', () => {
       <QueryClientProvider client={client}>
         <Paper
           storyId="s1"
-          storyTitle="Test"
           onReady={(ed) => {
             editor = ed;
           }}
@@ -76,7 +75,6 @@ describe('Paper @-mention character picker (X30 regression)', () => {
     render(
       <QueryClientProvider client={client}>
         <Paper
-          storyTitle="Test"
           onReady={(ed) => {
             editor = ed;
           }}
