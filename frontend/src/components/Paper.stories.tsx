@@ -30,6 +30,7 @@ const meta: Meta<typeof Paper> = {
   title: 'Components/Paper',
   component: Paper,
   parameters: { layout: 'fullscreen' },
+  args: { storyId: 'story-1' },
   decorators: [
     (Story) => (
       <QueryClientProvider client={client()}>
@@ -52,7 +53,6 @@ export const TitledChapter: Story = {
     draftLabel: 'Draft A',
     initialWordCount: 1204,
     initialBodyJson: BODY,
-    storyId: 'story-1',
   },
 };
 
@@ -63,7 +63,6 @@ export const UntitledChapter: Story = {
     chapterNumber: 1,
     draftLabel: 'Draft 1',
     initialWordCount: 0,
-    storyId: 'story-1',
   },
 };
 
@@ -72,6 +71,5 @@ export const NoChapterSelected: Story = {
     chapterId: null,
     chapterTitle: null,
     initialWordCount: 0,
-    storyId: 'story-1',
   },
 };

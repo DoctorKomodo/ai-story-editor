@@ -90,6 +90,20 @@ describe('Paper — header + status line', () => {
     unmount();
   });
 
+  it('renders the status chip (right-aligned) when storyStatus is non-null', async () => {
+    const { unmount } = await renderAndGrab({
+      chapterId: 'ch-1',
+      chapterTitle: 'Hollow Crown',
+      draftLabel: 'Draft 2',
+      initialWordCount: 0,
+      storyStatus: 'draft',
+    });
+    const chip = screen.getByTestId('paper-status-chip');
+    expect(chip).toHaveTextContent('draft');
+    expect(chip.className).toMatch(/ml-auto/);
+    unmount();
+  });
+
   it('omits the status chip when storyStatus is null', async () => {
     const { unmount } = await renderAndGrab({
       chapterId: 'ch-1',
