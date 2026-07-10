@@ -80,18 +80,9 @@ describe('ConfirmDialog', () => {
   });
 
   it('omits derived test ids when no testId is given', () => {
-    render(
-      <ConfirmDialog
-        open
-        title="T"
-        body="B"
-        confirmLabel="Go"
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    );
+    renderDialog({ testId: undefined });
     // Derived ids must be absent, not the literal string "undefined-confirm".
-    expect(screen.getByRole('button', { name: 'Go' })).not.toHaveAttribute('data-testid');
+    expect(screen.getByRole('button', { name: 'Delete' })).not.toHaveAttribute('data-testid');
     expect(screen.getByRole('button', { name: 'Cancel' })).not.toHaveAttribute('data-testid');
     expect(screen.getByRole('alertdialog')).not.toHaveAttribute('data-testid');
   });

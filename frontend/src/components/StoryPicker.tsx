@@ -11,7 +11,7 @@
 // mode (F58 — dashboard surface) passes `embedded` through to the primitive.
 //
 // [story-editor-0wz] Per-row delete: a hover-revealed trash icon (mirrors
-// ChatSceneTab/SessionPicker's row-icon idiom) opens a Modal confirm dialog;
+// ChatSceneTab/SessionPicker's row-icon idiom) opens a <ConfirmDialog>;
 // confirming schedules a 5s soft-delete/undo (useSoftDelete, same shape as
 // ChatSceneTab's) before the real DELETE fires.
 import { type JSX, useId, useState } from 'react';

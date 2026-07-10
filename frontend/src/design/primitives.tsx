@@ -65,7 +65,15 @@ export interface ModalProps {
   labelledBy: string;
   /** "sm" 360 · "md" 480 (default) · "lg" 640 · "xl" 800 */
   size?: 'sm' | 'md' | 'lg' | 'xl';
-  /** When false, escape and click-outside become no-ops. Default true. */
+  /**
+   * When false, escape and click-outside become no-ops. Default true.
+   *
+   * Nesting a Modal inside a Modal: the OUTER one must pass
+   * `dismissable={false}` while the inner is open, or one Escape closes both.
+   * Each Modal's Escape handler is its own `window` keydown listener, and
+   * `stopPropagation()` does not stop sibling listeners on the same target —
+   * flipping `dismissable` is what unregisters the outer listener.
+   */
   dismissable?: boolean;
   /** Render only the card (no backdrop). Used by dashboard-embedded pickers. */
   embedded?: boolean;

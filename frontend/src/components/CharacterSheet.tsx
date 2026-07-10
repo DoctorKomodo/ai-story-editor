@@ -35,8 +35,9 @@ import { ApiError } from '@/lib/api';
  *
  * Bundle-3 port: chrome and form fields are now composed from
  * `@/design/primitives` (Modal / ModalHeader / ModalBody / ModalFooter /
- * Field / Input / Textarea / Button). The nested confirm dialog uses a
- * second Modal so backdrop / escape / focus management is centralised.
+ * Field / Input / Textarea / Button). The nested delete confirmation is a
+ * <ConfirmDialog>; the outer Modal gates its own `dismissable` on
+ * `confirmOpen` so Escape closes only the confirm (see Modal.dismissable).
  */
 export type CharacterSheetProps =
   | { storyId: string; mode: 'edit'; characterId: string; onClose: () => void }
