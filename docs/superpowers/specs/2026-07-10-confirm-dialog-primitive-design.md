@@ -263,12 +263,18 @@ default `danger` variant vs `primary`; `cancelLabel` default and override;
 | Suite | Pins |
 |---|---|
 | `tests/components/ResendConfirmDialog.test.tsx` | count pluralization, confirm/cancel callbacks |
+| `tests/components/SceneTab.test.tsx`, `tests/components/ChatTab.test.tsx` | the resend dialog by `data-testid="resend-confirm"` — i.e. the **card test-id passthrough** from `ConfirmDialog.testId` |
 | `tests/components/StoryPicker.test.tsx` | alertdialog accessible name, Cancel closes confirm only, **Escape cancels confirm and leaves picker open**, confirm → row hides + undo toast, timer expiry fires one DELETE |
-| `tests/components/CharacterSheet.test.tsx` | confirm opens/closes, DELETE on confirm, Cancel keeps main modal open, **layered Escape**, inline delete-error |
+| `tests/components/CharacterSheet.test.tsx` | confirm opens/closes, DELETE on confirm, Cancel keeps main modal open, **layered Escape** |
 
-These three suites are the whole safety argument for the nested migrations. If a
-migration requires editing an assertion in them, that is a signal the migration is
-wrong — fix the code, not the test.
+These suites are the whole safety argument for the nested migrations. If a migration
+requires editing an assertion in them, that is a signal the migration is wrong — fix the
+code, not the test.
+
+**Known gap:** nothing tests CharacterSheet's stay-open-on-delete-error path. Its only
+`role="alert"` assertion (line 155) covers the *fetch* error, not the delete error. So
+`error={deleteError}` is preserved by inspection, not by a test. Adding that test is
+optional in 8hb and worth doing.
 
 **Verify line (unchanged from the bd issue):**
 ```
