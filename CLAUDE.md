@@ -91,7 +91,7 @@ For every task:
 
 1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line + `plan:` link in `--notes`.
 2. **If `--notes` has no `plan:` link:** run `superpowers:brainstorming` first, then `superpowers:writing-plans` (writes a plan under `docs/superpowers/plans/YYYY-MM-DD-<slug>.md` — must include the **existing-surface inventory** required by `docs/agent-workflow.md` §2), then `bash scripts/bd-link-plan.sh <id> <plan-path>` to record the link.
-3. `/bd-execute <id>` — runs the full implement → task-review (spec + quality, one pass) loop per task, a final whole-branch review, claims the issue along the way, and hands off to `/bd-close-reviewed` at the end.
+3. `/bd-execute <id>` — runs the full implement → task-review (spec + quality, one pass) loop per task, a whole-branch simplify pass (behavior-preserving cleanup, separate commit, re-verified), a final whole-branch review, claims the issue along the way, and hands off to `/bd-close-reviewed` at the end.
 4. `/bd-close-reviewed` runs typecheck on affected workspaces, fans path-matched surface reviewers (`security-reviewer`, `repo-boundary-reviewer`), and refuses close on `BLOCK` / `FIX_BEFORE_MERGE` findings. If a reviewer blocks: fix the code (not the test, not the verify) and re-loop. Override requires `--override-block "<reviewer> — <reason>"` plus explicit user-ack.
 5. Move to the next task immediately — do not refactor or add scope. (One carve-out: the "Duplication: file-and-block" rule below — avoiding a new near-duplicate is never scope creep.)
 
@@ -145,7 +145,7 @@ Closed work from the original bring-up letters lives in immutable `docs/done/don
 
 ### Local tooling
 
-- **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' (6.x) subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + task-reviewer (one reviewer, both spec-compliance and code-quality verdicts; Sonnet by default, per-task `model: opus` opt-in) per task via file-based brief/report/diff handoffs, runs a final whole-branch review, then hands off to `/bd-close-reviewed`.
+- **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' (6.x) subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + task-reviewer (one reviewer, both spec-compliance and code-quality verdicts; Sonnet by default, per-task `model: opus` opt-in) per task via file-based brief/report/diff handoffs, runs a whole-branch simplify pass (separate commit, re-verified, reverted on red) then a final whole-branch review, then hands off to `/bd-close-reviewed`.
 - **`/bd-close-reviewed <BD_ID>`** — `.claude/skills/bd-close-reviewed/`. Gates close on typecheck + path-matched surface reviewers + verify-line. Wraps `scripts/bd-close-reviewed.sh` for the mechanical phases.
 - **`scripts/bd-link-plan.sh <id> <plan-path>`** — links a plan file to a bd issue's `--notes`. Idempotent; preserves the `verify:` line. Called as a step in the protocol above when the issue lacks a plan link.
 

@@ -201,10 +201,18 @@ queue.)
    implementer and the task-reviewer dispatches (the merged reviewer
    owns the code-quality half, so it enforces the same rules the
    implementer was held to).
-8. After the last task is clean, dispatches a **final whole-branch
-   review** (`requesting-code-review/code-reviewer.md`, on the most
-   capable model) over the `merge-base..HEAD` package, then hands
-   off to `/bd-close-reviewed`.
+8. After the last task is clean, runs a **whole-branch simplify
+   pass** (the `simplify` skill over the `merge-base..HEAD` diff —
+   behavior-preserving cleanup of reuse/duplication/altitude the
+   per-task reviews can't see across tasks; applied fixes land as
+   one separate `[<bd-id>] simplify pass` commit, re-verified, and
+   reverted rather than debugged if the verify goes red; skipped
+   with a ledger note for trivial/docs-only branches).
+9. Then dispatches a **final whole-branch review**
+   (`requesting-code-review/code-reviewer.md`, on the most capable
+   model) over the `merge-base..HEAD` package — which now includes
+   the simplify commit, so the cleanup is reviewed like any other
+   code — then hands off to `/bd-close-reviewed`.
 
 **Continuous execution:** the bridge does not pause between tasks.
 The user is interrupted only when an implementer reports BLOCKED
