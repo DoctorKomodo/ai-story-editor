@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { DraftMeta } from 'story-editor-shared';
+import { userEvent, within } from 'storybook/test';
 import { DraftList } from '@/components/DraftList';
 import { draftsQueryKey } from '@/hooks/useDrafts';
 
@@ -65,4 +66,27 @@ export const ViewingNonActiveDraft: Story = {};
 
 export const FollowingActiveDraft: Story = {
   args: { viewedDraftId: 'd-a' },
+};
+
+const WITH_ATTACHED_CHATS = [
+  metaOf({ id: 'd-a', orderIndex: 0, isActive: true, wordCount: 2143 }),
+  metaOf({ id: 'd-b', orderIndex: 1, label: 'Grimdark ending', wordCount: 1890, chatCount: 3 }),
+  metaOf({ id: 'd-c', orderIndex: 2, wordCount: 260 }),
+];
+
+export const DeleteWarnsOnAttachedChats: Story = {
+  decorators: [
+    (Story) => (
+      <QueryClientProvider client={seeded(WITH_ATTACHED_CHATS)}>
+        <div className="w-64 p-2 bg-bg">
+          <Story />
+        </div>
+      </QueryClientProvider>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await userEvent.click(canvas.getByTestId('draft-row-d-b-delete'));
+    await canvas.findByTestId('draft-row-d-b-confirm-modal');
+  },
 };
