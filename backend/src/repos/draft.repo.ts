@@ -54,6 +54,7 @@ export type RepoDraftMeta = {
   summaryIsStale: boolean;
   createdAt: Date;
   updatedAt: Date;
+  chatCount: number;
 };
 
 /**
@@ -288,6 +289,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         labelAuthTag: true,
         summaryJsonCiphertext: true,
         summaryJsonUpdatedAt: true,
+        _count: { select: { chats: true } }, // asks + scenes; one query, no N+1
       },
     });
     return rows.map((r) => {
@@ -302,9 +304,11 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         r.updatedAt,
       );
       delete projected.summaryJsonUpdatedAt;
+      delete projected._count; // strip the aggregate remnant the spread carried in
       return {
         ...projected,
         isActive: r.id === chapter.activeDraftId,
+        chatCount: r._count.chats, // explicit map — mirrors chapter.repo draftCount
         ...flags,
       } as RepoDraftMeta;
     });

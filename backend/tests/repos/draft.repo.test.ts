@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeEncrypted } from '../../src/repos/_narrative';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createChatRepo } from '../../src/repos/chat.repo';
 import {
   createDraftRepo,
   DraftDeleteActiveError,
@@ -378,6 +379,7 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
           'summaryIsStale',
           'createdAt',
           'updatedAt',
+          'chatCount',
         ].sort(),
       );
       expect(
@@ -564,5 +566,36 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
       hasSummary: meta.hasSummary,
       summaryIsStale: meta.summaryIsStale,
     });
+  });
+
+  it('[6ze] findManyMetaForChapter reports chatCount = asks + scenes (0 / ask-only / scene-only / mixed)', async () => {
+    const ctx = await makeUserContext('draft-meta-count');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+
+    // chapter.repo minted an active draft at orderIndex 0 (the "0 chats" case).
+    const active = chapter.activeDraftId as string;
+    // a second draft with a mix of asks + scenes
+    const mixed = await draftRepo.create({ chapterId: chapter.id, orderIndex: 1 });
+    await chatRepo.create({ draftId: mixed.id, title: 'ask1', kind: 'ask' });
+    await chatRepo.create({ draftId: mixed.id, title: 'scene1', kind: 'scene' });
+    await chatRepo.create({ draftId: mixed.id, title: 'ask2', kind: 'ask' });
+
+    const metas = await draftRepo.findManyMetaForChapter(chapter.id);
+    const byId = new Map(metas.map((m) => [m.id, m]));
+    expect(byId.get(active)!.chatCount).toBe(0);
+    expect(byId.get(mixed.id)!.chatCount).toBe(3);
+    // no ciphertext / _count remnants on the meta shape
+    expect(Object.keys(byId.get(mixed.id)!)).not.toContain('_count');
   });
 });
