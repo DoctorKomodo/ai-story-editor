@@ -453,6 +453,153 @@ export const Textarea = forwardRef<HTMLTextAreaElement, TextareaProps>(function 
 });
 
 /* ============================================================================
+ * Checkbox / Radio — bare, controlled, token-styled native inputs.
+ *
+ * `type` is Omit-ted from the props so the primitive genuinely owns it: the
+ * base type is not overridable, and `{...rest}` cannot smuggle a different
+ * one back in. Everything else (checked, onChange, disabled, id, name, value,
+ * data-testid, aria-*) flows through unchanged, so callers keep their exact
+ * contracts. `className` merges last for per-site alignment (e.g. `mt-0.5`).
+ * ========================================================================== */
+
+const CHECK_CONTROL_BASE =
+  'accent-accent w-4 h-4 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed';
+
+export interface CheckboxProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {}
+
+export const Checkbox = forwardRef<HTMLInputElement, CheckboxProps>(function Checkbox(
+  { className, ...rest },
+  ref,
+): JSX.Element {
+  return (
+    <input ref={ref} type="checkbox" className={cx(CHECK_CONTROL_BASE, className)} {...rest} />
+  );
+});
+
+export interface RadioProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'type'> {}
+
+export const Radio = forwardRef<HTMLInputElement, RadioProps>(function Radio(
+  { className, ...rest },
+  ref,
+): JSX.Element {
+  return <input ref={ref} type="radio" className={cx(CHECK_CONTROL_BASE, className)} {...rest} />;
+});
+
+/* ============================================================================
+ * RadioGroup — a labelled <fieldset> that drives selection from one `value`.
+ * Generic over the value union so callers keep their literal types.
+ * ========================================================================== */
+
+export interface RadioOption<T extends string> {
+  value: T;
+  label: ReactNode;
+  disabled?: boolean;
+  testId?: string;
+}
+
+export interface RadioGroupProps<T extends string> {
+  /** Shared `name` across the options. */
+  name: string;
+  /** Accessible group label, rendered as a <legend>. */
+  legend: ReactNode;
+  /** Visually hide the legend (keeps it as the group's accessible name). */
+  srOnlyLegend?: boolean;
+  value: T;
+  onChange: (value: T) => void;
+  options: RadioOption<T>[];
+  /** Disable every radio in the group. */
+  disabled?: boolean;
+}
+
+export function RadioGroup<T extends string>({
+  name,
+  legend,
+  srOnlyLegend,
+  value,
+  onChange,
+  options,
+  disabled,
+}: RadioGroupProps<T>): JSX.Element {
+  return (
+    // `role="radiogroup"` is explicit: a bare <fieldset>'s implicit ARIA role
+    // is `group`, NOT `radiogroup` (verified in jsdom). Without it,
+    // getByRole('radiogroup') does not match. The <legend> is the group's
+    // accessible name either way.
+    // biome-ignore lint/a11y/noNoninteractiveElementToInteractiveRole: fieldset+legend is the correct native radiogroup pattern; role is required because jsdom (and some browsers) don't imply radiogroup from a bare fieldset.
+    <fieldset role="radiogroup" className="flex flex-col gap-1.5 border-0 p-0 m-0">
+      <legend className={srOnlyLegend ? 'sr-only' : 'text-[12px] font-medium text-ink-2 mb-1'}>
+        {legend}
+      </legend>
+      {options.map((opt) => (
+        // biome-ignore lint/a11y/noLabelWithoutControl: wraps a <Radio> (a forwardRef'd <input type="radio">); biome can't trace the control through the custom component.
+        <label
+          key={opt.value}
+          className="flex items-center gap-2 font-sans text-[13px] text-ink cursor-pointer"
+        >
+          <Radio
+            name={name}
+            value={opt.value}
+            checked={value === opt.value}
+            disabled={disabled || opt.disabled}
+            data-testid={opt.testId}
+            onChange={() => {
+              onChange(opt.value);
+            }}
+          />
+          {opt.label}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+/* ============================================================================
+ * CheckboxField — a two-line labelled checkbox (label + optional hint beside
+ * the box). Lifted from SettingsWritingTab's ToggleRow. The box is `mt-0.5`
+ * to sit on the label's cap-height (the 16px Checkbox needs less top offset
+ * than the old ~13px browser-default box's `mt-1`).
+ * ========================================================================== */
+
+export interface CheckboxFieldProps {
+  id: string;
+  label: ReactNode;
+  hint?: ReactNode;
+  testId?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}
+
+export function CheckboxField({
+  id,
+  label,
+  hint,
+  testId,
+  checked,
+  disabled,
+  onChange,
+}: CheckboxFieldProps): JSX.Element {
+  return (
+    <label htmlFor={id} className="flex items-start gap-2 text-[12px] py-1">
+      <Checkbox
+        id={id}
+        data-testid={testId}
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => {
+          onChange(e.target.checked);
+        }}
+        className="mt-0.5"
+      />
+      <span className="flex flex-col gap-[2px]">
+        <span className="font-medium text-ink-2">{label}</span>
+        {hint != null ? <span className="text-ink-4 font-sans">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+/* ============================================================================
  * Pill — small uppercase status chip
  * ========================================================================== */
 

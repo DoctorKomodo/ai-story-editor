@@ -11,6 +11,7 @@ import {
 } from 'story-editor-shared';
 import {
   Button,
+  Checkbox,
   Field,
   Input,
   Modal,
@@ -276,12 +277,10 @@ export function StoryModal({
               htmlFor={includePreviousChaptersId}
               className="flex items-center gap-2 cursor-pointer"
             >
-              <input
+              <Checkbox
                 id={includePreviousChaptersId}
-                type="checkbox"
                 checked={includePreviousChaptersInPrompt}
                 onChange={(e) => setIncludePreviousChaptersInPrompt(e.target.checked)}
-                className="accent-accent w-4 h-4"
               />
               <span className="font-sans text-sm text-ink-2">
                 Include previous-chapter summaries in AI context

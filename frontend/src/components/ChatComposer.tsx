@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Checkbox } from '@/design/primitives';
 import { useModelsQuery } from '@/hooks/useModels';
 import { useUserSettings } from '@/hooks/useUserSettings';
 import { type AttachedSelectionValue, useAttachedSelectionStore } from '@/store/attachedSelection';
@@ -287,15 +288,13 @@ export function ChatComposer({
             htmlFor="chat-web-search"
             className="flex items-center gap-1.5 font-sans text-[11px] text-ink-3"
           >
-            <input
+            <Checkbox
               id="chat-web-search"
-              type="checkbox"
               checked={useWebSearch}
               onChange={(e) => {
                 setUseWebSearch(e.target.checked);
               }}
               aria-describedby="chat-web-search-hint"
-              className="h-3.5 w-3.5"
             />
             <span>Web search</span>
           </label>

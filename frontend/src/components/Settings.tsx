@@ -23,7 +23,7 @@ import { SettingsDataTab } from '@/components/SettingsDataTab';
 import { SettingsModelsTab } from '@/components/SettingsModelsTab';
 import { SettingsPromptsTab } from '@/components/SettingsPromptsTab';
 import { SettingsWritingTab } from '@/components/SettingsWritingTab';
-import { Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
+import { CheckboxField, Modal, ModalBody, ModalFooter, ModalHeader } from '@/design/primitives';
 import { useUpdateUserSettingsMutation, useUserSettingsQuery } from '@/hooks/useUserSettings';
 import { useVeniceAccountQuery, veniceAccountQueryKey } from '@/hooks/useVeniceAccount';
 import {
@@ -203,6 +203,7 @@ function VeniceTab(): JSX.Element {
   const apiKeyId = useId();
   const endpointId = useId();
   const orgId = useId();
+  const veniceSystemPromptId = useId();
 
   const statusQuery = useVeniceKeyStatusQuery();
   const settingsQuery = useUserSettingsQuery();
@@ -473,27 +474,15 @@ function VeniceTab(): JSX.Element {
           <h3 className="m-0 font-serif text-[14px] font-medium text-ink">Behaviour</h3>
         </header>
 
-        <label className="flex items-start gap-2 text-[12px] py-1">
-          <input
-            type="checkbox"
-            data-testid="venice-include-system-prompt"
-            checked={includeVeniceSystemPrompt}
-            disabled={!settingsQuery.data || updateSettings.isPending}
-            onChange={(e) => {
-              handleToggleVenicePrompt(e.target.checked);
-            }}
-            className="mt-1"
-          />
-          <span className="flex flex-col gap-[2px]">
-            <span className="font-medium text-ink-2">
-              Include Venice&apos;s default system prompt
-            </span>
-            <span className="text-ink-4 font-sans">
-              When on, Venice prepends its own default system prompt before Inkwell&apos;s. When
-              off, only Inkwell&apos;s system prompt is sent.
-            </span>
-          </span>
-        </label>
+        <CheckboxField
+          id={veniceSystemPromptId}
+          testId="venice-include-system-prompt"
+          label="Include Venice's default system prompt"
+          hint="When on, Venice prepends its own default system prompt before Inkwell's. When off, only Inkwell's system prompt is sent."
+          checked={includeVeniceSystemPrompt}
+          disabled={!settingsQuery.data || updateSettings.isPending}
+          onChange={handleToggleVenicePrompt}
+        />
       </section>
     </div>
   );
