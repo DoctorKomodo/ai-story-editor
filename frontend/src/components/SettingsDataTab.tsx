@@ -7,6 +7,7 @@ import {
   type ImportResult,
   importSchema,
 } from 'story-editor-shared';
+import { Checkbox } from '@/design/primitives';
 import { useExportBackup, useImportBackup, useImportPlan } from '@/hooks/useBackup';
 
 const CONFIRM_PHRASE = 'replace these stories';
@@ -365,9 +366,9 @@ export function SettingsDataTab(): JSX.Element {
 
           {hasReplace ? (
             <>
+              {/* biome-ignore lint/a11y/noLabelWithoutControl: wraps a <Checkbox> (a forwardRef'd <input type="checkbox">); biome can't trace the control through the custom component. */}
               <label className="flex items-center gap-2 text-[12px] text-ink-2 font-sans">
-                <input
-                  type="checkbox"
+                <Checkbox
                   data-testid="data-restore-safety"
                   checked={safetyBackup}
                   disabled={restoring || importer.isPending}

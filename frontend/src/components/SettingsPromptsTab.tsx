@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, JSX } from 'react';
 import { useId, useState } from 'react';
+import { Checkbox } from '@/design/primitives';
 import { type DefaultPrompts, useDefaultPromptsQuery } from '@/hooks/useDefaultPrompts';
 import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 
@@ -153,9 +154,9 @@ function PromptRow({ meta, defaultText, override, onPatch }: PromptRowProps): JS
         </div>
       )}
 
+      {/* biome-ignore lint/a11y/noLabelWithoutControl: wraps a <Checkbox> (a forwardRef'd <input type="checkbox">); biome can't trace the control through the custom component. */}
       <label className="flex items-center gap-2 text-[12px]">
-        <input
-          type="checkbox"
+        <Checkbox
           data-testid={`prompts-toggle-${meta.key}`}
           checked={checked}
           onChange={handleToggle}
