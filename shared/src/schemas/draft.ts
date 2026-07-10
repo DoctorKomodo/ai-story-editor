@@ -46,6 +46,7 @@ export const draftSchema = draftCoreSchema.extend({
 export const draftCreateSchema = z.strictObject({
   mode: z.enum(['fork', 'blank']),
   label: z.string().min(1).max(DRAFT_LABEL_MAX).optional(),
+  copyChats: z.boolean().optional(), // only meaningful when mode === 'fork'
 });
 
 /**

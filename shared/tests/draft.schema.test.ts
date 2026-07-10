@@ -46,6 +46,15 @@ describe('draft schemas', () => {
     expect(() => draftCreateSchema.parse({ mode: 'copy' })).toThrow();
   });
 
+  it('draftCreateSchema: optional copyChats boolean', () => {
+    expect(draftCreateSchema.parse({ mode: 'fork', copyChats: true })).toEqual({
+      mode: 'fork',
+      copyChats: true,
+    });
+    expect(draftCreateSchema.parse({ mode: 'fork' })).toEqual({ mode: 'fork' });
+    expect(() => draftCreateSchema.parse({ mode: 'fork', copyChats: 'yes' })).toThrow();
+  });
+
   it('draftUpdateSchema: bodyJson / label / expectedUpdatedAt all optional; label nullable', () => {
     expect(draftUpdateSchema.parse({})).toEqual({});
     expect(draftUpdateSchema.parse({ label: null })).toEqual({ label: null });
