@@ -554,6 +554,52 @@ export function RadioGroup<T extends string>({
 }
 
 /* ============================================================================
+ * CheckboxField — a two-line labelled checkbox (label + optional hint beside
+ * the box). Lifted from SettingsWritingTab's ToggleRow. The box is `mt-0.5`
+ * to sit on the label's cap-height (the 16px Checkbox needs less top offset
+ * than the old ~13px browser-default box's `mt-1`).
+ * ========================================================================== */
+
+export interface CheckboxFieldProps {
+  id: string;
+  label: ReactNode;
+  hint?: ReactNode;
+  testId?: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}
+
+export function CheckboxField({
+  id,
+  label,
+  hint,
+  testId,
+  checked,
+  disabled,
+  onChange,
+}: CheckboxFieldProps): JSX.Element {
+  return (
+    <label htmlFor={id} className="flex items-start gap-2 text-[12px] py-1">
+      <Checkbox
+        id={id}
+        data-testid={testId}
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => {
+          onChange(e.target.checked);
+        }}
+        className="mt-0.5"
+      />
+      <span className="flex flex-col gap-[2px]">
+        <span className="font-medium text-ink-2">{label}</span>
+        {hint != null ? <span className="text-ink-4 font-sans">{hint}</span> : null}
+      </span>
+    </label>
+  );
+}
+
+/* ============================================================================
  * Pill — small uppercase status chip
  * ========================================================================== */
 

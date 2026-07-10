@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { Checkbox } from './primitives';
+import { Checkbox, CheckboxField } from './primitives';
 
 const meta = {
   title: 'Primitives/Checkbox',
@@ -20,3 +20,14 @@ type Story = StoryObj<typeof meta>;
 export const Unchecked: Story = { args: { defaultChecked: false } };
 export const Checked: Story = { args: { defaultChecked: true } };
 export const Disabled: Story = { args: { defaultChecked: true, disabled: true } };
+
+export const Field: StoryObj<typeof CheckboxField> = {
+  render: (args) => <CheckboxField {...args} />,
+  args: {
+    id: 'story-cf',
+    label: 'Auto-save',
+    hint: 'Persist drafts automatically as you type',
+    checked: true,
+    onChange: () => {},
+  },
+};
