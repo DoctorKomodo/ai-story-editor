@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
-import type { JSX, ReactNode } from 'react';
+import type { CSSProperties, JSX, ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChapterMeta } from 'story-editor-shared';
 import { ChapterListSectionHeader } from '@/components/ChapterListSectionHeader';
@@ -140,6 +140,12 @@ function ChapterRow({
       aria-current={active ? 'true' : undefined}
     >
       <div
+        // `--row-bg` publishes the row's own background colour so descendants
+        // (the word-count overlay) can fade into it without re-deriving the
+        // active/inactive branch and drifting from it.
+        style={
+          { '--row-bg': active ? 'var(--accent-soft)' : 'var(--surface-hover)' } as CSSProperties
+        }
         className={[
           'group flex items-center gap-1.5 pl-3 pr-2 h-8 rounded-[var(--radius)]',
           'transition-colors cursor-pointer',
@@ -206,9 +212,7 @@ function ChapterRow({
               'pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end pl-6 pr-0.5',
               'font-mono text-[11px] text-ink-4 tabular-nums',
               'opacity-0 group-hover:opacity-100 transition-opacity',
-              active
-                ? '[background-image:linear-gradient(to_right,transparent,var(--accent-soft)_20px)]'
-                : '[background-image:linear-gradient(to_right,transparent,var(--surface-hover)_20px)]',
+              '[background-image:linear-gradient(to_right,transparent,var(--row-bg)_20px)]',
             ].join(' ')}
           >
             {formatWordCountCompact(chapter.wordCount)}
@@ -240,10 +244,10 @@ function ChapterRow({
             <span
               className={[
                 'flex items-center gap-2 flex-shrink-0',
-                // Order-INDEPENDENT reveal: on the active row use opacity-100
-                // directly (omit revealOnRowHover's opacity-0 entirely) so
-                // visibility never depends on Tailwind's compiled class order;
-                // inactive rows reveal on hover/focus via revealOnRowHover.
+                // The active row's resting state is shown, so it selects
+                // opacity-100 instead of appending it to revealOnRowHover —
+                // concatenating would leave opacity-0/-100 at equal specificity
+                // and make visibility depend on compiled class order.
                 active ? 'opacity-100' : revealOnRowHover,
               ].join(' ')}
             >

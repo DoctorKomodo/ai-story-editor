@@ -1,7 +1,7 @@
 import type { JSONContent, Editor as TiptapEditor } from '@tiptap/core';
 import { EditorContent, useEditor } from '@tiptap/react';
-import type { JSX, ReactNode } from 'react';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import type { JSX } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { CharRefMenu } from '@/components/CharRefMenu';
 import { EditorEmptyHints } from '@/components/EditorEmptyHints';
 import { useCharactersQuery } from '@/hooks/useCharacters';
@@ -76,39 +76,20 @@ interface SubRowProps {
   status?: string | null;
 }
 
-interface SubRowPart {
-  key: string;
-  node: ReactNode;
-}
-
 function SubRow({ draftLabel, wordCount, status }: SubRowProps): JSX.Element {
-  // Build the inline parts in order, inserting middle-dot separators
-  // only between fields that are actually present. Each part carries a
-  // stable identity-based key (not an array index) so React can keep
-  // refs steady when fields toggle on/off. The status chip is rendered
-  // separately because it sits on the right of the row.
-  const parts: SubRowPart[] = [];
-  if (draftLabel) parts.push({ key: 'draft', node: <span>{draftLabel}</span> });
-
-  if (typeof wordCount === 'number') {
-    parts.push({ key: 'wc', node: <span>{wordCount.toLocaleString()} words</span> });
-  }
+  // The middle dot separates the two inline fields only when both are
+  // present. The status chip is rendered separately because it sits on the
+  // right of the row.
+  const hasWordCount = typeof wordCount === 'number';
 
   return (
     <div
       data-testid="paper-sub"
       className="paper-sub mt-1.5 flex items-center gap-2 font-mono text-[11px] uppercase tracking-[.04em] text-ink-4"
     >
-      {parts.map((part, i) => (
-        <Fragment key={part.key}>
-          {i > 0 ? (
-            <span key={`sep-${part.key}`} aria-hidden="true">
-              ·
-            </span>
-          ) : null}
-          {part.node}
-        </Fragment>
-      ))}
+      {draftLabel ? <span>{draftLabel}</span> : null}
+      {draftLabel && hasWordCount ? <span aria-hidden="true">·</span> : null}
+      {hasWordCount ? <span>{wordCount.toLocaleString()} words</span> : null}
       {status ? (
         <span
           data-testid="paper-status-chip"
@@ -253,10 +234,11 @@ export function Paper({
       },
     },
     onUpdate({ editor: ed }) {
-      const json = ed.getJSON();
+      // `getJSON()` is only serialized when a consumer is attached — the
+      // optional call short-circuits before evaluating its argument.
       const wordCount = countWords(ed.getText());
       setLiveWordCount(wordCount);
-      onUpdateRef.current?.({ bodyJson: json, wordCount });
+      onUpdateRef.current?.({ bodyJson: ed.getJSON(), wordCount });
     },
   });
 
