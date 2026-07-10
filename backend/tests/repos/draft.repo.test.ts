@@ -645,8 +645,23 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
 
     const ask = await chatRepo.create({ draftId: src, title: 'ask chat', kind: 'ask' });
     const scene = await chatRepo.create({ draftId: src, title: 'scene chat', kind: 'scene' });
+    const attachment = { selectionText: 'draft passage', chapterId: chapter.id as string };
+    const citations = [
+      { title: 'Source', url: 'https://example.test/s', snippet: 'snip', publishedAt: null },
+    ];
     await msgRepo.create({ chatId: ask.id, role: 'user', content: 'hello source' });
-    await msgRepo.create({ chatId: ask.id, role: 'assistant', content: 'reply source' });
+    // Enriched with all non-text forwarded fields so a field-name typo in the
+    // fork copy loop (attachment/citations/model/tokens/latencyMs) is caught.
+    await msgRepo.create({
+      chatId: ask.id,
+      role: 'assistant',
+      content: 'reply source',
+      attachmentJson: attachment,
+      citationsJson: citations,
+      model: 'venice-m1',
+      tokens: 42,
+      latencyMs: 1234,
+    });
     await msgRepo.create({ chatId: scene.id, role: 'user', content: 'scene line' });
 
     const forked = await draftRepo.createFork(chapter.id, { copyChats: true });
@@ -660,6 +675,13 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     const forkAskMsgs = await msgRepo.findManyForChat(forkAsk.id);
     expect(forkAskMsgs.map((m) => m.content)).toEqual(['hello source', 'reply source']); // source order
     expect(forkAskMsgs.every((m) => m.updatedAt === null)).toBe(true); // edit marker reset
+    // Every non-text field is copied faithfully (guards against a typo in the copy loop).
+    const forkReply = forkAskMsgs[1]!;
+    expect(forkReply.attachmentJson).toEqual(attachment);
+    expect(forkReply.citationsJson).toEqual(citations);
+    expect(forkReply.model).toBe('venice-m1');
+    expect(forkReply.tokens).toBe(42);
+    expect(forkReply.latencyMs).toBe(1234);
 
     // source untouched: still exactly its two original chats
     const srcChats = await chatRepo.findManyForDraft(src);
