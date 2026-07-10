@@ -11,6 +11,8 @@ import {
   resolveUserId,
   writeEncrypted,
 } from './_narrative';
+import { createChatRepo } from './chat.repo';
+import { createMessageRepo } from './message.repo';
 
 export interface RepoDraftCreateInput {
   chapterId: string;
@@ -326,7 +328,10 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     return (agg._max.orderIndex ?? -1) + 1;
   }
 
-  async function createFork(chapterId: string, label?: string) {
+  async function createFork(
+    chapterId: string,
+    opts?: { label?: string | null; copyChats?: boolean },
+  ) {
     const userId = resolveUserId(req, 'draft.repo');
     const chapter = await client.chapter.findFirst({
       where: { id: chapterId, story: { userId } },
@@ -338,15 +343,55 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     }
     const source = await findById(chapter.activeDraftId);
     if (!source) throw new Error('draft.repo: active draft not resolvable (invariant violation)');
-    // Fork copies prose only: body plaintext re-encrypted (fresh IV),
-    // wordCount RECOMPUTED from the forked plaintext (never copied — the
-    // wordCount-from-plaintext rule), summary NULL, no chats.
-    return create({
-      chapterId,
-      bodyJson: source.bodyJson,
-      wordCount: computeWordCount(source.bodyJson),
-      label: label ?? null,
-      orderIndex: await nextOrderIndex(chapterId),
+
+    // Read the source chats + their messages (decrypted) BEFORE opening the tx.
+    // Reuses the request-scoped repos; the copy re-encrypts under the same DEK.
+    const chatRepo = createChatRepo(req, client);
+    const messageRepo = createMessageRepo(req, client);
+    const sourceChats = opts?.copyChats ? await chatRepo.findManyForDraft(source.id) : [];
+    const chatsWithMessages = await Promise.all(
+      sourceChats.map(async (c) => ({
+        chat: c,
+        messages: await messageRepo.findManyForChat(c.id),
+      })),
+    );
+
+    const orderIndex = await nextOrderIndex(chapterId);
+
+    // ONE transaction for the whole fork: body-copy + chat/message deep-copy.
+    // A mid-copy failure rolls the entire fork back (no half-copied draft).
+    return client.$transaction(async (tx) => {
+      // Fork copies prose only for the BODY: body plaintext re-encrypted (fresh
+      // IV), wordCount RECOMPUTED (never copied), summary NULL.
+      const fork = await createWithin(tx, {
+        chapterId,
+        bodyJson: source.bodyJson,
+        wordCount: computeWordCount(source.bodyJson),
+        label: opts?.label ?? null,
+        orderIndex,
+      });
+
+      // Deep-copy chats (stable order) + messages (source order), fresh IVs.
+      for (const { chat, messages } of chatsWithMessages) {
+        const newChat = await chatRepo.createWithin(tx, {
+          draftId: fork.id,
+          title: chat.title,
+          kind: chat.kind,
+        });
+        for (const m of messages) {
+          await messageRepo.createWithin(tx, {
+            chatId: newChat.id,
+            role: m.role,
+            content: m.content,
+            attachmentJson: m.attachmentJson ?? null,
+            citationsJson: m.citationsJson ?? null,
+            model: m.model ?? null,
+            tokens: m.tokens ?? null,
+            latencyMs: m.latencyMs ?? null,
+          });
+        }
+      }
+      return fork;
     });
   }
 

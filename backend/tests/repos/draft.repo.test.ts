@@ -7,6 +7,7 @@ import {
   DraftDeleteActiveError,
   DraftVersionConflictError,
 } from '../../src/repos/draft.repo';
+import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { computeWordCount } from '../../src/services/tiptap-text';
 import { resetDb } from '../helpers/db';
@@ -313,7 +314,7 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     const draftRepo = createDraftRepo(ctx.req);
     const source = await draftRepo.findById(chapter.activeDraftId as string);
 
-    const forked = await draftRepo.createFork(chapter.id, 'fork label');
+    const forked = await draftRepo.createFork(chapter.id, { label: 'fork label' });
     expect(forked.bodyJson).toEqual(source!.bodyJson);
     expect(forked.wordCount).toBe(computeWordCount(source!.bodyJson));
     expect(forked.summary).toBeNull();
@@ -597,5 +598,70 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     expect(byId.get(mixed.id)!.chatCount).toBe(3);
     // no ciphertext / _count remnants on the meta shape
     expect(Object.keys(byId.get(mixed.id)!)).not.toContain('_count');
+  });
+
+  it('[6ze] createFork copyChats:false copies body only, zero chats (regression guard)', async () => {
+    const ctx = await makeUserContext('fork-nochats');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: paragraphDoc('src'),
+      wordCount: 1,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+    await chatRepo.create({ draftId: chapter.activeDraftId as string, title: 'a', kind: 'ask' });
+
+    const forked = await draftRepo.createFork(chapter.id, { copyChats: false });
+    const metas = await draftRepo.findManyMetaForChapter(chapter.id);
+    expect(metas.find((m) => m.id === forked.id)!.chatCount).toBe(0);
+  });
+
+  it('[6ze] createFork copyChats:true deep-copies every chat + message; source untouched', async () => {
+    const ctx = await makeUserContext('fork-copychats');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: paragraphDoc('src body'),
+      wordCount: 2,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+    const msgRepo = createMessageRepo(ctx.req);
+    const src = chapter.activeDraftId as string;
+
+    const ask = await chatRepo.create({ draftId: src, title: 'ask chat', kind: 'ask' });
+    const scene = await chatRepo.create({ draftId: src, title: 'scene chat', kind: 'scene' });
+    await msgRepo.create({ chatId: ask.id, role: 'user', content: 'hello source' });
+    await msgRepo.create({ chatId: ask.id, role: 'assistant', content: 'reply source' });
+    await msgRepo.create({ chatId: scene.id, role: 'user', content: 'scene line' });
+
+    const forked = await draftRepo.createFork(chapter.id, { copyChats: true });
+
+    const forkChats = await chatRepo.findManyForDraft(forked.id);
+    expect(forkChats).toHaveLength(2);
+    expect(forkChats.map((c) => c.kind).sort()).toEqual(['ask', 'scene']);
+    // decrypt yields source plaintext; rows point at the NEW draft
+    const forkAsk = forkChats.find((c) => c.title === 'ask chat')!;
+    expect(forkAsk.draftId).toBe(forked.id);
+    const forkAskMsgs = await msgRepo.findManyForChat(forkAsk.id);
+    expect(forkAskMsgs.map((m) => m.content)).toEqual(['hello source', 'reply source']); // source order
+    expect(forkAskMsgs.every((m) => m.updatedAt === null)).toBe(true); // edit marker reset
+
+    // source untouched: still exactly its two original chats
+    const srcChats = await chatRepo.findManyForDraft(src);
+    expect(srcChats).toHaveLength(2);
   });
 });
