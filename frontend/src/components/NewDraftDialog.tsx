@@ -9,6 +9,7 @@ import {
   ModalBody,
   ModalFooter,
   ModalHeader,
+  RadioGroup,
   useId,
 } from '@/design/primitives';
 import { positionalDraftLabel, useCreateDraftMutation } from '@/hooks/useDrafts';
@@ -99,31 +100,17 @@ export function NewDraftDialog({
         closeDisabled={createDraft.isPending}
       />
       <ModalBody className="flex flex-col gap-3">
-        <fieldset className="flex flex-col gap-1.5 border-0 p-0 m-0">
-          <legend className="sr-only">Starting point</legend>
-          <label className="flex items-center gap-2 font-sans text-[13px] text-ink cursor-pointer">
-            <input
-              type="radio"
-              name="new-draft-mode"
-              checked={mode === 'fork'}
-              onChange={() => {
-                setMode('fork');
-              }}
-            />
-            {forkLabel}
-          </label>
-          <label className="flex items-center gap-2 font-sans text-[13px] text-ink cursor-pointer">
-            <input
-              type="radio"
-              name="new-draft-mode"
-              checked={mode === 'blank'}
-              onChange={() => {
-                setMode('blank');
-              }}
-            />
-            Start blank
-          </label>
-        </fieldset>
+        <RadioGroup
+          name="new-draft-mode"
+          legend="Starting point"
+          srOnlyLegend
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'fork', label: forkLabel },
+            { value: 'blank', label: 'Start blank' },
+          ]}
+        />
         <Field label="Name (optional)" htmlFor={nameId}>
           <Input
             id={nameId}

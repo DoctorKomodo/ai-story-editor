@@ -270,9 +270,6 @@ body {
   color: var(--ink-2);
   line-height: 1.5;
 }
-.recovery-code-confirm input[type="checkbox"] {
-  margin-top: 2px;
-}
 
 @media (max-width: 720px) {
   .auth-screen {

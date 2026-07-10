@@ -7,6 +7,7 @@ import {
   type ImportResult,
   importSchema,
 } from 'story-editor-shared';
+import { Checkbox } from '@/design/primitives';
 import { useExportBackup, useImportBackup, useImportPlan } from '@/hooks/useBackup';
 
 const CONFIRM_PHRASE = 'replace these stories';
@@ -32,6 +33,7 @@ function defaultResolutionFor(bucket: Bucket): ImportResolution {
 
 export function SettingsDataTab(): JSX.Element {
   const confirmId = useId();
+  const safetyBackupId = useId();
   const navigate = useNavigate();
   const exporter = useExportBackup();
   const importPlan = useImportPlan();
@@ -365,9 +367,12 @@ export function SettingsDataTab(): JSX.Element {
 
           {hasReplace ? (
             <>
-              <label className="flex items-center gap-2 text-[12px] text-ink-2 font-sans">
-                <input
-                  type="checkbox"
+              <label
+                htmlFor={safetyBackupId}
+                className="flex items-center gap-2 text-[12px] text-ink-2 font-sans"
+              >
+                <Checkbox
+                  id={safetyBackupId}
                   data-testid="data-restore-safety"
                   checked={safetyBackup}
                   disabled={restoring || importer.isPending}

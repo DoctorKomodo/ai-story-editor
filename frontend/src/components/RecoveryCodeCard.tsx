@@ -1,5 +1,6 @@
 import type { JSX } from 'react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
+import { Checkbox } from '@/design/primitives';
 import { useCopyToClipboard } from '@/hooks/useCopyToClipboard';
 import { downloadTxt } from '@/lib/downloadTxt';
 
@@ -36,6 +37,7 @@ export function RecoveryCodeCard({
   onDownload,
 }: RecoveryCodeCardProps): JSX.Element {
   const [confirmed, setConfirmed] = useState(false);
+  const confirmId = useId();
   const { status: copyStatus, copy: copyToClipboard } = useCopyToClipboard({ resetMs: 2000 });
 
   const download = (): void => {
@@ -82,9 +84,10 @@ export function RecoveryCodeCard({
         </p>
       ) : null}
 
-      <label className="recovery-code-confirm">
-        <input
-          type="checkbox"
+      <label htmlFor={confirmId} className="recovery-code-confirm">
+        <Checkbox
+          id={confirmId}
+          className="mt-0.5"
           checked={confirmed}
           onChange={(e) => {
             setConfirmed(e.target.checked);

@@ -2,6 +2,7 @@
 
 import type { ChangeEvent, JSX } from 'react';
 import { useId, useState } from 'react';
+import { Checkbox } from '@/design/primitives';
 import { type DefaultPrompts, useDefaultPromptsQuery } from '@/hooks/useDefaultPrompts';
 import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 
@@ -98,6 +99,7 @@ interface PromptRowProps {
 
 function PromptRow({ meta, defaultText, override, onPatch }: PromptRowProps): JSX.Element {
   const fieldId = useId();
+  const overrideId = useId();
   const checked = override !== null;
   const [draft, setDraft] = useState<string>(override ?? defaultText);
 
@@ -153,9 +155,9 @@ function PromptRow({ meta, defaultText, override, onPatch }: PromptRowProps): JS
         </div>
       )}
 
-      <label className="flex items-center gap-2 text-[12px]">
-        <input
-          type="checkbox"
+      <label htmlFor={overrideId} className="flex items-center gap-2 text-[12px]">
+        <Checkbox
+          id={overrideId}
           data-testid={`prompts-toggle-${meta.key}`}
           checked={checked}
           onChange={handleToggle}
