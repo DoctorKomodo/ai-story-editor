@@ -33,6 +33,7 @@ function defaultResolutionFor(bucket: Bucket): ImportResolution {
 
 export function SettingsDataTab(): JSX.Element {
   const confirmId = useId();
+  const safetyBackupId = useId();
   const navigate = useNavigate();
   const exporter = useExportBackup();
   const importPlan = useImportPlan();
@@ -366,9 +367,12 @@ export function SettingsDataTab(): JSX.Element {
 
           {hasReplace ? (
             <>
-              {/* biome-ignore lint/a11y/noLabelWithoutControl: wraps a <Checkbox> (a forwardRef'd <input type="checkbox">); biome can't trace the control through the custom component. */}
-              <label className="flex items-center gap-2 text-[12px] text-ink-2 font-sans">
+              <label
+                htmlFor={safetyBackupId}
+                className="flex items-center gap-2 text-[12px] text-ink-2 font-sans"
+              >
                 <Checkbox
+                  id={safetyBackupId}
                   data-testid="data-restore-safety"
                   checked={safetyBackup}
                   disabled={restoring || importer.isPending}

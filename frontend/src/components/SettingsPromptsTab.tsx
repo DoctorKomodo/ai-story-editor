@@ -99,6 +99,7 @@ interface PromptRowProps {
 
 function PromptRow({ meta, defaultText, override, onPatch }: PromptRowProps): JSX.Element {
   const fieldId = useId();
+  const overrideId = useId();
   const checked = override !== null;
   const [draft, setDraft] = useState<string>(override ?? defaultText);
 
@@ -154,9 +155,9 @@ function PromptRow({ meta, defaultText, override, onPatch }: PromptRowProps): JS
         </div>
       )}
 
-      {/* biome-ignore lint/a11y/noLabelWithoutControl: wraps a <Checkbox> (a forwardRef'd <input type="checkbox">); biome can't trace the control through the custom component. */}
-      <label className="flex items-center gap-2 text-[12px]">
+      <label htmlFor={overrideId} className="flex items-center gap-2 text-[12px]">
         <Checkbox
+          id={overrideId}
           data-testid={`prompts-toggle-${meta.key}`}
           checked={checked}
           onChange={handleToggle}
