@@ -7,7 +7,7 @@
 // column shape (ciphertext triple only). No dual-write, no plaintext
 // fallback — ciphertext is the sole source of truth for narrative content.
 
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { type ChapterSummary, chapterSummarySchema } from 'story-editor-shared';
 import {
@@ -135,7 +135,7 @@ export async function ensureStoryOwned(
 }
 
 export async function ensureChapterOwned(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   chapterId: string,
   userId: string,
   repoTag: string,

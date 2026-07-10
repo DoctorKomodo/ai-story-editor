@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { type ChapterSummary, DRAFT_ENCRYPTED_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
@@ -86,9 +86,9 @@ export class DraftDeleteLastError extends Error {
 }
 
 export function createDraftRepo(req: Request, client: PrismaClient = defaultPrisma) {
-  async function create(input: RepoDraftCreateInput) {
+  async function createWithin(tx: Prisma.TransactionClient, input: RepoDraftCreateInput) {
     const userId = resolveUserId(req, 'draft.repo');
-    await ensureChapterOwned(client, input.chapterId, userId, 'draft.repo');
+    await ensureChapterOwned(tx, input.chapterId, userId, 'draft.repo');
 
     const bodyPlaintext =
       input.bodyJson === undefined || input.bodyJson === null
@@ -103,7 +103,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     // Same instant as @updatedAt so a draft created WITH a summary isn't
     // born stale. Ported from update()'s summary write path.
     const now = new Date();
-    const row = await client.draft.create({
+    const row = await tx.draft.create({
       data: {
         chapterId: input.chapterId,
         orderIndex: input.orderIndex,
@@ -115,6 +115,10 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
       },
     });
     return shape(row, req);
+  }
+
+  async function create(input: RepoDraftCreateInput) {
+    return client.$transaction((tx) => createWithin(tx, input));
   }
 
   async function findById(id: string) {
@@ -359,6 +363,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
 
   return {
     create,
+    createWithin,
     createFork,
     createBlank,
     findById,
