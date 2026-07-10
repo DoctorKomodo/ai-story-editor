@@ -7,8 +7,10 @@
 // `StoryPicker` + `StoryRow` block).
 //
 // [X22] Ported onto the `<Modal>` primitive — backdrop, Escape, click-outside,
-// focus management, and close-X chrome all live in the primitive now. Embedded
-// mode (F58 — dashboard surface) passes `embedded` through to the primitive.
+// and close-X chrome all live in the primitive now. Embedded mode (F58 —
+// dashboard surface) passes `embedded` through to the primitive. Modal does
+// NOT do focus management, despite what its own header once claimed —
+// see story-editor-g4x.
 //
 // [story-editor-0wz] Per-row delete: a hover-revealed trash icon (mirrors
 // ChatSceneTab/SessionPicker's row-icon idiom) opens a <ConfirmDialog>;
