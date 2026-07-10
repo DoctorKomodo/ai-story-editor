@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeEncrypted } from '../../src/repos/_narrative';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
@@ -7,6 +7,7 @@ import {
   DraftDeleteActiveError,
   DraftVersionConflictError,
 } from '../../src/repos/draft.repo';
+import * as messageRepoModule from '../../src/repos/message.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { computeWordCount } from '../../src/services/tiptap-text';
@@ -663,5 +664,52 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     // source untouched: still exactly its two original chats
     const srcChats = await chatRepo.findManyForDraft(src);
     expect(srcChats).toHaveLength(2);
+  });
+
+  it('[6ze] createFork copyChats:true rolls back the whole fork on a mid-copy failure', async () => {
+    const ctx = await makeUserContext('fork-rollback');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: paragraphDoc('b'),
+      wordCount: 1,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+    const msgRepo = createMessageRepo(ctx.req);
+    const src = chapter.activeDraftId as string;
+    const chat = await chatRepo.create({ draftId: src, title: 'c', kind: 'ask' });
+    await msgRepo.create({ chatId: chat.id, role: 'user', content: 'x' });
+
+    const draftsBefore = await prisma.draft.count({ where: { chapterId: chapter.id } });
+
+    // Make the message copy throw AFTER the fork draft + its chat were inserted
+    // in the same tx, proving the tx rolls both back.
+    const real = messageRepoModule.createMessageRepo;
+    const spy = vi.spyOn(messageRepoModule, 'createMessageRepo').mockImplementation((req) => {
+      const inst = real(req);
+      return {
+        ...inst,
+        createWithin: async () => {
+          throw new Error('boom mid-copy');
+        },
+      };
+    });
+
+    await expect(draftRepo.createFork(chapter.id, { copyChats: true })).rejects.toThrow(
+      'boom mid-copy',
+    );
+    spy.mockRestore();
+
+    // No fork draft, no orphaned copied chats.
+    expect(await prisma.draft.count({ where: { chapterId: chapter.id } })).toBe(draftsBefore);
+    const srcChats = await chatRepo.findManyForDraft(src);
+    expect(srcChats).toHaveLength(1); // source chat only; no copy leaked
   });
 });
