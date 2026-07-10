@@ -177,11 +177,7 @@ function DraftRow({
         <ConfirmDialog
           open={confirmingDelete}
           title={`Delete "${displayLabel}"?`}
-          body={
-            `This permanently deletes its ${draft.chatCount} attached ` +
-            `${draft.chatCount === 1 ? 'chat & scene' : 'chats & scenes'}. ` +
-            `This can't be undone.`
-          }
+          body={`This permanently deletes its ${draft.chatCount} attached ${draft.chatCount === 1 ? 'chat & scene' : 'chats & scenes'}. This can't be undone.`}
           confirmLabel="Delete draft"
           confirmVariant="danger"
           pending={isDeleting}
