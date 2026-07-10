@@ -3,13 +3,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JSX, ReactNode } from 'react';
-import type { DraftMeta } from 'story-editor-shared';
+import { type DraftMeta, draftSchema } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DraftList } from '@/components/DraftList';
 import { draftsQueryKey } from '@/hooks/useDrafts';
 import { resetApiClientForTests } from '@/lib/api';
 import { useSelectedDraftStore } from '@/store/selectedDraft';
 import { useSessionStore } from '@/store/session';
+import { makeDraft, makeDraftMeta } from '../fixtures/chapter';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -268,5 +269,12 @@ describe('DraftList', () => {
     const { onRequestNewDraft } = renderList();
     await userEvent.click(screen.getByRole('button', { name: 'New draft…' }));
     expect(onRequestNewDraft).toHaveBeenCalledWith('ch-1');
+  });
+
+  it('[6ze] makeDraftMeta carries chatCount; makeDraft (full Draft) does NOT', () => {
+    expect(makeDraftMeta().chatCount).toBe(0);
+    // full-Draft fixture must parse clean — i.e. NOT carry chatCount (strictObject)
+    expect(() => draftSchema.parse(makeDraft())).not.toThrow();
+    expect('chatCount' in makeDraft()).toBe(false);
   });
 });
