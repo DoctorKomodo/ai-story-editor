@@ -187,3 +187,32 @@ describe('chatRepo.findManyForDraft — most-recent-activity ordering (story-edi
     expect(list[1]?.id).toBe(chatAId);
   });
 });
+
+describe('[6ze] chat.repo.createWithin', () => {
+  beforeEach(resetDb);
+  afterEach(resetDb);
+
+  it('inserts within a tx and decrypts back', async () => {
+    const ctx = await makeUserContext('chat-createwithin');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const chatRepo = createChatRepo(ctx.req);
+    const created = await prisma.$transaction((tx) =>
+      chatRepo.createWithin(tx, {
+        draftId: chapter.activeDraftId as string,
+        title: 'hi',
+        kind: 'scene',
+      }),
+    );
+    expect(created.title).toBe('hi');
+    expect(created.kind).toBe('scene');
+  });
+});

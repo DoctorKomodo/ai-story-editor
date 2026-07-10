@@ -1,4 +1,4 @@
-import type { PrismaClient } from '@prisma/client';
+import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { CHAT_ENCRYPTED_FIELD_KEYS, type ChatKind } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
@@ -34,7 +34,7 @@ export type RepoChat = {
 };
 
 async function ensureDraftOwned(
-  client: PrismaClient,
+  client: PrismaClient | Prisma.TransactionClient,
   draftId: string,
   userId: string,
 ): Promise<void> {
@@ -45,10 +45,10 @@ async function ensureDraftOwned(
 }
 
 export function createChatRepo(req: Request, client: PrismaClient = defaultPrisma) {
-  async function create(input: ChatCreateInput) {
+  async function createWithin(tx: Prisma.TransactionClient, input: ChatCreateInput) {
     const userId = resolveUserId(req, 'chat.repo');
-    await ensureDraftOwned(client, input.draftId, userId);
-    const row = await client.chat.create({
+    await ensureDraftOwned(tx, input.draftId, userId);
+    const row = await tx.chat.create({
       data: {
         draftId: input.draftId,
         kind: input.kind ?? 'ask',
@@ -57,6 +57,10 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
       },
     });
     return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
+  }
+
+  async function create(input: ChatCreateInput) {
+    return client.$transaction((tx) => createWithin(tx, input));
   }
 
   async function findById(id: string) {
@@ -112,5 +116,5 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     return deleted.count > 0;
   }
 
-  return { create, findById, findManyForDraft, update, remove };
+  return { create, createWithin, findById, findManyForDraft, update, remove };
 }
