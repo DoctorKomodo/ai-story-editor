@@ -65,7 +65,15 @@ export interface ModalProps {
   labelledBy: string;
   /** "sm" 360 · "md" 480 (default) · "lg" 640 · "xl" 800 */
   size?: 'sm' | 'md' | 'lg' | 'xl';
-  /** When false, escape and click-outside become no-ops. Default true. */
+  /**
+   * When false, escape and click-outside become no-ops. Default true.
+   *
+   * Nesting a Modal inside a Modal: the OUTER one must pass
+   * `dismissable={false}` while the inner is open, or one Escape closes both.
+   * Each Modal's Escape handler is its own `window` keydown listener, and
+   * `stopPropagation()` does not stop sibling listeners on the same target —
+   * flipping `dismissable` is what unregisters the outer listener.
+   */
   dismissable?: boolean;
   /** Render only the card (no backdrop). Used by dashboard-embedded pickers. */
   embedded?: boolean;
@@ -827,6 +835,98 @@ export function InlineConfirm({
         Cancel
       </Button>
     </fieldset>
+  );
+}
+
+/* ============================================================================
+ * <ConfirmDialog/> — modal Cancel/confirm dialog.
+ *
+ * The modal sibling of <InlineConfirm/>. Presentational: `pending` and
+ * `error` are props, so the caller keeps its own mutation, error mapping,
+ * and close-vs-stay-open policy.
+ *
+ * `dismissable` is deliberately NOT exposed. Escape/backdrop close via
+ * `onCancel`. When this dialog is nested inside another Modal, the CALLER
+ * must gate the outer modal with `dismissable={!open}` — that gate is what
+ * makes layered Escape work (it tears down the outer window listener, so
+ * only one is ever registered). `stopPropagation` does not do this.
+ * ========================================================================== */
+
+export interface ConfirmDialogProps {
+  open: boolean;
+  title: ReactNode;
+  body: ReactNode;
+  /** Action-button label, e.g. "Delete" | "Confirm" | "Regenerate". */
+  confirmLabel: string;
+  /** Action-button variant. Default "danger". */
+  confirmVariant?: 'danger' | 'primary';
+  /** Default "Cancel". */
+  cancelLabel?: string;
+  /** Disables Cancel; puts a spinner on the action button. */
+  pending?: boolean;
+  /** Rendered role="alert" under the body. The dialog stays open. */
+  error?: ReactNode;
+  onConfirm: () => void;
+  onCancel: () => void;
+  /** Root id. Buttons/error derive `${testId}-confirm|-cancel|-error`. */
+  testId?: string;
+}
+
+export function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel,
+  confirmVariant = 'danger',
+  cancelLabel = 'Cancel',
+  pending,
+  error,
+  onConfirm,
+  onCancel,
+  testId,
+}: ConfirmDialogProps): JSX.Element {
+  const titleId = useId();
+  return (
+    <Modal
+      open={open}
+      onClose={onCancel}
+      labelledBy={titleId}
+      size="sm"
+      role="alertdialog"
+      testId={testId}
+    >
+      <ModalHeader titleId={titleId} title={title} />
+      <ModalBody>
+        <p className="font-serif text-[13.5px] leading-[1.55] text-ink-2">{body}</p>
+        {error ? (
+          <p
+            role="alert"
+            className="mt-3 font-sans text-[12.5px] text-danger"
+            data-testid={testId ? `${testId}-error` : undefined}
+          >
+            {error}
+          </p>
+        ) : null}
+      </ModalBody>
+      <ModalFooter>
+        <Button
+          variant="ghost"
+          onClick={onCancel}
+          disabled={pending}
+          data-testid={testId ? `${testId}-cancel` : undefined}
+        >
+          {cancelLabel}
+        </Button>
+        <Button
+          variant={confirmVariant}
+          loading={pending}
+          onClick={onConfirm}
+          data-testid={testId ? `${testId}-confirm` : undefined}
+        >
+          {confirmLabel}
+        </Button>
+      </ModalFooter>
+    </Modal>
   );
 }
 
