@@ -278,4 +278,62 @@ describe('DraftList', () => {
     expect(() => draftSchema.parse(makeDraft())).not.toThrow();
     expect('chatCount' in makeDraft()).toBe(false);
   });
+
+  it('[6ze] draft with chatCount 0 uses the inline confirm (no modal)', async () => {
+    renderList();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Draft C' }));
+    expect(screen.getByTestId('draft-row-d-c-confirm')).toBeInTheDocument();
+    expect(screen.queryByTestId('draft-row-d-c-confirm-modal')).not.toBeInTheDocument();
+  });
+
+  it('[6ze] draft with chatCount > 0 opens the ConfirmDialog with pluralized copy', async () => {
+    renderList({
+      drafts: [
+        meta({ id: 'd-a', orderIndex: 0, isActive: true }),
+        meta({ id: 'd-b', orderIndex: 1, chatCount: 3 }),
+        meta({ id: 'd-c', orderIndex: 2, chatCount: 1 }),
+      ],
+    });
+
+    await userEvent.click(screen.getByTestId('draft-row-d-b-delete'));
+    expect(screen.getByTestId('draft-row-d-b-confirm-modal')).toBeInTheDocument();
+    expect(screen.getByText(/its 3 attached chats & scenes/)).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('draft-row-d-b-confirm-modal-cancel'));
+
+    await userEvent.click(screen.getByTestId('draft-row-d-c-delete'));
+    expect(screen.getByTestId('draft-row-d-c-confirm-modal')).toBeInTheDocument();
+    expect(screen.getByText(/its 1 attached chat & scene/)).toBeInTheDocument();
+  });
+
+  it('[6ze] modal Cancel dismisses with no delete mutation; Delete fires it and removes the row', async () => {
+    renderList({
+      drafts: [
+        meta({ id: 'd-a', orderIndex: 0, isActive: true }),
+        meta({ id: 'd-b', orderIndex: 1, chatCount: 2 }),
+      ],
+    });
+
+    await userEvent.click(screen.getByTestId('draft-row-d-b-delete'));
+    await userEvent.click(screen.getByTestId('draft-row-d-b-confirm-modal-cancel'));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('draft-row-d-b-confirm-modal')).not.toBeInTheDocument();
+    expect(screen.getByTestId('draft-row-d-b')).toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { drafts: [meta({ id: 'd-a', orderIndex: 0, isActive: true })] }),
+    );
+    await userEvent.click(screen.getByTestId('draft-row-d-b-delete'));
+    await userEvent.click(screen.getByTestId('draft-row-d-b-confirm-modal-confirm'));
+
+    await waitFor(() => {
+      const del = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === 'DELETE',
+      );
+      expect(del).toBeDefined();
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('draft-row-d-b')).not.toBeInTheDocument();
+    });
+  });
 });
