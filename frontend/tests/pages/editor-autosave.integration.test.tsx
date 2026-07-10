@@ -204,7 +204,7 @@ function draftMetaOf(r: DraftRecord): Record<string, unknown> {
     summaryUpdatedAt: _summaryUpdatedAt,
     ...meta
   } = r;
-  return meta;
+  return { ...meta, chatCount: 0 };
 }
 
 function makeChapterRecord(overrides: Record<string, unknown> = {}): Record<string, unknown> {
