@@ -88,6 +88,26 @@ without prompting):
 - An explicit **TDD signal** per task if TDD is required (most
   tasks should have it; superpowers' implementer follows TDD when
   the task says so).
+- An **existing-surface inventory** — for any plan that creates a
+  new component, helper, or pattern: enumerate what already
+  implements something close, found by **actual grep / Storybook
+  browse, not memory** (frontend: `frontend/src/design/`,
+  `frontend/src/lib/`, Storybook `Primitives/`; backend:
+  `backend/src/lib/`, `backend/src/services/`). Each entry gets a
+  path and a one-line disposition: *reuse*, *extend*,
+  *extract-then-use*, or *genuinely new — nothing close exists*.
+  An empty inventory on a plan that builds new UI or helpers is
+  presumed wrong at the plan-review gate. If the inventory turns up
+  ≥2 near-identical implementations of what the plan would add,
+  apply the file-and-block rule (CLAUDE.md, "Duplication:
+  file-and-block") before the plan proceeds.
+- **Global Constraints carry the reuse rule** when the inventory
+  resolved a disposition — e.g. "No new bespoke confirm dialog;
+  use `ConfirmDialog` from `frontend/src/design/`". The bridge hands
+  Global Constraints to the task-reviewer **verbatim**, so a
+  constraint written here is enforced on every task's diff; the
+  generic backstop (a near-duplicate diff is a blocking finding)
+  lives in `docs/agent-rules/general.md` ("Reuse before build").
 
 If the plan's file map is missing, `/bd-execute` will dispatch with
 no rules digest and surface that as a concern. Add the map and
@@ -120,6 +140,20 @@ For sub-issue splits, file each child the same way and add the
 bd dep add <parent-id> <child-id>     # parent waits on child
 bd dep add <child-2-id> <child-1-id>  # child 2 waits on child 1
 ```
+
+The same edge type implements **file-and-block** (CLAUDE.md,
+"Duplication: file-and-block"): when an extraction/consolidation
+issue is filed because a task would otherwise add another copy of
+an existing pattern, add it as a blocker of that task — and of any
+other open issue that would add an instance:
+
+```bash
+bd dep add <blocked-task-id> <extraction-id>   # task waits on the primitive
+```
+
+A consolidation issue that blocks nothing never gets scheduled and
+the duplication grows one copy per task; one that gates ready work
+sits on the critical path and gets done.
 
 ### 4. Execute via `/bd-execute`
 
@@ -167,10 +201,18 @@ queue.)
    implementer and the task-reviewer dispatches (the merged reviewer
    owns the code-quality half, so it enforces the same rules the
    implementer was held to).
-8. After the last task is clean, dispatches a **final whole-branch
-   review** (`requesting-code-review/code-reviewer.md`, on the most
-   capable model) over the `merge-base..HEAD` package, then hands
-   off to `/bd-close-reviewed`.
+8. After the last task is clean, runs a **whole-branch simplify
+   pass** (the `simplify` skill over the `merge-base..HEAD` diff —
+   behavior-preserving cleanup of reuse/duplication/altitude the
+   per-task reviews can't see across tasks; applied fixes land as
+   one separate `[<bd-id>] simplify pass` commit, re-verified, and
+   reverted rather than debugged if the verify goes red; skipped
+   with a ledger note for trivial/docs-only branches).
+9. Then dispatches a **final whole-branch review**
+   (`requesting-code-review/code-reviewer.md`, on the most capable
+   model) over the `merge-base..HEAD` package — which now includes
+   the simplify commit, so the cleanup is reviewed like any other
+   code — then hands off to `/bd-close-reviewed`.
 
 **Continuous execution:** the bridge does not pause between tasks.
 The user is interrupted only when an implementer reports BLOCKED

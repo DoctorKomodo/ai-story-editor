@@ -16,6 +16,7 @@
 import type { ChangeEvent, JSX } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
+import { Checkbox } from '@/design/primitives';
 import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { resolveChatParams, useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '@/lib/textGenDefaults';
@@ -288,14 +289,12 @@ export function SettingsModelsTab(): JSX.Element {
           htmlFor={reasoningId}
           className={`flex items-center gap-2 text-[12px] ${!reasoningSupported ? 'opacity-50' : ''}`}
         >
-          <input
+          <Checkbox
             id={reasoningId}
             data-testid="param-reasoning"
-            type="checkbox"
             checked={reasoningOn}
             disabled={slidersDisabled || !reasoningSupported}
             onChange={(e) => onReasoning(e.target.checked)}
-            className="accent-accent w-4 h-4"
           />
           <span className="font-medium text-ink-2">Reasoning</span>
           {!reasoningSupported ? (

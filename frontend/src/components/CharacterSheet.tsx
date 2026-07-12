@@ -11,6 +11,7 @@ import {
 import type { Character, CharacterCreateInput } from 'story-editor-shared';
 import {
   Button,
+  ConfirmDialog,
   Field,
   Input,
   Modal,
@@ -34,8 +35,9 @@ import { ApiError } from '@/lib/api';
  *
  * Bundle-3 port: chrome and form fields are now composed from
  * `@/design/primitives` (Modal / ModalHeader / ModalBody / ModalFooter /
- * Field / Input / Textarea / Button). The nested confirm dialog uses a
- * second Modal so backdrop / escape / focus management is centralised.
+ * Field / Input / Textarea / Button). The nested delete confirmation is a
+ * <ConfirmDialog>; the outer Modal gates its own `dismissable` on
+ * `confirmOpen` so Escape closes only the confirm (see Modal.dismissable).
  */
 export type CharacterSheetProps =
   | { storyId: string; mode: 'edit'; characterId: string; onClose: () => void }
@@ -626,58 +628,22 @@ function EditCharacterSheet({
         </ModalFooter>
       </form>
 
-      <Modal
+      <ConfirmDialog
         open={confirmOpen}
-        onClose={() => {
+        title="Delete this character?"
+        body="Delete this character? This cannot be undone."
+        confirmLabel={deletePending ? 'Deleting…' : 'Confirm'}
+        pending={deletePending}
+        error={deleteError}
+        onConfirm={() => {
+          void handleConfirmDelete();
+        }}
+        onCancel={() => {
           setConfirmOpen(false);
           setDeleteError(null);
         }}
-        labelledBy={`${headingId}-confirm`}
-        size="sm"
-        role="alertdialog"
         testId="character-sheet-confirm"
-      >
-        <ModalHeader titleId={`${headingId}-confirm`} title="Delete this character?" />
-        <ModalBody>
-          <p className="font-serif text-[13.5px] leading-[1.55] text-ink-2">
-            Delete this character? This cannot be undone.
-          </p>
-          {deleteError ? (
-            <p
-              role="alert"
-              className="mt-3 font-sans text-[12.5px] text-danger"
-              data-testid="character-sheet-delete-error"
-            >
-              {deleteError}
-            </p>
-          ) : null}
-        </ModalBody>
-        <ModalFooter>
-          <Button
-            type="button"
-            variant="ghost"
-            onClick={() => {
-              setConfirmOpen(false);
-              setDeleteError(null);
-            }}
-            disabled={deletePending}
-            data-testid="character-sheet-confirm-cancel"
-          >
-            Cancel
-          </Button>
-          <Button
-            type="button"
-            variant="danger"
-            onClick={() => {
-              void handleConfirmDelete();
-            }}
-            disabled={deletePending}
-            data-testid="character-sheet-confirm-delete"
-          >
-            {deletePending ? 'Deleting…' : 'Confirm'}
-          </Button>
-        </ModalFooter>
-      </Modal>
+      />
     </Modal>
   );
 }

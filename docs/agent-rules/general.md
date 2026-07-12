@@ -36,7 +36,9 @@
   what the task requires. A bug fix doesn't need surrounding cleanup;
   a one-shot operation doesn't need a helper. Don't design for
   hypothetical future requirements. Three similar lines beats a
-  premature abstraction.
+  premature abstraction — but see "Reuse before build" below for
+  the flip side: at the third *occurrence* the abstraction is no
+  longer premature.
 - Don't add error handling, fallbacks, or validation for scenarios
   that can't happen. Trust internal code and framework guarantees.
   Only validate at system boundaries (user input, external APIs).
@@ -44,6 +46,31 @@
   re-exporting types, adding `// removed` comments for deleted code,
   feature flags or compat shims you can just inline. If something is
   certainly unused, delete it.
+
+## Reuse before build (the other half of YAGNI)
+
+- YAGNI cuts both ways. Don't abstract on the second occurrence —
+  but a **third occurrence means the abstraction is real, not
+  premature**. At that point extraction is in scope by definition.
+- **Before writing a new component, helper, or pattern, search for
+  an existing one.** Grep the lane for the shape you're about to
+  build (frontend: `frontend/src/design/`, `frontend/src/lib/`,
+  Storybook `Primitives/`; backend: `backend/src/lib/`,
+  `backend/src/services/`). Building a near-duplicate because you
+  didn't look is a defect, same as failing a lint.
+- If ≥2 near-identical implementations already exist and your task
+  would add another: use the shared primitive if one exists; extract
+  one if the lift is small; otherwise **STOP** — report the block to
+  the controller so the extraction gets filed as its own bd issue
+  **and added as a blocker of the current task**
+  (`bd dep add <current-id> <extraction-id>`). Do not ship copy N+1.
+- **"Out of scope" is never a valid justification for adding another
+  copy of an existing pattern.** Deferring the *migration of old
+  sites* is fine; growing the duplication while it's deferred is not.
+- **Reviewer criterion:** a diff that introduces a near-duplicate of
+  an existing component/helper/pattern is a **blocking code-quality
+  finding**, not an observation. Name the existing implementation(s)
+  by path in the finding.
 
 ## Dependencies
 

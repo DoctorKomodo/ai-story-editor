@@ -809,10 +809,8 @@ export function EditorPage(): JSX.Element {
                         : (viewedDraftId ?? activeChapterId)
                     }
                     storyId={story.id}
-                    storyTitle={story.title}
-                    storyGenre={story.genre}
                     draftLabel={viewedDraftMeta ? draftDisplayLabel(viewedDraftMeta) : null}
-                    storyWordCount={totalWordCount}
+                    initialWordCount={viewedDraftMeta?.wordCount ?? 0}
                     chapterId={activeChapterId}
                     chapterNumber={activeChapter ? activeChapter.orderIndex + 1 : null}
                     chapterTitle={activeChapter?.title ?? null}

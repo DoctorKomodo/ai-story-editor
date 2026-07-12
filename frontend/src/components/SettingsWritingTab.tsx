@@ -18,8 +18,9 @@
 // Daily goal PATCHes are debounced (~400ms) so a quick typed change doesn't
 // fire a request per keystroke. Toggle PATCHes are immediate — they're
 // single-event changes.
-import type { ChangeEvent, JSX, ReactNode } from 'react';
+import type { JSX } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
+import { CheckboxField } from '@/design/primitives';
 import { useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 
 // --- localStorage helpers ----------------------------------------------------
@@ -83,48 +84,6 @@ function useDebouncedCallback<A extends unknown[]>(
       fnRef.current(...args);
     }, delayMs);
   };
-}
-
-// --- ToggleRow ---------------------------------------------------------------
-
-interface ToggleRowProps {
-  id: string;
-  label: string;
-  hint?: ReactNode;
-  testId: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (next: boolean) => void;
-}
-
-function ToggleRow({
-  id,
-  label,
-  hint,
-  testId,
-  checked,
-  disabled,
-  onChange,
-}: ToggleRowProps): JSX.Element {
-  return (
-    <label htmlFor={id} className="flex items-start gap-2 text-[12px] py-1">
-      <input
-        id={id}
-        data-testid={testId}
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e: ChangeEvent<HTMLInputElement>) => {
-          onChange(e.target.checked);
-        }}
-        className="mt-1"
-      />
-      <span className="flex flex-col gap-[2px]">
-        <span className="font-medium text-ink-2">{label}</span>
-        {hint != null ? <span className="text-ink-4 font-sans">{hint}</span> : null}
-      </span>
-    </label>
-  );
 }
 
 // --- Main tab ---------------------------------------------------------------
@@ -200,7 +159,7 @@ export function SettingsWritingTab(): JSX.Element {
 
   return (
     <div className="flex flex-col gap-4">
-      <ToggleRow
+      <CheckboxField
         id={typewriterId}
         label="Typewriter mode"
         hint="Keep the active line vertically centered while writing"
@@ -209,7 +168,7 @@ export function SettingsWritingTab(): JSX.Element {
         disabled={updateSetting.isPending}
         onChange={handleTypewriter}
       />
-      <ToggleRow
+      <CheckboxField
         id={focusId}
         label="Focus paragraph"
         hint="Dim everything except the paragraph you're editing"
@@ -218,7 +177,7 @@ export function SettingsWritingTab(): JSX.Element {
         disabled={updateSetting.isPending}
         onChange={handleFocusMode}
       />
-      <ToggleRow
+      <CheckboxField
         id={autoSaveId}
         label="Auto-save"
         hint="Persist drafts automatically as you type"
@@ -226,7 +185,7 @@ export function SettingsWritingTab(): JSX.Element {
         checked={autoSave}
         onChange={setAutoSave}
       />
-      <ToggleRow
+      <CheckboxField
         id={smartQuotesId}
         label="Smart quotes"
         hint="Convert straight quotes into curly quotes as you type"
@@ -235,7 +194,7 @@ export function SettingsWritingTab(): JSX.Element {
         disabled={updateSetting.isPending}
         onChange={handleSmartQuotes}
       />
-      <ToggleRow
+      <CheckboxField
         id={emDashId}
         label="Em-dash expansion"
         hint="Expand `--` into an em dash automatically"

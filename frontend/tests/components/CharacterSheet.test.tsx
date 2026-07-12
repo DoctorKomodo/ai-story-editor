@@ -391,6 +391,40 @@ describe('CharacterSheet (F19)', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('Delete failure keeps the confirm dialog open and shows the error', async () => {
+    fetchMock.mockImplementation((url: string, init?: RequestInit) => {
+      if (url.endsWith('/stories/story-1/characters/c1')) {
+        if (!init || init.method === undefined || init.method === 'GET') {
+          return Promise.resolve(jsonResponse(200, { character: char({ id: 'c1', name: 'Ada' }) }));
+        }
+        if (init.method === 'DELETE') {
+          return Promise.resolve(
+            jsonResponse(500, { error: { message: 'boom', code: 'internal' } }),
+          );
+        }
+      }
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderSheet({ characterId: 'c1', onClose });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/name/i)).toHaveValue('Ada');
+    });
+
+    await user.click(screen.getByRole('button', { name: /^delete$/i }));
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    const confirmBtn = await screen.findByRole('button', { name: /^confirm$/i });
+    await user.click(confirmBtn);
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent ?? '').toMatch(/boom/i);
+    expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   it('Escape closes main dialog when no confirm is open; with confirm open, closes only the confirm first', async () => {
     fetchMock.mockImplementation((url: string) => {
       if (url.endsWith('/stories/story-1/characters/c1')) {

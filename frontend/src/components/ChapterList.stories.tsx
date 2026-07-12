@@ -175,6 +175,10 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+/**
+ * Titles run full-width at rest; the per-chapter word count is a hover overlay
+ * that fades in over the title's tail (no reflow). Hover a row to see it.
+ */
 export const Default: Story = {
   args: { activeChapterId: 'c1' },
   decorators: [withClient(sampleChapters)],
@@ -206,4 +210,19 @@ export const DeleteConfirm: Story = {
 export const WithDraftTree: Story = {
   args: { activeChapterId: 'c1' },
   decorators: [withDraftTreeClient()],
+};
+
+// Uniform rows: a multi-draft chapter (caret) alongside active + inactive
+// single-draft chapters (invisible caret spacer) — all rows the same width,
+// no reflow on hover/select. c1 is multi-draft but not active, so it stays
+// collapsed (no DraftList mount → no draftsQueryKey seed needed).
+const uniformRowChapters: ChapterMeta[] = [
+  { ...sampleChapters[0], draftCount: 2 },
+  sampleChapters[1],
+  sampleChapters[2],
+];
+
+export const UniformRows: Story = {
+  args: { activeChapterId: 'c2' },
+  decorators: [withClient(uniformRowChapters)],
 };

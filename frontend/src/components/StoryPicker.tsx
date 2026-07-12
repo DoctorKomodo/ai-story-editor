@@ -7,11 +7,13 @@
 // `StoryPicker` + `StoryRow` block).
 //
 // [X22] Ported onto the `<Modal>` primitive — backdrop, Escape, click-outside,
-// focus management, and close-X chrome all live in the primitive now. Embedded
-// mode (F58 — dashboard surface) passes `embedded` through to the primitive.
+// and close-X chrome all live in the primitive now. Embedded mode (F58 —
+// dashboard surface) passes `embedded` through to the primitive. Modal does
+// NOT do focus management, despite what its own header once claimed —
+// see story-editor-g4x.
 //
 // [story-editor-0wz] Per-row delete: a hover-revealed trash icon (mirrors
-// ChatSceneTab/SessionPicker's row-icon idiom) opens a Modal confirm dialog;
+// ChatSceneTab/SessionPicker's row-icon idiom) opens a <ConfirmDialog>;
 // confirming schedules a 5s soft-delete/undo (useSoftDelete, same shape as
 // ChatSceneTab's) before the real DELETE fires.
 import { type JSX, useId, useState } from 'react';
@@ -19,6 +21,7 @@ import { StoryPickerEmpty } from '@/components/StoryPickerEmpty';
 import { UndoToast } from '@/components/UndoToast';
 import {
   Button,
+  ConfirmDialog,
   IconButton,
   Modal,
   ModalBody,
@@ -92,7 +95,6 @@ export function StoryPicker({
   embedded = false,
 }: StoryPickerProps): JSX.Element | null {
   const headingId = useId();
-  const confirmHeadingId = useId();
   const { data: stories, isLoading, isError, error } = useStoriesQuery();
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
@@ -264,40 +266,17 @@ export function StoryPicker({
       </div>
 
       {confirmingStory ? (
-        <Modal
+        <ConfirmDialog
           open
-          onClose={() => {
+          title={`Delete "${confirmingStory.title || 'Untitled'}"?`}
+          body="This permanently removes the story and all its chapters, characters, outline, and chats."
+          confirmLabel="Delete"
+          onConfirm={handleConfirmDelete}
+          onCancel={() => {
             setConfirmingId(null);
           }}
-          labelledBy={confirmHeadingId}
-          size="sm"
-          role="alertdialog"
           testId="story-picker-delete-confirm"
-        >
-          <ModalHeader
-            titleId={confirmHeadingId}
-            title={`Delete "${confirmingStory.title || 'Untitled'}"?`}
-          />
-          <ModalBody>
-            <p className="font-serif text-[13.5px] leading-[1.55] text-ink-2">
-              This permanently removes the story and all its chapters, characters, outline, and
-              chats.
-            </p>
-          </ModalBody>
-          <ModalFooter>
-            <Button
-              variant="ghost"
-              onClick={() => {
-                setConfirmingId(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button variant="danger" onClick={handleConfirmDelete}>
-              Delete
-            </Button>
-          </ModalFooter>
-        </Modal>
+        />
       ) : null}
     </Modal>
   );

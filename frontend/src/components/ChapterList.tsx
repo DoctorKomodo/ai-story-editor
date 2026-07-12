@@ -15,7 +15,7 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { useQueryClient } from '@tanstack/react-query';
-import type { JSX, ReactNode } from 'react';
+import type { CSSProperties, JSX, ReactNode } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChapterMeta } from 'story-editor-shared';
 import { ChapterListSectionHeader } from '@/components/ChapterListSectionHeader';
@@ -86,8 +86,9 @@ interface ChapterRowProps {
 /**
  * Single row. Uses `useSortable` so drag-to-reorder works. The grip handle
  * sits to the left and captures pointer events so a drag does not fire the
- * row's click. The × delete button is shown only on the active row; clicking
- * it opens an InlineConfirm that replaces the word-count slot.
+ * row's click. The × delete button is always mounted (opacity-revealed on
+ * hover or when the row is active) so selecting a row never reflows it;
+ * clicking it opens an InlineConfirm that replaces the word-count slot.
  */
 function ChapterRow({
   chapter,
@@ -139,8 +140,14 @@ function ChapterRow({
       aria-current={active ? 'true' : undefined}
     >
       <div
+        // `--row-bg` publishes the row's own background colour so descendants
+        // (the word-count overlay) can fade into it without re-deriving the
+        // active/inactive branch and drifting from it.
+        style={
+          { '--row-bg': active ? 'var(--accent-soft)' : 'var(--surface-hover)' } as CSSProperties
+        }
         className={[
-          'group flex items-center gap-2 pl-3 pr-2 h-8 rounded-[var(--radius)]',
+          'group flex items-center gap-1.5 pl-3 pr-2 h-8 rounded-[var(--radius)]',
           'transition-colors cursor-pointer',
           active ? 'bg-[var(--accent-soft)]' : 'hover:bg-[var(--surface-hover)]',
           isOver ? 'ring-1 ring-ink' : '',
@@ -165,7 +172,7 @@ function ChapterRow({
         </button>
         <span
           aria-hidden="true"
-          className="font-mono text-[11px] text-ink-4 tabular-nums w-5 flex-shrink-0"
+          className="font-mono text-[10px] text-ink-4 tabular-nums w-4 flex-shrink-0"
         >
           {String(chapter.orderIndex + 1).padStart(2, '0')}
         </span>
@@ -180,21 +187,37 @@ function ChapterRow({
               e.stopPropagation();
               onToggleExpanded();
             }}
-            className="flex-shrink-0 text-ink-4 hover:text-ink-2 transition-transform"
+            className="w-3 flex-shrink-0 text-ink-4 hover:text-ink-2 transition-transform"
             style={{ transform: expanded ? 'rotate(90deg)' : undefined }}
           >
             <span aria-hidden="true">▸</span>
           </button>
-        ) : null}
-        <button
-          type="button"
-          onClick={() => {
-            onSelect(chapter.id);
-          }}
-          className="flex-1 min-w-0 text-left font-serif text-[14px] text-ink leading-tight truncate"
-        >
-          {chapterDisplayTitle(chapter)}
-        </button>
+        ) : (
+          <span aria-hidden="true" className="w-3 flex-shrink-0" />
+        )}
+        <div className="relative flex-1 min-w-0">
+          <button
+            type="button"
+            onClick={() => {
+              onSelect(chapter.id);
+            }}
+            className="w-full text-left font-serif text-[13px] text-ink leading-tight truncate"
+          >
+            {chapterDisplayTitle(chapter)}
+          </button>
+          {/* Word count overlays the title's tail on hover and fades into the
+              row background, so revealing it never reflows the title (item 4). */}
+          <span
+            className={[
+              'pointer-events-none absolute inset-y-0 right-0 flex items-center justify-end pl-6 pr-0.5',
+              'font-mono text-[11px] text-ink-4 tabular-nums',
+              'opacity-0 group-hover:opacity-100 transition-opacity',
+              '[background-image:linear-gradient(to_right,transparent,var(--row-bg)_20px)]',
+            ].join(' ')}
+          >
+            {formatWordCountCompact(chapter.wordCount)}
+          </span>
+        </div>
         {confirm.open ? (
           <InlineConfirm
             {...confirm.props}
@@ -218,22 +241,28 @@ function ChapterRow({
                 onOpenSummary(chapter.id, e.currentTarget);
               }}
             />
-            <span className="font-mono text-[11px] text-ink-4 tabular-nums w-14 flex-shrink-0 text-right">
-              {formatWordCountCompact(chapter.wordCount)}
-            </span>
-            {showNewDraftAffordance ? (
-              <IconButton
-                ariaLabel="New draft"
-                onClick={() => {
-                  onRequestNewDraft(chapter.id);
-                }}
-                testId={`chapter-row-${chapter.id}-new-draft`}
-                className={['flex-shrink-0', revealOnRowHover].join(' ')}
-              >
-                <span aria-hidden="true">＋</span>
-              </IconButton>
-            ) : null}
-            {active ? (
+            <span
+              className={[
+                'flex items-center gap-2 flex-shrink-0',
+                // The active row's resting state is shown, so it selects
+                // opacity-100 instead of appending it to revealOnRowHover —
+                // concatenating would leave opacity-0/-100 at equal specificity
+                // and make visibility depend on compiled class order.
+                active ? 'opacity-100' : revealOnRowHover,
+              ].join(' ')}
+            >
+              {showNewDraftAffordance ? (
+                <IconButton
+                  ariaLabel="New draft"
+                  onClick={() => {
+                    onRequestNewDraft(chapter.id);
+                  }}
+                  testId={`chapter-row-${chapter.id}-new-draft`}
+                  className="flex-shrink-0"
+                >
+                  <span aria-hidden="true">＋</span>
+                </IconButton>
+              ) : null}
               <IconButton
                 ariaLabel={`Delete ${chapterDisplayTitle(chapter)}`}
                 onClick={confirm.ask}
@@ -242,7 +271,7 @@ function ChapterRow({
               >
                 <CloseIcon />
               </IconButton>
-            ) : null}
+            </span>
           </>
         )}
       </div>

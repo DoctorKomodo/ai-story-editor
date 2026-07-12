@@ -1,6 +1,6 @@
 ---
 name: bd-execute
-description: Bridge from bd → superpowers' subagent-driven-development loop. Claims a bd issue, reads its plan link, picks rules digests by touch-set, then runs the implementer + task-reviewer loop with project rules prepended at each dispatch, plus a final whole-branch review. After the loop is clean, hands off to `/bd-close-reviewed`. User-invocable as `/bd-execute <BD_ID>`.
+description: Bridge from bd → superpowers' subagent-driven-development loop. Claims a bd issue, reads its plan link, picks rules digests by touch-set, then runs the implementer + task-reviewer loop with project rules prepended at each dispatch, plus a whole-branch simplify pass and a final whole-branch review. After the loop is clean, hands off to `/bd-close-reviewed`. User-invocable as `/bd-execute <BD_ID>`.
 ---
 
 # bd-execute
@@ -68,7 +68,7 @@ Read these files fresh (the bridge does not fork them — plugin upgrades roll f
 
 - `$SDD/implementer-prompt.md`
 - `$SDD/task-reviewer-prompt.md`
-- `$SP/$VER/skills/requesting-code-review/code-reviewer.md` (final whole-branch review, step 10)
+- `$SP/$VER/skills/requesting-code-review/code-reviewer.md` (final whole-branch review, step 11)
 
 `$SP`, `$VER`, and `$SDD` were resolved in step 2. `$VER` is the highest installed semver — the version Claude Code loads when more than one is present (cross-check: the path any already-loaded superpowers skill reports in this session is the active version). Ignore older sibling versions.
 
@@ -173,7 +173,7 @@ Dispatch via the Agent tool, `subagent_type: general-purpose`, with an **explici
 **c. Act on the verdicts:**
 - **Spec ❌ or Critical/Important quality findings** → dispatch **one** fix subagent (same task, same model as the implementer dispatch) with the complete findings list — not one fixer per finding. The fix subagent re-runs the tests covering its change and appends results to the same report file; confirm the report contains the command + output before re-reviewing. Then regenerate the review package (fresh range) and re-dispatch the reviewer. Loop until spec ✅ **and** no open Critical/Important.
 - **⚠️ "Cannot verify from diff"** items → you resolve each yourself (you hold the cross-task context the reviewer lacks). A confirmed gap is a failed spec review — send it back and re-review.
-- **Minor findings** → record them in the ledger and carry the list into the final whole-branch review (step 10) for triage. Don't silently discard them.
+- **Minor findings** → record them in the ledger and carry the list into the final whole-branch review (step 11) for triage. Don't silently discard them.
 - **Plan-mandated finding** (the reviewer flags something the plan's text explicitly requires) → that's the user's decision, like any plan contradiction. Present the finding beside the plan text and ask which governs. Don't dispatch a fix that contradicts the plan without asking, and don't dismiss the finding because the plan mandates it.
 
 ### 8. (folded into step 7)
@@ -184,7 +184,29 @@ The 6.x reviewer returns spec compliance **and** code quality in one pass — th
 
 Mark the TodoWrite item complete **and** append the `Task N: complete (commits <base7>..<head7>, review clean)` line to `$WS/progress.md` in the same step. Repeat steps 6–9 for each remaining task. Do not pause to check in between tasks — execute the whole plan. The only reasons to stop are an unresolvable BLOCKED, a plan-mandated finding needing the user's call, or all tasks done.
 
-### 10. After all tasks: final whole-branch review
+### 10. After all tasks: simplify pass (whole-branch, behavior-preserving)
+
+Per-task reviews judge one task's diff at a time — two tasks of the same plan can each grow a similar helper and no single review sees both. Before the final review, run one behavior-preserving cleanup pass over the whole branch, so the final reviewer (step 11) reviews the cleaned branch, simplify edits included.
+
+**Skip when** the plan is `plan: trivial`, the branch diff is docs/config-only, or the plan was a single small task — the pass is pure cost there. Record `Simplify pass: skipped (<reason>)` in the ledger and go to step 11.
+
+Otherwise:
+
+**a.** Confirm the tree is clean (the loop leaves every task committed) and record `HEAD` — that's the revert point.
+
+**b.** Invoke the **`simplify` skill** (Skill tool), scoped to the branch diff (`git merge-base main HEAD`..`HEAD`). Quality-only: reuse, duplication the branch introduced, altitude, dead weight.
+
+**c. Boundaries — the pass must not:**
+- change observable behavior, a wire shape, or the schema;
+- expand scope beyond the branch diff. It may consolidate duplication **this branch introduced**; pre-existing duplicates elsewhere in the tree are file-and-block territory (CLAUDE.md, "Duplication: file-and-block") — file the issue, add the blocker edge, don't edit them here.
+
+**d. If it applied fixes:** commit them as **one separate commit** (`[<bd-id>] simplify pass`) so the cleanup diff stays separable from the feature diff, then re-run the issue's `verify:` line and typecheck on the affected workspaces. Green → record `Simplify pass: applied (<sha7>)` in the ledger and proceed. Red → **revert the simplify commit**, record `Simplify pass: reverted (<what failed>)`, and proceed — do not loop on a failing cleanup; the branch was already review-clean without it.
+
+**e. If it found nothing:** record `Simplify pass: clean` and proceed. On a branch that went through a strict plan and per-task reviews, that outcome is normal.
+
+This pass runs **before** the final whole-branch review by design — its edits must be reviewed like any other code. Running it after step 11, or after `/bd-close-reviewed`, is forbidden.
+
+### 11. After the simplify pass: final whole-branch review
 
 The per-task reviews are task-scoped gates; a cross-task / whole-branch review runs once at the end and catches integration issues no single task's diff shows.
 
@@ -196,7 +218,7 @@ Dispatch the final reviewer from `requesting-code-review/code-reviewer.md`, `sub
 
 If it returns Critical/Important findings: dispatch **one** fix subagent with the complete list, re-run covering tests, then re-review. Loop until clean.
 
-### 11. Hand off to close-reviewed
+### 12. Hand off to close-reviewed
 
 After the final review is clean, invoke:
 
@@ -225,7 +247,7 @@ Before dispatching Task 1, scan the plan once for conflicts: tasks that contradi
 
 ## Diff sanity check (after the loop)
 
-The final whole-branch review (step 10) and `/bd-close-reviewed` are the real gates and already read the whole-branch diff — so no separate controller re-review is needed. The one thing to confirm yourself, because it's cheap and project-critical: that the final reviewer was handed a project-rules file **including `repo-boundary.md`** whenever the touch-set is narrative-adjacent (that digest carries the no-plaintext-leak invariant). If the touch-set produced no project-rules file, or `repo-boundary.md` wasn't in it for a narrative change, skim `git diff <merge-base>...HEAD` once for decrypted narrative content in new logs / response shapes before handing off.
+The final whole-branch review (step 11) and `/bd-close-reviewed` are the real gates and already read the whole-branch diff — so no separate controller re-review is needed. The one thing to confirm yourself, because it's cheap and project-critical: that the final reviewer was handed a project-rules file **including `repo-boundary.md`** whenever the touch-set is narrative-adjacent (that digest carries the no-plaintext-leak invariant). If the touch-set produced no project-rules file, or `repo-boundary.md` wasn't in it for a narrative change, skim `git diff <merge-base>...HEAD` once for decrypted narrative content in new logs / response shapes before handing off.
 
 ## Model selection
 
@@ -233,7 +255,8 @@ Always specify `model:` explicitly on every dispatch — an omitted model inheri
 
 - **Implementer** — default **Sonnet**. The plan + project rules spell out the work; Sonnet executes structured TDD-shaped tasks well. When a task's plan text contains the complete code to write, the work is transcription + testing — Sonnet is still the floor (don't drop to Haiku; it takes more turns on multi-step work and the turn count outweighs the token saving). Per-task lift to Opus via a plan `model: opus` line (below).
 - **Task reviewer** — **Sonnet**, scaled to the diff: a small mechanical diff stays on Sonnet; a subtle concurrency/crypto change can justify Opus. Sonnet is the default.
-- **Final whole-branch reviewer (step 10)** — **Opus** (most capable available). A whole-branch review is a judgment task.
+- **Final whole-branch reviewer (step 11)** — **Opus** (most capable available). A whole-branch review is a judgment task.
+- **Simplify pass (step 10)** — not a subagent dispatch; the `simplify` skill runs in the controller session, so no `model:` applies.
 
 Surface reviewers (`security-reviewer`, `repo-boundary-reviewer`) dispatched by `/bd-close-reviewed` pin their own model in agent frontmatter (`.claude/agents/`) — the bridge doesn't override them.
 
@@ -256,7 +279,9 @@ When step 1 reads the plan it records that override and uses it for that task's 
 ## Forbidden
 
 - Skipping the task review, or accepting a report missing either verdict (spec compliance **and** code quality are both required from the single 6.x reviewer).
-- Skipping the final whole-branch review (step 10) before handing off.
+- Skipping the final whole-branch review (step 11) before handing off.
+- Running the simplify pass (step 10) after the final review or after `/bd-close-reviewed` — its edits must land where the final reviewer and close gates see them. Skipping it silently is also out: a skip gets a ledger line with a reason.
+- Letting the simplify pass change behavior, wire shapes, or pre-existing code outside the branch diff — pre-existing duplication is file-and-block, not an inline edit. And never loop on a red simplify commit: revert and move on.
 - Forking superpowers' template files (read them fresh each dispatch); inlining a hand-copied template instead of reading the installed one.
 - Hardcoding the `<RULES_BLOCK>` into the bridge skill's content (always assemble it from `docs/agent-rules/`).
 - Dispatching a task reviewer without a diff file — generate it with `scripts/review-package <BASE> <HEAD>` first, using the recorded per-task BASE (never `HEAD~1`).
@@ -269,4 +294,4 @@ When step 1 reads the plan it records that override and uses it for that task's 
 
 ## Verification
 
-This skill is intentionally not directly verifiable by an automated `verify:` line — its correctness is observed end-to-end across the bd issues that flow through it. For a smoke test, hand-craft a no-op single-task plan, run `/bd-execute`, and confirm: (1) the project-rules file is assembled and its path reaches the implementer dispatch; (2) the task-brief and review-package files are written under `.superpowers/sdd/`; (3) the task reviewer returns both verdicts; (4) the progress ledger gains a `Task 1: complete …` line.
+This skill is intentionally not directly verifiable by an automated `verify:` line — its correctness is observed end-to-end across the bd issues that flow through it. For a smoke test, hand-craft a no-op single-task plan, run `/bd-execute`, and confirm: (1) the project-rules file is assembled and its path reaches the implementer dispatch; (2) the task-brief and review-package files are written under `.superpowers/sdd/`; (3) the task reviewer returns both verdicts; (4) the progress ledger gains a `Task 1: complete …` line; (5) the ledger gains a `Simplify pass: …` line (`applied`/`clean`/`skipped`/`reverted` — a single-small-task smoke plan should legitimately hit `skipped`).

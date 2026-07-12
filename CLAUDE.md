@@ -90,14 +90,24 @@ bd show <id>                   # detailed view (description + verify: + plan: in
 For every task:
 
 1. `bd ready` to find work; `bd show <id>` to read description + `verify:` line + `plan:` link in `--notes`.
-2. **If `--notes` has no `plan:` link:** run `superpowers:brainstorming` first, then `superpowers:writing-plans` (writes a plan under `docs/superpowers/plans/YYYY-MM-DD-<slug>.md`), then `bash scripts/bd-link-plan.sh <id> <plan-path>` to record the link.
-3. `/bd-execute <id>` — runs the full implement → task-review (spec + quality, one pass) loop per task, a final whole-branch review, claims the issue along the way, and hands off to `/bd-close-reviewed` at the end.
+2. **If `--notes` has no `plan:` link:** run `superpowers:brainstorming` first, then `superpowers:writing-plans` (writes a plan under `docs/superpowers/plans/YYYY-MM-DD-<slug>.md` — must include the **existing-surface inventory** required by `docs/agent-workflow.md` §2), then `bash scripts/bd-link-plan.sh <id> <plan-path>` to record the link.
+3. `/bd-execute <id>` — runs the full implement → task-review (spec + quality, one pass) loop per task, a whole-branch simplify pass (behavior-preserving cleanup, separate commit, re-verified), a final whole-branch review, claims the issue along the way, and hands off to `/bd-close-reviewed` at the end.
 4. `/bd-close-reviewed` runs typecheck on affected workspaces, fans path-matched surface reviewers (`security-reviewer`, `repo-boundary-reviewer`), and refuses close on `BLOCK` / `FIX_BEFORE_MERGE` findings. If a reviewer blocks: fix the code (not the test, not the verify) and re-loop. Override requires `--override-block "<reviewer> — <reason>"` plus explicit user-ack.
-5. Move to the next task immediately — do not refactor or add scope.
+5. Move to the next task immediately — do not refactor or add scope. (One carve-out: the "Duplication: file-and-block" rule below — avoiding a new near-duplicate is never scope creep.)
 
 **NEVER `bd close` a task directly.** Always go through `/bd-close-reviewed` so the verify gate, typecheck, and surface reviewers all run. Tasks with `TBD` / `design decision` / empty verify lines require the override path with explicit user-ack to close.
 
 If a task has no verify command, add one to `--notes` (`bd update <id> --notes "verify: <command>\n…"`) before starting.
+
+### Duplication: file-and-block
+
+Discovering that a task would add a near-duplicate of an existing pattern (a 4th bespoke confirm dialog, another radio-group variant, another copy of a helper) is **not** a license to ship copy N+1 and defer the cleanup. Deferred consolidation issues that block nothing never get scheduled, and the pile grows one copy per task. The convention:
+
+1. **File** the extraction/consolidation as its own bd issue, listing every existing site to migrate (paths + line refs).
+2. **Block**: add it as a blocker of the current task — `bd dep add <current-id> <extraction-id>` — and of any other open issue that would add another instance. `bd ready` then stops offering those tasks until the primitive exists, which puts the extraction on the critical path instead of in a graveyard.
+3. If the extraction is small (a straight lift into `frontend/src/design/` or a shared lib, plus trivial call-site swaps), prefer making it **task 1 of the current plan** instead of splitting — the same review gates apply either way.
+
+"Out of scope" defers the *migration of old sites*; it never justifies creating a **new** duplicate site. The same rule, phrased for implementer + task-reviewer dispatches, lives in `docs/agent-rules/general.md` ("Reuse before build") — a diff introducing a near-duplicate is a blocking review finding.
 
 ### Plan-review gate
 
@@ -114,6 +124,8 @@ After writing or updating a plan under `docs/superpowers/plans/`, **STOP**. Quot
 - **Plan-review gate:** the user reads the written plan file and confirms.
 
 A plan that passes direction approval can still be wrong in shape, scope, or abstraction. The brainstorming skill's hard gate ("Do NOT invoke any implementation skill … until you have presented a design and the user has approved it") applies to the plan file itself, not to a summary or to the design questions that preceded it. Auto Mode does **not** override this gate — Auto Mode is about reducing interruptions on routine work, not about skipping reviews of multi-task plans.
+
+When reviewing a plan, check its **existing-surface inventory** (see `docs/agent-workflow.md` §2): a plan that builds a new component/helper with an empty or missing inventory is presumed wrong — send it back for the grep before approving.
 
 ### When to skip `/bd-execute`
 
@@ -133,7 +145,7 @@ Closed work from the original bring-up letters lives in immutable `docs/done/don
 
 ### Local tooling
 
-- **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' (6.x) subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + task-reviewer (one reviewer, both spec-compliance and code-quality verdicts; Sonnet by default, per-task `model: opus` opt-in) per task via file-based brief/report/diff handoffs, runs a final whole-branch review, then hands off to `/bd-close-reviewed`.
+- **`/bd-execute <BD_ID>`** — `.claude/skills/bd-execute/`. Bridges bd issues into superpowers' (6.x) subagent-driven-development loop. Reads the plan link from `--notes`, picks rules digests from `docs/agent-rules/index.md` by touch-set, dispatches implementer + task-reviewer (one reviewer, both spec-compliance and code-quality verdicts; Sonnet by default, per-task `model: opus` opt-in) per task via file-based brief/report/diff handoffs, runs a whole-branch simplify pass (separate commit, re-verified, reverted on red) then a final whole-branch review, then hands off to `/bd-close-reviewed`.
 - **`/bd-close-reviewed <BD_ID>`** — `.claude/skills/bd-close-reviewed/`. Gates close on typecheck + path-matched surface reviewers + verify-line. Wraps `scripts/bd-close-reviewed.sh` for the mechanical phases.
 - **`scripts/bd-link-plan.sh <id> <plan-path>`** — links a plan file to a bd issue's `--notes`. Idempotent; preserves the `verify:` line. Called as a step in the protocol above when the issue lacks a plan link.
 
