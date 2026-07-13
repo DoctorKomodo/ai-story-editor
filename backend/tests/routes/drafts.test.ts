@@ -115,6 +115,36 @@ describe('Draft routes [9wk.4]', () => {
     expect(res.body.draft.label).toBe('x');
   });
 
+  it('[6ze] POST { mode: fork, copyChats: true } deep-copies chats onto the fork', async () => {
+    const { agent, chapterId, activeDraftId } = await setupChapter('drafts-fork-copy', 'one two');
+    // seed a chat on the active (source) draft
+    await agent
+      .post(`/api/drafts/${activeDraftId}/chats`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ kind: 'ask' });
+
+    const res = await agent
+      .post(`/api/chapters/${chapterId}/drafts`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ mode: 'fork', copyChats: true });
+    expect(res.status).toBe(201);
+    const forkId = res.body.draft.id;
+
+    const list = await agent.get(`/api/chapters/${chapterId}/drafts`);
+    expect(list.body.drafts.find((d: { id: string }) => d.id === forkId).chatCount).toBe(1);
+    assertNoCiphertextKeys(res.body);
+  });
+
+  it('[6ze] POST { mode: blank, copyChats: true } ignores copyChats', async () => {
+    const { agent, chapterId } = await setupChapter('drafts-blank-copy');
+    const res = await agent
+      .post(`/api/chapters/${chapterId}/drafts`)
+      .set('Origin', TEST_ORIGIN)
+      .send({ mode: 'blank', copyChats: true });
+    expect(res.status).toBe(201);
+    expect(res.body.draft.bodyJson).toBeNull();
+  });
+
   it('PATCH { label } renames; { label: null } clears back to positional', async () => {
     const { agent, activeDraftId } = await setupChapter('drafts-rename');
 

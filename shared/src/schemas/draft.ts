@@ -4,12 +4,13 @@ import { chapterSummarySchema } from './chapter';
 export const DRAFT_LABEL_MAX = 200;
 
 /**
- * Draft metadata — the LIST endpoint payload shape. Excludes the TipTap body
- * so the sidebar draft-tree payload stays small. `draftSchema` (below) extends
- * this with `bodyJson` + summary for detail responses.
- * `label: null` ⇒ the frontend renders a positional label ("Draft A/B/C").
+ * Fields shared by the list-meta shape and the full-draft shape. Kept as a
+ * private base so `chatCount` can live ONLY on meta (draftMetaSchema) without
+ * riding onto the full-draft payload via `.extend` (the egress trap — see the
+ * design §1a: adding a key to draftMetaSchema used to make it required on
+ * draftSchema, 500-ing every full-draft endpoint through respond()'s hard parse).
  */
-export const draftMetaSchema = z.strictObject({
+const draftCoreSchema = z.strictObject({
   id: z.string().min(1),
   chapterId: z.string().min(1),
   label: z.string().max(DRAFT_LABEL_MAX).nullable(),
@@ -22,8 +23,20 @@ export const draftMetaSchema = z.strictObject({
   updatedAt: z.string().datetime(),
 });
 
-/** Full draft — meta + TipTap body + decoded summary. */
-export const draftSchema = draftMetaSchema.extend({
+/**
+ * Draft metadata — the LIST endpoint payload shape. Excludes the TipTap body
+ * so the sidebar draft-tree payload stays small; carries `chatCount`, the
+ * cascade-delete warning count. `label: null` ⇒ the frontend renders a
+ * positional label ("Draft A/B/C").
+ */
+export const draftMetaSchema = draftCoreSchema.extend({
+  // Every Chat row for the draft — asks + scenes combined (scenes are chats
+  // with kind: "scene"). This is what cascade-deletes when the draft is deleted.
+  chatCount: z.number().int().nonnegative(),
+});
+
+/** Full draft — core + TipTap body + decoded summary. NO chatCount (egress trap). */
+export const draftSchema = draftCoreSchema.extend({
   bodyJson: z.unknown(),
   summary: chapterSummarySchema.nullable(),
   summaryUpdatedAt: z.string().datetime().nullable(),
@@ -33,6 +46,7 @@ export const draftSchema = draftMetaSchema.extend({
 export const draftCreateSchema = z.strictObject({
   mode: z.enum(['fork', 'blank']),
   label: z.string().min(1).max(DRAFT_LABEL_MAX).optional(),
+  copyChats: z.boolean().optional(), // only meaningful when mode === 'fork'
 });
 
 /**

@@ -1,11 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { writeEncrypted } from '../../src/repos/_narrative';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createChatRepo } from '../../src/repos/chat.repo';
 import {
   createDraftRepo,
   DraftDeleteActiveError,
   DraftVersionConflictError,
 } from '../../src/repos/draft.repo';
+import * as messageRepoModule from '../../src/repos/message.repo';
+import { createMessageRepo } from '../../src/repos/message.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { computeWordCount } from '../../src/services/tiptap-text';
 import { resetDb } from '../helpers/db';
@@ -312,7 +315,7 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
     const draftRepo = createDraftRepo(ctx.req);
     const source = await draftRepo.findById(chapter.activeDraftId as string);
 
-    const forked = await draftRepo.createFork(chapter.id, 'fork label');
+    const forked = await draftRepo.createFork(chapter.id, { label: 'fork label' });
     expect(forked.bodyJson).toEqual(source!.bodyJson);
     expect(forked.wordCount).toBe(computeWordCount(source!.bodyJson));
     expect(forked.summary).toBeNull();
@@ -378,6 +381,7 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
           'summaryIsStale',
           'createdAt',
           'updatedAt',
+          'chatCount',
         ].sort(),
       );
       expect(
@@ -564,5 +568,170 @@ describe('[9wk.2] draft.repo — encrypt on write / decrypt on read', () => {
       hasSummary: meta.hasSummary,
       summaryIsStale: meta.summaryIsStale,
     });
+  });
+
+  it('[6ze] findManyMetaForChapter reports chatCount = asks + scenes (0 / ask-only / scene-only / mixed)', async () => {
+    const ctx = await makeUserContext('draft-meta-count');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+
+    // chapter.repo minted an active draft at orderIndex 0 (the "0 chats" case).
+    const active = chapter.activeDraftId as string;
+    // a second draft with a mix of asks + scenes
+    const mixed = await draftRepo.create({ chapterId: chapter.id, orderIndex: 1 });
+    await chatRepo.create({ draftId: mixed.id, title: 'ask1', kind: 'ask' });
+    await chatRepo.create({ draftId: mixed.id, title: 'scene1', kind: 'scene' });
+    await chatRepo.create({ draftId: mixed.id, title: 'ask2', kind: 'ask' });
+
+    const metas = await draftRepo.findManyMetaForChapter(chapter.id);
+    const byId = new Map(metas.map((m) => [m.id, m]));
+    expect(byId.get(active)!.chatCount).toBe(0);
+    expect(byId.get(mixed.id)!.chatCount).toBe(3);
+    // no ciphertext / _count remnants on the meta shape
+    expect(Object.keys(byId.get(mixed.id)!)).not.toContain('_count');
+  });
+
+  it('[6ze] createFork copyChats:false copies body only, zero chats (regression guard)', async () => {
+    const ctx = await makeUserContext('fork-nochats');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: paragraphDoc('src'),
+      wordCount: 1,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+    await chatRepo.create({ draftId: chapter.activeDraftId as string, title: 'a', kind: 'ask' });
+
+    const forked = await draftRepo.createFork(chapter.id, { copyChats: false });
+    const metas = await draftRepo.findManyMetaForChapter(chapter.id);
+    expect(metas.find((m) => m.id === forked.id)!.chatCount).toBe(0);
+  });
+
+  it('[6ze] createFork copyChats:true deep-copies every chat + message; source untouched', async () => {
+    const ctx = await makeUserContext('fork-copychats');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: paragraphDoc('src body'),
+      wordCount: 2,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+    const msgRepo = createMessageRepo(ctx.req);
+    const src = chapter.activeDraftId as string;
+
+    const ask = await chatRepo.create({ draftId: src, title: 'ask chat', kind: 'ask' });
+    const scene = await chatRepo.create({ draftId: src, title: 'scene chat', kind: 'scene' });
+    const attachment = { selectionText: 'draft passage', chapterId: chapter.id as string };
+    const citations = [
+      { title: 'Source', url: 'https://example.test/s', snippet: 'snip', publishedAt: null },
+    ];
+    await msgRepo.create({ chatId: ask.id, role: 'user', content: 'hello source' });
+    // Enriched with all non-text forwarded fields so a field-name typo in the
+    // fork copy loop (attachment/citations/model/tokens/latencyMs) is caught.
+    await msgRepo.create({
+      chatId: ask.id,
+      role: 'assistant',
+      content: 'reply source',
+      attachmentJson: attachment,
+      citationsJson: citations,
+      model: 'venice-m1',
+      tokens: 42,
+      latencyMs: 1234,
+    });
+    await msgRepo.create({ chatId: scene.id, role: 'user', content: 'scene line' });
+
+    const forked = await draftRepo.createFork(chapter.id, { copyChats: true });
+
+    const forkChats = await chatRepo.findManyForDraft(forked.id);
+    expect(forkChats).toHaveLength(2);
+    expect(forkChats.map((c) => c.kind).sort()).toEqual(['ask', 'scene']);
+    // decrypt yields source plaintext; rows point at the NEW draft
+    const forkAsk = forkChats.find((c) => c.title === 'ask chat')!;
+    expect(forkAsk.draftId).toBe(forked.id);
+    const forkAskMsgs = await msgRepo.findManyForChat(forkAsk.id);
+    expect(forkAskMsgs.map((m) => m.content)).toEqual(['hello source', 'reply source']); // source order
+    expect(forkAskMsgs.every((m) => m.updatedAt === null)).toBe(true); // edit marker reset
+    // Every non-text field is copied faithfully (guards against a typo in the copy loop).
+    const forkReply = forkAskMsgs[1]!;
+    expect(forkReply.attachmentJson).toEqual(attachment);
+    expect(forkReply.citationsJson).toEqual(citations);
+    expect(forkReply.model).toBe('venice-m1');
+    expect(forkReply.tokens).toBe(42);
+    expect(forkReply.latencyMs).toBe(1234);
+
+    // source untouched: still exactly its two original chats
+    const srcChats = await chatRepo.findManyForDraft(src);
+    expect(srcChats).toHaveLength(2);
+  });
+
+  it('[6ze] createFork copyChats:true rolls back the whole fork on a mid-copy failure', async () => {
+    const ctx = await makeUserContext('fork-rollback');
+    const story = await createStoryRepo(ctx.req).create({
+      title: 'S',
+      genre: null,
+      targetWords: null,
+    });
+    const chapter = await createChapterRepo(ctx.req).create({
+      storyId: story.id as string,
+      title: 'C',
+      orderIndex: 0,
+      bodyJson: paragraphDoc('b'),
+      wordCount: 1,
+    });
+    const draftRepo = createDraftRepo(ctx.req);
+    const chatRepo = createChatRepo(ctx.req);
+    const msgRepo = createMessageRepo(ctx.req);
+    const src = chapter.activeDraftId as string;
+    const chat = await chatRepo.create({ draftId: src, title: 'c', kind: 'ask' });
+    await msgRepo.create({ chatId: chat.id, role: 'user', content: 'x' });
+
+    const draftsBefore = await prisma.draft.count({ where: { chapterId: chapter.id } });
+
+    // Make the message copy throw AFTER the fork draft + its chat were inserted
+    // in the same tx, proving the tx rolls both back.
+    const real = messageRepoModule.createMessageRepo;
+    const spy = vi.spyOn(messageRepoModule, 'createMessageRepo').mockImplementation((req) => {
+      const inst = real(req);
+      return {
+        ...inst,
+        createWithin: async () => {
+          throw new Error('boom mid-copy');
+        },
+      };
+    });
+
+    await expect(draftRepo.createFork(chapter.id, { copyChats: true })).rejects.toThrow(
+      'boom mid-copy',
+    );
+    spy.mockRestore();
+
+    // No fork draft, no orphaned copied chats.
+    expect(await prisma.draft.count({ where: { chapterId: chapter.id } })).toBe(draftsBefore);
+    const srcChats = await chatRepo.findManyForDraft(src);
+    expect(srcChats).toHaveLength(1); // source chat only; no copy leaked
   });
 });

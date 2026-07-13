@@ -57,6 +57,7 @@ const draftMetaFixture: DraftMeta = {
   summaryIsStale: false,
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T01:00:00.000Z',
+  chatCount: 0,
 };
 
 const draftMetaFixtureInactive: DraftMeta = {
@@ -66,8 +67,10 @@ const draftMetaFixtureInactive: DraftMeta = {
   orderIndex: 1,
 };
 
+const { chatCount: _draftMetaFixtureChatCount, ...draftMetaFixtureCore } = draftMetaFixture;
+
 const draftFixture: Draft = {
-  ...draftMetaFixture,
+  ...draftMetaFixtureCore,
   bodyJson: { type: 'doc', content: [] },
   summary: null,
   summaryUpdatedAt: null,

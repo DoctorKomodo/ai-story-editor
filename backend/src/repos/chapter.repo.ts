@@ -110,10 +110,10 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
           ...writeEncrypted(req, 'title', input.title),
         },
       });
-      // Same tx-client cast pattern as import.service.ts. draft.repo owns
-      // Draft encryption; its ensureChapterOwned re-check inside the tx is
-      // one cheap SELECT against the row created above.
-      const draft = await createDraftRepo(req, tx as unknown as PrismaClient).create({
+      // draft.repo owns Draft encryption; createWithin binds the mint to
+      // this tx directly (its ensureChapterOwned re-check inside the tx is
+      // one cheap SELECT against the row created above).
+      const draft = await createDraftRepo(req).createWithin(tx, {
         chapterId: chapterRow.id,
         bodyJson: input.bodyJson,
         wordCount: input.wordCount ?? 0,

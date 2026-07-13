@@ -199,5 +199,6 @@ export function serializeDraftMeta(row: RepoDraftMeta): DraftMeta {
     summaryIsStale: row.summaryIsStale,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
+    chatCount: row.chatCount,
   };
 }

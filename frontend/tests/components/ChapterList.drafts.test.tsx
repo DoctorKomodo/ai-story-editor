@@ -30,6 +30,7 @@ function draftMeta(
     summaryIsStale: false,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T01:00:00.000Z',
+    chatCount: 0,
     ...overrides,
   };
 }

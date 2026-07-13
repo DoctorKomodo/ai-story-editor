@@ -1,14 +1,16 @@
 # Draft Delete / Fork Data-Safety — Design
 
 **bd:** story-editor-6ze (split from story-editor-322 items 5–6)
-**Date:** 2026-07-09
+**Date:** 2026-07-09 · **revised 2026-07-10** (unblocked)
 **Status:** design drafted → **BLOCKED** on DS cleanup (story-editor-8hb
-`ConfirmDialog` primitive, story-editor-0x2 `Checkbox`/`Radio` primitives).
-Those must land first. **When they do, this spec needs a revision pass:** §2
-consumes the `ConfirmDialog` primitive (not an inline `Modal` composition) and
-§3a consumes the `Checkbox` primitive (not a hand-rolled `<input>`). The rest of
-the design (schema split, `_count`, fork transaction/copy, fixtures) is
-unaffected and stands.
+`ConfirmDialog` primitive, story-editor-0x2 `Checkbox`/`Radio` primitives) →
+**REVISED & READY.** Both blockers landed on `main` (8hb #162 `7f710f2`,
+0x2 #163 `5f17664`). The revision pass called for at block time is done:
+§2 now consumes the `ConfirmDialog` primitive (was: inline `Modal`
+composition), §3a now consumes the `Checkbox` primitive (was: hand-rolled
+`<input>`), and §8's two follow-ups are marked shipped. The rest of the design
+(schema split, `_count`, fork transaction/copy, fixtures) was unaffected and
+stands as originally written.
 
 ## Problem
 
@@ -122,11 +124,17 @@ _count: { select: { chats: true } },   // asks + scenes; one query, no N+1
 
 then map `r._count.chats → chatCount` **explicitly** in the meta shaper. Note
 the shaper currently returns `{ ...projected, isActive, ...flags }` by spread
-(`draft.repo.ts:305`), and `projectDecrypted` only strips the ciphertext
-triples — so `_count` will **not** ride through `...projected` and `chatCount`
-must be assigned by hand (`chatCount: r._count.chats`), with `RepoDraftMeta`
-(`draft.repo.ts`) extended to carry it. Drop the stray `_count` from the shaped
-object (explicit map, like `chapter.repo`). No second query, no `groupBy`.
+(`draft.repo.ts:305`), and `projectDecrypted` (`_narrative.ts`) strips **only**
+keys ending in `Ciphertext`/`Iv`/`AuthTag` (`stripCiphertextFields`). `_count`
+is none of those, so it **does** ride through `...stripCiphertextFields(row)`
+into `projected._count` — and `serializeDraftMeta` is an explicit-pick serializer, so a
+stray `_count` on `RepoDraftMeta` would not itself reach the wire or 500 — but
+it pollutes the internal `RepoDraftMeta` shape and its repo-level test. So the
+mapper must both **assign** `chatCount: r._count.chats` by hand
+**and remove** the phantom `_count` (`delete projected._count`, or build the
+meta object without spreading `_count`), with `RepoDraftMeta` (`draft.repo.ts`)
+extended to carry `chatCount`. This mirrors `chapter.repo`'s explicit
+`draftCount` map. No second query, no `groupBy`.
 
 No new column, no migration — read-time aggregation only.
 
@@ -164,27 +172,43 @@ The existing active-draft and last-draft guards stay exactly as they are.
   - Singular/plural handled inline (`chatCount === 1 ? 'chat & scene' : 'chats
     & scenes'`, or simply "1 attached chat/scene" vs "N attached chats &
     scenes"). No shared `pluralize` helper exists and none is added — inline
-    ternary is the codebase idiom (see `ResendConfirmDialog`).
-  - **Template:** compose it exactly like
-    [`ResendConfirmDialog`](frontend/src/components/messageRow/ResendConfirmDialog.tsx)
-    — a small bespoke dialog built from `Modal` + `ModalHeader` + `ModalBody` +
-    `ModalFooter` + `Button`, `size="sm"`, `role="alertdialog"`, `useId()` for
-    the label.
-  - **Why compose inline rather than extract a `ConfirmDialog` primitive now:**
-    this would be the **4th** near-identical confirm dialog (`ResendConfirmDialog`,
-    `StoryPicker` delete, `CharacterSheet` delete) — genuine drift that *does*
-    warrant a shared primitive. But two of the existing three are modal-in-modal
-    and entangled with `useSoftDelete` / delete-error state, so extracting +
-    migrating them belongs in a focused DS refactor, not a data-safety PR; and
-    extracting a primitive whose *only* consumer is this new site would leave two
-    competing idioms (worse). So compose inline here, and track the extraction as
-    its own bd issue: **"Extract `ConfirmDialog` primitive; migrate
-    ResendConfirmDialog + StoryPicker + CharacterSheet + draft-delete."** (Filed
-    as a real issue, not a vague deferral — see §8.)
-  - The destructive button is the danger variant.
+    ternary is the codebase idiom.
+  - **Consume the `ConfirmDialog` primitive** (`frontend/src/design/primitives.tsx`,
+    shipped by story-editor-8hb). It is the standard confirm surface now that
+    8hb migrated `ResendConfirmDialog`, `StoryPicker` delete, `CharacterSheet`
+    delete, and `ChatSceneTab` onto it — building a new bespoke `Modal`
+    composition here would reintroduce exactly the drift 8hb removed (a
+    blocking "Reuse before build" review finding). Wire it directly:
+
+    ```tsx
+    <ConfirmDialog
+      open={confirmingDelete}
+      title={`Delete "${displayLabel}"?`}
+      body={
+        `This permanently deletes its ${draft.chatCount} attached ` +
+        `${draft.chatCount === 1 ? 'chat & scene' : 'chats & scenes'}. ` +
+        `This can't be undone.`
+      }
+      confirmLabel="Delete draft"
+      confirmVariant="danger"
+      pending={isDeleting}
+      error={deleteError}
+      onConfirm={() => { void onConfirmDelete(); }}
+      onCancel={() => { setConfirmingDelete(false); }}
+      testId={`draft-row-${draft.id}-confirm-modal`}
+    />
+    ```
+
+    The primitive already provides `size="sm"`, `role="alertdialog"`, the
+    `useId()`-labelled header, the danger action button, the `pending`
+    spinner + Cancel-disable, and the `error` (`role="alert"`, dialog stays
+    open) — so no inline chrome is written. The `chatCount === 1` ternary lives
+    in the `body` string only.
   - Confirm calls the **same** `useDeleteDraftMutation` the inline path uses;
     the mutation, optimistic removal, error handling (`cannot_delete_active_draft`
-    resync), and `pendingDeleteId` state are unchanged.
+    resync), and `pendingDeleteId` state are unchanged. On failure the row keeps
+    the modal open via the primitive's `error` prop (§4) rather than the inline
+    path's aria-live-only surface.
   - Dismiss (Escape / Cancel / backdrop) closes with no side effect.
 
 Active/last-draft drafts: the delete affordance is already hidden on the active
@@ -205,13 +229,33 @@ draft. No new guard logic.
 `frontend/src/components/NewDraftDialog.tsx`:
 
 - Under the Fork radio, an indented checkbox: **`[ ] Also copy chats & scenes`**.
-- **Markup mirrors the existing hand-rolled radios in the same file**
-  (`NewDraftDialog.tsx:104-125`: a `<label>` wrapping `<input type="…">` + text,
-  same token classes). There is no `Checkbox` primitive and the fork radios
-  aren't primitives either — form controls are hand-rolled at the call site in
-  this codebase, so an inline `<input type="checkbox">` here matches the idiom.
-  (A shared `Checkbox` primitive would be new DS scope — out of this PR;
-  fileable separately.)
+- **Consume the `CheckboxField` primitive** (`frontend/src/design/primitives.tsx`,
+  shipped by story-editor-0x2 — `{ id, label, hint?, checked, onChange: (next:
+  boolean) => void, testId? }`). NewDraftDialog's radios are *already* the
+  `RadioGroup` primitive after 0x2's migration (`NewDraftDialog.tsx:103-113`),
+  so a hand-rolled `<input type="checkbox">` here would be the lone raw control
+  in an otherwise primitive-based dialog — a "Reuse before build" finding.
+  `CheckboxField` renders the `<label htmlFor>` + `Checkbox` + text at the same
+  `text-[12px]` scale the dialog uses; feed it a `useId()`:
+
+  ```tsx
+  const copyChatsId = useId();
+  const [copyChats, setCopyChats] = useState(false);
+  // …rendered only when mode === 'fork', indented under the RadioGroup.
+  // CheckboxField takes no className (verified frontend/src/design/primitives.tsx),
+  // so the pl-6 indent goes on a wrapping <div>:
+  {mode === 'fork' ? (
+    <div className="pl-6">
+      <CheckboxField
+        id={copyChatsId}
+        label="Also copy chats & scenes"
+        checked={copyChats}
+        onChange={setCopyChats}
+        testId="new-draft-copy-chats"
+      />
+    </div>
+  ) : null}
+  ```
 - Rendered only when `mode === 'fork'` (hidden for blank).
 - **No count in the label.** An earlier draft proposed "Also copy chats &
   scenes (N)", but `NewDraftDialog` has no access to the source count:
@@ -349,11 +393,12 @@ Distinct tasks:
    `createFork` deep-copy in one `$transaction` (tx-threaded draft insert +
    **new** `chat.repo.createWithin` + existing `message.repo.createWithin`),
    route wiring, repo/route/leak tests.
-2. **Delete-warning modal (frontend).** `DraftRow` modal-vs-inline branch
-   (`chatCount > 0`), inline-ternary copy, the `chatCount:0` fixture defaults on
+2. **Delete-warning modal (frontend).** `DraftRow` `ConfirmDialog`-vs-inline
+   branch (`chatCount > 0` → `ConfirmDialog` primitive; `=== 0` → existing
+   inline confirm), inline-ternary copy, the `chatCount:0` fixture defaults on
    all three `DraftMeta` builders + the `makeDraft` strip (§5), tests, Storybook.
-3. **Fork checkbox (frontend).** `NewDraftDialog` checkbox (mirroring the file's
-   hand-rolled radios), `copyChats` wiring, tests, Storybook.
+3. **Fork checkbox (frontend).** `NewDraftDialog` `CheckboxField` (fork-only),
+   `copyChats` wiring, tests, Storybook.
 
 Task 1 lands the contract both frontend tasks consume.
 
@@ -365,23 +410,22 @@ the encrypted message copy path. **`repo-boundary-reviewer`** is in-lane
 **`security-reviewer`** is plausibly in-lane if the touch-set brushes the DEK
 usage on the copy path. Both run at the `/bd-close-reviewed` gate.
 
-## 8. Tracked follow-ups (real bd issues, not vague deferrals)
+## 8. Tracked follow-ups — both SHIPPED (this spec now consumes them)
 
-The delete modal composes `Modal` primitives inline (§2) rather than extract a
-shared component **in this PR**, for scope/risk reasons — but the underlying
-drift is real and gets a filed issue, not a hand-wave:
+At block time these were filed as the DS prerequisites; both have since landed
+on `main` and this feature consumes them directly rather than deferring:
 
-- **`ConfirmDialog` primitive (to file, P2/P3).** Extract a
-  `ConfirmDialog({ title, body, confirmLabel, confirmVariant, onConfirm,
-  onCancel })` primitive with a story, and migrate all four bespoke confirm
-  dialogs to it (`ResendConfirmDialog`, `StoryPicker` delete, `CharacterSheet`
-  delete, the new draft-delete). Called out because two sites are modal-in-modal
-  + `useSoftDelete`-entangled and warrant their own careful, tested change.
-- **`Checkbox`/`Radio` primitives (optional, low-pri DS note).** ~10 hand-rolled
-  `<input type="checkbox">`/radio sites exist app-wide. A primitive + migration
-  is a legitimate DS cleanup but higher-churn/lower-value than the confirm
-  extraction; file only if the design-system backlog wants it. This PR matches
-  the existing hand-rolled idiom (§3a).
+- **`ConfirmDialog` primitive — ✅ shipped (story-editor-8hb, #162).** Extracted
+  and migrated `ResendConfirmDialog`, `StoryPicker` delete, `CharacterSheet`
+  delete, and `ChatSceneTab` onto it. §2's delete-warning modal consumes this
+  primitive (no new bespoke dialog).
+- **`Checkbox`/`Radio` primitives — ✅ shipped (story-editor-0x2, #163).** Added
+  `Checkbox`/`Radio`/`RadioGroup`/`CheckboxField` and migrated ~9 hand-rolled
+  form controls, including NewDraftDialog's radios (now `RadioGroup`). §3a's
+  fork checkbox consumes `CheckboxField`.
+
+No follow-up remains open from this section. This PR adds **no** new hand-rolled
+form control or bespoke confirm dialog.
 
 ## Global Constraints
 
@@ -397,3 +441,7 @@ drift is real and gets a filed issue, not a hand-wave:
   warning is frontend-only.
 - Token-only styling in `frontend/src/` (`lint:design`); TypeScript strict, no
   `any`; commit prefix `[story-editor-6ze]`.
+- **Reuse before build:** consume the shipped DS primitives — `ConfirmDialog`
+  for the delete warning (§2), `CheckboxField` for the fork option (§3a). No new
+  bespoke confirm dialog and no hand-rolled `<input>` form control; introducing
+  either is a blocking review finding.

@@ -81,7 +81,10 @@ export function createChapterDraftsRouter() {
         try {
           created =
             body.mode === 'fork'
-              ? await repo.createFork(chapterId, body.label)
+              ? await repo.createFork(chapterId, {
+                  label: body.label,
+                  copyChats: body.copyChats,
+                })
               : await repo.createBlank(chapterId, body.label);
           break;
         } catch (err) {

@@ -131,6 +131,43 @@ describe('NewDraftDialog', () => {
     expect(onClose).not.toHaveBeenCalled();
   });
 
+  it('[6ze] copy-chats checkbox shows only for fork mode', async () => {
+    renderDialog();
+    expect(screen.getByTestId('new-draft-copy-chats')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Start blank' }));
+
+    expect(screen.queryByTestId('new-draft-copy-chats')).not.toBeInTheDocument();
+  });
+
+  it('[6ze] toggling copy-chats sets copyChats:true on the create call', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { draft: createdDraft }));
+    renderDialog();
+
+    await userEvent.click(screen.getByTestId('new-draft-copy-chats'));
+    await userEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ mode: 'fork', copyChats: true });
+  });
+
+  it('[6ze] blank mode create omits copyChats', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(201, { draft: createdDraft }));
+    renderDialog();
+
+    await userEvent.click(screen.getByRole('radio', { name: 'Start blank' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Create draft' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(JSON.parse(init.body as string)).toEqual({ mode: 'blank' });
+  });
+
   it('Cancel closes without POSTing', async () => {
     const { onClose } = renderDialog();
     await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));

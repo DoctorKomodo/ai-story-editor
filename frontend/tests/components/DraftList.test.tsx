@@ -3,13 +3,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { JSX, ReactNode } from 'react';
-import type { DraftMeta } from 'story-editor-shared';
+import { type DraftMeta, draftSchema } from 'story-editor-shared';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DraftList } from '@/components/DraftList';
 import { draftsQueryKey } from '@/hooks/useDrafts';
 import { resetApiClientForTests } from '@/lib/api';
 import { useSelectedDraftStore } from '@/store/selectedDraft';
 import { useSessionStore } from '@/store/session';
+import { makeDraft, makeDraftMeta } from '../fixtures/chapter';
 
 function jsonResponse(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), {
@@ -28,6 +29,7 @@ function meta(overrides: Partial<DraftMeta> & Pick<DraftMeta, 'id' | 'orderIndex
     summaryIsStale: false,
     createdAt: '2026-06-01T00:00:00.000Z',
     updatedAt: '2026-06-01T01:00:00.000Z',
+    chatCount: 0,
     ...overrides,
   };
 }
@@ -268,5 +270,70 @@ describe('DraftList', () => {
     const { onRequestNewDraft } = renderList();
     await userEvent.click(screen.getByRole('button', { name: 'New draft…' }));
     expect(onRequestNewDraft).toHaveBeenCalledWith('ch-1');
+  });
+
+  it('[6ze] makeDraftMeta carries chatCount; makeDraft (full Draft) does NOT', () => {
+    expect(makeDraftMeta().chatCount).toBe(0);
+    // full-Draft fixture must parse clean — i.e. NOT carry chatCount (strictObject)
+    expect(() => draftSchema.parse(makeDraft())).not.toThrow();
+    expect('chatCount' in makeDraft()).toBe(false);
+  });
+
+  it('[6ze] draft with chatCount 0 uses the inline confirm (no modal)', async () => {
+    renderList();
+    await userEvent.click(screen.getByRole('button', { name: 'Delete Draft C' }));
+    expect(screen.getByTestId('draft-row-d-c-confirm')).toBeInTheDocument();
+    expect(screen.queryByTestId('draft-row-d-c-confirm-modal')).not.toBeInTheDocument();
+  });
+
+  it('[6ze] draft with chatCount > 0 opens the ConfirmDialog with pluralized copy', async () => {
+    renderList({
+      drafts: [
+        meta({ id: 'd-a', orderIndex: 0, isActive: true }),
+        meta({ id: 'd-b', orderIndex: 1, chatCount: 3 }),
+        meta({ id: 'd-c', orderIndex: 2, chatCount: 1 }),
+      ],
+    });
+
+    await userEvent.click(screen.getByTestId('draft-row-d-b-delete'));
+    expect(screen.getByTestId('draft-row-d-b-confirm-modal')).toBeInTheDocument();
+    expect(screen.getByText(/its 3 attached chats & scenes/)).toBeInTheDocument();
+    await userEvent.click(screen.getByTestId('draft-row-d-b-confirm-modal-cancel'));
+
+    await userEvent.click(screen.getByTestId('draft-row-d-c-delete'));
+    expect(screen.getByTestId('draft-row-d-c-confirm-modal')).toBeInTheDocument();
+    expect(screen.getByText(/its 1 attached chat & scene/)).toBeInTheDocument();
+  });
+
+  it('[6ze] modal Cancel dismisses with no delete mutation; Delete fires it and removes the row', async () => {
+    renderList({
+      drafts: [
+        meta({ id: 'd-a', orderIndex: 0, isActive: true }),
+        meta({ id: 'd-b', orderIndex: 1, chatCount: 2 }),
+      ],
+    });
+
+    await userEvent.click(screen.getByTestId('draft-row-d-b-delete'));
+    await userEvent.click(screen.getByTestId('draft-row-d-b-confirm-modal-cancel'));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('draft-row-d-b-confirm-modal')).not.toBeInTheDocument();
+    expect(screen.getByTestId('draft-row-d-b')).toBeInTheDocument();
+
+    fetchMock.mockResolvedValueOnce(new Response(null, { status: 204 }));
+    fetchMock.mockResolvedValueOnce(
+      jsonResponse(200, { drafts: [meta({ id: 'd-a', orderIndex: 0, isActive: true })] }),
+    );
+    await userEvent.click(screen.getByTestId('draft-row-d-b-delete'));
+    await userEvent.click(screen.getByTestId('draft-row-d-b-confirm-modal-confirm'));
+
+    await waitFor(() => {
+      const del = fetchMock.mock.calls.find(
+        ([, init]) => (init as RequestInit | undefined)?.method === 'DELETE',
+      );
+      expect(del).toBeDefined();
+    });
+    await waitFor(() => {
+      expect(screen.queryByTestId('draft-row-d-b')).not.toBeInTheDocument();
+    });
   });
 });

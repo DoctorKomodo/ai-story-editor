@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { Draft } from 'story-editor-shared';
 import {
   Button,
+  CheckboxField,
   Field,
   Input,
   Modal,
@@ -60,8 +61,10 @@ export function NewDraftDialog({
 }: NewDraftDialogProps): JSX.Element {
   const titleId = useId();
   const nameId = useId();
+  const copyChatsId = useId();
   const [mode, setMode] = useState<'fork' | 'blank'>('fork');
   const [name, setName] = useState('');
+  const [copyChats, setCopyChats] = useState(false);
   const createDraft = useCreateDraftMutation();
 
   const forkLabel = viewedIsActive ? 'Fork current draft' : 'Fork active draft';
@@ -73,7 +76,11 @@ export function NewDraftDialog({
       {
         chapterId,
         storyId,
-        input: { mode, ...(trimmed.length > 0 ? { label: trimmed } : {}) },
+        input: {
+          mode,
+          ...(trimmed.length > 0 ? { label: trimmed } : {}),
+          ...(mode === 'fork' && copyChats ? { copyChats: true } : {}),
+        },
       },
       {
         onSuccess: (draft) => {
@@ -111,6 +118,18 @@ export function NewDraftDialog({
             { value: 'blank', label: 'Start blank' },
           ]}
         />
+        {mode === 'fork' ? (
+          <div className="pl-6">
+            <CheckboxField
+              id={copyChatsId}
+              label="Also copy chats & scenes"
+              checked={copyChats}
+              disabled={createDraft.isPending}
+              onChange={setCopyChats}
+              testId="new-draft-copy-chats"
+            />
+          </div>
+        ) : null}
         <Field label="Name (optional)" htmlFor={nameId}>
           <Input
             id={nameId}

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import type { DraftMeta } from 'story-editor-shared';
 import {
   CloseIcon,
+  ConfirmDialog,
   IconButton,
   InlineConfirm,
   InlineEdit,
@@ -68,14 +69,20 @@ function DraftRow({
 }: DraftRowProps): JSX.Element {
   const liRef = useRef<HTMLLIElement>(null);
   const confirm = useInlineConfirm(liRef);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const hasAttached = draft.chatCount > 0;
 
   const onConfirmDelete = async (): Promise<void> => {
+    setDeleteError(null);
     try {
       await onRequestDelete();
       confirm.dismiss();
+      setConfirmingDelete(false);
     } catch {
-      // Failure surfaced via ChapterList's aria-live region (onStatus); keep
-      // the confirm open so the user can retry or cancel.
+      // Inline path: surfaced via onStatus (aria-live). Modal path: keep it
+      // open and show the error inline on the dialog.
+      if (hasAttached) setDeleteError('Delete failed — try again.');
     }
   };
 
@@ -150,7 +157,14 @@ function DraftRow({
             {draft.isActive ? null : (
               <IconButton
                 ariaLabel={`Delete ${displayLabel}`}
-                onClick={confirm.ask}
+                onClick={() => {
+                  if (hasAttached) {
+                    setDeleteError(null);
+                    setConfirmingDelete(true);
+                  } else {
+                    confirm.ask();
+                  }
+                }}
                 testId={`draft-row-${draft.id}-delete`}
               >
                 <CloseIcon />
@@ -159,6 +173,24 @@ function DraftRow({
           </span>
         </>
       )}
+      {hasAttached ? (
+        <ConfirmDialog
+          open={confirmingDelete}
+          title={`Delete "${displayLabel}"?`}
+          body={`This permanently deletes its ${draft.chatCount} attached ${draft.chatCount === 1 ? 'chat & scene' : 'chats & scenes'}. This can't be undone.`}
+          confirmLabel="Delete draft"
+          confirmVariant="danger"
+          pending={isDeleting}
+          error={deleteError}
+          onConfirm={() => {
+            void onConfirmDelete();
+          }}
+          onCancel={() => {
+            setConfirmingDelete(false);
+          }}
+          testId={`draft-row-${draft.id}-confirm-modal`}
+        />
+      ) : null}
     </li>
   );
 }

@@ -22,14 +22,19 @@ const META = {
 };
 
 describe('draft schemas', () => {
-  it('draftMetaSchema accepts a meta row and rejects ciphertext keys', () => {
-    expect(draftMetaSchema.parse(META)).toEqual(META);
-    expect(() => draftMetaSchema.parse({ ...META, bodyCiphertext: 'x' })).toThrow();
+  it('draftMetaSchema requires chatCount and rejects ciphertext keys', () => {
+    const withCount = { ...META, chatCount: 0 };
+    expect(draftMetaSchema.parse(withCount)).toEqual(withCount);
+    // chatCount is required on meta now
+    expect(() => draftMetaSchema.parse(META)).toThrow();
+    expect(() => draftMetaSchema.parse({ ...withCount, bodyCiphertext: 'x' })).toThrow();
   });
 
-  it('draftSchema = meta + bodyJson + summary + summaryUpdatedAt', () => {
+  it('draftSchema = core + bodyJson + summary + summaryUpdatedAt, and has NO chatCount (egress trap)', () => {
     const full = { ...META, bodyJson: { type: 'doc' }, summary: null, summaryUpdatedAt: null };
     expect(draftSchema.parse(full)).toEqual(full);
+    // The egress-trap guard: a full Draft must NOT carry chatCount.
+    expect(() => draftSchema.parse({ ...full, chatCount: 3 })).toThrow();
   });
 
   it('draftCreateSchema: fork|blank mode, optional label', () => {
@@ -39,6 +44,15 @@ describe('draft schemas', () => {
       label: 'darker take',
     });
     expect(() => draftCreateSchema.parse({ mode: 'copy' })).toThrow();
+  });
+
+  it('draftCreateSchema: optional copyChats boolean', () => {
+    expect(draftCreateSchema.parse({ mode: 'fork', copyChats: true })).toEqual({
+      mode: 'fork',
+      copyChats: true,
+    });
+    expect(draftCreateSchema.parse({ mode: 'fork' })).toEqual({ mode: 'fork' });
+    expect(() => draftCreateSchema.parse({ mode: 'fork', copyChats: 'yes' })).toThrow();
   });
 
   it('draftUpdateSchema: bodyJson / label / expectedUpdatedAt all optional; label nullable', () => {

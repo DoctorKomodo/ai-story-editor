@@ -51,6 +51,7 @@ export function makeDraftMeta(overrides: Partial<DraftMeta> = {}): DraftMeta {
     summaryIsStale: false,
     createdAt: '2026-04-01T00:00:00.000Z',
     updatedAt: '2026-04-24T00:00:00.000Z',
+    chatCount: 0,
     ...overrides,
   };
 }
@@ -60,8 +61,9 @@ export function makeDraftMeta(overrides: Partial<DraftMeta> = {}): DraftMeta {
  * makeDraftMeta so the shared metadata fields stay defined in one place.
  */
 export function makeDraft(overrides: Partial<Draft> = {}): Draft {
+  const { chatCount: _chatCount, ...core } = makeDraftMeta();
   return {
-    ...makeDraftMeta(),
+    ...core,
     bodyJson: { type: 'doc', content: [] },
     summary: null,
     summaryUpdatedAt: null,
