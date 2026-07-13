@@ -36,7 +36,13 @@ model User {
   createdAt                 DateTime @default(now())
   updatedAt                 DateTime @updatedAt
 
-  stories Story[]
+  stories      Story[]
+  chapters     Chapter[]
+  characters   Character[]
+  outlineItems OutlineItem[]
+  drafts       Draft[]
+  chats        Chat[]
+  messages     Message[]
 }
 
 model Story {
@@ -73,8 +79,8 @@ model Story {
 }
 
 model Chapter {
-  id         String   @id @default(cuid())
-  orderIndex Int
+  id              String   @id @default(cuid())
+  orderIndex      Int
   // [9wk.5] body/summary/wordCount live on the active Draft — the active
   // draft IS the chapter downstream (see Draft model). `titleCiphertext` is
   // the only remaining narrative ciphertext triple on this model.
@@ -91,12 +97,19 @@ model Chapter {
   activeDraft   Draft?  @relation("ActiveDraft", fields: [activeDraftId], references: [id], onDelete: SetNull)
   drafts        Draft[] @relation("ChapterDrafts")
 
+  // [story-editor-35u] Denormalized owner — collapses the storyId -> Story ->
+  // userId chain to a direct FK. Written once at create from the session,
+  // never from client input (see docs/superpowers/plans/2026-07-06-owner-denormalization.md).
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // [D16] Uniqueness at the DB level is the only reliable guard against the
   // aggregate(_max)+insert race in the POST handler; a unique constraint also
   // creates the btree index Postgres needs for `ORDER BY orderIndex ASC`, so
   // the separate `@@index([storyId, orderIndex])` becomes redundant.
   @@unique([storyId, orderIndex])
   @@index([storyId])
+  @@index([userId])
 }
 
 model Draft {
@@ -123,14 +136,19 @@ model Draft {
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
-  chapterId String
-  chapter   Chapter @relation("ChapterDrafts", fields: [chapterId], references: [id], onDelete: Cascade)
+  chapterId        String
+  chapter          Chapter  @relation("ChapterDrafts", fields: [chapterId], references: [id], onDelete: Cascade)
   // Back-side of Chapter.activeDraft (the active-pointer relation).
   activeForChapter Chapter? @relation("ActiveDraft")
-  chats            Chat[]  @relation("DraftChats")
+  chats            Chat[]   @relation("DraftChats")
+
+  // [story-editor-35u] Denormalized owner — see Chapter.userId.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([chapterId, orderIndex])
   @@index([chapterId])
+  @@index([userId])
 }
 
 model Character {
@@ -175,11 +193,16 @@ model Character {
   storyId String
   story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
+  // [story-editor-35u] Denormalized owner — see Chapter.userId.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // [cast-ui] Same race guard as Chapter — unique constraint prevents
   // aggregate(_max)+insert race in POST handler and provides the btree index
   // Postgres needs for `ORDER BY orderIndex ASC`.
   @@unique([storyId, orderIndex])
   @@index([storyId])
+  @@index([userId])
 }
 
 model OutlineItem {
@@ -202,9 +225,14 @@ model OutlineItem {
   storyId String
   story   Story  @relation(fields: [storyId], references: [id], onDelete: Cascade)
 
+  // [story-editor-35u] Denormalized owner — see Chapter.userId.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   // [D16] See Chapter — same race, same fix.
   @@unique([storyId, order])
   @@index([storyId])
+  @@index([userId])
 }
 
 model Chat {
@@ -228,14 +256,19 @@ model Chat {
 
   messages Message[]
 
+  // [story-editor-35u] Denormalized owner — see Chapter.userId.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([draftId])
   @@index([draftId, kind])
   // story-editor-loj: index supports the findManyForDraft ORDER BY.
   @@index([draftId, lastActivityAt])
+  @@index([userId])
 }
 
 model Message {
-  id                       String   @id @default(cuid())
+  id                       String    @id @default(cuid())
   role                     String
   model                    String?
   tokens                   Int?
@@ -259,7 +292,7 @@ model Message {
   citationsJsonCiphertext  String?
   citationsJsonIv          String?
   citationsJsonAuthTag     String?
-  createdAt                DateTime @default(now())
+  createdAt                DateTime  @default(now())
   // Null = never edited. Set explicitly by the edit path (message.repo.update),
   // never by create — deliberately not @updatedAt, so "edited?" is unambiguous.
   // See docs/superpowers/specs/2026-06-14-chat-message-edit-resend-design.md.
@@ -268,7 +301,11 @@ model Message {
   chatId String
   chat   Chat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
 
+  // [story-editor-35u] Denormalized owner — see Chapter.userId.
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([chatId])
   @@index([chatId, createdAt])
+  @@index([userId])
 }
-
