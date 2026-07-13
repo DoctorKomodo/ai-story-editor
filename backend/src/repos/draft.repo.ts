@@ -99,7 +99,7 @@ async function loadOwnedChapter(
 ): Promise<{ activeDraftId: string | null }> {
   await ensureChapterOwned(client, chapterId, userId, 'draft.repo');
   const chapter = await client.chapter.findFirst({
-    where: { id: chapterId },
+    where: { id: chapterId, userId },
     select: { activeDraftId: true },
   });
   if (!chapter) throw new Error('draft.repo: chapter not owned by caller');

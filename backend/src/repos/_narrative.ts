@@ -192,6 +192,8 @@ export async function messageExistsForUser(
   return (await client.message.findFirst({ where: { id, userId }, select: { id: true } })) !== null;
 }
 
+// `PrismaClient`-only (no tx-client union like its siblings): no call site
+// invokes it inside a transaction. Widen only when a real tx caller appears.
 export async function ensureStoryOwned(
   client: PrismaClient,
   storyId: string,
