@@ -107,6 +107,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
         data: {
           storyId: input.storyId,
           orderIndex: input.orderIndex,
+          userId,
           ...writeEncrypted(req, 'title', input.title),
         },
       });

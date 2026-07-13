@@ -55,6 +55,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
         storyId: input.storyId,
         order: input.order,
         status: input.status,
+        userId,
         // Post-[E11]: `title` and `sub` are ciphertext-only.
         ...writeEncrypted(req, 'title', input.title),
         ...writeEncrypted(req, 'sub', input.sub ?? null),

@@ -56,8 +56,8 @@ describe('Story model', () => {
   it('cascades chapter and character deletes when the story is deleted', async () => {
     const user = await makeUser('c@example.com');
     const story = await prisma.story.create({ data: { userId: user.id } });
-    await prisma.chapter.create({ data: { orderIndex: 0, storyId: story.id } });
-    await prisma.character.create({ data: { storyId: story.id, orderIndex: 0 } });
+    await prisma.chapter.create({ data: { orderIndex: 0, storyId: story.id, userId: user.id } });
+    await prisma.character.create({ data: { storyId: story.id, orderIndex: 0, userId: user.id } });
 
     await prisma.story.delete({ where: { id: story.id } });
 

@@ -110,6 +110,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         chapterId: input.chapterId,
         orderIndex: input.orderIndex,
         wordCount: input.wordCount ?? 0,
+        userId,
         ...(summaryPlaintext !== null ? { summaryJsonUpdatedAt: now, updatedAt: now } : {}),
         ...writeEncrypted(req, 'body', bodyPlaintext),
         ...writeEncrypted(req, 'summaryJson', summaryPlaintext),

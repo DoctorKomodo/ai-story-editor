@@ -49,6 +49,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
       data: {
         chatId: input.chatId,
         role: input.role,
+        userId,
         model: input.model ?? null,
         tokens: input.tokens ?? null,
         latencyMs: input.latencyMs ?? null,

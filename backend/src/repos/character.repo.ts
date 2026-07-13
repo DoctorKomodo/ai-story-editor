@@ -55,6 +55,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
       data: {
         storyId: input.storyId,
         orderIndex: input.orderIndex,
+        userId,
         color: input.color ?? null,
         initial: input.initial ?? null,
         // Post-[E11]: all narrative fields (name, role, age, appearance,

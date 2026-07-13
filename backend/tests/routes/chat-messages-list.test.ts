@@ -157,7 +157,7 @@ describe('[V21] GET /api/chats/:chatId/messages', () => {
     // Raw Prisma: messageRepo.create always encrypts content on write — only a
     // direct insert can produce the null-ciphertext state this test needs.
     await prisma.message.create({
-      data: { chatId, role: 'user' },
+      data: { chatId, role: 'user', userId: req.user!.id },
     });
 
     const res = await agent.get(`/api/chats/${chatId}/messages`);

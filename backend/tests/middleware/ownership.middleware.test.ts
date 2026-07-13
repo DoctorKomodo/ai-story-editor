@@ -50,22 +50,24 @@ async function seedTwoUsersAndAStory(): Promise<{
   // structural fields (FKs, order/status indexes).
   const story = await prisma.story.create({ data: { userId: owner.id } });
   const chapter = await prisma.chapter.create({
-    data: { orderIndex: 0, storyId: story.id },
+    data: { orderIndex: 0, storyId: story.id, userId: owner.id },
   });
-  const character = await prisma.character.create({ data: { storyId: story.id, orderIndex: 0 } });
+  const character = await prisma.character.create({
+    data: { storyId: story.id, orderIndex: 0, userId: owner.id },
+  });
   const outline = await prisma.outlineItem.create({
-    data: { order: 0, status: 'pending', storyId: story.id },
+    data: { order: 0, status: 'pending', storyId: story.id, userId: owner.id },
   });
   const draft = await prisma.draft.create({
-    data: { chapterId: chapter.id, orderIndex: 0 },
+    data: { chapterId: chapter.id, orderIndex: 0, userId: owner.id },
   });
   await prisma.chapter.update({
     where: { id: chapter.id },
     data: { activeDraftId: draft.id },
   });
-  const chat = await prisma.chat.create({ data: { draftId: draft.id } });
+  const chat = await prisma.chat.create({ data: { draftId: draft.id, userId: owner.id } });
   const message = await prisma.message.create({
-    data: { chatId: chat.id, role: 'user' },
+    data: { chatId: chat.id, role: 'user', userId: owner.id },
   });
 
   return {

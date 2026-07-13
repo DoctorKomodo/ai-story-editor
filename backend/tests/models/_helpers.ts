@@ -17,13 +17,13 @@ export async function createStoryRow(userId: string) {
   return prisma.story.create({ data: { userId } });
 }
 
-export async function createChapterRow(storyId: string) {
-  return prisma.chapter.create({ data: { storyId, orderIndex: 0 } });
+export async function createChapterRow(storyId: string, userId: string) {
+  return prisma.chapter.create({ data: { storyId, orderIndex: 0, userId } });
 }
 
-export async function createChatRow(chapterId: string) {
-  const draft = await prisma.draft.create({ data: { chapterId, orderIndex: 0 } });
-  return prisma.chat.create({ data: { draftId: draft.id } });
+export async function createChatRow(chapterId: string, userId: string) {
+  const draft = await prisma.draft.create({ data: { chapterId, orderIndex: 0, userId } });
+  return prisma.chat.create({ data: { draftId: draft.id, userId } });
 }
 
 // A sentinel ciphertext triple for schema-shape tests. The repo layer ([E9])

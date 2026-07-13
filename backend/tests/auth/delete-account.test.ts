@@ -66,22 +66,22 @@ describe('[X3] DELETE /api/auth/delete-account', () => {
       data: { userId: alice.userId },
     });
     const chapter = await prisma.chapter.create({
-      data: { storyId: story.id, orderIndex: 0 },
+      data: { storyId: story.id, orderIndex: 0, userId: alice.userId },
     });
     await prisma.character.create({
-      data: { storyId: story.id, orderIndex: 0 },
+      data: { storyId: story.id, orderIndex: 0, userId: alice.userId },
     });
     await prisma.outlineItem.create({
-      data: { storyId: story.id, order: 0, status: 'pending' },
+      data: { storyId: story.id, order: 0, status: 'pending', userId: alice.userId },
     });
     const draft = await prisma.draft.create({
-      data: { chapterId: chapter.id, orderIndex: 0 },
+      data: { chapterId: chapter.id, orderIndex: 0, userId: alice.userId },
     });
     const chat = await prisma.chat.create({
-      data: { draftId: draft.id },
+      data: { draftId: draft.id, userId: alice.userId },
     });
     await prisma.message.create({
-      data: { chatId: chat.id, role: 'user' },
+      data: { chatId: chat.id, role: 'user', userId: alice.userId },
     });
 
     // Bob seeds a story so we can prove his rows are not touched.

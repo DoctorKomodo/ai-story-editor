@@ -11,7 +11,7 @@ async function makeChapter(email = 'chat-author@example.com') {
     .replace(/[^a-z0-9_-]/g, '');
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
   const story = await prisma.story.create({ data: { userId: user.id } });
-  return prisma.chapter.create({ data: { orderIndex: 0, storyId: story.id } });
+  return prisma.chapter.create({ data: { orderIndex: 0, storyId: story.id, userId: user.id } });
 }
 
 describe('Chat model', () => {
@@ -25,8 +25,10 @@ describe('Chat model', () => {
 
   it('creates a chat with a nullable ciphertext title', async () => {
     const chapter = await makeChapter();
-    const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
-    const chat = await prisma.chat.create({ data: { draftId: draft.id } });
+    const draft = await prisma.draft.create({
+      data: { chapterId: chapter.id, orderIndex: 0, userId: chapter.userId },
+    });
+    const chat = await prisma.chat.create({ data: { draftId: draft.id, userId: chapter.userId } });
     expect(chat.id).toMatch(/^c[a-z0-9]+$/);
     expect(chat.draftId).toBe(draft.id);
     expect(chat.titleCiphertext).toBeNull();
@@ -36,8 +38,10 @@ describe('Chat model', () => {
 
   it('cascades deletion when the chapter is deleted', async () => {
     const chapter = await makeChapter('casc@example.com');
-    const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
-    const chat = await prisma.chat.create({ data: { draftId: draft.id } });
+    const draft = await prisma.draft.create({
+      data: { chapterId: chapter.id, orderIndex: 0, userId: chapter.userId },
+    });
+    const chat = await prisma.chat.create({ data: { draftId: draft.id, userId: chapter.userId } });
     await prisma.chapter.delete({ where: { id: chapter.id } });
     expect(await prisma.chat.findUnique({ where: { id: chat.id } })).toBeNull();
   });

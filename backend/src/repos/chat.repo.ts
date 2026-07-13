@@ -52,6 +52,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
       data: {
         draftId: input.draftId,
         kind: input.kind ?? 'ask',
+        userId,
         // Post-[E11]: `title` is ciphertext-only.
         ...writeEncrypted(req, 'title', input.title ?? null),
       },
