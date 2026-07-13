@@ -3,7 +3,7 @@ import type { Request } from 'express';
 import type { Citation, Message, MessageAttachment, MessageRole } from 'story-editor-shared';
 import { MESSAGE_ENCRYPTED_FIELD_KEYS, MESSAGE_JSON_PAYLOAD_FIELD_KEYS } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
+import { chatExistsForUser, projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = MESSAGE_ENCRYPTED_FIELD_KEYS;
 const JSON_PAYLOAD_FIELDS = MESSAGE_JSON_PAYLOAD_FIELD_KEYS;
@@ -30,9 +30,7 @@ async function ensureChatOwned(
   chatId: string,
   userId: string,
 ): Promise<void> {
-  const ok = await client.chat.findFirst({
-    where: { id: chatId, userId },
-  });
+  const ok = await chatExistsForUser(chatId, userId, client);
   if (!ok) throw new Error('message.repo: chat not owned by caller');
 }
 

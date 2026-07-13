@@ -10,6 +10,7 @@
 import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { type ChapterSummary, chapterSummarySchema } from 'story-editor-shared';
+import { prisma as defaultPrisma } from '../lib/prisma';
 import {
   DekNotAvailableError,
   decryptForRequest,
@@ -124,13 +125,80 @@ export function resolveUserId(req: Request, repoTag: string): string {
   return id;
 }
 
+// ─── Ownership predicates (owner-denormalization, story-editor-z7g) ────────
+// One per narrative table, all flat `{ id, userId }` lookups now that every
+// table carries its owner directly — no transitive chain to walk. These are
+// the single source of truth for "does this row exist and belong to this
+// user"; the `ensure*` guards below and the ownership middleware's dispatch
+// table both delegate to them.
+
+export async function storyExistsForUser(
+  id: string,
+  userId: string,
+  client: PrismaClient | Prisma.TransactionClient = defaultPrisma,
+): Promise<boolean> {
+  return (await client.story.findFirst({ where: { id, userId }, select: { id: true } })) !== null;
+}
+
+export async function chapterExistsForUser(
+  id: string,
+  userId: string,
+  client: PrismaClient | Prisma.TransactionClient = defaultPrisma,
+): Promise<boolean> {
+  return (await client.chapter.findFirst({ where: { id, userId }, select: { id: true } })) !== null;
+}
+
+export async function characterExistsForUser(
+  id: string,
+  userId: string,
+  client: PrismaClient | Prisma.TransactionClient = defaultPrisma,
+): Promise<boolean> {
+  return (
+    (await client.character.findFirst({ where: { id, userId }, select: { id: true } })) !== null
+  );
+}
+
+export async function outlineItemExistsForUser(
+  id: string,
+  userId: string,
+  client: PrismaClient | Prisma.TransactionClient = defaultPrisma,
+): Promise<boolean> {
+  return (
+    (await client.outlineItem.findFirst({ where: { id, userId }, select: { id: true } })) !== null
+  );
+}
+
+export async function draftExistsForUser(
+  id: string,
+  userId: string,
+  client: PrismaClient | Prisma.TransactionClient = defaultPrisma,
+): Promise<boolean> {
+  return (await client.draft.findFirst({ where: { id, userId }, select: { id: true } })) !== null;
+}
+
+export async function chatExistsForUser(
+  id: string,
+  userId: string,
+  client: PrismaClient | Prisma.TransactionClient = defaultPrisma,
+): Promise<boolean> {
+  return (await client.chat.findFirst({ where: { id, userId }, select: { id: true } })) !== null;
+}
+
+export async function messageExistsForUser(
+  id: string,
+  userId: string,
+  client: PrismaClient | Prisma.TransactionClient = defaultPrisma,
+): Promise<boolean> {
+  return (await client.message.findFirst({ where: { id, userId }, select: { id: true } })) !== null;
+}
+
 export async function ensureStoryOwned(
   client: PrismaClient,
   storyId: string,
   userId: string,
   repoTag: string,
 ): Promise<void> {
-  const ok = await client.story.findFirst({ where: { id: storyId, userId } });
+  const ok = await storyExistsForUser(storyId, userId, client);
   if (!ok) throw new Error(`${repoTag}: story not owned by caller`);
 }
 
@@ -140,7 +208,7 @@ export async function ensureChapterOwned(
   userId: string,
   repoTag: string,
 ): Promise<void> {
-  const ok = await client.chapter.findFirst({ where: { id: chapterId, userId } });
+  const ok = await chapterExistsForUser(chapterId, userId, client);
   if (!ok) throw new Error(`${repoTag}: chapter not owned by caller`);
 }
 

@@ -87,6 +87,25 @@ export class DraftDeleteLastError extends Error {
   }
 }
 
+// Ownership-check + minimal data fetch, shared by the two call sites below
+// that need `activeDraftId` after confirming the caller owns the chapter.
+// Delegates the ownership check to `ensureChapterOwned` (same throw message
+// both call sites relied on); the follow-up `if (!chapter)` is type-narrowing
+// only — `ensureChapterOwned` already proved the row exists.
+async function loadOwnedChapter(
+  client: PrismaClient | Prisma.TransactionClient,
+  chapterId: string,
+  userId: string,
+): Promise<{ activeDraftId: string | null }> {
+  await ensureChapterOwned(client, chapterId, userId, 'draft.repo');
+  const chapter = await client.chapter.findFirst({
+    where: { id: chapterId },
+    select: { activeDraftId: true },
+  });
+  if (!chapter) throw new Error('draft.repo: chapter not owned by caller');
+  return chapter;
+}
+
 export function createDraftRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function createWithin(tx: Prisma.TransactionClient, input: RepoDraftCreateInput) {
     const userId = resolveUserId(req, 'draft.repo');
@@ -276,11 +295,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
 
   async function findManyMetaForChapter(chapterId: string): Promise<RepoDraftMeta[]> {
     const userId = resolveUserId(req, 'draft.repo');
-    const chapter = await client.chapter.findFirst({
-      where: { id: chapterId, userId },
-      select: { activeDraftId: true },
-    });
-    if (!chapter) throw new Error('draft.repo: chapter not owned by caller');
+    const chapter = await loadOwnedChapter(client, chapterId, userId);
     const rows = await client.draft.findMany({
       where: { chapterId, userId },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
@@ -334,11 +349,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     opts?: { label?: string | null; copyChats?: boolean },
   ) {
     const userId = resolveUserId(req, 'draft.repo');
-    const chapter = await client.chapter.findFirst({
-      where: { id: chapterId, userId },
-      select: { activeDraftId: true },
-    });
-    if (!chapter) throw new Error('draft.repo: chapter not owned by caller');
+    const chapter = await loadOwnedChapter(client, chapterId, userId);
     if (chapter.activeDraftId === null) {
       throw new Error('draft.repo: chapter has no active draft (invariant violation)');
     }

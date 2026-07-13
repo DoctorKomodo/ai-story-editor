@@ -2,7 +2,7 @@ import type { Prisma, PrismaClient } from '@prisma/client';
 import type { Request } from 'express';
 import { CHAT_ENCRYPTED_FIELD_KEYS, type ChatKind } from 'story-editor-shared';
 import { prisma as defaultPrisma } from '../lib/prisma';
-import { projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
+import { draftExistsForUser, projectDecrypted, resolveUserId, writeEncrypted } from './_narrative';
 
 const ENCRYPTED_FIELDS = CHAT_ENCRYPTED_FIELD_KEYS;
 
@@ -38,9 +38,7 @@ async function ensureDraftOwned(
   draftId: string,
   userId: string,
 ): Promise<void> {
-  const ok = await client.draft.findFirst({
-    where: { id: draftId, userId },
-  });
+  const ok = await draftExistsForUser(draftId, userId, client);
   if (!ok) throw new Error('chat.repo: draft not owned by caller');
 }
 
