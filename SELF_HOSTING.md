@@ -214,6 +214,18 @@ If the release notes say a migration is destructive (e.g. dropping a plaintext c
 > rollback is restore-from-backup. After the upgrade every chapter is simply a
 > one-draft chapter — users see no change until they create a second draft.
 
+> **Upgrade note (owner denormalization):** The first release containing the
+> owner-denormalization change ships a **destructive migration**. It adds a
+> direct `userId` column to every narrative table (`Chapter`, `Character`,
+> `OutlineItem`, `Draft`, `Chat`, `Message`), backfills it from each row's
+> owning story in one transaction, then enforces it `NOT NULL` with a foreign
+> key back to `User`. No narrative content is touched or decrypted — only a
+> plaintext ownership column is added. Take a `scripts/backup-db.sh` snapshot
+> before `docker compose pull && docker compose up -d`. The migration applies
+> automatically on boot, in one shot, and self-checks its own backfill before
+> committing; rollback is restore-from-backup. Users see no change after the
+> upgrade — this is an internal data-model change only.
+
 ## Backup and restore
 
 Run a regular backup of the Postgres database (`pgdata` volume). That is the only server-side secret surface — there is no separate server-held encryption key to back up.
