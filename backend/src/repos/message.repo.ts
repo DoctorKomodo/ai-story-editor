@@ -31,7 +31,7 @@ async function ensureChatOwned(
   userId: string,
 ): Promise<void> {
   const ok = await client.chat.findFirst({
-    where: { id: chatId, draft: { chapter: { story: { userId } } } },
+    where: { id: chatId, userId },
   });
   if (!ok) throw new Error('message.repo: chat not owned by caller');
 }
@@ -75,7 +75,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     // Ownership + role gate: only the owner's own user messages are editable,
     // and the message must belong to the specific chat named in the URL.
     const target = await client.message.findFirst({
-      where: { id, chatId, chat: { draft: { chapter: { story: { userId } } } } },
+      where: { id, chatId, userId },
       select: { id: true, role: true },
     });
     if (!target || target.role !== 'user') return null;
@@ -102,7 +102,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   async function findById(id: string) {
     const userId = resolveUserId(req, 'message.repo');
     const row = await client.message.findFirst({
-      where: { id, chat: { draft: { chapter: { story: { userId } } } } },
+      where: { id, userId },
     });
     if (!row) return null;
     return shape(row, req);
@@ -112,7 +112,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     const userId = resolveUserId(req, 'message.repo');
     await ensureChatOwned(client, chatId, userId);
     const rows = await client.message.findMany({
-      where: { chatId, chat: { draft: { chapter: { story: { userId } } } } },
+      where: { chatId, userId },
       orderBy: { createdAt: 'asc' },
     });
     return rows.map((r) => shape(r, req));
@@ -121,7 +121,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
   async function countForChat(chatId: string): Promise<number> {
     const userId = resolveUserId(req, 'message.repo');
     return client.message.count({
-      where: { chatId, chat: { draft: { chapter: { story: { userId } } } } },
+      where: { chatId, userId },
     });
   }
 
@@ -135,7 +135,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
       where: {
         id: afterMessageId,
         chatId,
-        chat: { draft: { chapter: { story: { userId } } } },
+        userId,
       },
       select: { id: true, createdAt: true },
     });
@@ -145,7 +145,7 @@ export function createMessageRepo(req: Request, client: PrismaClient = defaultPr
     const result = await client.message.deleteMany({
       where: {
         chatId,
-        chat: { draft: { chapter: { story: { userId } } } },
+        userId,
         OR: [
           { createdAt: { gt: ref.createdAt } },
           { AND: [{ createdAt: ref.createdAt }, { id: { not: ref.id } }] },

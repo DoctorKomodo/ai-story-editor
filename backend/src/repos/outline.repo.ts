@@ -70,7 +70,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
 
   async function findById(id: string) {
     const userId = resolveUserId(req, 'outline.repo');
-    const row = await client.outlineItem.findFirst({ where: { id, story: { userId } } });
+    const row = await client.outlineItem.findFirst({ where: { id, userId } });
     if (!row) return null;
     return projectDecrypted<RepoOutlineItem>(
       req,
@@ -83,7 +83,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
     const userId = resolveUserId(req, 'outline.repo');
     await ensureStoryOwned(client, storyId, userId, 'outline.repo');
     const rows = await client.outlineItem.findMany({
-      where: { storyId, story: { userId } },
+      where: { storyId, userId },
       orderBy: { order: 'asc' },
     });
     return rows.map((r) =>
@@ -103,12 +103,12 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
     if (input.order !== undefined) data.order = input.order;
     if (input.status !== undefined) data.status = input.status;
     const updated = await client.outlineItem.updateMany({
-      where: { id, story: { userId } },
+      where: { id, userId },
       data,
     });
     if (updated.count === 0) return null;
     const row = await client.outlineItem.findFirst({
-      where: { id, story: { userId } },
+      where: { id, userId },
     });
     if (!row) return null;
     return projectDecrypted<RepoOutlineItem>(
@@ -120,7 +120,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
 
   async function remove(id: string) {
     const userId = resolveUserId(req, 'outline.repo');
-    const deleted = await client.outlineItem.deleteMany({ where: { id, story: { userId } } });
+    const deleted = await client.outlineItem.deleteMany({ where: { id, userId } });
     return deleted.count > 0;
   }
 
@@ -133,7 +133,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
 
     const ids = items.map((i) => i.id);
     const found = await client.outlineItem.findMany({
-      where: { id: { in: ids }, storyId, story: { userId } },
+      where: { id: { in: ids }, storyId, userId },
       select: { id: true },
     });
     if (found.length !== ids.length) {
@@ -165,7 +165,7 @@ export function createOutlineRepo(req: Request, client: PrismaClient = defaultPr
   async function maxOrder(storyId: string): Promise<number | null> {
     const userId = resolveUserId(req, 'outline.repo');
     const agg = await client.outlineItem.aggregate({
-      where: { storyId, story: { userId } },
+      where: { storyId, userId },
       _max: { order: true },
     });
     return agg._max.order ?? null;

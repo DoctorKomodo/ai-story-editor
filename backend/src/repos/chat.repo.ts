@@ -39,7 +39,7 @@ async function ensureDraftOwned(
   userId: string,
 ): Promise<void> {
   const ok = await client.draft.findFirst({
-    where: { id: draftId, chapter: { story: { userId } } },
+    where: { id: draftId, userId },
   });
   if (!ok) throw new Error('chat.repo: draft not owned by caller');
 }
@@ -67,7 +67,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   async function findById(id: string) {
     const userId = resolveUserId(req, 'chat.repo');
     const row = await client.chat.findFirst({
-      where: { id, draft: { chapter: { story: { userId } } } },
+      where: { id, userId },
     });
     if (!row) return null;
     return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
@@ -79,7 +79,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     const rows = await client.chat.findMany({
       where: {
         draftId,
-        draft: { chapter: { story: { userId } } },
+        userId,
         ...(opts?.kind !== undefined ? { kind: opts.kind } : {}),
       },
       // story-editor-loj: order by most-recent-activity desc, with createdAt
@@ -98,12 +98,12 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
     const data: Record<string, unknown> = {};
     if (input.title !== undefined) Object.assign(data, writeEncrypted(req, 'title', input.title));
     const updated = await client.chat.updateMany({
-      where: { id, draft: { chapter: { story: { userId } } } },
+      where: { id, userId },
       data,
     });
     if (updated.count === 0) return null;
     const row = await client.chat.findFirst({
-      where: { id, draft: { chapter: { story: { userId } } } },
+      where: { id, userId },
     });
     if (!row) return null;
     return projectDecrypted<RepoChat>(req, row, ENCRYPTED_FIELDS);
@@ -112,7 +112,7 @@ export function createChatRepo(req: Request, client: PrismaClient = defaultPrism
   async function remove(id: string) {
     const userId = resolveUserId(req, 'chat.repo');
     const deleted = await client.chat.deleteMany({
-      where: { id, draft: { chapter: { story: { userId } } } },
+      where: { id, userId },
     });
     return deleted.count > 0;
   }

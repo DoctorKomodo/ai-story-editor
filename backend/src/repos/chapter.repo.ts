@@ -137,7 +137,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   async function findById(id: string) {
     const userId = resolveUserId(req, 'chapter.repo');
     const row = await client.chapter.findFirst({
-      where: { id, story: { userId } },
+      where: { id, userId },
       include: CHAPTER_WITH_ACTIVE_DRAFT,
     });
     if (!row) return null;
@@ -165,7 +165,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     // keeps the wire payload independent of chapter-body size. The single-
     // chapter `findById` is the sole authority for `bodyJson`.
     const rows = await client.chapter.findMany({
-      where: { storyId, story: { userId } },
+      where: { storyId, userId },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
@@ -234,13 +234,13 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     if (input.orderIndex !== undefined) data.orderIndex = input.orderIndex;
 
     const updated = await client.chapter.updateMany({
-      where: { id, story: { userId } },
+      where: { id, userId },
       data,
     });
     if (updated.count === 0) return null;
 
     const row = await client.chapter.findFirst({
-      where: { id, story: { userId } },
+      where: { id, userId },
       include: CHAPTER_WITH_ACTIVE_DRAFT,
     });
     if (!row) return null;
@@ -252,7 +252,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     const userId = resolveUserId(req, 'chapter.repo');
     return client.$transaction(async (tx) => {
       const target = await tx.chapter.findFirst({
-        where: { id, story: { userId } },
+        where: { id, userId },
         select: { id: true, storyId: true },
       });
       if (!target) return false;
@@ -293,7 +293,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
 
     const ids = items.map((i) => i.id);
     const found = await client.chapter.findMany({
-      where: { id: { in: ids }, storyId, story: { userId } },
+      where: { id: { in: ids }, storyId, userId },
       select: { id: true },
     });
     if (found.length !== ids.length) {
@@ -330,7 +330,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
   async function maxOrderIndex(storyId: string): Promise<number | null> {
     const userId = resolveUserId(req, 'chapter.repo');
     const agg = await client.chapter.aggregate({
-      where: { storyId, story: { userId } },
+      where: { storyId, userId },
       _max: { orderIndex: true },
     });
     return agg._max.orderIndex ?? null;
@@ -347,7 +347,7 @@ export function createChapterRepo(req: Request, client: PrismaClient = defaultPr
     // reduce; zero-chapter stories get no entry, matching the old groupBy —
     // the route's `?? 0` defaults cover them.
     const rows = await client.chapter.findMany({
-      where: { storyId: { in: storyIds }, story: { userId } },
+      where: { storyId: { in: storyIds }, userId },
       select: { storyId: true, activeDraft: { select: { wordCount: true } } },
     });
     for (const r of rows) {

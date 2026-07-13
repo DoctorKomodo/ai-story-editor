@@ -73,7 +73,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
 
   async function findById(id: string) {
     const userId = resolveUserId(req, 'character.repo');
-    const row = await client.character.findFirst({ where: { id, story: { userId } } });
+    const row = await client.character.findFirst({ where: { id, userId } });
     if (!row) return null;
     return projectDecrypted<RepoCharacter>(
       req,
@@ -86,7 +86,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     const userId = resolveUserId(req, 'character.repo');
     await ensureStoryOwned(client, storyId, userId, 'character.repo');
     const rows = await client.character.findMany({
-      where: { storyId, story: { userId } },
+      where: { storyId, userId },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
     });
     return rows.map((r) =>
@@ -104,12 +104,12 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     if (input.color !== undefined) data.color = input.color;
     if (input.initial !== undefined) data.initial = input.initial;
     const updated = await client.character.updateMany({
-      where: { id, story: { userId } },
+      where: { id, userId },
       data,
     });
     if (updated.count === 0) return null;
     const row = await client.character.findFirst({
-      where: { id, story: { userId } },
+      where: { id, userId },
     });
     if (!row) return null;
     return projectDecrypted<RepoCharacter>(
@@ -123,7 +123,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     const userId = resolveUserId(req, 'character.repo');
     return client.$transaction(async (tx) => {
       const target = await tx.character.findFirst({
-        where: { id, story: { userId } },
+        where: { id, userId },
         select: { id: true, storyId: true },
       });
       if (!target) return false;
@@ -162,7 +162,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
     const userId = resolveUserId(req, 'character.repo');
     const ids = items.map((i) => i.id);
     const found = await client.character.findMany({
-      where: { id: { in: ids }, storyId, story: { userId } },
+      where: { id: { in: ids }, storyId, userId },
       select: { id: true },
     });
     if (found.length !== ids.length) {
@@ -194,7 +194,7 @@ export function createCharacterRepo(req: Request, client: PrismaClient = default
   async function maxOrderIndex(storyId: string): Promise<number | null> {
     const userId = resolveUserId(req, 'character.repo');
     const agg = await client.character.aggregate({
-      where: { storyId, story: { userId } },
+      where: { storyId, userId },
       _max: { orderIndex: true },
     });
     return agg._max.orderIndex ?? null;

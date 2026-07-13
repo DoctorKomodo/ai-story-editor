@@ -140,7 +140,7 @@ export async function ensureChapterOwned(
   userId: string,
   repoTag: string,
 ): Promise<void> {
-  const ok = await client.chapter.findFirst({ where: { id: chapterId, story: { userId } } });
+  const ok = await client.chapter.findFirst({ where: { id: chapterId, userId } });
   if (!ok) throw new Error(`${repoTag}: chapter not owned by caller`);
 }
 
