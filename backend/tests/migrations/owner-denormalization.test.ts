@@ -1,9 +1,7 @@
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
-import { config as dotenvConfig } from 'dotenv';
-import { Client } from 'pg';
+import type { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { lit, makeMigrationHarness } from './_harness';
 
 // [story-editor-35u] Owner-denormalization migration harness. Validates the
 // consolidated userId-backfill migration against a POPULATED pre-migration
@@ -16,55 +14,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // Every "ciphertext" below is an arbitrary marker string — the migration
 // only backfills a plaintext userId column, it never touches ciphertext.
 
-const BACKEND_DIR = path.resolve(__dirname, '..', '..');
-const REPO_ROOT = path.resolve(BACKEND_DIR, '..');
-const FIXTURE = path.join(__dirname, 'fixtures', 'pre-owner-denorm-baseline.sql');
-const SCRATCH_DB = 'storyeditor_owner_denorm_test';
-const CONTAINER = process.env.POSTGRES_CONTAINER ?? 'story-editor-postgres-1';
-
-dotenvConfig({ path: path.join(REPO_ROOT, '.env.test') });
-const templateUrl = process.env.DATABASE_URL;
-if (!templateUrl) {
-  throw new Error('DATABASE_URL missing — copy .env.test.example to .env.test first');
-}
-
-function dbUrl(dbName: string): string {
-  const url = new URL(templateUrl as string);
-  url.pathname = `/${dbName}`;
-  return url.toString();
-}
-
-const scratchUrl = dbUrl(SCRATCH_DB);
-const dbUser = new URL(templateUrl).username;
-
-function loadFixture(): void {
-  execFileSync(
-    'docker',
-    [
-      'exec',
-      '-i',
-      CONTAINER,
-      'psql',
-      '-U',
-      dbUser,
-      '-d',
-      SCRATCH_DB,
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-f',
-      '-',
-    ],
-    { input: fs.readFileSync(FIXTURE) },
-  );
-}
-
-function migrateDeploy(): string {
-  return execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
-    cwd: BACKEND_DIR,
-    env: { ...process.env, DATABASE_URL: scratchUrl },
-    encoding: 'utf8',
-  });
-}
+const { migrateDeploy, setup, teardown } = makeMigrationHarness({
+  scratchDb: 'storyeditor_owner_denorm_test',
+  fixture: path.join(__dirname, 'fixtures', 'pre-owner-denorm-baseline.sql'),
+});
 
 // ---- seed data (pre-migration shapes; raw SQL — no userId column exists
 // ---- yet on this fixture's schema, by design) -------------------------------
@@ -109,12 +62,6 @@ const MESSAGES: Record<string, { chatId: string; role: string }> = {
   'msg-2': { chatId: 'chat-1', role: 'assistant' },
   'msg-3': { chatId: 'chat-2', role: 'user' },
 };
-
-function lit(v: string | number | null): string {
-  if (v === null) return 'NULL';
-  if (typeof v === 'number') return String(v);
-  return `'${v.replace(/'/g, "''")}'`;
-}
 
 function seedSql(): string {
   const stmts: string[] = [];
@@ -183,30 +130,19 @@ function seedSql(): string {
 
 // ---- harness ----------------------------------------------------------------
 
-let maintenance: Client;
 let scratch: Client;
 let deployOutput = '';
 
 describe('[story-editor-35u] owner-denormalization migration on populated pre-migration data', () => {
   beforeAll(async () => {
-    maintenance = new Client({ connectionString: dbUrl('postgres') });
-    await maintenance.connect();
-    await maintenance.query(`DROP DATABASE IF EXISTS ${SCRATCH_DB} WITH (FORCE)`);
-    await maintenance.query(`CREATE DATABASE ${SCRATCH_DB}`);
-
-    loadFixture();
-
-    scratch = new Client({ connectionString: scratchUrl });
-    await scratch.connect();
+    scratch = await setup();
     await scratch.query(seedSql());
 
     deployOutput = migrateDeploy();
   }, 120_000);
 
   afterAll(async () => {
-    await scratch?.end();
-    await maintenance?.query(`DROP DATABASE IF EXISTS ${SCRATCH_DB} WITH (FORCE)`);
-    await maintenance?.end();
+    await teardown(scratch);
   }, 120_000);
 
   it('deploy applied exactly the owner_denormalization migration', () => {

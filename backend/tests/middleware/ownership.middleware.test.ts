@@ -365,6 +365,8 @@ describe('requireOwnership — exhaustive resource enumeration (drift gate)', ()
     await resetDb();
   });
 
+  // Cast: Object.entries widens keys to string; exhaustiveness is enforced by
+  // the Record type on RESOURCE_FIXTURES itself, not by this cast.
   for (const [resource, seed] of Object.entries(RESOURCE_FIXTURES) as Array<
     [OwnedResource, ResourceFixture]
   >) {

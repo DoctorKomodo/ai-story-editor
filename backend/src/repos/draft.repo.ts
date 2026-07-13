@@ -87,17 +87,16 @@ export class DraftDeleteLastError extends Error {
   }
 }
 
-// Ownership-check + minimal data fetch, shared by the two call sites below
-// that need `activeDraftId` after confirming the caller owns the chapter.
-// Delegates the ownership check to `ensureChapterOwned` (same throw message
-// both call sites relied on); the follow-up `if (!chapter)` is type-narrowing
-// only — `ensureChapterOwned` already proved the row exists.
+// Ownership check + minimal data fetch in one owner-scoped query, shared by
+// the two call sites below that need `activeDraftId`. Throws the same message
+// `ensureChapterOwned` would — proving ownership and fetching the field are
+// the same findFirst here, so a separate guard call would only add a round
+// trip.
 async function loadOwnedChapter(
   client: PrismaClient | Prisma.TransactionClient,
   chapterId: string,
   userId: string,
 ): Promise<{ activeDraftId: string | null }> {
-  await ensureChapterOwned(client, chapterId, userId, 'draft.repo');
   const chapter = await client.chapter.findFirst({
     where: { id: chapterId, userId },
     select: { activeDraftId: true },
