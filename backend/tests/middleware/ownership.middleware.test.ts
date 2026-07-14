@@ -3,12 +3,14 @@ import request from 'supertest';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { type OwnedResource, requireOwnership } from '../../src/middleware/ownership.middleware';
 import { createChapterRepo } from '../../src/repos/chapter.repo';
+import { createCharacterRepo } from '../../src/repos/character.repo';
 import { createChatRepo } from '../../src/repos/chat.repo';
 import { createMessageRepo } from '../../src/repos/message.repo';
+import { createOutlineRepo } from '../../src/repos/outline.repo';
 import { createStoryRepo } from '../../src/repos/story.repo';
 import { resetDb } from '../helpers/db';
 import { makeUser } from '../helpers/makeUser';
-import { makeUserContext } from '../repos/_req';
+import { makeUserContext, type TestUserContext } from '../repos/_req';
 import { prisma } from '../setup';
 
 function mountProtected(resource: OwnedResource, idParam: string, userId: string) {
@@ -50,22 +52,24 @@ async function seedTwoUsersAndAStory(): Promise<{
   // structural fields (FKs, order/status indexes).
   const story = await prisma.story.create({ data: { userId: owner.id } });
   const chapter = await prisma.chapter.create({
-    data: { orderIndex: 0, storyId: story.id },
+    data: { orderIndex: 0, storyId: story.id, userId: owner.id },
   });
-  const character = await prisma.character.create({ data: { storyId: story.id, orderIndex: 0 } });
+  const character = await prisma.character.create({
+    data: { storyId: story.id, orderIndex: 0, userId: owner.id },
+  });
   const outline = await prisma.outlineItem.create({
-    data: { order: 0, status: 'pending', storyId: story.id },
+    data: { order: 0, status: 'pending', storyId: story.id, userId: owner.id },
   });
   const draft = await prisma.draft.create({
-    data: { chapterId: chapter.id, orderIndex: 0 },
+    data: { chapterId: chapter.id, orderIndex: 0, userId: owner.id },
   });
   await prisma.chapter.update({
     where: { id: chapter.id },
     data: { activeDraftId: draft.id },
   });
-  const chat = await prisma.chat.create({ data: { draftId: draft.id } });
+  const chat = await prisma.chat.create({ data: { draftId: draft.id, userId: owner.id } });
   const message = await prisma.message.create({
-    data: { chatId: chat.id, role: 'user' },
+    data: { chatId: chat.id, role: 'user', userId: owner.id },
   });
 
   return {
@@ -247,4 +251,148 @@ describe('requireOwnership middleware', () => {
     ).get(`/${message.id}`);
     expect(messageDenyRes.status).toBe(403);
   });
+});
+
+// ─── Exhaustive enumeration (the drift gate, story-editor-35u task 4) ──────
+//
+// `RESOURCE_FIXTURES` is typed `Record<OwnedResource, ResourceFixture>` — if a
+// future resource joins the `OwnedResource` union without a matching entry
+// here, this file fails to typecheck (a missing-property error on the object
+// literal below), not a runtime assertion. No hardcoded resource list, no
+// `satisfies`-only helper: the object literal itself is the exhaustiveness
+// check.
+type ResourceFixture = (
+  owner: TestUserContext,
+  stranger: TestUserContext,
+) => Promise<{ ownedId: string; notOwnedId: string }>;
+
+async function seedOwnedStory(ctx: TestUserContext) {
+  return createStoryRepo(ctx.req).create({ title: 'S' });
+}
+
+async function seedOwnedChapter(ctx: TestUserContext) {
+  const story = await seedOwnedStory(ctx);
+  return createChapterRepo(ctx.req).create({ storyId: story.id, title: 'C', orderIndex: 0 });
+}
+
+async function seedOwnedChat(ctx: TestUserContext) {
+  const chapter = await seedOwnedChapter(ctx);
+  return createChatRepo(ctx.req).create({ draftId: chapter.activeDraftId as string });
+}
+
+const RESOURCE_FIXTURES: Record<OwnedResource, ResourceFixture> = {
+  story: async (owner, stranger) => {
+    const owned = await seedOwnedStory(owner);
+    const notOwned = await seedOwnedStory(stranger);
+    return { ownedId: owned.id, notOwnedId: notOwned.id };
+  },
+  chapter: async (owner, stranger) => {
+    const owned = await seedOwnedChapter(owner);
+    const notOwned = await seedOwnedChapter(stranger);
+    return { ownedId: owned.id, notOwnedId: notOwned.id };
+  },
+  character: async (owner, stranger) => {
+    const ownerStory = await seedOwnedStory(owner);
+    const owned = await createCharacterRepo(owner.req).create({
+      storyId: ownerStory.id,
+      orderIndex: 0,
+      name: 'Owner Char',
+    });
+    const strangerStory = await seedOwnedStory(stranger);
+    const notOwned = await createCharacterRepo(stranger.req).create({
+      storyId: strangerStory.id,
+      orderIndex: 0,
+      name: 'Stranger Char',
+    });
+    return { ownedId: owned.id, notOwnedId: notOwned.id };
+  },
+  outline: async (owner, stranger) => {
+    const ownerStory = await seedOwnedStory(owner);
+    const owned = await createOutlineRepo(owner.req).create({
+      storyId: ownerStory.id,
+      order: 0,
+      status: 'pending',
+      title: 'Beat',
+    });
+    const strangerStory = await seedOwnedStory(stranger);
+    const notOwned = await createOutlineRepo(stranger.req).create({
+      storyId: strangerStory.id,
+      order: 0,
+      status: 'pending',
+      title: 'Beat',
+    });
+    return { ownedId: owned.id, notOwnedId: notOwned.id };
+  },
+  // Chapter creation already seeds the chapter's initial draft through
+  // draft.repo (via chapter.repo internally) — reuse `activeDraftId` rather
+  // than seeding a second draft per chapter.
+  draft: async (owner, stranger) => {
+    const ownedChapter = await seedOwnedChapter(owner);
+    const notOwnedChapter = await seedOwnedChapter(stranger);
+    return {
+      ownedId: ownedChapter.activeDraftId as string,
+      notOwnedId: notOwnedChapter.activeDraftId as string,
+    };
+  },
+  chat: async (owner, stranger) => {
+    const owned = await seedOwnedChat(owner);
+    const notOwned = await seedOwnedChat(stranger);
+    return { ownedId: owned.id, notOwnedId: notOwned.id };
+  },
+  message: async (owner, stranger) => {
+    const ownedChat = await seedOwnedChat(owner);
+    const owned = await createMessageRepo(owner.req).create({
+      chatId: ownedChat.id,
+      role: 'user',
+      content: 'hi',
+    });
+    const notOwnedChat = await seedOwnedChat(stranger);
+    const notOwned = await createMessageRepo(stranger.req).create({
+      chatId: notOwnedChat.id,
+      role: 'user',
+      content: 'hi',
+    });
+    return { ownedId: owned.id, notOwnedId: notOwned.id };
+  },
+};
+
+describe('requireOwnership — exhaustive resource enumeration (drift gate)', () => {
+  beforeEach(async () => {
+    await resetDb();
+  });
+
+  afterEach(async () => {
+    await resetDb();
+  });
+
+  // Cast: Object.entries widens keys to string; exhaustiveness is enforced by
+  // the Record type on RESOURCE_FIXTURES itself, not by this cast.
+  for (const [resource, seed] of Object.entries(RESOURCE_FIXTURES) as Array<
+    [OwnedResource, ResourceFixture]
+  >) {
+    const idParam = `${resource}Id`;
+
+    it(`${resource}: owner passes; a stranger's row and a nonexistent id both 403`, async () => {
+      const owner = await makeUserContext(`own-${resource}`);
+      const stranger = await makeUserContext(`atk-${resource}`);
+      const { ownedId, notOwnedId } = await seed(owner, stranger);
+
+      const okRes = await request(mountProtected(resource, idParam, owner.user.id)).get(
+        `/${ownedId}`,
+      );
+      expect(okRes.status).toBe(200);
+
+      const notOwnedRes = await request(mountProtected(resource, idParam, owner.user.id)).get(
+        `/${notOwnedId}`,
+      );
+      expect(notOwnedRes.status).toBe(403);
+      expect(notOwnedRes.body.error.code).toBe('forbidden');
+
+      const nonexistentRes = await request(mountProtected(resource, idParam, owner.user.id)).get(
+        '/cm-definitely-not-real',
+      );
+      expect(nonexistentRes.status).toBe(403);
+      expect(nonexistentRes.body.error.code).toBe('forbidden');
+    });
+  }
 });

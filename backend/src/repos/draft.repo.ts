@@ -87,6 +87,24 @@ export class DraftDeleteLastError extends Error {
   }
 }
 
+// Ownership check + minimal data fetch in one owner-scoped query, shared by
+// the two call sites below that need `activeDraftId`. Throws the same message
+// `ensureChapterOwned` would — proving ownership and fetching the field are
+// the same findFirst here, so a separate guard call would only add a round
+// trip.
+async function loadOwnedChapter(
+  client: PrismaClient | Prisma.TransactionClient,
+  chapterId: string,
+  userId: string,
+): Promise<{ activeDraftId: string | null }> {
+  const chapter = await client.chapter.findFirst({
+    where: { id: chapterId, userId },
+    select: { activeDraftId: true },
+  });
+  if (!chapter) throw new Error('draft.repo: chapter not owned by caller');
+  return chapter;
+}
+
 export function createDraftRepo(req: Request, client: PrismaClient = defaultPrisma) {
   async function createWithin(tx: Prisma.TransactionClient, input: RepoDraftCreateInput) {
     const userId = resolveUserId(req, 'draft.repo');
@@ -110,6 +128,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         chapterId: input.chapterId,
         orderIndex: input.orderIndex,
         wordCount: input.wordCount ?? 0,
+        userId,
         ...(summaryPlaintext !== null ? { summaryJsonUpdatedAt: now, updatedAt: now } : {}),
         ...writeEncrypted(req, 'body', bodyPlaintext),
         ...writeEncrypted(req, 'summaryJson', summaryPlaintext),
@@ -125,7 +144,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
 
   async function findById(id: string) {
     const userId = resolveUserId(req, 'draft.repo');
-    const row = await client.draft.findFirst({ where: { id, chapter: { story: { userId } } } });
+    const row = await client.draft.findFirst({ where: { id, userId } });
     if (!row) return null;
     return shape(row, req);
   }
@@ -134,7 +153,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     const userId = resolveUserId(req, 'draft.repo');
     await ensureChapterOwned(client, chapterId, userId, 'draft.repo');
     const rows = await client.draft.findMany({
-      where: { chapterId, chapter: { story: { userId } } },
+      where: { chapterId, userId },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
     });
     return rows.map((r) => shape(r, req));
@@ -174,7 +193,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
       // Nothing to write — skip the query entirely so an empty PATCH doesn't
       // bump Prisma's `@updatedAt` and spuriously stale a fresh summary. A
       // stale precondition must still 409 even though there's no write.
-      const row = await client.draft.findFirst({ where: { id, chapter: { story: { userId } } } });
+      const row = await client.draft.findFirst({ where: { id, userId } });
       if (!row) return null;
       if (
         opts?.expectedUpdatedAt !== undefined &&
@@ -188,7 +207,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     const updated = await client.draft.updateMany({
       where: {
         id,
-        chapter: { story: { userId } },
+        userId,
         ...(opts?.expectedUpdatedAt !== undefined ? { updatedAt: opts.expectedUpdatedAt } : {}),
       },
       data,
@@ -198,14 +217,14 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
         // Disambiguate: precondition failed (row moved — 409) vs row gone /
         // not owned (plain null → 404). Same pattern as chapter.repo had.
         const exists = await client.draft.findFirst({
-          where: { id, chapter: { story: { userId } } },
+          where: { id, userId },
           select: { id: true },
         });
         if (exists) throw new DraftVersionConflictError();
       }
       return null;
     }
-    const row = await client.draft.findFirst({ where: { id, chapter: { story: { userId } } } });
+    const row = await client.draft.findFirst({ where: { id, userId } });
     if (!row) return null;
     return shape(row, req);
   }
@@ -217,7 +236,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
   async function isActive(draftId: string): Promise<boolean> {
     const userId = resolveUserId(req, 'draft.repo');
     const row = await client.draft.findFirst({
-      where: { id: draftId, chapter: { story: { userId } } },
+      where: { id: draftId, userId },
       select: { id: true, chapter: { select: { activeDraftId: true } } },
     });
     return row !== null && row.chapter.activeDraftId === row.id;
@@ -229,7 +248,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     // chapter and the chapter under this user. Mismatch and not-found are
     // indistinguishable (no enumeration oracle).
     const draft = await client.draft.findFirst({
-      where: { id: draftId, chapterId, chapter: { story: { userId } } },
+      where: { id: draftId, chapterId, userId },
       select: { id: true },
     });
     if (!draft) return false;
@@ -244,7 +263,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     const userId = resolveUserId(req, 'draft.repo');
     return client.$transaction(async (tx) => {
       const target = await tx.draft.findFirst({
-        where: { id, chapter: { story: { userId } } },
+        where: { id, userId },
         select: { id: true, chapterId: true, chapter: { select: { activeDraftId: true } } },
       });
       if (!target) return false;
@@ -275,13 +294,9 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
 
   async function findManyMetaForChapter(chapterId: string): Promise<RepoDraftMeta[]> {
     const userId = resolveUserId(req, 'draft.repo');
-    const chapter = await client.chapter.findFirst({
-      where: { id: chapterId, story: { userId } },
-      select: { activeDraftId: true },
-    });
-    if (!chapter) throw new Error('draft.repo: chapter not owned by caller');
+    const chapter = await loadOwnedChapter(client, chapterId, userId);
     const rows = await client.draft.findMany({
-      where: { chapterId, chapter: { story: { userId } } },
+      where: { chapterId, userId },
       orderBy: [{ orderIndex: 'asc' }, { createdAt: 'asc' }],
       select: {
         id: true,
@@ -333,11 +348,7 @@ export function createDraftRepo(req: Request, client: PrismaClient = defaultPris
     opts?: { label?: string | null; copyChats?: boolean },
   ) {
     const userId = resolveUserId(req, 'draft.repo');
-    const chapter = await client.chapter.findFirst({
-      where: { id: chapterId, story: { userId } },
-      select: { activeDraftId: true },
-    });
-    if (!chapter) throw new Error('draft.repo: chapter not owned by caller');
+    const chapter = await loadOwnedChapter(client, chapterId, userId);
     if (chapter.activeDraftId === null) {
       throw new Error('draft.repo: chapter has no active draft (invariant violation)');
     }

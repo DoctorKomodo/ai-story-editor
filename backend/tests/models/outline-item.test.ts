@@ -30,6 +30,7 @@ describe('OutlineItem model', () => {
         storyId: story.id,
         order: 0,
         status: 'current',
+        userId: story.userId,
       },
     });
     expect(item.id).toMatch(/^c[a-z0-9]+$/);
@@ -46,7 +47,7 @@ describe('OutlineItem model', () => {
     const story = await makeStory('st@example.com');
     for (const [i, status] of ['done', 'current', 'pending'].entries()) {
       const item = await prisma.outlineItem.create({
-        data: { storyId: story.id, order: i, status },
+        data: { storyId: story.id, order: i, status, userId: story.userId },
       });
       expect(item.status).toBe(status);
     }
@@ -56,9 +57,9 @@ describe('OutlineItem model', () => {
     const story = await makeStory('ord@example.com');
     await prisma.outlineItem.createMany({
       data: [
-        { storyId: story.id, order: 2, status: 'pending' },
-        { storyId: story.id, order: 0, status: 'done' },
-        { storyId: story.id, order: 1, status: 'current' },
+        { storyId: story.id, order: 2, status: 'pending', userId: story.userId },
+        { storyId: story.id, order: 0, status: 'done', userId: story.userId },
+        { storyId: story.id, order: 1, status: 'current', userId: story.userId },
       ],
     });
     const ordered = await prisma.outlineItem.findMany({
@@ -71,7 +72,7 @@ describe('OutlineItem model', () => {
   it('cascades deletion when the parent story is deleted', async () => {
     const story = await makeStory('casc@example.com');
     await prisma.outlineItem.create({
-      data: { storyId: story.id, order: 0, status: 'pending' },
+      data: { storyId: story.id, order: 0, status: 'pending', userId: story.userId },
     });
     await prisma.story.delete({ where: { id: story.id } });
     expect(await prisma.outlineItem.count({ where: { storyId: story.id } })).toBe(0);

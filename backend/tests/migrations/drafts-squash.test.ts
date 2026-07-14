@@ -1,9 +1,7 @@
-import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
 import path from 'node:path';
-import { config as dotenvConfig } from 'dotenv';
-import { Client } from 'pg';
+import type { Client } from 'pg';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { lit, makeMigrationHarness } from './_harness';
 
 // [story-editor-9wk.9] Migration-squash harness. Validates the consolidated
 // pre-9wk → post-9wk drafts migration against a POPULATED pre-9wk database,
@@ -16,55 +14,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 // relocates bytes without decrypting, so byte-identity is the property under
 // test.
 
-const BACKEND_DIR = path.resolve(__dirname, '..', '..');
-const REPO_ROOT = path.resolve(BACKEND_DIR, '..');
-const FIXTURE = path.join(__dirname, 'fixtures', 'pre-9wk-baseline.sql');
-const SCRATCH_DB = 'storyeditor_squash_test';
-const CONTAINER = process.env.POSTGRES_CONTAINER ?? 'story-editor-postgres-1';
-
-dotenvConfig({ path: path.join(REPO_ROOT, '.env.test') });
-const templateUrl = process.env.DATABASE_URL;
-if (!templateUrl) {
-  throw new Error('DATABASE_URL missing — copy .env.test.example to .env.test first');
-}
-
-function dbUrl(dbName: string): string {
-  const url = new URL(templateUrl as string);
-  url.pathname = `/${dbName}`;
-  return url.toString();
-}
-
-const scratchUrl = dbUrl(SCRATCH_DB);
-const dbUser = new URL(templateUrl).username;
-
-function loadFixture(): void {
-  execFileSync(
-    'docker',
-    [
-      'exec',
-      '-i',
-      CONTAINER,
-      'psql',
-      '-U',
-      dbUser,
-      '-d',
-      SCRATCH_DB,
-      '-v',
-      'ON_ERROR_STOP=1',
-      '-f',
-      '-',
-    ],
-    { input: fs.readFileSync(FIXTURE) },
-  );
-}
-
-function migrateDeploy(): string {
-  return execFileSync('npx', ['prisma', 'migrate', 'deploy'], {
-    cwd: BACKEND_DIR,
-    env: { ...process.env, DATABASE_URL: scratchUrl },
-    encoding: 'utf8',
-  });
-}
+const { migrateDeploy, setup, teardown } = makeMigrationHarness({
+  scratchDb: 'storyeditor_squash_test',
+  fixture: path.join(__dirname, 'fixtures', 'pre-9wk-baseline.sql'),
+});
 
 // ---- seed data (pre-9wk shapes; raw SQL — the current Prisma client no
 // ---- longer knows these columns, by design) --------------------------------
@@ -129,12 +82,6 @@ const MESSAGES: Record<string, { chatId: string; role: string; content: string }
   'msg-3': { chatId: 'chat-3', role: 'user', content: 'ct:msg-3' },
 };
 
-function lit(v: string | number | null): string {
-  if (v === null) return 'NULL';
-  if (typeof v === 'number') return String(v);
-  return `'${v.replace(/'/g, "''")}'`;
-}
-
 function seedSql(): string {
   const stmts: string[] = [];
   stmts.push(
@@ -176,32 +123,19 @@ function seedSql(): string {
 
 // ---- harness ----------------------------------------------------------------
 
-let maintenance: Client;
 let scratch: Client;
 let firstDeployOutput = '';
 
 describe('[9wk.9] consolidated drafts migration on populated pre-9wk data', () => {
   beforeAll(async () => {
-    maintenance = new Client({ connectionString: dbUrl('postgres') });
-    await maintenance.connect();
-    await maintenance.query(`DROP DATABASE IF EXISTS ${SCRATCH_DB} WITH (FORCE)`);
-    await maintenance.query(`CREATE DATABASE ${SCRATCH_DB}`);
-
-    loadFixture();
-
-    scratch = new Client({ connectionString: scratchUrl });
-    await scratch.connect();
+    scratch = await setup();
     await scratch.query(seedSql());
 
     firstDeployOutput = migrateDeploy();
   });
 
   afterAll(async () => {
-    await scratch?.end();
-    // Best-effort: leave the DB inspectable if assertions failed mid-run
-    // would be nice, but a deterministic re-run matters more — always drop.
-    await maintenance?.query(`DROP DATABASE IF EXISTS ${SCRATCH_DB} WITH (FORCE)`);
-    await maintenance?.end();
+    await teardown(scratch);
   });
 
   it('deploy applied exactly the consolidated migration', () => {

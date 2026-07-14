@@ -15,10 +15,12 @@ async function makeChat(email = 'msg-author@example.com') {
   const user = await prisma.user.create({ data: { email, username, passwordHash: 'h' } });
   const story = await prisma.story.create({ data: { userId: user.id } });
   const chapter = await prisma.chapter.create({
-    data: { orderIndex: 0, storyId: story.id },
+    data: { orderIndex: 0, storyId: story.id, userId: user.id },
   });
-  const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
-  return prisma.chat.create({ data: { draftId: draft.id } });
+  const draft = await prisma.draft.create({
+    data: { chapterId: chapter.id, orderIndex: 0, userId: user.id },
+  });
+  return prisma.chat.create({ data: { draftId: draft.id, userId: user.id } });
 }
 
 describe('Message model', () => {
@@ -33,7 +35,7 @@ describe('Message model', () => {
   it('creates a message with role + required chat ref (content is ciphertext-only)', async () => {
     const chat = await makeChat();
     const msg = await prisma.message.create({
-      data: { chatId: chat.id, role: 'user' },
+      data: { chatId: chat.id, role: 'user', userId: chat.userId },
     });
     expect(msg.id).toMatch(/^c[a-z0-9]+$/);
     expect(msg.chatId).toBe(chat.id);
@@ -52,6 +54,7 @@ describe('Message model', () => {
       data: {
         chatId: chat.id,
         role: 'assistant',
+        userId: chat.userId,
         model: 'venice-dolphin-70b',
         tokens: 412,
         latencyMs: 1823,
@@ -66,11 +69,11 @@ describe('Message model', () => {
   it('orders messages by createdAt within a chat', async () => {
     const chat = await makeChat('ord@example.com');
     const first = await prisma.message.create({
-      data: { chatId: chat.id, role: 'user' },
+      data: { chatId: chat.id, role: 'user', userId: chat.userId },
     });
     await new Promise((r) => setTimeout(r, 5));
     const second = await prisma.message.create({
-      data: { chatId: chat.id, role: 'assistant' },
+      data: { chatId: chat.id, role: 'assistant', userId: chat.userId },
     });
     const ordered = await prisma.message.findMany({
       where: { chatId: chat.id },
@@ -82,7 +85,7 @@ describe('Message model', () => {
   it('cascades deletion when the parent chat is deleted', async () => {
     const chat = await makeChat('casc@example.com');
     await prisma.message.create({
-      data: { chatId: chat.id, role: 'user' },
+      data: { chatId: chat.id, role: 'user', userId: chat.userId },
     });
     await prisma.chat.delete({ where: { id: chat.id } });
     expect(await prisma.message.count({ where: { chatId: chat.id } })).toBe(0);

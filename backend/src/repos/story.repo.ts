@@ -125,30 +125,30 @@ export function createStoryRepo(req: Request, client: PrismaClient = defaultPris
     const [chapterMax, draftMax, characterMax, outlineMax, chatMax, messageMax] = await Promise.all(
       [
         client.chapter.aggregate({
-          where: { storyId, story: { userId } },
+          where: { storyId, userId },
           _max: { updatedAt: true },
         }),
         // [story-editor-wkw] Body/summary edits land on Draft.updatedAt only —
         // without this candidate a draft-only edit leaves the max unmoved and
         // import/plan under-reports a conflict as "unchanged".
         client.draft.aggregate({
-          where: { chapter: { storyId, story: { userId } } },
+          where: { chapter: { storyId }, userId },
           _max: { updatedAt: true },
         }),
         client.character.aggregate({
-          where: { storyId, story: { userId } },
+          where: { storyId, userId },
           _max: { updatedAt: true },
         }),
         client.outlineItem.aggregate({
-          where: { storyId, story: { userId } },
+          where: { storyId, userId },
           _max: { updatedAt: true },
         }),
         client.chat.aggregate({
-          where: { draft: { chapter: { storyId, story: { userId } } } },
+          where: { draft: { chapter: { storyId } }, userId },
           _max: { updatedAt: true },
         }),
         client.message.aggregate({
-          where: { chat: { draft: { chapter: { storyId, story: { userId } } } } },
+          where: { chat: { draft: { chapter: { storyId } } }, userId },
           _max: { createdAt: true, updatedAt: true },
         }),
       ],

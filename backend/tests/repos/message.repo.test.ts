@@ -177,6 +177,7 @@ describe('MessageRepo.deleteAllAfter', () => {
       data: {
         chatId: chat.id as string,
         role: 'user',
+        userId: user.user.id,
         createdAt: ts,
       },
     });
@@ -184,6 +185,7 @@ describe('MessageRepo.deleteAllAfter', () => {
       data: {
         chatId: chat.id as string,
         role: 'assistant',
+        userId: user.user.id,
         createdAt: ts, // same millisecond
       },
     });

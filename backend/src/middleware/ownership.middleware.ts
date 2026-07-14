@@ -1,6 +1,15 @@
 import type { PrismaClient } from '@prisma/client';
 import type { NextFunction, Request, Response } from 'express';
 import { prisma as defaultPrisma } from '../lib/prisma';
+import {
+  chapterExistsForUser,
+  characterExistsForUser,
+  chatExistsForUser,
+  draftExistsForUser,
+  messageExistsForUser,
+  outlineItemExistsForUser,
+  storyExistsForUser,
+} from '../repos/_narrative';
 
 export type OwnedResource =
   | 'story'
@@ -20,62 +29,21 @@ function deny(res: Response, status: 401 | 403 | 400, code: string): Response {
   return res.status(status).json({ error: { message: messages[code] ?? 'Forbidden', code } });
 }
 
-async function checkOwned(
-  client: PrismaClient,
-  type: OwnedResource,
-  id: string,
-  userId: string,
-): Promise<boolean> {
-  const select = { id: true } as const;
-  switch (type) {
-    case 'story': {
-      const row = await client.story.findFirst({ where: { id, userId }, select });
-      return row !== null;
-    }
-    case 'chapter': {
-      const row = await client.chapter.findFirst({
-        where: { id, story: { userId } },
-        select,
-      });
-      return row !== null;
-    }
-    case 'character': {
-      const row = await client.character.findFirst({
-        where: { id, story: { userId } },
-        select,
-      });
-      return row !== null;
-    }
-    case 'outline': {
-      const row = await client.outlineItem.findFirst({
-        where: { id, story: { userId } },
-        select,
-      });
-      return row !== null;
-    }
-    case 'chat': {
-      const row = await client.chat.findFirst({
-        where: { id, draft: { chapter: { story: { userId } } } },
-        select,
-      });
-      return row !== null;
-    }
-    case 'message': {
-      const row = await client.message.findFirst({
-        where: { id, chat: { draft: { chapter: { story: { userId } } } } },
-        select,
-      });
-      return row !== null;
-    }
-    case 'draft': {
-      const row = await client.draft.findFirst({
-        where: { id, chapter: { story: { userId } } },
-        select,
-      });
-      return row !== null;
-    }
-  }
-}
+// Dispatch table over the `_narrative.ts` ownership predicates — one flat
+// `{ id, userId }` lookup per resource now that every narrative table
+// carries its owner directly. No narrative-model Prisma calls live here.
+const checkOwned: Record<
+  OwnedResource,
+  (id: string, userId: string, client: PrismaClient) => Promise<boolean>
+> = {
+  story: storyExistsForUser,
+  chapter: chapterExistsForUser,
+  character: characterExistsForUser,
+  outline: outlineItemExistsForUser,
+  chat: chatExistsForUser,
+  message: messageExistsForUser,
+  draft: draftExistsForUser,
+};
 
 export interface RequireOwnershipOptions {
   idParam?: string;
@@ -98,7 +66,7 @@ export function requireOwnership(type: OwnedResource, options: RequireOwnershipO
     }
 
     try {
-      const owned = await checkOwned(client, type, id, req.user.id);
+      const owned = await checkOwned[type](id, req.user.id, client);
       if (!owned) {
         // Conflate "does not exist" with "does not own" so the endpoint isn't
         // an id-enumeration oracle — same 403 in either case.

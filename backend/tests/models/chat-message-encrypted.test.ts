@@ -10,11 +10,14 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
   it('Chat persists title ciphertext triple', async () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
-    const chapter = await createChapterRow(story.id);
-    const draft = await prisma.draft.create({ data: { chapterId: chapter.id, orderIndex: 0 } });
+    const chapter = await createChapterRow(story.id, user.id);
+    const draft = await prisma.draft.create({
+      data: { chapterId: chapter.id, orderIndex: 0, userId: user.id },
+    });
     const created = await prisma.chat.create({
       data: {
         draftId: draft.id,
+        userId: user.id,
         titleCiphertext: SENTINEL.ciphertext,
         titleIv: SENTINEL.iv,
         titleAuthTag: SENTINEL.authTag,
@@ -27,12 +30,13 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
   it('Message persists content + attachmentJson ciphertext triples', async () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
-    const chapter = await createChapterRow(story.id);
-    const chat = await createChatRow(chapter.id);
+    const chapter = await createChapterRow(story.id, user.id);
+    const chat = await createChatRow(chapter.id, user.id);
     const created = await prisma.message.create({
       data: {
         chatId: chat.id,
         role: 'user',
+        userId: user.id,
         contentCiphertext: SENTINEL.ciphertext,
         contentIv: SENTINEL.iv,
         contentAuthTag: SENTINEL.authTag,
@@ -49,12 +53,13 @@ describe('[E8] Chat + Message — ciphertext columns', () => {
   it('Keeps role, model, tokens, latencyMs, timestamps plaintext (chat header + regen flow)', async () => {
     const user = await createUser();
     const story = await createStoryRow(user.id);
-    const chapter = await createChapterRow(story.id);
-    const chat = await createChatRow(chapter.id);
+    const chapter = await createChapterRow(story.id, user.id);
+    const chat = await createChatRow(chapter.id, user.id);
     const created = await prisma.message.create({
       data: {
         chatId: chat.id,
         role: 'assistant',
+        userId: user.id,
         model: 'venice-mini',
         tokens: 42,
         latencyMs: 1234,
