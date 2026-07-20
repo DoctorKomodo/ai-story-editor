@@ -34,6 +34,7 @@ interface ControlledPickerProps {
   onUseModel?: (id: string) => void;
   loading?: boolean;
   error?: boolean;
+  emptyMessage?: string;
 }
 
 function ControlledPicker({
@@ -43,6 +44,7 @@ function ControlledPicker({
   onUseModel = () => {},
   loading,
   error,
+  emptyMessage,
 }: ControlledPickerProps): React.ReactElement {
   const [highlightedId, setHighlightedId] = useState<string | null>(initialHighlightedId);
   return (
@@ -54,6 +56,7 @@ function ControlledPicker({
       onUseModel={onUseModel}
       loading={loading}
       error={error}
+      emptyMessage={emptyMessage}
     />
   );
 }
@@ -205,5 +208,30 @@ describe('ModelPickerInline (X33)', () => {
     render(<ControlledPicker models={[]} activeId={null} initialHighlightedId={null} loading />);
     expect(screen.queryByTestId('model-detail-name')).toBeNull();
     expect(screen.getByTestId('model-rail-skeleton')).toBeInTheDocument();
+  });
+
+  it('renders the provided empty message when the list is empty and not loading', () => {
+    render(
+      <ControlledPicker
+        models={[]}
+        activeId={null}
+        initialHighlightedId={null}
+        emptyMessage={'No models match “xyz”'}
+      />,
+    );
+    expect(screen.queryByTestId('model-rail-skeleton')).toBeNull();
+    expect(screen.getByTestId('model-rail-empty')).toHaveTextContent(/No models match/);
+    expect(screen.queryByTestId('model-detail-name')).toBeNull();
+  });
+
+  it('renders a default empty message when none is provided', () => {
+    render(<ControlledPicker models={[]} activeId={null} initialHighlightedId={null} />);
+    expect(screen.getByTestId('model-rail-empty')).toHaveTextContent(/No models available/);
+  });
+
+  it('still shows the skeleton (not the empty state) while loading with an empty list', () => {
+    render(<ControlledPicker models={[]} activeId={null} initialHighlightedId={null} loading />);
+    expect(screen.getByTestId('model-rail-skeleton')).toBeInTheDocument();
+    expect(screen.queryByTestId('model-rail-empty')).toBeNull();
   });
 });

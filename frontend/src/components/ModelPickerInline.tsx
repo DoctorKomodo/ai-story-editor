@@ -16,6 +16,7 @@ export interface ModelPickerInlineProps {
   onUseModel: (id: string) => void;
   loading?: boolean;
   error?: boolean;
+  emptyMessage?: string;
 }
 
 function formatCtx(n: number): string {
@@ -196,6 +197,7 @@ export function ModelPickerInline({
   onUseModel,
   loading = false,
   error = false,
+  emptyMessage,
 }: ModelPickerInlineProps): JSX.Element {
   if (error) {
     return (
@@ -205,13 +207,26 @@ export function ModelPickerInline({
     );
   }
 
-  if (loading || models.length === 0) {
+  if (loading) {
     return (
       <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
         <div className="border-r border-line bg-bg-sunken/30">
           <SkeletonRail />
         </div>
         <div />
+      </div>
+    );
+  }
+
+  if (models.length === 0) {
+    return (
+      <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+        <div
+          data-testid="model-rail-empty"
+          className="grid place-items-center p-6 text-center text-[12.5px] text-ink-4 font-sans col-span-2"
+        >
+          {emptyMessage ?? 'No models available.'}
+        </div>
       </div>
     );
   }
