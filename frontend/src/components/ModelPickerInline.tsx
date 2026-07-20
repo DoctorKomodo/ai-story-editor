@@ -215,6 +215,16 @@ function MessageFrame({
   );
 }
 
+// Shared picker chrome: the fixed-size bordered two-column grid that every
+// branch (error / loading / empty / normal) renders its content inside.
+function PickerFrame({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+      {children}
+    </div>
+  );
+}
+
 export function ModelPickerInline({
   models,
   activeId,
@@ -227,32 +237,32 @@ export function ModelPickerInline({
 }: ModelPickerInlineProps): JSX.Element {
   if (error) {
     return (
-      <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+      <PickerFrame>
         <MessageFrame className="h-[360px]">
           Couldn't load models. Try reopening Settings.
         </MessageFrame>
-      </div>
+      </PickerFrame>
     );
   }
 
   if (loading) {
     return (
-      <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+      <PickerFrame>
         <div className="border-r border-line bg-bg-sunken/30">
           <SkeletonRail />
         </div>
         <div />
-      </div>
+      </PickerFrame>
     );
   }
 
   if (models.length === 0) {
     return (
-      <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+      <PickerFrame>
         <MessageFrame testId="model-rail-empty">
           {emptyMessage ?? 'No models available.'}
         </MessageFrame>
-      </div>
+      </PickerFrame>
     );
   }
 
@@ -260,7 +270,7 @@ export function ModelPickerInline({
   if (highlighted == null) return <div />;
 
   return (
-    <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+    <PickerFrame>
       <div
         role="listbox"
         aria-label="Models"
@@ -283,6 +293,6 @@ export function ModelPickerInline({
         isActive={highlighted.id === activeId}
         onUseModel={onUseModel}
       />
-    </div>
+    </PickerFrame>
   );
 }

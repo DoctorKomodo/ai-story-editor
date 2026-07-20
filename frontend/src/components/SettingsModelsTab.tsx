@@ -125,6 +125,12 @@ export function SettingsModelsTab(): JSX.Element {
     });
   }, [settings.chat.model, filtered, q]);
 
+  // `highlightedModel` derives from `filtered` (so a zero-match query disables
+  // the sliders) while the write handlers below key off `highlightedId`. The
+  // two can diverge for a single render after `filtered` changes — the effect
+  // above reconciles `highlightedId` before any interaction is possible, and
+  // the picker CTA commits from `filtered`, so this split is intentional; do
+  // not "simplify" the handlers to read `highlightedModel.id`.
   const highlightedModel: Model | undefined =
     filtered.find((m) => m.id === highlightedId) ?? filtered[0];
 
