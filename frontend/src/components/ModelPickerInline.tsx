@@ -4,7 +4,7 @@
 //
 // Layout: 240px rail (scrollable list of models) + flex-1 detail pane
 // (capabilities, description, pricing/context grid, "Use this model" CTA).
-import type { JSX } from 'react';
+import { type JSX, memo, type ReactNode } from 'react';
 import { Button } from '@/design/primitives';
 import type { Model } from '@/hooks/useModels';
 
@@ -16,6 +16,7 @@ export interface ModelPickerInlineProps {
   onUseModel: (id: string) => void;
   loading?: boolean;
   error?: boolean;
+  emptyMessage?: string;
 }
 
 function formatCtx(n: number): string {
@@ -32,14 +33,21 @@ interface RailRowProps {
   model: Model;
   highlighted: boolean;
   active: boolean;
-  onPreview: () => void;
+  onHighlightChange: (id: string) => void;
 }
 
-function RailRow({ model, highlighted, active, onPreview }: RailRowProps): JSX.Element {
+const RailRow = memo(function RailRow({
+  model,
+  highlighted,
+  active,
+  onHighlightChange,
+}: RailRowProps): JSX.Element {
   return (
     <button
       type="button"
-      onClick={onPreview}
+      onClick={() => {
+        onHighlightChange(model.id);
+      }}
       data-testid={`model-rail-${model.id}`}
       aria-current={highlighted ? 'true' : undefined}
       className={[
@@ -72,7 +80,7 @@ function RailRow({ model, highlighted, active, onPreview }: RailRowProps): JSX.E
       </div>
     </button>
   );
-}
+});
 
 interface CapabilityChipProps {
   label: string;
@@ -180,10 +188,39 @@ function SkeletonRail(): JSX.Element {
   );
 }
 
-function ErrorFrame(): JSX.Element {
+// Centered full-width message spanning both picker columns — used by the error
+// and empty-state branches. `className` carries per-branch tweaks (e.g. the
+// error frame's fixed height) without duplicating the shared layout classes.
+function MessageFrame({
+  testId,
+  className = '',
+  children,
+}: {
+  testId?: string;
+  className?: string;
+  children: ReactNode;
+}): JSX.Element {
   return (
-    <div className="grid place-items-center p-6 text-center text-[12.5px] text-ink-4 font-sans h-[360px] col-span-2">
-      Couldn't load models. Try reopening Settings.
+    <div
+      data-testid={testId}
+      className={[
+        'grid place-items-center p-6 text-center text-[12.5px] text-ink-4 font-sans col-span-2',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {children}
+    </div>
+  );
+}
+
+// Shared picker chrome: the fixed-size bordered two-column grid that every
+// branch (error / loading / empty / normal) renders its content inside.
+function PickerFrame({ children }: { children: ReactNode }): JSX.Element {
+  return (
+    <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+      {children}
     </div>
   );
 }
@@ -196,23 +233,36 @@ export function ModelPickerInline({
   onUseModel,
   loading = false,
   error = false,
+  emptyMessage,
 }: ModelPickerInlineProps): JSX.Element {
   if (error) {
     return (
-      <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
-        <ErrorFrame />
-      </div>
+      <PickerFrame>
+        <MessageFrame className="h-[360px]">
+          Couldn't load models. Try reopening Settings.
+        </MessageFrame>
+      </PickerFrame>
     );
   }
 
-  if (loading || models.length === 0) {
+  if (loading) {
     return (
-      <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+      <PickerFrame>
         <div className="border-r border-line bg-bg-sunken/30">
           <SkeletonRail />
         </div>
         <div />
-      </div>
+      </PickerFrame>
+    );
+  }
+
+  if (models.length === 0) {
+    return (
+      <PickerFrame>
+        <MessageFrame testId="model-rail-empty">
+          {emptyMessage ?? 'No models available.'}
+        </MessageFrame>
+      </PickerFrame>
     );
   }
 
@@ -220,7 +270,7 @@ export function ModelPickerInline({
   if (highlighted == null) return <div />;
 
   return (
-    <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+    <PickerFrame>
       <div
         role="listbox"
         aria-label="Models"
@@ -233,9 +283,7 @@ export function ModelPickerInline({
             model={m}
             highlighted={m.id === highlighted.id}
             active={m.id === activeId}
-            onPreview={() => {
-              onHighlightChange(m.id);
-            }}
+            onHighlightChange={onHighlightChange}
           />
         ))}
       </div>
@@ -245,6 +293,6 @@ export function ModelPickerInline({
         isActive={highlighted.id === activeId}
         onUseModel={onUseModel}
       />
-    </div>
+    </PickerFrame>
   );
 }

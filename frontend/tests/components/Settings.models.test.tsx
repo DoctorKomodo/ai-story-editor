@@ -652,4 +652,155 @@ describe('SettingsModal Models tab (X28)', () => {
       { timeout: 1000 },
     );
   });
+
+  // -------------------------------------------------------------------------
+  // Search: filtering, matching fields, empty state, reconciliation
+  // -------------------------------------------------------------------------
+
+  it('shows all models with an empty or whitespace query', async () => {
+    vi.stubGlobal('fetch', buildFetch({ modelsBody: TWO_MODELS_BODY }));
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    expect(await screen.findByTestId('model-rail-m1')).toBeInTheDocument();
+    expect(screen.getByTestId('model-rail-m2')).toBeInTheDocument();
+
+    await user.type(screen.getByTestId('models-search'), '   ');
+    expect(screen.getByTestId('model-rail-m1')).toBeInTheDocument();
+    expect(screen.getByTestId('model-rail-m2')).toBeInTheDocument();
+  });
+
+  it('filters by name substring (case-insensitive)', async () => {
+    vi.stubGlobal('fetch', buildFetch({ modelsBody: TWO_MODELS_BODY }));
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    await screen.findByTestId('model-rail-m1');
+
+    await user.type(screen.getByTestId('models-search'), 'TWO');
+    expect(screen.queryByTestId('model-rail-m1')).toBeNull();
+    expect(screen.getByTestId('model-rail-m2')).toBeInTheDocument();
+  });
+
+  it('filters by id substring', async () => {
+    vi.stubGlobal('fetch', buildFetch({ modelsBody: TWO_MODELS_BODY }));
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    await screen.findByTestId('model-rail-m1');
+
+    await user.type(screen.getByTestId('models-search'), 'm1');
+    expect(screen.getByTestId('model-rail-m1')).toBeInTheDocument();
+    expect(screen.queryByTestId('model-rail-m2')).toBeNull();
+  });
+
+  it('filters by description substring and does not throw on null descriptions', async () => {
+    const noDesc = makeModel({ id: 'nd', name: 'NoDesc', description: null });
+    vi.stubGlobal('fetch', buildFetch({ modelsBody: { models: [MODEL_M1, noDesc] } }));
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    await screen.findByTestId('model-rail-m1');
+
+    // MODEL_M1.description === 'Test model 1.'
+    await user.type(screen.getByTestId('models-search'), 'test model 1');
+    expect(screen.getByTestId('model-rail-m1')).toBeInTheDocument();
+    expect(screen.queryByTestId('model-rail-nd')).toBeNull();
+  });
+
+  it('shows the zero-match empty state and disables the sliders', async () => {
+    vi.stubGlobal('fetch', buildFetch({ modelsBody: TWO_MODELS_BODY }));
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    await screen.findByTestId('model-rail-m1');
+
+    await user.type(screen.getByTestId('models-search'), 'zzz');
+    const empty = screen.getByTestId('model-rail-empty');
+    expect(empty).toHaveTextContent(/No models match/);
+    expect(empty).toHaveTextContent(/zzz/);
+    expect(screen.queryByTestId('model-rail-m1')).toBeNull();
+    expect(screen.getByTestId('param-temperature')).toBeDisabled();
+  });
+
+  it('clearing the query via the × button restores the full list', async () => {
+    vi.stubGlobal('fetch', buildFetch({ modelsBody: TWO_MODELS_BODY }));
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    await screen.findByTestId('model-rail-m1');
+
+    await user.type(screen.getByTestId('models-search'), 'two');
+    expect(screen.queryByTestId('model-rail-m1')).toBeNull();
+
+    await user.click(screen.getByTestId('models-search-clear'));
+    expect(screen.getByTestId('model-rail-m1')).toBeInTheDocument();
+    expect(screen.getByTestId('model-rail-m2')).toBeInTheDocument();
+  });
+
+  it('auto-highlights the first match over the saved default when a query excludes the current highlight', async () => {
+    const A = makeModel({ id: 'alpha', name: 'Alpha match', description: 'a' });
+    const B = makeModel({ id: 'bravo', name: 'Bravo match', description: 'b' });
+    const C = makeModel({ id: 'charlie', name: 'Charlie', description: 'c' });
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({ modelsBody: { models: [A, B, C] }, initialSettings: { model: 'bravo' } }),
+    );
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+
+    // Mount highlights the saved default (bravo).
+    await waitFor(() => {
+      expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Bravo match');
+    });
+
+    // Move the highlight off the default to charlie (no commit — just a preview).
+    await user.click(screen.getByTestId('model-rail-charlie'));
+    expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Charlie');
+
+    // Query matches [alpha, bravo], excludes charlie. First-match (alpha) must win
+    // over the saved default (bravo) while a query is active.
+    await user.type(screen.getByTestId('models-search'), 'match');
+    await waitFor(() => {
+      expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Alpha match');
+    });
+  });
+
+  it('commits the correct filtered model id via PATCH after filtering', async () => {
+    const fetchMock = buildFetch({ modelsBody: TWO_MODELS_BODY, initialSettings: { model: null } });
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    await screen.findByTestId('model-rail-m1');
+
+    await user.type(screen.getByTestId('models-search'), 'two'); // -> [m2] only
+    await user.click(await screen.findByTestId('model-detail-cta'));
+
+    await waitFor(() => {
+      const patch = fetchMock.mock.calls.find(
+        (call): call is [string, RequestInit] =>
+          call[0] === '/api/users/me/settings' && call[1] != null && call[1].method === 'PATCH',
+      );
+      expect(patch).toBeDefined();
+      if (!patch) return;
+      const body = JSON.parse(String(patch[1].body)) as { chat?: { model?: string } };
+      expect(body.chat?.model).toBe('m2');
+    });
+  });
+
+  it('keeps the highlight after committing a model while a query is active', async () => {
+    vi.stubGlobal(
+      'fetch',
+      buildFetch({ modelsBody: TWO_MODELS_BODY, initialSettings: { model: null } }),
+    );
+    const user = userEvent.setup();
+    renderModal(<SettingsModal open onClose={onClose} initialTab="models" />);
+    await screen.findByTestId('model-rail-m1');
+
+    await user.type(screen.getByTestId('models-search'), 'model'); // matches both m1, m2
+    await user.click(screen.getByTestId('model-rail-m2'));
+    expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Model Two');
+
+    await user.click(screen.getByTestId('model-detail-cta')); // commit m2
+
+    // settings.chat.model changing to m2 must NOT yank the highlight back to filtered[0] (m1).
+    await waitFor(() => {
+      expect(screen.getByTestId('model-detail-name')).toHaveTextContent('Model Two');
+    });
+  });
 });

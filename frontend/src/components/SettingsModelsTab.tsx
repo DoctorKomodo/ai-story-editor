@@ -16,7 +16,7 @@
 import type { ChangeEvent, JSX } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
-import { Checkbox } from '@/design/primitives';
+import { Checkbox, CloseIcon, IconButton, Input } from '@/design/primitives';
 import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { resolveChatParams, useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '@/lib/textGenDefaults';
@@ -98,17 +98,41 @@ export function SettingsModelsTab(): JSX.Element {
 
   const [highlightedId, setHighlightedId] = useState<string | null>(null);
 
-  useEffect(() => {
-    const list = modelsQuery.data ?? [];
-    if (list.length === 0) return;
-    setHighlightedId((prev) => {
-      if (prev != null && list.some((m) => m.id === prev)) return prev;
-      return settings.chat.model ?? list[0].id;
-    });
-  }, [settings.chat.model, modelsQuery.data]);
+  const [query, setQuery] = useState('');
+  const q = query.trim().toLowerCase();
+  const filtered = useMemo(
+    () =>
+      q === ''
+        ? models
+        : models.filter(
+            (m) =>
+              m.name.toLowerCase().includes(q) ||
+              m.id.toLowerCase().includes(q) ||
+              (m.description?.toLowerCase().includes(q) ?? false),
+          ),
+    [models, q],
+  );
 
+  useEffect(() => {
+    if (filtered.length === 0) return; // keep prev; highlightedModel resolves to undefined
+    setHighlightedId((prev) => {
+      if (prev != null && filtered.some((m) => m.id === prev)) return prev; // keep if visible
+      if (q === '') {
+        const saved = settings.chat.model;
+        if (saved != null && filtered.some((m) => m.id === saved)) return saved;
+      }
+      return filtered[0].id; // query active (or default absent) → first match
+    });
+  }, [settings.chat.model, filtered, q]);
+
+  // `highlightedModel` derives from `filtered` (so a zero-match query disables
+  // the sliders) while the write handlers below key off `highlightedId`. The
+  // two can diverge for a single render after `filtered` changes — the effect
+  // above reconciles `highlightedId` before any interaction is possible, and
+  // the picker CTA commits from `filtered`, so this split is intentional; do
+  // not "simplify" the handlers to read `highlightedModel.id`.
   const highlightedModel: Model | undefined =
-    models.find((m) => m.id === highlightedId) ?? models[0];
+    filtered.find((m) => m.id === highlightedId) ?? filtered[0];
 
   const slidersDisabled = highlightedModel == null;
 
@@ -201,17 +225,46 @@ export function SettingsModelsTab(): JSX.Element {
   return (
     <div className="flex flex-col gap-6">
       <section className="flex flex-col gap-3" data-testid="models-section-list">
+        <div className="relative">
+          <Input
+            data-testid="models-search"
+            type="text"
+            font="sans"
+            placeholder="Search models…"
+            aria-label="Search models"
+            className="pr-8"
+            value={query}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => {
+              setQuery(e.target.value);
+            }}
+          />
+          {query !== '' ? (
+            <IconButton
+              testId="models-search-clear"
+              ariaLabel="Clear search"
+              size="md"
+              className="absolute right-1 top-1/2 -translate-y-1/2"
+              onClick={() => {
+                setQuery('');
+              }}
+            >
+              <CloseIcon />
+            </IconButton>
+          ) : null}
+        </div>
+
         <p className="text-[12px] text-ink-4 font-sans">
           Pick the default model used for chat and continuations.
         </p>
 
         <ModelPickerInline
-          models={models}
+          models={filtered}
           activeId={settings.chat.model}
           highlightedId={highlightedId}
           onHighlightChange={setHighlightedId}
           loading={modelsQuery.isLoading}
           error={modelsQuery.isError}
+          emptyMessage={query.trim() ? `No models match “${query.trim()}”` : undefined}
           onUseModel={(id) => {
             updateSetting.mutate({ chat: { model: id } });
           }}
