@@ -94,6 +94,15 @@ function EyeOffIcon(): JSX.Element {
   );
 }
 
+const TAB_PANELS: Record<SettingsTab, () => JSX.Element> = {
+  venice: VeniceTab,
+  models: SettingsModelsTab,
+  prompts: SettingsPromptsTab,
+  writing: SettingsWritingTab,
+  appearance: SettingsAppearanceTab,
+  data: SettingsDataTab,
+};
+
 export function SettingsModal({
   open,
   onClose,
@@ -108,12 +117,15 @@ export function SettingsModal({
     if (open) setActiveTab(initialTab ?? 'venice');
   }, [open, initialTab]);
 
+  const ActivePanel = TAB_PANELS[activeTab];
+
   return (
     <Modal
       open={open}
       onClose={onClose}
       labelledBy={titleId}
       size="xl"
+      className="h-[82vh]"
       testId="settings-modal"
       backdropTestId="settings-backdrop"
     >
@@ -164,19 +176,7 @@ export function SettingsModal({
         aria-labelledby={`settings-tab-${activeTab}`}
         data-testid={`settings-panel-${activeTab}`}
       >
-        {activeTab === 'venice' ? (
-          <VeniceTab />
-        ) : activeTab === 'models' ? (
-          <SettingsModelsTab />
-        ) : activeTab === 'prompts' ? (
-          <SettingsPromptsTab />
-        ) : activeTab === 'writing' ? (
-          <SettingsWritingTab />
-        ) : activeTab === 'appearance' ? (
-          <SettingsAppearanceTab />
-        ) : (
-          <SettingsDataTab />
-        )}
+        <ActivePanel />
       </ModalBody>
 
       <ModalFooter
