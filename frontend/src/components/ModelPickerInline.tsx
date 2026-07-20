@@ -4,7 +4,7 @@
 //
 // Layout: 240px rail (scrollable list of models) + flex-1 detail pane
 // (capabilities, description, pricing/context grid, "Use this model" CTA).
-import { type JSX, memo } from 'react';
+import { type JSX, memo, type ReactNode } from 'react';
 import { Button } from '@/design/primitives';
 import type { Model } from '@/hooks/useModels';
 
@@ -188,10 +188,29 @@ function SkeletonRail(): JSX.Element {
   );
 }
 
-function ErrorFrame(): JSX.Element {
+// Centered full-width message spanning both picker columns — used by the error
+// and empty-state branches. `className` carries per-branch tweaks (e.g. the
+// error frame's fixed height) without duplicating the shared layout classes.
+function MessageFrame({
+  testId,
+  className = '',
+  children,
+}: {
+  testId?: string;
+  className?: string;
+  children: ReactNode;
+}): JSX.Element {
   return (
-    <div className="grid place-items-center p-6 text-center text-[12.5px] text-ink-4 font-sans h-[360px] col-span-2">
-      Couldn't load models. Try reopening Settings.
+    <div
+      data-testid={testId}
+      className={[
+        'grid place-items-center p-6 text-center text-[12.5px] text-ink-4 font-sans col-span-2',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {children}
     </div>
   );
 }
@@ -209,7 +228,9 @@ export function ModelPickerInline({
   if (error) {
     return (
       <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
-        <ErrorFrame />
+        <MessageFrame className="h-[360px]">
+          Couldn't load models. Try reopening Settings.
+        </MessageFrame>
       </div>
     );
   }
@@ -228,12 +249,9 @@ export function ModelPickerInline({
   if (models.length === 0) {
     return (
       <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
-        <div
-          data-testid="model-rail-empty"
-          className="grid place-items-center p-6 text-center text-[12.5px] text-ink-4 font-sans col-span-2"
-        >
+        <MessageFrame testId="model-rail-empty">
           {emptyMessage ?? 'No models available.'}
-        </div>
+        </MessageFrame>
       </div>
     );
   }
