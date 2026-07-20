@@ -4,7 +4,7 @@
 //
 // Layout: 240px rail (scrollable list of models) + flex-1 detail pane
 // (capabilities, description, pricing/context grid, "Use this model" CTA).
-import type { JSX } from 'react';
+import { type JSX, memo } from 'react';
 import { Button } from '@/design/primitives';
 import type { Model } from '@/hooks/useModels';
 
@@ -33,14 +33,21 @@ interface RailRowProps {
   model: Model;
   highlighted: boolean;
   active: boolean;
-  onPreview: () => void;
+  onHighlightChange: (id: string) => void;
 }
 
-function RailRow({ model, highlighted, active, onPreview }: RailRowProps): JSX.Element {
+const RailRow = memo(function RailRow({
+  model,
+  highlighted,
+  active,
+  onHighlightChange,
+}: RailRowProps): JSX.Element {
   return (
     <button
       type="button"
-      onClick={onPreview}
+      onClick={() => {
+        onHighlightChange(model.id);
+      }}
       data-testid={`model-rail-${model.id}`}
       aria-current={highlighted ? 'true' : undefined}
       className={[
@@ -73,7 +80,7 @@ function RailRow({ model, highlighted, active, onPreview }: RailRowProps): JSX.E
       </div>
     </button>
   );
-}
+});
 
 interface CapabilityChipProps {
   label: string;
@@ -248,9 +255,7 @@ export function ModelPickerInline({
             model={m}
             highlighted={m.id === highlighted.id}
             active={m.id === activeId}
-            onPreview={() => {
-              onHighlightChange(m.id);
-            }}
+            onHighlightChange={onHighlightChange}
           />
         ))}
       </div>
