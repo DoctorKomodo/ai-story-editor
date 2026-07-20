@@ -83,6 +83,8 @@ export interface ModalProps {
   testId?: string;
   /** Override the backdrop's test ID (otherwise `${testId}-backdrop`). */
   backdropTestId?: string;
+  /** Extra classes merged onto the card (after the built-ins). E.g. a fixed height. */
+  className?: string;
   children: ReactNode;
 }
 
@@ -103,6 +105,7 @@ export function Modal({
   role = 'dialog',
   testId,
   backdropTestId,
+  className,
   children,
 }: ModalProps): JSX.Element | null {
   // Escape closes (priority 100 — same as StoryPicker convention).
@@ -139,6 +142,7 @@ export function Modal({
         'max-w-[94vw] max-h-[82vh] flex flex-col overflow-hidden',
         'rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop',
         embedded ? '' : 't-modal-in',
+        className,
       )}
     >
       {children}
