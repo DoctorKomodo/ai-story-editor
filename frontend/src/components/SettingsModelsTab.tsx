@@ -16,7 +16,7 @@
 import type { ChangeEvent, JSX } from 'react';
 import { useEffect, useId, useMemo, useState } from 'react';
 import { ModelPickerInline } from '@/components/ModelPickerInline';
-import { Checkbox, Input } from '@/design/primitives';
+import { Checkbox, CloseIcon, IconButton, Input } from '@/design/primitives';
 import { type Model, useModelsQuery } from '@/hooks/useModels';
 import { resolveChatParams, useUpdateUserSetting, useUserSettings } from '@/hooks/useUserSettings';
 import { GLOBAL_TEXT_GEN_DEFAULTS, MAX_OUTPUT_TOKENS_CEILING } from '@/lib/textGenDefaults';
@@ -233,17 +233,17 @@ export function SettingsModelsTab(): JSX.Element {
             }}
           />
           {query !== '' ? (
-            <button
-              type="button"
-              data-testid="models-search-clear"
-              aria-label="Clear search"
+            <IconButton
+              testId="models-search-clear"
+              ariaLabel="Clear search"
+              size="md"
+              className="absolute right-1 top-1/2 -translate-y-1/2"
               onClick={() => {
                 setQuery('');
               }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-4 hover:text-ink-2 text-[16px] leading-none"
             >
-              ×
-            </button>
+              <CloseIcon />
+            </IconButton>
           ) : null}
         </div>
 
