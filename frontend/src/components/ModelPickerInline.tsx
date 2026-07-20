@@ -17,6 +17,11 @@ export interface ModelPickerInlineProps {
   loading?: boolean;
   error?: boolean;
   emptyMessage?: string;
+  /**
+   * Extra classes on the picker frame (all states). E.g. `flex-1` so the
+   * picker grows to fill a tall container. Extends the frame's built-ins.
+   */
+  className?: string;
 }
 
 function formatCtx(n: number): string {
@@ -215,11 +220,27 @@ function MessageFrame({
   );
 }
 
-// Shared picker chrome: the fixed-size bordered two-column grid that every
-// branch (error / loading / empty / normal) renders its content inside.
-function PickerFrame({ children }: { children: ReactNode }): JSX.Element {
+// Shared picker chrome: the bordered two-column grid that every branch
+// (error / loading / empty / normal) renders its content inside. `min-h-[360px]`
+// is the floor; a caller can pass `flex-1` (etc.) via `className` to let the
+// frame grow and fill a taller container. `className` extends the built-ins.
+function PickerFrame({
+  className = '',
+  children,
+}: {
+  className?: string;
+  children: ReactNode;
+}): JSX.Element {
   return (
-    <div className="grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden">
+    <div
+      data-testid="model-picker-frame"
+      className={[
+        'grid grid-cols-[240px_1fr] min-h-[360px] rounded-[var(--radius)] border border-line bg-bg-elevated overflow-hidden',
+        className,
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
       {children}
     </div>
   );
@@ -234,10 +255,11 @@ export function ModelPickerInline({
   loading = false,
   error = false,
   emptyMessage,
+  className,
 }: ModelPickerInlineProps): JSX.Element {
   if (error) {
     return (
-      <PickerFrame>
+      <PickerFrame className={className}>
         <MessageFrame className="h-[360px]">
           Couldn't load models. Try reopening Settings.
         </MessageFrame>
@@ -247,7 +269,7 @@ export function ModelPickerInline({
 
   if (loading) {
     return (
-      <PickerFrame>
+      <PickerFrame className={className}>
         <div className="border-r border-line bg-bg-sunken/30">
           <SkeletonRail />
         </div>
@@ -258,7 +280,7 @@ export function ModelPickerInline({
 
   if (models.length === 0) {
     return (
-      <PickerFrame>
+      <PickerFrame className={className}>
         <MessageFrame testId="model-rail-empty">
           {emptyMessage ?? 'No models available.'}
         </MessageFrame>
@@ -270,12 +292,12 @@ export function ModelPickerInline({
   if (highlighted == null) return <div />;
 
   return (
-    <PickerFrame>
+    <PickerFrame className={className}>
       <div
         role="listbox"
         aria-label="Models"
         data-testid="model-rail"
-        className="overflow-y-auto border-r border-line bg-bg-sunken/30 max-h-[420px]"
+        className="overflow-y-auto border-r border-line bg-bg-sunken/30 min-h-0"
       >
         {models.map((m) => (
           <RailRow

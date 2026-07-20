@@ -71,9 +71,13 @@ interface DemoArgs {
 function Demo({ activeId, loading, error, models = SAMPLE_MODELS }: DemoArgs): React.ReactElement {
   const [active, setActive] = useState(activeId);
   const [highlighted, setHighlighted] = useState<string | null>(activeId);
+  // Bounded, tall flex container mirrors the real Settings › Models tab (fixed
+  // 82vh modal): the picker fills the height via `flex-1` and the rail scrolls
+  // internally rather than growing the frame.
   return (
-    <div className="p-6" style={{ minWidth: 720 }}>
+    <div className="p-6 flex flex-col" style={{ minWidth: 720, height: 560 }}>
       <ModelPickerInline
+        className="flex-1"
         models={models}
         activeId={active}
         highlightedId={highlighted}
