@@ -83,7 +83,14 @@ export interface ModalProps {
   testId?: string;
   /** Override the backdrop's test ID (otherwise `${testId}-backdrop`). */
   backdropTestId?: string;
-  /** Extra classes merged onto the card (after the built-ins). E.g. a fixed height. */
+  /**
+   * Extra classes appended to the card (after the built-ins) via `cx`. E.g. a
+   * fixed height. `cx` is a plain concatenator, not tailwind-merge: this
+   * *extends* the built-ins, it does not replace them. Passing a utility that
+   * conflicts with a built-in (e.g. another `max-h-*`/`w-*`) leaves both in the
+   * class string and the CSS cascade decides — avoid that; add non-conflicting
+   * utilities only.
+   */
   className?: string;
   children: ReactNode;
 }
