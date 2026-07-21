@@ -223,8 +223,8 @@ export function SettingsModelsTab(): JSX.Element {
   };
 
   return (
-    <div className="flex flex-col gap-6">
-      <section className="flex flex-col gap-3" data-testid="models-section-list">
+    <div className="flex flex-col gap-6 h-full min-h-0">
+      <section className="flex flex-col gap-3 flex-1 min-h-0" data-testid="models-section-list">
         <div className="relative">
           <Input
             data-testid="models-search"
@@ -258,6 +258,7 @@ export function SettingsModelsTab(): JSX.Element {
         </p>
 
         <ModelPickerInline
+          className="flex-1"
           models={filtered}
           activeId={settings.chat.model}
           highlightedId={highlightedId}

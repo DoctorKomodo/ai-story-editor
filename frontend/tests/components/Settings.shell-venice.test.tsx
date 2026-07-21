@@ -138,6 +138,19 @@ describe('SettingsModal (F43)', () => {
     expect(screen.getByTestId('settings-close')).toBeInTheDocument();
   });
 
+  it('pins the modal to a fixed 82vh height so tabs do not resize the window', () => {
+    vi.stubGlobal(
+      'fetch',
+      routeFetch({
+        '/api/users/me/settings': () => jsonResponse(200, defaultSettings()),
+        '/api/users/me/venice-key': () => jsonResponse(200, keyStatus()),
+      }),
+    );
+    renderModal(<SettingsModal open onClose={onClose} />);
+    const tokens = screen.getByTestId('settings-modal').className.split(/\s+/);
+    expect(tokens).toContain('h-[82vh]');
+  });
+
   it('renders six tabs in order with Venice active by default', () => {
     vi.stubGlobal(
       'fetch',

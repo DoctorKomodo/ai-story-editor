@@ -35,6 +35,7 @@ interface ControlledPickerProps {
   loading?: boolean;
   error?: boolean;
   emptyMessage?: string;
+  className?: string;
 }
 
 function ControlledPicker({
@@ -45,10 +46,12 @@ function ControlledPicker({
   loading,
   error,
   emptyMessage,
+  className,
 }: ControlledPickerProps): React.ReactElement {
   const [highlightedId, setHighlightedId] = useState<string | null>(initialHighlightedId);
   return (
     <ModelPickerInline
+      className={className}
       models={models}
       activeId={activeId}
       highlightedId={highlightedId}
@@ -78,6 +81,29 @@ describe('ModelPickerInline (X33)', () => {
     const bare = makeModel({ id: 'bare', name: 'Bare', pricing: null });
     render(<ControlledPicker models={[bare]} activeId={null} initialHighlightedId={null} />);
     expect(screen.getByTestId('model-rail-bare')).toHaveTextContent(/no price/i);
+  });
+
+  it('forwards className onto the picker frame (to fill a tall container) without dropping the built-ins', () => {
+    render(
+      <ControlledPicker
+        className="flex-1"
+        models={TWO_MODELS}
+        activeId={null}
+        initialHighlightedId={null}
+      />,
+    );
+    // Token membership, not substring — the frame keeps its built-in floor.
+    const tokens = screen.getByTestId('model-picker-frame').className.split(/\s+/);
+    expect(tokens).toContain('flex-1'); // caller class present
+    expect(tokens).toContain('min-h-[360px]'); // built-in floor retained
+    expect(tokens).toContain('grid'); // built-in layout retained
+  });
+
+  it('omits any grow class on the picker frame when no className is passed', () => {
+    render(<ControlledPicker models={TWO_MODELS} activeId={null} initialHighlightedId={null} />);
+    const tokens = screen.getByTestId('model-picker-frame').className.split(/\s+/);
+    expect(tokens).toContain('min-h-[360px]');
+    expect(tokens).not.toContain('flex-1');
   });
 
   it('marks the active model with a dot prefix in the rail', () => {

@@ -83,6 +83,15 @@ export interface ModalProps {
   testId?: string;
   /** Override the backdrop's test ID (otherwise `${testId}-backdrop`). */
   backdropTestId?: string;
+  /**
+   * Extra classes appended to the card (after the built-ins) via `cx`. E.g. a
+   * fixed height. `cx` is a plain concatenator, not tailwind-merge: this
+   * *extends* the built-ins, it does not replace them. Passing a utility that
+   * conflicts with a built-in (e.g. another `max-h-*`/`w-*`) leaves both in the
+   * class string and the CSS cascade decides — avoid that; add non-conflicting
+   * utilities only.
+   */
+  className?: string;
   children: ReactNode;
 }
 
@@ -103,6 +112,7 @@ export function Modal({
   role = 'dialog',
   testId,
   backdropTestId,
+  className,
   children,
 }: ModalProps): JSX.Element | null {
   // Escape closes (priority 100 — same as StoryPicker convention).
@@ -139,6 +149,7 @@ export function Modal({
         'max-w-[94vw] max-h-[82vh] flex flex-col overflow-hidden',
         'rounded-[var(--radius-lg)] border border-line-2 bg-bg-elevated shadow-pop',
         embedded ? '' : 't-modal-in',
+        className,
       )}
     >
       {children}
